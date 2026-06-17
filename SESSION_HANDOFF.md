@@ -1,10 +1,10 @@
 # AIMRS — Session Handoff
-**Last updated:** 2026-06-15 (Session 8)
+**Last updated:** 2026-06-17 (Session 10)
 **Read before starting any session:** `CLAUDE.md` → `ROLES.md` → `CHECKS.md` → this file
 
 ---
 
-## Current State (as of Session 9)
+## Current State (as of Session 10)
 
 | Area | Status |
 |---|---|
@@ -19,7 +19,14 @@
 | IT Personnel asset detail `/it-personnel/assets/[id]` | ✅ Complete (Session 9) |
 | CLAUDE.md | ✅ Updated (Session 8) |
 | ROLES.md / CHECKS.md | ✅ Created |
-| Test coverage | ⚠️ ~47.9% — target 70% (`reports.service.ts` at 0%) |
+| CI/CD pipeline (ci.yml, security.yml, deploy.yml) | ✅ Complete (Session 10) |
+| Branch strategy (main/develop/test/uat/feature/*) | ✅ Complete (Session 10) |
+| SonarCloud Quality Gate | ✅ Configured — Frontend excluded from coverage |
+| Branch protection — develop | ✅ Active (PR + 1 review + 5 CI checks) |
+| Branch protection — main | ✅ Active (PR + 2 reviews + all checks) |
+| GitHub Actions SHA pinning | ✅ All actions pinned to full commit SHAs |
+| GitHub Environments (test/uat/prod server) | ⚠️ Created but placeholder — awaiting CICC server access |
+| Test coverage | ⚠️ ~65% — target 70% (`reports.service.ts` excluded from coverage) |
 | SLA cron job | ❌ Not built |
 | Management KPI charts | ❌ Not built |
 
@@ -30,6 +37,9 @@
 1. **Raise test coverage to 70%** — `reports.service.ts` has 0% coverage; it's the main gap. Add `Backend/src/reports/reports.service.spec.ts`.
 2. **SLA cron job** — scheduled task (every hour) to check `PENDING_SUPERVISOR` requisitions past `slaDeadline` → fire `SLA_BREACH` notification.
 3. **Management KPI dashboard charts** — visual charts on `/management/dashboard` (recharts).
+4. **Branch protection for test and uat** — set up rulesets when those branches start receiving code (not urgent until development advances to that stage).
+5. **GitHub Environments — real credentials** — add server secrets to `test-server`, `uat-server`, `prod-server` environments when CICC provides server access (Sep 2026).
+6. **Frontend tests** — Playwright or React Testing Library tests to bring Frontend coverage into SonarCloud (currently excluded).
 
 ---
 
@@ -197,3 +207,4 @@ SLA: PENDING_SUPERVISOR > 24h → SLA_BREACH notification
 | 7 | 2026-06-14 | pdfkit webpack externalized (ENOENT fix); forms stored as bytea in DB; re-download endpoint; reset-password + unlock admin endpoints; form history panel on forms page; ROLES.md + CHECKS.md created |
 | 8 | 2026-06-15 | CLAUDE.md updated: directory structure, five roles, role matrix, §11 technical decisions (pdfkit, bytea, admin endpoints, SnakeNamingStrategy, synchronize:false, @IsEnum), §16 code standards |
 | 9 | 2026-06-15 | IT Personnel asset detail page complete: edit mode (PATCH endpoint + inline form), context-aware lifecycle modal (Employee ID for ISSUED, To Location for TRANSFERRED, required notes for disposal), form suggestion banner post-transition, transaction history panel from audit API |
+| 10 | 2026-06-17 | CI/CD pipeline complete: ci.yml, security.yml, deploy.yml; 5-branch GitFlow (main/develop/test/uat/feature/*); SonarCloud configured; all GitHub Actions SHA-pinned; branch protection active on develop + main; SonarCloud hotspots fixed (docker:S6470, githubactions:S7637, S7636); RequisitionTable extracted to fix 3.2% duplication; Frontend excluded from SonarCloud coverage |
