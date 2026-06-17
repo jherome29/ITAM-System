@@ -59,7 +59,10 @@ jobs:
       - name: Coverage (threshold enforced)
         run: cd Backend && npm run test:cov
 
+      # Upload even when the threshold step fails so SonarCloud always
+      # has coverage data to download in the same workflow run.
       - name: Upload coverage report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: backend-coverage
@@ -80,7 +83,10 @@ jobs:
         with:
           fetch-depth: 0  # SonarCloud needs full history for blame info
 
+      # continue-on-error so SonarCloud scan still runs even when
+      # backend-ci failed before uploading the coverage artifact.
       - name: Download coverage report
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: backend-coverage
