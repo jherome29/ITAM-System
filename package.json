@@ -1,0 +1,31 @@
+{
+  "name": "aimrs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Asset Inventory Management and Requisition System — CICC (Cybercrime Investigation and Coordinating Center)",
+  "workspaces": [
+    "Backend",
+    "Frontend",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:frontend": "npm run dev --workspace=Frontend",
+    "dev:backend": "npm run start:dev --workspace=Backend",
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "test": "npm run test --workspace=Backend",
+    "test:coverage": "npm run test:cov --workspace=Backend",
+    "lint": "npm run lint --workspace=Backend && npm run lint --workspace=Frontend",
+    "build": "npm run build --workspace=Backend && npm run build --workspace=Frontend",
+    "audit:check": "npm run audit:check --workspace=Backend && npm run audit:check --workspace=Frontend",
+    "secretlint": "secretlint \"**/*\""
+  },
+  "devDependencies": {
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.2",
+    "concurrently": "^8.2.2",
+    "secretlint": "^13.0.2"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

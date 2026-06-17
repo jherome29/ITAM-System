@@ -1,0 +1,163 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [develop, test, uat, main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Shared Package ────────────────────────────────────────────────────────
+  shared-pkg:
+    name: Shared Package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check (shared)
+        run: cd packages/shared && npx tsc --noEmit
+
+  # ── Backend CI ────────────────────────────────────────────────────────────
+  backend-ci:
+    name: Backend CI
+    needs: shared-pkg
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: cd Backend && npx tsc --noEmit
+
+      - name: ESLint
+        run: cd Backend && npx eslint "{src,apps,libs,test}/**/*.ts" --max-warnings 0
+
+      - name: Build
+        run: cd Backend && npm run build
+
+      - name: Unit tests
+        run: cd Backend && npm run test
+
+      - name: Coverage (threshold enforced)
+        run: cd Backend && npm run test:cov
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage/lcov.info
+          retention-days: 1
+
+  # ── SonarCloud ────────────────────────────────────────────────────────────
+  # Runs after backend-ci to consume the coverage artifact from this same run.
+  # continue-on-error: true until SONAR_TOKEN secret is configured (Task 5).
+  # Remove continue-on-error after SONAR_TOKEN is added to repo secrets.
+  sonarcloud:
+    name: SonarCloud
+    needs: backend-ci
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # SonarCloud needs full history for blame info
+
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # ── Frontend CI ───────────────────────────────────────────────────────────
+  frontend-ci:
+    name: Frontend CI
+    needs: shared-pkg
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: cd Frontend && npx tsc --noEmit
+
+      - name: ESLint
+        run: cd Frontend && npx eslint . --max-warnings 0
+
+      - name: Build
+        run: cd Frontend && npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3001/api
+
+  # ── Backend E2E ───────────────────────────────────────────────────────────
+  backend-e2e:
+    name: Backend E2E
+    needs: shared-pkg
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aimrs_test
+          POSTGRES_PASSWORD: aimrs_test
+          POSTGRES_DB: aimrs_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The e2e test boots AppModule which connects to TypeORM.
+      # DATABASE_URL points to the ephemeral postgres service above.
+      # TypeORM synchronize:true is acceptable here because the CI
+      # database is fresh and empty on every run (no columns to drop).
+      # Add migration steps here as the e2e test suite grows.
+      - name: Run e2e tests
+        run: cd Backend && npm run test:e2e
+        env:
+          DATABASE_URL: postgresql://aimrs_test:aimrs_test@localhost:5432/aimrs_test
+          JWT_SECRET: ci-test-jwt-secret-32-chars-minimum
+          JWT_EXPIRES_IN: 8h
+          NODE_ENV: test

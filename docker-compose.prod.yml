@@ -1,0 +1,33 @@
+version: '3.9'
+
+services:
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      target: production
+    container_name: aimrs_backend_prod
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN}
+    ports:
+      - '3001:3001'
+
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+      target: production
+    container_name: aimrs_frontend_prod
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_APP_NAME: AIMRS
+    ports:
+      - '3000:3000'

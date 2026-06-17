@@ -1,0 +1,37 @@
+version: 2
+updates:
+  # Root workspace (secretlint, concurrently)
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    groups:
+      root-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+
+  # Backend (NestJS, TypeORM, bcrypt, pdfkit, etc.)
+  - package-ecosystem: 'npm'
+    directory: '/Backend'
+    schedule:
+      interval: 'weekly'
+    groups:
+      backend-patch:
+        patterns: ['*']
+        update-types: ['patch']
+
+  # Frontend (Next.js, React, Tailwind, etc.)
+  - package-ecosystem: 'npm'
+    directory: '/Frontend'
+    schedule:
+      interval: 'weekly'
+    groups:
+      frontend-patch:
+        patterns: ['*']
+        update-types: ['patch']
+
+  # GitHub Actions workflow action versions
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'

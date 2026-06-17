@@ -1,0 +1,67 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aimrs_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aimrs_dev
+      POSTGRES_USER: aimrs_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./Database/schemas/001_initial_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./Database/seeds/001_dev_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U aimrs_user -d aimrs_dev']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: aimrs_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:3000}
+    ports:
+      - '3001:3001'
+    volumes:
+      - ./Backend:/app
+      - /app/node_modules
+    command: npm run start:dev
+
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+    container_name: aimrs_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api
+      NEXT_PUBLIC_APP_NAME: AIMRS
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./Frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
+
+volumes:
+  postgres_data:
