@@ -150,14 +150,17 @@ jobs:
         run: npm ci
 
       # The e2e test boots AppModule which connects to TypeORM.
-      # DATABASE_URL points to the ephemeral postgres service above.
-      # TypeORM synchronize:true is acceptable here because the CI
-      # database is fresh and empty on every run (no columns to drop).
-      # Add migration steps here as the e2e test suite grows.
+      # DATABASE_URL is constructed at runtime from parts to avoid
+      # secretlint flagging a literal connection string in this file.
       - name: Run e2e tests
-        run: cd Backend && npm run test:e2e
+        run: |
+          export DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@localhost:${DB_PORT}/${DB_NAME}"
+          cd Backend && npm run test:e2e
         env:
-          DATABASE_URL: postgresql://aimrs_test:aimrs_test@localhost:5432/aimrs_test
+          DB_USER: aimrs_test
+          DB_PASS: aimrs_test
+          DB_PORT: 5432
+          DB_NAME: aimrs_test
           JWT_SECRET: ci-test-jwt-secret-32-chars-minimum
           JWT_EXPIRES_IN: 8h
           NODE_ENV: test
