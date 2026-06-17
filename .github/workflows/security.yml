@@ -117,7 +117,9 @@ jobs:
       - name: Build OWASP DC args
         id: owasp_args
         run: |
-          ARGS="--enableRetired"
+          # --disableNodeAudit: the npm audit API rejects monorepo payloads
+          # with aliases; npm audit runs separately in the dependency-audit job
+          ARGS="--enableRetired --disableNodeAudit"
           if [ -n "${{ secrets.NVD_API_KEY }}" ]; then
             ARGS="$ARGS --nvdApiKey ${{ secrets.NVD_API_KEY }}"
           fi

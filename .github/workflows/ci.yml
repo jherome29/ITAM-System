@@ -71,21 +71,31 @@ jobs:
 
   # ── SonarCloud ────────────────────────────────────────────────────────────
   # Runs after backend-ci to consume the coverage artifact from this same run.
-  # continue-on-error: true until SONAR_TOKEN secret is configured (Task 5).
-  # Remove continue-on-error after SONAR_TOKEN is added to repo secrets.
+  # All real steps are gated on SONAR_TOKEN being present so the job shows
+  # green (skipped) rather than red (failed) until the token is configured.
+  # Setup: sonarcloud.io → My Account → Security → Generate Token →
+  #        GitHub repo Settings → Secrets → SONAR_TOKEN
+  # Also update sonar-project.properties with your real org slug.
   sonarcloud:
     name: SonarCloud
     needs: backend-ci
     runs-on: ubuntu-latest
-    continue-on-error: true
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
+      - name: Skip if SONAR_TOKEN not configured
+        if: env.SONAR_TOKEN == ''
+        run: echo "::notice::SONAR_TOKEN not set — skipping SonarCloud scan. Add the secret and update sonar-project.properties to enable."
+
       - uses: actions/checkout@v4
+        if: env.SONAR_TOKEN != ''
         with:
           fetch-depth: 0  # SonarCloud needs full history for blame info
 
       # continue-on-error so SonarCloud scan still runs even when
       # backend-ci failed before uploading the coverage artifact.
       - name: Download coverage report
+        if: env.SONAR_TOKEN != ''
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
@@ -93,7 +103,8 @@ jobs:
           path: coverage
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@v5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
