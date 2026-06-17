@@ -6,9 +6,8 @@ import Link from 'next/link';
 import { assetsApi, type AssetStats } from '@/lib/api/assets';
 import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';
 import { StatCard } from '@/components/ui/StatCard';
-import { StatusBadge } from '@/components/ui/StatusBadge';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
+import { RequisitionTable } from '@/components/shared/RequisitionTable';
 
 export default function ItPersonnelDashboard() {
   const [assetStats, setAssetStats] = useState<AssetStats | null>(null);
@@ -56,40 +55,14 @@ export default function ItPersonnelDashboard() {
           </div>
           <Link href="/it-personnel/requisitions" className="text-sm text-[#1a4d7a] font-medium hover:underline">View all</Link>
         </div>
-        {loading ? (
-          <div className="p-6"><LoadingSkeleton rows={4} /></div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  {['ID', 'Requestor', 'Items', 'Type', 'Required Date', 'Status', ''].map((h) => (
-                    <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {pending.length === 0 ? (
-                  <tr><td colSpan={7} className="px-6 py-10 text-center text-sm text-gray-400">No pending fulfillments.</td></tr>
-                ) : (
-                  pending.map((req) => (
-                    <tr key={req.id} className="hover:bg-blue-50 transition-colors duration-100">
-                      <td className="px-6 py-4 text-sm text-gray-500">#{req.id.slice(0, 8)}</td>
-                      <td className="px-6 py-4 text-xs font-mono text-gray-500">#{req.requestedById.slice(0, 8)}</td>
-                      <td className="px-6 py-4 text-sm text-gray-700">{req.items.map((i) => i.itemDescription).join(', ')}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{req.requisitionType}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{new Date(req.requiredDate).toLocaleDateString()}</td>
-                      <td className="px-6 py-4"><StatusBadge status={req.status} /></td>
-                      <td className="px-6 py-4">
-                        <Link href={`/it-personnel/requisitions/${req.id}`} className="text-[#1a4d7a] text-sm font-medium hover:underline">Fulfill</Link>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <RequisitionTable
+          requisitions={pending}
+          loading={loading}
+          actionLabel="Fulfill"
+          getActionHref={(id) => `/it-personnel/requisitions/${id}`}
+          emptyMessage="No pending fulfillments."
+          showRequestor
+        />
       </div>
     </div>
   );
