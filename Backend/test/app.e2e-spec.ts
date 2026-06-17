@@ -16,11 +16,8 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/ (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Hello World!');
+  it('returns 404 for the root path — all API routes live under /api', () => {
+    return request(app.getHttpServer()).get('/').expect(404);
   });
 
   afterEach(async () => {

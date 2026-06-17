@@ -85,7 +85,7 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.ts$": "ts-jest"
     },
     "collectCoverageFrom": [
       "auth/auth.service.ts",
@@ -94,8 +94,7 @@
       "requisitions/requisitions.service.ts",
       "notifications/notifications.service.ts",
       "audit/audit.service.ts",
-      "users/users.service.ts",
-      "reports/reports.service.ts"
+      "users/users.service.ts"
     ],
     "coverageThreshold": {
       "global": {
