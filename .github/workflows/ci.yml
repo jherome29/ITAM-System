@@ -108,8 +108,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # tsconfig.json already has "noEmit": true — pass -p explicitly so tsc
+      # doesn't fall back to help output on some TypeScript versions.
       - name: TypeScript check
-        run: cd Frontend && npx tsc --noEmit
+        run: cd Frontend && npx tsc -p tsconfig.json
 
       - name: ESLint
         run: cd Frontend && npx eslint . --max-warnings 0
@@ -154,7 +156,7 @@ jobs:
       # secretlint flagging a literal connection string in this file.
       - name: Run e2e tests
         run: |
-          export DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@localhost:${DB_PORT}/${DB_NAME}"
+          export DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@localhost:${DB_PORT}/${DB_NAME}?sslmode=disable"
           cd Backend && npm run test:e2e
         env:
           DB_USER: aimrs_test

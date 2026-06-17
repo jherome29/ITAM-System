@@ -102,6 +102,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # OWASP DC runs in a Docker container that mounts the workspace.
+      # node_modules must be present for the Node Audit Analyzer to work.
+      - name: Install dependencies
+        run: npm ci
+
       # Build args string — only include --nvdApiKey when the secret is set.
       # Passing --nvdApiKey with an empty value causes a CLI parse error.
       - name: Build OWASP DC args

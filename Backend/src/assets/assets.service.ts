@@ -256,7 +256,9 @@ export class AssetsService {
 
     // Resolve employeeId → UUID if provided (IT Personnel don't know raw UUIDs)
     if (dto.employeeId && dto.status === AssetStatus.ISSUED) {
-      const recipient = await this.usersService.findByEmployeeId(dto.employeeId);
+      const recipient = await this.usersService.findByEmployeeId(
+        dto.employeeId,
+      );
       if (!recipient) {
         throw new BadRequestException(
           `No user found with employee ID "${dto.employeeId}".`,

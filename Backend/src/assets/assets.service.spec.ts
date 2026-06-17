@@ -158,7 +158,11 @@ describe('AssetsService', () => {
       const recipient = { id: 'user-uuid-123', employeeId: 'CICC-0042' } as any;
 
       mockAssetRepo.findOne.mockResolvedValue(asset);
-      mockAssetRepo.save.mockResolvedValue({ ...asset, status: AssetStatus.ISSUED, custodianId: 'user-uuid-123' });
+      mockAssetRepo.save.mockResolvedValue({
+        ...asset,
+        status: AssetStatus.ISSUED,
+        custodianId: 'user-uuid-123',
+      });
       mockTxRepo.create.mockReturnValue({});
       mockTxRepo.save.mockResolvedValue({});
       mockUsersService.findByEmployeeId.mockResolvedValue(recipient);
@@ -171,14 +175,19 @@ describe('AssetsService', () => {
         '127.0.0.1',
       );
 
-      expect(mockUsersService.findByEmployeeId).toHaveBeenCalledWith('CICC-0042');
+      expect(mockUsersService.findByEmployeeId).toHaveBeenCalledWith(
+        'CICC-0042',
+      );
       expect(mockAssetRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ custodianId: 'user-uuid-123' }),
       );
     });
 
     it('throws BadRequestException when employeeId is not found', async () => {
-      const asset = { id: 'asset-1', status: AssetStatus.AVAILABLE } as AssetEntity;
+      const asset = {
+        id: 'asset-1',
+        status: AssetStatus.AVAILABLE,
+      } as AssetEntity;
       mockAssetRepo.findOne.mockResolvedValue(asset);
       mockUsersService.findByEmployeeId.mockResolvedValue(null);
 
@@ -316,11 +325,17 @@ describe('AssetsService', () => {
         ...asset,
         itemDescription: 'New Laptop',
         brand: 'Lenovo',
-      } as AssetEntity);
+      });
       mockAssetRepo.update.mockResolvedValue({ affected: 1 });
 
       const dto = { itemDescription: 'New Laptop', brand: 'Lenovo' };
-      const result = await service.update('asset-1', dto, 'user-1', UserRole.IT_PERSONNEL, '127.0.0.1');
+      const result = await service.update(
+        'asset-1',
+        dto,
+        'user-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
 
       expect(mockAssetRepo.update).toHaveBeenCalledWith('asset-1', dto);
       expect(mockAuditService.log).toHaveBeenCalledWith(
@@ -337,7 +352,13 @@ describe('AssetsService', () => {
       mockAssetRepo.findOne.mockResolvedValue(null);
 
       await expect(
-        service.update('missing-id', { brand: 'X' }, 'user-1', UserRole.IT_PERSONNEL, '127.0.0.1'),
+        service.update(
+          'missing-id',
+          { brand: 'X' },
+          'user-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
       ).rejects.toThrow(NotFoundException);
     });
   });
