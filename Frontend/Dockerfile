@@ -8,14 +8,28 @@ RUN npm ci
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY package*.json ./
+COPY next.config.ts ./
+COPY tsconfig.json ./
+COPY postcss.config.mjs ./
+COPY app ./app
+COPY components ./components
+COPY lib ./lib
+COPY public ./public
 RUN npm run build
 
 # ── Development Stage ─────────────────────────────────────────
 FROM node:20-alpine AS development
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY package*.json ./
+COPY next.config.ts ./
+COPY tsconfig.json ./
+COPY postcss.config.mjs ./
+COPY app ./app
+COPY components ./components
+COPY lib ./lib
+COPY public ./public
 EXPOSE 3000
 CMD ["npm", "run", "dev"]
 

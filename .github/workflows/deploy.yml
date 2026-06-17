@@ -17,7 +17,7 @@ jobs:
       name: test-server
       url: ${{ vars.TEST_SERVER_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       # --- PLACEHOLDER: uncomment when CICC provides test server access ---
       # - name: Build Docker images
@@ -51,7 +51,7 @@ jobs:
       name: uat-server
       url: ${{ vars.UAT_SERVER_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       # --- PLACEHOLDER: uncomment when CICC provides UAT server access ---
       # - name: Build Docker images
@@ -85,7 +85,7 @@ jobs:
       name: prod-server
       url: ${{ vars.PROD_SERVER_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       # --- PLACEHOLDER: uncomment when CICC provides production server access ---
       # - name: Build Docker images
