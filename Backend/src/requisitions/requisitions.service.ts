@@ -127,9 +127,7 @@ export class RequisitionsService {
       .addSelect('COUNT(*)', 'count')
       .groupBy('r.status');
 
-    if (userRole === UserRole.EMPLOYEE) {
-      qb.where('r.requestedById = :userId', { userId });
-    } else if (userRole === UserRole.SUPERVISOR) {
+    if (userRole === UserRole.EMPLOYEE || userRole === UserRole.SUPERVISOR) {
       qb.where('r.requestedById = :userId', { userId });
     }
 
@@ -137,7 +135,7 @@ export class RequisitionsService {
 
     const byStatus: Record<string, number> = {};
     rows.forEach((r) => {
-      byStatus[r.status] = parseInt(r.count, 10);
+      byStatus[r.status] = Number.parseInt(r.count, 10);
     });
 
     const total = Object.values(byStatus).reduce((s, c) => s + c, 0);

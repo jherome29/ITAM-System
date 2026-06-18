@@ -382,12 +382,12 @@ export class ReportsService {
             a.serialNumber ?? '—',
             a.assetClass,
             a.assetType,
-            (a.condition ?? '—').replace(/_/g, ' '),
-            a.status.replace(/_/g, ' '),
+            (a.condition ?? '—').replaceAll('_', ' '),
+            a.status.replaceAll('_', ' '),
             `${a.division ?? '—'} / ${a.officeOrSection ?? '—'}`,
-            a.acquisitionCost != null
-              ? `₱${Number(a.acquisitionCost).toLocaleString('en-PH')}`
-              : '—',
+            a.acquisitionCost == null
+              ? '—'
+              : `₱${Number(a.acquisitionCost).toLocaleString('en-PH')}`,
             a.acquisitionDate
               ? new Date(a.acquisitionDate).toLocaleDateString('en-PH')
               : '—',
@@ -414,7 +414,7 @@ export class ReportsService {
           rows: reqs.map((r) => [
             r.requestNumber,
             r.requisitionType,
-            r.status.replace(/_/g, ' '),
+            r.status.replaceAll('_', ' '),
             r.items.map((i) => i.itemDescription).join('; '),
             new Date(r.submittedAt).toLocaleDateString('en-PH'),
             new Date(r.requiredDate).toLocaleDateString('en-PH'),
@@ -471,7 +471,7 @@ export class ReportsService {
             a.itemDescription,
             a.brand ?? '—',
             a.serialNumber ?? '—',
-            (a.condition ?? '—').replace(/_/g, ' '),
+            (a.condition ?? '—').replaceAll('_', ' '),
             `${a.division ?? '—'} / ${a.officeOrSection ?? '—'}`,
           ]),
         };
@@ -497,8 +497,8 @@ export class ReportsService {
             a.itemDescription,
             a.assetClass,
             a.assetType,
-            (a.condition ?? '—').replace(/_/g, ' '),
-            a.status.replace(/_/g, ' '),
+            (a.condition ?? '—').replaceAll('_', ' '),
+            a.status.replaceAll('_', ' '),
             a.officeLocation ?? '—',
           ]),
         };
@@ -530,11 +530,11 @@ export class ReportsService {
             a.brand ?? '—',
             a.serialNumber ?? '—',
             a.assetClass,
-            (a.condition ?? '—').replace(/_/g, ' '),
-            a.status.replace(/_/g, ' '),
-            a.acquisitionCost != null
-              ? `₱${Number(a.acquisitionCost).toLocaleString('en-PH')}`
-              : '—',
+            (a.condition ?? '—').replaceAll('_', ' '),
+            a.status.replaceAll('_', ' '),
+            a.acquisitionCost == null
+              ? '—'
+              : `₱${Number(a.acquisitionCost).toLocaleString('en-PH')}`,
           ]),
         };
       }
@@ -544,7 +544,7 @@ export class ReportsService {
           order: { createdAt: 'DESC' },
         });
         return {
-          title: reportType.replace(/_/g, ' '),
+          title: reportType.replaceAll('_', ' '),
           headers: ['Property #', 'Description', 'Status'],
           rows: assets.map((a) => [
             a.propertyNumber ?? '—',
