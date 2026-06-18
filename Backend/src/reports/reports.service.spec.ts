@@ -15,6 +15,7 @@ import {
   AssetClass,
   AssetCondition,
   AssetType,
+  OfficialFormType,
 } from '../../../packages/shared/src/enums';
 
 const makeAsset = (overrides: Partial<AssetEntity> = {}): AssetEntity =>
@@ -58,12 +59,14 @@ describe('ReportsService', () => {
 
   const mockAssetRepo = {
     find: jest.fn(),
+    findOne: jest.fn(),
     count: jest.fn(),
     createQueryBuilder: jest.fn(),
   };
 
   const mockReqRepo = {
     find: jest.fn(),
+    findOne: jest.fn(),
     count: jest.fn(),
     createQueryBuilder: jest.fn(),
   };
@@ -219,6 +222,65 @@ describe('ReportsService', () => {
     });
   });
 
+  // ── generate() — real builders (covers buildPdfReport / buildExcelReport) ──
+  // These tests do NOT spy on the private builders so the actual PDF/Excel
+  // generation code executes and counts toward coverage.
+  describe('generate() — real builders', () => {
+    beforeEach(() => {
+      // One asset row is enough to drive the PDF/Excel table-rendering paths.
+      mockAssetRepo.find.mockResolvedValue([makeAsset()]);
+      mockReportRepo.create.mockReturnValue({
+        id: 'r-1',
+        reportType: 'ASSET_MASTER_LIST',
+      });
+      mockReportRepo.save.mockResolvedValue({
+        id: 'r-1',
+        reportType: 'ASSET_MASTER_LIST',
+      });
+    });
+
+    it('runs real buildPdfReport and returns a non-empty Buffer', async () => {
+      const result = await service.generate(
+        'ASSET_MASTER_LIST',
+        'PDF',
+        'u-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+      expect(Buffer.isBuffer(result.buffer)).toBe(true);
+      expect(result.buffer.length).toBeGreaterThan(100);
+    }, 15000);
+
+    it('runs real buildExcelReport and returns a non-empty Buffer', async () => {
+      const result = await service.generate(
+        'ASSET_MASTER_LIST',
+        'Excel',
+        'u-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+      expect(Buffer.isBuffer(result.buffer)).toBe(true);
+      expect(result.buffer.length).toBeGreaterThan(100);
+    }, 15000);
+
+    it('PDF builder handles multi-page reports when row count exceeds page height', async () => {
+      // 40+ rows guarantees the page-break branch inside buildPdfReport is hit
+      mockAssetRepo.find.mockResolvedValue(
+        Array.from({ length: 40 }, (_, i) =>
+          makeAsset({ propertyNumber: `P-${String(i).padStart(3, '0')}` }),
+        ),
+      );
+      const result = await service.generate(
+        'ASSET_MASTER_LIST',
+        'PDF',
+        'u-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+      expect(result.buffer.length).toBeGreaterThan(100);
+    }, 15000);
+  });
+
   // ── fetchReportData() — private, tested via direct access ─────────────────
   describe('fetchReportData() — private', () => {
     type ReportData = {
@@ -342,6 +404,84 @@ describe('ReportsService', () => {
 
       expect(r.title).toBe('UNKNOWN REPORT TYPE');
       expect(r.headers).toEqual(['Property #', 'Description', 'Status']);
+    });
+  });
+
+  // ── generateForm() — error-path coverage ──────────────────────────────────
+  // Happy-path tests would require mocking all 18 form generators; these error
+  // paths cover the helper functions (getAsset, getCustodian, getIssuer) and the
+  // default unsupported-type branch without needing generator mocks.
+  describe('generateForm() — error paths', () => {
+    it('throws NotFoundException when assetId is missing for PAR', async () => {
+      await expect(
+        service.generateForm(
+          { formType: OfficialFormType.PAR },
+          'u-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException when asset record is not found', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(null);
+      await expect(
+        service.generateForm(
+          { formType: OfficialFormType.PAR, assetId: 'a-missing' },
+          'u-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException when asset has no custodian assigned', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(makeAsset({ custodianId: null }));
+      await expect(
+        service.generateForm(
+          { formType: OfficialFormType.PAR, assetId: 'a-1' },
+          'u-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException when custodian user record is not found', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(
+        makeAsset({ custodianId: 'u-missing' }),
+      );
+      mockUserRepo.findOne.mockResolvedValue(null); // getCustodian → getUser returns null
+      await expect(
+        service.generateForm(
+          { formType: OfficialFormType.PAR, assetId: 'a-1' },
+          'u-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException when requisitionId is missing for RIS', async () => {
+      await expect(
+        service.generateForm(
+          { formType: OfficialFormType.RIS },
+          'u-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException for unsupported form type', async () => {
+      await expect(
+        service.generateForm(
+          { formType: 'UNSUPPORTED_TYPE' as OfficialFormType },
+          'u-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

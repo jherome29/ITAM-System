@@ -95,7 +95,8 @@
       "requisitions/requisitions.service.ts",
       "notifications/notifications.service.ts",
       "audit/audit.service.ts",
-      "users/users.service.ts"
+      "users/users.service.ts",
+      "reports/reports.service.ts"
     ],
     "coverageThreshold": {
       "global": {
@@ -105,6 +106,7 @@
         "lines": 65
       }
     },
+    "coverageProvider": "v8",
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
   }
