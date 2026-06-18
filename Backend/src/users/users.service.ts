@@ -21,12 +21,23 @@ export class UsersService {
     private readonly userRepo: Repository<UserEntity>,
   ) {}
 
-  async findAll(page = 1, limit = 50) {
-    const [data, total] = await this.userRepo.findAndCount({
-      order: { lastName: 'ASC', firstName: 'ASC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+  async findAll(page = 1, limit = 50, search?: string) {
+    const qb = this.userRepo
+      .createQueryBuilder('u')
+      .orderBy('u.lastName', 'ASC')
+      .addOrderBy('u.firstName', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    if (search) {
+      const q = `%${search}%`;
+      qb.where(
+        '(LOWER(u.firstName) LIKE LOWER(:q) OR LOWER(u.lastName) LIKE LOWER(:q) OR LOWER(u.email) LIKE LOWER(:q) OR LOWER(u.employeeId) LIKE LOWER(:q))',
+        { q },
+      );
+    }
+
+    const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit };
   }
 

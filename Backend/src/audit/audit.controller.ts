@@ -28,8 +28,12 @@ export class AuditController {
    */
   @Get()
   @Roles(UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)
-  async findAll(@Query('page') page = 1, @Query('limit') limit = 50) {
-    const result = await this.svc.findAll(+page, +limit);
+  async findAll(
+    @Query('page') page = 1,
+    @Query('limit') limit = 50,
+    @Query('action') action?: string,
+  ) {
+    const result = await this.svc.findAll(+page, +limit, action);
     return { message: 'Audit logs retrieved', data: result };
   }
 

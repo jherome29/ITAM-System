@@ -362,4 +362,99 @@ describe('AssetsService', () => {
       ).rejects.toThrow(NotFoundException);
     });
   });
+
+  // ── findAll() — paginated list with optional filters ──────────────────────
+  describe('findAll()', () => {
+    const makeQb = () => ({
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+    });
+
+    it('returns paginated list with no filters applied', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      const result = await service.findAll();
+      expect(qb.getManyAndCount).toHaveBeenCalled();
+      expect(result).toMatchObject({ data: [], total: 0, page: 1, limit: 20 });
+    });
+
+    it('applies status filter when status param is provided', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(1, 20, undefined, 'available');
+      expect(qb.andWhere).toHaveBeenCalledWith('a.status = :status', {
+        status: 'available',
+      });
+    });
+
+    it('applies search LIKE filter when search param is provided', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(1, 20, 'Dell');
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('LIKE'),
+        expect.objectContaining({ q: '%Dell%' }),
+      );
+    });
+
+    it('applies both status and search filters when both are provided', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(1, 20, 'Dell', 'issued');
+      expect(qb.andWhere).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // ── findCatalogue() — available-only list ─────────────────────────────────
+  describe('findCatalogue()', () => {
+    it('returns only available assets with pagination', async () => {
+      mockAssetRepo.findAndCount.mockResolvedValue([[], 0]);
+      const result = await service.findCatalogue();
+      expect(mockAssetRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { status: AssetStatus.AVAILABLE } }),
+      );
+      expect(result).toMatchObject({ data: [], total: 0, page: 1, limit: 20 });
+    });
+  });
+
+  // ── getStats() — inventory dashboard KPI counts ───────────────────────────
+  describe('getStats()', () => {
+    const makeStatsQb = (rawRows: Record<string, string>[]) => ({
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue(rawRows),
+    });
+
+    it('returns counts broken down by status, class, and type', async () => {
+      mockAssetRepo.createQueryBuilder
+        .mockReturnValueOnce(
+          makeStatsQb([{ status: AssetStatus.AVAILABLE, count: '10' }]),
+        )
+        .mockReturnValueOnce(makeStatsQb([{ assetClass: 'PPE', count: '7' }]))
+        .mockReturnValueOnce(makeStatsQb([{ assetType: 'ICT', count: '10' }]));
+
+      const result = await service.getStats();
+      expect(result.total).toBe(10);
+      expect(result.available).toBe(10);
+      expect(result.issued).toBe(0); // ?? 0 fallback for missing keys
+      expect(result.byClass).toEqual({ PPE: 7 });
+      expect(result.byType).toEqual({ ICT: 10 });
+    });
+
+    it('returns all zeros and empty maps when no assets exist', async () => {
+      mockAssetRepo.createQueryBuilder
+        .mockReturnValueOnce(makeStatsQb([]))
+        .mockReturnValueOnce(makeStatsQb([]))
+        .mockReturnValueOnce(makeStatsQb([]));
+
+      const result = await service.getStats();
+      expect(result.total).toBe(0);
+      expect(result.available).toBe(0);
+      expect(result.byClass).toEqual({});
+    });
+  });
 });

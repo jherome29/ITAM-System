@@ -26,6 +26,15 @@ const makeUser = (overrides: Partial<UserEntity> = {}): UserEntity =>
 describe('UsersService', () => {
   let service: UsersService;
 
+  const mockQb = {
+    orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    take: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    getManyAndCount: jest.fn(),
+  };
+
   const mockRepo = {
     findAndCount: jest.fn(),
     findOne: jest.fn(),
@@ -33,6 +42,7 @@ describe('UsersService', () => {
     create: jest.fn(),
     save: jest.fn(),
     update: jest.fn(),
+    createQueryBuilder: jest.fn(() => mockQb),
   };
 
   beforeEach(async () => {
@@ -50,7 +60,7 @@ describe('UsersService', () => {
   describe('findAll()', () => {
     it('returns paginated users with correct metadata', async () => {
       const users = [makeUser(), makeUser({ id: 'u-2' })];
-      mockRepo.findAndCount.mockResolvedValue([users, 2]);
+      mockQb.getManyAndCount.mockResolvedValue([users, 2]);
 
       const result = await service.findAll(1, 10);
 
@@ -61,9 +71,18 @@ describe('UsersService', () => {
     });
 
     it('uses default pagination when page/limit omitted', async () => {
-      mockRepo.findAndCount.mockResolvedValue([[], 0]);
+      mockQb.getManyAndCount.mockResolvedValue([[], 0]);
       const result = await service.findAll();
       expect(result.limit).toBeGreaterThan(0); // default limit exists
+    });
+
+    it('applies search filter via where when search term provided', async () => {
+      mockQb.getManyAndCount.mockResolvedValue([[], 0]);
+      await service.findAll(1, 10, 'Ana');
+      expect(mockQb.where).toHaveBeenCalledWith(
+        expect.stringContaining('LIKE'),
+        expect.objectContaining({ q: '%Ana%' }),
+      );
     });
   });
 

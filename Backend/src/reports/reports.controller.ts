@@ -92,20 +92,37 @@ export class ReportsController {
 
   /**
    * POST /api/v1/reports/generate
-   * Generate a management report (PDF or Excel) — stub; returns metadata record.
+   * Generate a management report as a binary PDF or Excel file.
+   * Streams the file directly to the browser as an attachment.
    */
   @Post('generate')
   @HttpCode(HttpStatus.OK)
   @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)
-  async generate(@Body() dto: GenerateReportDto, @Req() req: AuthReq) {
-    const result = await this.svc.generate(
+  async generate(
+    @Body() dto: GenerateReportDto,
+    @Req() req: AuthReq,
+    @Res() res: Response,
+  ) {
+    const format = dto.format.toUpperCase() as 'PDF' | 'Excel';
+    const { buffer } = await this.svc.generate(
       dto.reportType,
-      dto.format,
+      format,
       req.user.id,
       req.user.role,
       req.ip,
     );
-    return { message: `Report generated: ${dto.reportType}`, data: result };
+    const isPdf = format === 'PDF';
+    const ext = isPdf ? 'pdf' : 'xlsx';
+    const mimeType = isPdf
+      ? 'application/pdf'
+      : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const filename = `${dto.reportType}-${new Date().toISOString().slice(0, 10)}.${ext}`;
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 
   /**

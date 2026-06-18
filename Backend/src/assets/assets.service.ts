@@ -75,13 +75,27 @@ export class AssetsService {
     private readonly usersService: UsersService,
   ) {}
 
-  // ── List all assets (paginated) ────────────────────────────────────────────
-  async findAll(page = 1, limit = 20) {
-    const [data, total] = await this.assetRepo.findAndCount({
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+  // ── List all assets (paginated, optional search + status filter) ──────────
+  async findAll(page = 1, limit = 20, search?: string, status?: string) {
+    const qb = this.assetRepo
+      .createQueryBuilder('a')
+      .orderBy('a.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    if (status) {
+      qb.andWhere('a.status = :status', { status: status.toLowerCase() });
+    }
+
+    if (search) {
+      const q = `%${search}%`;
+      qb.andWhere(
+        '(LOWER(a.itemDescription) LIKE LOWER(:q) OR LOWER(a.propertyNumber) LIKE LOWER(:q) OR LOWER(a.serialNumber) LIKE LOWER(:q) OR LOWER(a.brand) LIKE LOWER(:q))',
+        { q },
+      );
+    }
+
+    const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
@@ -101,7 +115,13 @@ export class AssetsService {
   // SVC: Improve — inventory overview KPIs
   async getStats(): Promise<{
     total: number;
-    byStatus: Record<string, number>;
+    available: number;
+    issued: number;
+    returned: number;
+    underRepair: number;
+    flaggedForDisposal: number;
+    transferred: number;
+    disposed: number;
     byClass: Record<string, number>;
     byType: Record<string, number>;
   }> {
@@ -146,7 +166,18 @@ export class AssetsService {
 
     const total = Object.values(byStatus).reduce((s, c) => s + c, 0);
 
-    return { total, byStatus, byClass, byType };
+    return {
+      total,
+      available: byStatus[AssetStatus.AVAILABLE] ?? 0,
+      issued: byStatus[AssetStatus.ISSUED] ?? 0,
+      returned: byStatus[AssetStatus.RETURNED] ?? 0,
+      underRepair: byStatus[AssetStatus.UNDER_REPAIR] ?? 0,
+      flaggedForDisposal: byStatus[AssetStatus.FLAGGED_FOR_DISPOSAL] ?? 0,
+      transferred: byStatus[AssetStatus.TRANSFERRED] ?? 0,
+      disposed: byStatus[AssetStatus.DISPOSED] ?? 0,
+      byClass,
+      byType,
+    };
   }
 
   // ── Single asset with full lifecycle history ───────────────────────────────

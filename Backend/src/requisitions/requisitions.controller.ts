@@ -56,12 +56,14 @@ export class RequisitionsController {
     @Req() req: AuthReq,
     @Query('page') page = 1,
     @Query('limit') limit = 20,
+    @Query('status') status?: string,
   ) {
     const result = await this.svc.findAll(
       req.user.id,
       req.user.role,
       +page,
       +limit,
+      status,
     );
     return { message: 'Requisitions retrieved', data: result };
   }
@@ -117,8 +119,8 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
   )
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    const result = await this.svc.findOne(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthReq) {
+    const result = await this.svc.findOne(id, req.user.id, req.user.role);
     return { message: 'Requisition retrieved', data: result };
   }
 
