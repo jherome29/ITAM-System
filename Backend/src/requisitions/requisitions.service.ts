@@ -50,11 +50,13 @@ export class RequisitionsService {
 
   // ── Role-filtered list ─────────────────────────────────────────────────────
   // employees → own; supervisors → pending_supervisor; IT → pending_fulfillment; admin/mgmt → all
+  // Optional `statusFilter` narrows within the role-allowed set.
   async findAll(
     requestingUserId: string,
     requestingRole: UserRole,
     page = 1,
     limit = 20,
+    statusFilter?: string,
   ) {
     const qb = this.reqRepo
       .createQueryBuilder('r')
@@ -84,6 +86,10 @@ export class RequisitionsService {
       // SYSTEM_ADMIN and MANAGEMENT see all
     }
 
+    if (statusFilter) {
+      qb.andWhere('r.status = :sf', { sf: statusFilter.toLowerCase() });
+    }
+
     const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
@@ -100,78 +106,52 @@ export class RequisitionsService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  // ── Requisition stats — Employee/Supervisor dashboard counts ──────────────
+  // ── Requisition stats — dashboard counts in flat shape matching frontend ────
   // SVC: Improve — personal requisition status overview
   async getStats(
     userId: string,
     userRole: UserRole,
   ): Promise<{
-    mine: Record<string, number>;
-    mineTotal: number;
-    // Supervisor-only:
-    pendingSupervisorCount?: number;
-    // IT-only:
-    pendingFulfillmentCount?: number;
-    onHoldCount?: number;
-    // SLA:
-    slaBreachedCount: number;
+    total: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+    fulfilled: number;
+    onHold: number;
   }> {
-    // User's own requisitions grouped by status
-    const myRows = await this.reqRepo
+    // For employees/supervisors: count their own requisitions by status
+    // For IT/Admin/Mgmt: count all requisitions by status
+    const qb = this.reqRepo
       .createQueryBuilder('r')
       .select('r.status', 'status')
       .addSelect('COUNT(*)', 'count')
-      .where('r.requestedById = :userId', { userId })
-      .groupBy('r.status')
-      .getRawMany<{ status: string; count: string }>();
+      .groupBy('r.status');
 
-    const mine: Record<string, number> = {};
-    myRows.forEach((r) => {
-      mine[r.status] = parseInt(r.count, 10);
-    });
-    const mineTotal = Object.values(mine).reduce((s, c) => s + c, 0);
-
-    // SLA breached (pending_supervisor past deadline)
-    const slaBreachedCount = await this.reqRepo.count({
-      where: {
-        status: RequisitionStatus.PENDING_SUPERVISOR,
-        // slaDeadline < NOW — use raw query for this
-      },
-    });
-
-    const result: {
-      mine: Record<string, number>;
-      mineTotal: number;
-      pendingSupervisorCount?: number;
-      pendingFulfillmentCount?: number;
-      onHoldCount?: number;
-      slaBreachedCount: number;
-    } = { mine, mineTotal, slaBreachedCount };
-
-    // Supervisor: add their pending queue count
-    if (userRole === UserRole.SUPERVISOR) {
-      result.pendingSupervisorCount = await this.reqRepo.count({
-        where: {
-          supervisorId: userId,
-          status: RequisitionStatus.PENDING_SUPERVISOR,
-        },
-      });
+    if (userRole === UserRole.EMPLOYEE) {
+      qb.where('r.requestedById = :userId', { userId });
+    } else if (userRole === UserRole.SUPERVISOR) {
+      qb.where('r.requestedById = :userId', { userId });
     }
 
-    // IT Personnel: pending fulfillment + on hold counts
-    if (
-      userRole === UserRole.IT_PERSONNEL ||
-      userRole === UserRole.SYSTEM_ADMIN
-    ) {
-      result.pendingFulfillmentCount = await this.reqRepo.count({
-        where: { status: RequisitionStatus.PENDING_FULFILLMENT },
-      });
-      result.onHoldCount = await this.reqRepo.count({
-        where: { status: RequisitionStatus.ON_HOLD },
-      });
-    }
+    const rows = await qb.getRawMany<{ status: string; count: string }>();
 
-    return result;
+    const byStatus: Record<string, number> = {};
+    rows.forEach((r) => {
+      byStatus[r.status] = parseInt(r.count, 10);
+    });
+
+    const total = Object.values(byStatus).reduce((s, c) => s + c, 0);
+
+    return {
+      total,
+      pending:
+        (byStatus[RequisitionStatus.PENDING_SUPERVISOR] ?? 0) +
+        (byStatus[RequisitionStatus.PENDING_FULFILLMENT] ?? 0),
+      approved: byStatus[RequisitionStatus.PENDING_FULFILLMENT] ?? 0,
+      rejected: byStatus[RequisitionStatus.REJECTED] ?? 0,
+      fulfilled: byStatus[RequisitionStatus.FULFILLED] ?? 0,
+      onHold: byStatus[RequisitionStatus.ON_HOLD] ?? 0,
+    };
   }
 
   // ── Single requisition with full approval timeline ─────────────────────────

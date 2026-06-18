@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, Repository } from 'typeorm';
+import PDFDocument from 'pdfkit';
+import ExcelJS from 'exceljs';
 import { GeneratedReportEntity } from './entities/generated-report.entity';
 import { GeneratedFormEntity } from './entities/generated-form.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
@@ -152,13 +154,23 @@ export class ReportsService {
     };
   }
 
+  /**
+   * generate — Builds a management report as a PDF or Excel buffer and persists metadata.
+   * SVC: Improve — management reporting and COA audit readiness.
+   * Returns `{ buffer, report }` so the controller can stream the binary directly.
+   */
   async generate(
     reportType: string,
     format: 'PDF' | 'Excel',
     generatedById: string,
     userRole: UserRole,
     ipAddress: string,
-  ): Promise<GeneratedReportEntity> {
+  ): Promise<{ buffer: Buffer; report: GeneratedReportEntity }> {
+    const buffer =
+      format === 'PDF'
+        ? await this.buildPdfReport(reportType)
+        : await this.buildExcelReport(reportType);
+
     const ext = format === 'PDF' ? 'pdf' : 'xlsx';
     const report = this.reportRepo.create({
       reportType,
@@ -178,7 +190,370 @@ export class ReportsService {
       metadata: { reportType, format },
     });
 
-    return saved;
+    return { buffer, report: saved };
+  }
+
+  // ── PDF report builder ─────────────────────────────────────────────────────
+  private async buildPdfReport(reportType: string): Promise<Buffer> {
+    const { rows, headers, title } = await this.fetchReportData(reportType);
+
+    return new Promise<Buffer>((resolve, reject) => {
+      const doc = new PDFDocument({
+        margin: 40,
+        size: 'LETTER',
+        layout: 'landscape',
+      });
+      const chunks: Buffer[] = [];
+      doc.on('data', (c: Buffer) => chunks.push(c));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      // Header bar
+      doc.rect(40, 40, doc.page.width - 80, 36).fill('#1a4d7a');
+      doc
+        .fillColor('white')
+        .font('Helvetica-Bold')
+        .fontSize(14)
+        .text('AIMRS — ' + title, 50, 52, { width: doc.page.width - 100 });
+      doc
+        .fillColor('#555')
+        .font('Helvetica')
+        .fontSize(8)
+        .text(
+          `Generated: ${new Date().toLocaleString('en-PH')}  |  Cybercrime Investigation and Coordinating Center`,
+          50,
+          85,
+        );
+
+      // Column layout
+      const colCount = headers.length;
+      const colW = Math.floor((doc.page.width - 80) / colCount);
+      let y = 100;
+
+      // Table header row
+      doc.rect(40, y, doc.page.width - 80, 18).fill('#e8f0f7');
+      headers.forEach((h, i) => {
+        doc
+          .fillColor('#1a4d7a')
+          .font('Helvetica-Bold')
+          .fontSize(7)
+          .text(String(h), 44 + i * colW, y + 5, {
+            width: colW - 4,
+            ellipsis: true,
+          });
+      });
+      y += 18;
+
+      // Data rows
+      rows.forEach((row, ri) => {
+        if (y > doc.page.height - 60) {
+          doc.addPage({ layout: 'landscape', size: 'LETTER', margin: 40 });
+          y = 40;
+        }
+        if (ri % 2 === 0) {
+          doc.rect(40, y, doc.page.width - 80, 16).fill('#f8fafc');
+        }
+        row.forEach((cell, i) => {
+          doc
+            .fillColor('#333')
+            .font('Helvetica')
+            .fontSize(7)
+            .text(String(cell ?? '—'), 44 + i * colW, y + 4, {
+              width: colW - 4,
+              ellipsis: true,
+            });
+        });
+        y += 16;
+      });
+
+      // Footer
+      doc
+        .fillColor('#aaa')
+        .font('Helvetica')
+        .fontSize(7)
+        .text(`Total records: ${rows.length}`, 40, doc.page.height - 30);
+
+      doc.end();
+    });
+  }
+
+  // ── Excel report builder ───────────────────────────────────────────────────
+  private async buildExcelReport(reportType: string): Promise<Buffer> {
+    const { rows, headers, title } = await this.fetchReportData(reportType);
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'AIMRS — CICC';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet(title.slice(0, 31));
+
+    // Title row
+    sheet.mergeCells(1, 1, 1, headers.length);
+    const titleCell = sheet.getCell(1, 1);
+    titleCell.value = `AIMRS — ${title}`;
+    titleCell.font = { bold: true, size: 13, color: { argb: 'FF1A4D7A' } };
+    titleCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE8F0F7' },
+    };
+
+    // Generated date row
+    sheet.mergeCells(2, 1, 2, headers.length);
+    sheet.getCell(2, 1).value =
+      `Generated: ${new Date().toLocaleString('en-PH')} | CICC`;
+    sheet.getCell(2, 1).font = {
+      italic: true,
+      size: 9,
+      color: { argb: 'FF555555' },
+    };
+
+    // Header row
+    const headerRow = sheet.addRow(headers);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1A4D7A' },
+      };
+      cell.alignment = { vertical: 'middle' };
+      cell.border = { bottom: { style: 'thin', color: { argb: 'FFB0C4D8' } } };
+    });
+
+    // Data rows
+    rows.forEach((row, ri) => {
+      const r = sheet.addRow(row);
+      if (ri % 2 === 0) {
+        r.eachCell((cell) => {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFF8FAFC' },
+          };
+        });
+      }
+    });
+
+    // Auto-width columns
+    sheet.columns.forEach((col) => {
+      let max = 12;
+      col.eachCell?.({ includeEmpty: false }, (cell) => {
+        const len = (cell.text ?? '').length;
+        if (len > max) max = len;
+      });
+      col.width = Math.min(max + 2, 40);
+    });
+
+    const buf = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buf);
+  }
+
+  // ── Data fetcher — returns typed rows for a given report type ─────────────
+  private async fetchReportData(reportType: string): Promise<{
+    headers: string[];
+    rows: (string | number | null)[][];
+    title: string;
+  }> {
+    switch (reportType) {
+      case 'ASSET_MASTER_LIST': {
+        const assets = await this.assetRepo.find({
+          order: { createdAt: 'DESC' },
+        });
+        return {
+          title: 'Asset Master List',
+          headers: [
+            'Property #',
+            'Description',
+            'Brand',
+            'Serial #',
+            'Class',
+            'Type',
+            'Condition',
+            'Status',
+            'Division / Section',
+            'Acquisition Cost',
+            'Acquired',
+          ],
+          rows: assets.map((a) => [
+            a.propertyNumber ?? '—',
+            a.itemDescription,
+            a.brand ?? '—',
+            a.serialNumber ?? '—',
+            a.assetClass,
+            a.assetType,
+            (a.condition ?? '—').replace(/_/g, ' '),
+            a.status.replace(/_/g, ' '),
+            `${a.division ?? '—'} / ${a.officeOrSection ?? '—'}`,
+            a.acquisitionCost != null
+              ? `₱${Number(a.acquisitionCost).toLocaleString('en-PH')}`
+              : '—',
+            a.acquisitionDate
+              ? new Date(a.acquisitionDate).toLocaleDateString('en-PH')
+              : '—',
+          ]),
+        };
+      }
+
+      case 'REQUISITION_HISTORY': {
+        const reqs = await this.reqRepo.find({
+          relations: { items: true },
+          order: { createdAt: 'DESC' },
+        });
+        return {
+          title: 'Requisition History Log',
+          headers: [
+            'Request #',
+            'Type',
+            'Status',
+            'Items',
+            'Submitted',
+            'Required Date',
+            'Fulfilled At',
+          ],
+          rows: reqs.map((r) => [
+            r.requestNumber,
+            r.requisitionType,
+            r.status.replace(/_/g, ' '),
+            r.items.map((i) => i.itemDescription).join('; '),
+            new Date(r.submittedAt).toLocaleDateString('en-PH'),
+            new Date(r.requiredDate).toLocaleDateString('en-PH'),
+            r.fulfilledAt
+              ? new Date(r.fulfilledAt).toLocaleDateString('en-PH')
+              : '—',
+          ]),
+        };
+      }
+
+      case 'ASSET_ISSUANCE': {
+        const issued = await this.assetRepo.find({
+          where: { status: AssetStatus.ISSUED },
+          order: { updatedAt: 'DESC' },
+        });
+        return {
+          title: 'Asset Issuance Record',
+          headers: [
+            'Property #',
+            'Description',
+            'Brand',
+            'Serial #',
+            'Division / Section',
+            'Location',
+          ],
+          rows: issued.map((a) => [
+            a.propertyNumber ?? '—',
+            a.itemDescription,
+            a.brand ?? '—',
+            a.serialNumber ?? '—',
+            `${a.division ?? '—'} / ${a.officeOrSection ?? '—'}`,
+            a.officeLocation ?? '—',
+          ]),
+        };
+      }
+
+      case 'ASSET_RETURN': {
+        const returned = await this.assetRepo.find({
+          where: { status: AssetStatus.RETURNED },
+          order: { updatedAt: 'DESC' },
+        });
+        return {
+          title: 'Asset Return Record',
+          headers: [
+            'Property #',
+            'Description',
+            'Brand',
+            'Serial #',
+            'Condition',
+            'Division / Section',
+          ],
+          rows: returned.map((a) => [
+            a.propertyNumber ?? '—',
+            a.itemDescription,
+            a.brand ?? '—',
+            a.serialNumber ?? '—',
+            (a.condition ?? '—').replace(/_/g, ' '),
+            `${a.division ?? '—'} / ${a.officeOrSection ?? '—'}`,
+          ]),
+        };
+      }
+
+      case 'PHYSICAL_COUNT': {
+        const assets = await this.assetRepo.find({
+          order: { condition: 'ASC' },
+        });
+        return {
+          title: 'Physical Count Summary',
+          headers: [
+            'Property #',
+            'Description',
+            'Class',
+            'Type',
+            'Condition',
+            'Status',
+            'Location',
+          ],
+          rows: assets.map((a) => [
+            a.propertyNumber ?? '—',
+            a.itemDescription,
+            a.assetClass,
+            a.assetType,
+            (a.condition ?? '—').replace(/_/g, ' '),
+            a.status.replace(/_/g, ' '),
+            a.officeLocation ?? '—',
+          ]),
+        };
+      }
+
+      case 'DISPOSAL': {
+        const disposal = await this.assetRepo
+          .createQueryBuilder('a')
+          .where('a.status IN (:...statuses)', {
+            statuses: [AssetStatus.FLAGGED_FOR_DISPOSAL, AssetStatus.DISPOSED],
+          })
+          .orderBy('a.updatedAt', 'DESC')
+          .getMany();
+        return {
+          title: 'Disposal Documentation Report',
+          headers: [
+            'Property #',
+            'Description',
+            'Brand',
+            'Serial #',
+            'Class',
+            'Condition',
+            'Status',
+            'Acquisition Cost',
+          ],
+          rows: disposal.map((a) => [
+            a.propertyNumber ?? '—',
+            a.itemDescription,
+            a.brand ?? '—',
+            a.serialNumber ?? '—',
+            a.assetClass,
+            (a.condition ?? '—').replace(/_/g, ' '),
+            a.status.replace(/_/g, ' '),
+            a.acquisitionCost != null
+              ? `₱${Number(a.acquisitionCost).toLocaleString('en-PH')}`
+              : '—',
+          ]),
+        };
+      }
+
+      default: {
+        const assets = await this.assetRepo.find({
+          order: { createdAt: 'DESC' },
+        });
+        return {
+          title: reportType.replace(/_/g, ' '),
+          headers: ['Property #', 'Description', 'Status'],
+          rows: assets.map((a) => [
+            a.propertyNumber ?? '—',
+            a.itemDescription,
+            a.status,
+          ]),
+        };
+      }
+    }
   }
 
   /**

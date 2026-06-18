@@ -42,8 +42,18 @@ export class AssetsController {
    */
   @Get()
   @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)
-  async findAll(@Query('page') page = 1, @Query('limit') limit = 20) {
-    const result = await this.assetsService.findAll(+page, +limit);
+  async findAll(
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+  ) {
+    const result = await this.assetsService.findAll(
+      +page,
+      +limit,
+      search,
+      status,
+    );
     return { message: 'Assets retrieved successfully', data: result };
   }
 

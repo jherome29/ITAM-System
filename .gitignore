@@ -53,5 +53,9 @@ desktop.ini
 Backend/uploads/
 Backend/generated/
 
+# ─── Runtime server logs (created by node dist/main.js) ──────
+Backend/server.log
+Backend/server-error.log
+
 # ─── TypeScript incremental build info ───────────────────────
 *.tsbuildinfo

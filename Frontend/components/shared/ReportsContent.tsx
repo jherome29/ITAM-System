@@ -30,8 +30,15 @@ export function ReportsContent() {
     setError('');
     setSuccess('');
     try {
-      await reportsApi.generate({ type: selectedReport, format });
-      setSuccess(`${currentReport?.label} (${format.toUpperCase()}) is being generated and will be available shortly.`);
+      const blob = await reportsApi.generate({ type: selectedReport, format });
+      const ext = format === 'excel' ? 'xlsx' : 'pdf';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${selectedReport}-${new Date().toISOString().slice(0, 10)}.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setSuccess(`${currentReport?.label} downloaded successfully.`);
     } catch {
       setError('Failed to generate report. Please try again.');
     } finally {

@@ -29,11 +29,15 @@ import { UserRole } from '../../../packages/shared/src/enums';
 export class UsersController {
   constructor(private readonly svc: UsersService) {}
 
-  /** GET /api/v1/users — All users paginated */
+  /** GET /api/v1/users — All users paginated, optional name/email/ID search */
   @Get()
   @Roles(UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)
-  async findAll(@Query('page') page = 1, @Query('limit') limit = 50) {
-    const result = await this.svc.findAll(+page, +limit);
+  async findAll(
+    @Query('page') page = 1,
+    @Query('limit') limit = 50,
+    @Query('search') search?: string,
+  ) {
+    const result = await this.svc.findAll(+page, +limit, search);
     return { message: 'Users retrieved', data: result };
   }
 

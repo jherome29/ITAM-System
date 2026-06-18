@@ -38,12 +38,18 @@ export class AuditService {
     return this.auditRepo.save(entry);
   }
 
-  async findAll(page = 1, limit = 20) {
-    const [data, total] = await this.auditRepo.findAndCount({
-      order: { timestamp: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+  async findAll(page = 1, limit = 20, action?: string) {
+    const qb = this.auditRepo
+      .createQueryBuilder('a')
+      .orderBy('a.timestamp', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    if (action) {
+      qb.where('a.action = :action', { action });
+    }
+
+    const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit };
   }
 

@@ -440,4 +440,173 @@ describe('RequisitionsService', () => {
       expect((result as any).approvals).toEqual(approvals);
     });
   });
+
+  // ── getStats() ────────────────────────────────────────────────────────────
+  describe('getStats()', () => {
+    const makeStatsQb = (rawRows: { status: string; count: string }[]) => ({
+      where: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue(rawRows),
+    });
+
+    it('returns stats scoped to employee (own requests only)', async () => {
+      const qb = makeStatsQb([
+        { status: RequisitionStatus.PENDING_SUPERVISOR, count: '2' },
+        { status: RequisitionStatus.FULFILLED, count: '3' },
+      ]);
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.getStats('emp-1', UserRole.EMPLOYEE);
+
+      expect(qb.where).toHaveBeenCalledWith('r.requestedById = :userId', {
+        userId: 'emp-1',
+      });
+      expect(result.total).toBe(5);
+      expect(result.pending).toBe(2);
+      expect(result.fulfilled).toBe(3);
+      expect(result.rejected).toBe(0);
+      expect(result.onHold).toBe(0);
+    });
+
+    it('scopes supervisor stats to their own requests', async () => {
+      const qb = makeStatsQb([
+        { status: RequisitionStatus.PENDING_SUPERVISOR, count: '1' },
+        { status: RequisitionStatus.REJECTED, count: '1' },
+      ]);
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.getStats('sup-1', UserRole.SUPERVISOR);
+
+      expect(qb.where).toHaveBeenCalledWith('r.requestedById = :userId', {
+        userId: 'sup-1',
+      });
+      expect(result.total).toBe(2);
+      expect(result.rejected).toBe(1);
+    });
+
+    it('returns system-wide stats for IT Personnel (no scope filter)', async () => {
+      const qb = makeStatsQb([
+        { status: RequisitionStatus.PENDING_FULFILLMENT, count: '4' },
+        { status: RequisitionStatus.ON_HOLD, count: '2' },
+        { status: RequisitionStatus.REJECTED, count: '1' },
+      ]);
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.getStats('it-1', UserRole.IT_PERSONNEL);
+
+      expect(qb.where).not.toHaveBeenCalled();
+      expect(result.total).toBe(7);
+      expect(result.approved).toBe(4);
+      expect(result.onHold).toBe(2);
+      expect(result.rejected).toBe(1);
+    });
+
+    it('returns all-zero stats when no requisitions exist', async () => {
+      const qb = makeStatsQb([]);
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.getStats('admin-1', UserRole.SYSTEM_ADMIN);
+
+      expect(result).toEqual({
+        total: 0,
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        fulfilled: 0,
+        onHold: 0,
+      });
+    });
+  });
+
+  // ── findAll() ─────────────────────────────────────────────────────────────
+  describe('findAll()', () => {
+    const makeListQb = () => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+    });
+
+    it('scopes to own requisitions for EMPLOYEE role', async () => {
+      const qb = makeListQb();
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findAll('emp-1', UserRole.EMPLOYEE);
+
+      expect(qb.where).toHaveBeenCalledWith('r.requestedById = :id', {
+        id: 'emp-1',
+      });
+    });
+
+    it('scopes to pending-approval queue for SUPERVISOR role', async () => {
+      const qb = makeListQb();
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findAll('sup-1', UserRole.SUPERVISOR);
+
+      expect(qb.where).toHaveBeenCalledWith(
+        'r.supervisorId = :id AND r.status = :status',
+        { id: 'sup-1', status: RequisitionStatus.PENDING_SUPERVISOR },
+      );
+    });
+
+    it('scopes to fulfillment queue for IT_PERSONNEL role', async () => {
+      const qb = makeListQb();
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findAll('it-1', UserRole.IT_PERSONNEL);
+
+      expect(qb.where).toHaveBeenCalledWith('r.status IN (:...statuses)', {
+        statuses: [
+          RequisitionStatus.PENDING_FULFILLMENT,
+          RequisitionStatus.ON_HOLD,
+        ],
+      });
+    });
+
+    it('returns all requisitions for SYSTEM_ADMIN without role filter', async () => {
+      const qb = makeListQb();
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findAll('admin-1', UserRole.SYSTEM_ADMIN);
+
+      expect(qb.where).not.toHaveBeenCalled();
+    });
+
+    it('applies statusFilter via andWhere when provided', async () => {
+      const qb = makeListQb();
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findAll('emp-1', UserRole.EMPLOYEE, 1, 20, 'fulfilled');
+
+      expect(qb.andWhere).toHaveBeenCalledWith('r.status = :sf', {
+        sf: 'fulfilled',
+      });
+    });
+
+    it('returns pagination metadata', async () => {
+      const reqs = [makeReq(), makeReq({ id: 'req-2' })];
+      const qb = makeListQb();
+      qb.getManyAndCount.mockResolvedValue([reqs, 2]);
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.findAll(
+        'admin-1',
+        UserRole.SYSTEM_ADMIN,
+        1,
+        20,
+      );
+
+      expect(result.total).toBe(2);
+      expect(result.data).toHaveLength(2);
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(20);
+      expect(result.totalPages).toBe(1);
+    });
+  });
 });

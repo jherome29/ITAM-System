@@ -9,8 +9,8 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
 const STATUS_OPTIONS = [
-  'REGISTERED', 'AVAILABLE', 'ISSUED', 'RETURNED',
-  'TRANSFERRED', 'UNDER_REPAIR', 'FLAGGED_FOR_DISPOSAL', 'DISPOSED',
+  'registered', 'available', 'issued', 'returned',
+  'transferred', 'under_repair', 'flagged_for_disposal', 'disposed',
 ];
 
 export default function AssetsInventoryPage() {
@@ -68,7 +68,7 @@ export default function AssetsInventoryPage() {
         >
           <option value="">All Statuses</option>
           {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+            <option key={s} value={s}>{s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</option>
           ))}
         </select>
       </div>
