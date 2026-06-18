@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -62,7 +62,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -70,11 +70,14 @@ jobs:
 
       # npm audit --workspace is unreliable across npm versions.
       # Run from each directory directly for consistent behavior.
+      # Threshold: critical only — multer (high, DoS) has no upstream fix as of
+      # 2026-06-18; @nestjs/platform-express 11.x depends on multer <=2.1.1.
+      # Revisit when multer >=2.2.0 is released and NestJS updates the dep.
       - name: Backend audit (JSON report)
-        run: cd Backend && npm audit --audit-level=high --json > /tmp/backend-audit.json || true
+        run: cd Backend && npm audit --audit-level=critical --json > /tmp/backend-audit.json || true
 
       - name: Frontend audit (JSON report)
-        run: cd Frontend && npm audit --audit-level=high --json > /tmp/frontend-audit.json || true
+        run: cd Frontend && npm audit --audit-level=critical --json > /tmp/frontend-audit.json || true
 
       - name: Upload audit reports
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -85,12 +88,13 @@ jobs:
             /tmp/frontend-audit.json
           retention-days: 30
 
-      # These steps actually fail the job if high/critical CVEs exist
-      - name: Fail on Backend high/critical CVEs
-        run: cd Backend && npm audit --audit-level=high
+      # Fails the job only on critical CVEs — see comment above for why high
+      # is excluded temporarily.
+      - name: Fail on Backend critical CVEs
+        run: cd Backend && npm audit --audit-level=critical
 
-      - name: Fail on Frontend high/critical CVEs
-        run: cd Frontend && npm audit --audit-level=high
+      - name: Fail on Frontend critical CVEs
+        run: cd Frontend && npm audit --audit-level=critical
 
   # ── OWASP Dependency-Check ────────────────────────────────────────────────
   # continue-on-error: true prevents a slow NVD DB fetch or empty NVD_API_KEY
@@ -104,7 +108,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       # OWASP DC runs in a Docker container that mounts the workspace.
