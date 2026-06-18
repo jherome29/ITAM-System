@@ -119,8 +119,8 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
   )
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    const result = await this.svc.findOne(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthReq) {
+    const result = await this.svc.findOne(id, req.user.id, req.user.role);
     return { message: 'Requisition retrieved', data: result };
   }
 

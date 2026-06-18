@@ -425,9 +425,9 @@ describe('RequisitionsService', () => {
   describe('findOne()', () => {
     it('throws NotFoundException for unknown requisition ID', async () => {
       mockReqRepo.findOne.mockResolvedValue(null);
-      await expect(service.findOne('no-such-id')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.findOne('no-such-id', 'user-1', UserRole.SYSTEM_ADMIN),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('attaches approval history to the result', async () => {
@@ -436,8 +436,31 @@ describe('RequisitionsService', () => {
       mockReqRepo.findOne.mockResolvedValue(req);
       mockApprovalRepo.find.mockResolvedValue(approvals);
 
-      const result = await service.findOne(req.id);
+      const result = await service.findOne(
+        req.id,
+        'user-1',
+        UserRole.IT_PERSONNEL,
+      );
       expect((result as any).approvals).toEqual(approvals);
+    });
+
+    it('allows an Employee to view their own requisition', async () => {
+      const req = makeReq({ requestedById: 'emp-1' });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+
+      await expect(
+        service.findOne(req.id, 'emp-1', UserRole.EMPLOYEE),
+      ).resolves.toBeDefined();
+    });
+
+    it('throws ForbiddenException when Employee tries to view another user requisition', async () => {
+      const req = makeReq({ requestedById: 'emp-owner' });
+      mockReqRepo.findOne.mockResolvedValue(req);
+
+      await expect(
+        service.findOne(req.id, 'emp-different', UserRole.EMPLOYEE),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 

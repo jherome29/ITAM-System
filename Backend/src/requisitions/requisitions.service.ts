@@ -155,12 +155,24 @@ export class RequisitionsService {
   // ── Single requisition with full approval timeline ─────────────────────────
   async findOne(
     id: string,
+    requestingUserId?: string,
+    requestingRole?: UserRole,
   ): Promise<RequisitionEntity & { approvals: RequisitionApprovalEntity[] }> {
     const req = await this.reqRepo.findOne({
       where: { id },
       relations: { items: true },
     });
     if (!req) throw new NotFoundException(`Requisition "${id}" not found`);
+
+    // IDOR guard — Employees may only view their own requisitions (OWASP ASVS 4.2.1)
+    if (
+      requestingRole === UserRole.EMPLOYEE &&
+      req.requestedById !== requestingUserId
+    ) {
+      throw new ForbiddenException(
+        'You do not have permission to view this requisition',
+      );
+    }
 
     const approvals = await this.approvalRepo.find({
       where: { requisitionId: id },
