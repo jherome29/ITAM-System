@@ -141,9 +141,7 @@ describe('ReportsService', () => {
       mockAssetRepo.createQueryBuilder.mockReturnValue(makeQb(8));
       // decidedRows QB → withinSla QB → fulfilledThisMonth QB
       mockReqRepo.createQueryBuilder
-        .mockReturnValueOnce(
-          makeQb(0, [{ hours: '2.5' }, { hours: '1.5' }]),
-        )
+        .mockReturnValueOnce(makeQb(0, [{ hours: '2.5' }, { hours: '1.5' }]))
         .mockReturnValueOnce(makeQb(2))
         .mockReturnValueOnce(makeQb(3));
 
@@ -223,6 +221,19 @@ describe('ReportsService', () => {
 
   // ── fetchReportData() — private, tested via direct access ─────────────────
   describe('fetchReportData() — private', () => {
+    type ReportData = {
+      title: string;
+      headers: string[];
+      rows: (string | number | null)[][];
+    };
+    type ServiceWithFetch = {
+      fetchReportData: (t: string) => Promise<ReportData>;
+    };
+
+    // Typed accessor avoids no-unsafe-call while still reaching the private method
+    const fetch = (type: string): Promise<ReportData> =>
+      (service as unknown as ServiceWithFetch).fetchReportData(type);
+
     const makeDisposalQb = (assets: AssetEntity[]) => ({
       where: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
@@ -240,7 +251,7 @@ describe('ReportsService', () => {
       });
       mockAssetRepo.find.mockResolvedValue([nullCostAsset, fullAsset]);
 
-      const r = await (service as any).fetchReportData('ASSET_MASTER_LIST');
+      const r = await fetch('ASSET_MASTER_LIST');
 
       expect(r.title).toBe('Asset Master List');
       expect(r.rows).toHaveLength(2);
@@ -262,7 +273,7 @@ describe('ReportsService', () => {
         },
       ]);
 
-      const r = await (service as any).fetchReportData('REQUISITION_HISTORY');
+      const r = await fetch('REQUISITION_HISTORY');
 
       expect(r.title).toBe('Requisition History Log');
       expect(r.rows[0][2]).toBe('pending supervisor'); // replaceAll('_', ' ')
@@ -275,7 +286,7 @@ describe('ReportsService', () => {
         makeAsset({ status: AssetStatus.ISSUED }),
       ]);
 
-      const r = await (service as any).fetchReportData('ASSET_ISSUANCE');
+      const r = await fetch('ASSET_ISSUANCE');
 
       expect(r.title).toBe('Asset Issuance Record');
       expect(r.rows).toHaveLength(1);
@@ -289,7 +300,7 @@ describe('ReportsService', () => {
         }),
       ]);
 
-      const r = await (service as any).fetchReportData('ASSET_RETURN');
+      const r = await fetch('ASSET_RETURN');
 
       expect(r.title).toBe('Asset Return Record');
       expect(r.rows[0][4]).toBe('serviceable');
@@ -298,7 +309,7 @@ describe('ReportsService', () => {
     it('PHYSICAL_COUNT returns all assets', async () => {
       mockAssetRepo.find.mockResolvedValue([makeAsset()]);
 
-      const r = await (service as any).fetchReportData('PHYSICAL_COUNT');
+      const r = await fetch('PHYSICAL_COUNT');
 
       expect(r.title).toBe('Physical Count Summary');
       expect(r.rows).toHaveLength(1);
@@ -317,7 +328,7 @@ describe('ReportsService', () => {
         makeDisposalQb([nullCost, withCost]),
       );
 
-      const r = await (service as any).fetchReportData('DISPOSAL');
+      const r = await fetch('DISPOSAL');
 
       expect(r.title).toBe('Disposal Documentation Report');
       expect(r.rows[0][7]).toBe('—'); // null cost
@@ -327,7 +338,7 @@ describe('ReportsService', () => {
     it('default case returns generic headers and uses replaceAll on title', async () => {
       mockAssetRepo.find.mockResolvedValue([makeAsset()]);
 
-      const r = await (service as any).fetchReportData('UNKNOWN_REPORT_TYPE');
+      const r = await fetch('UNKNOWN_REPORT_TYPE');
 
       expect(r.title).toBe('UNKNOWN REPORT TYPE');
       expect(r.headers).toEqual(['Property #', 'Description', 'Status']);
