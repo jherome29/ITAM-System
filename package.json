@@ -20,9 +20,9 @@
     "secretlint": "secretlint \"**/*\""
   },
   "devDependencies": {
-    "@secretlint/secretlint-rule-preset-recommend": "^13.0.2",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.4",
     "concurrently": "^8.2.2",
-    "secretlint": "^13.0.2"
+    "secretlint": "^13.0.4"
   },
   "engines": {
     "node": ">=20.0.0",
