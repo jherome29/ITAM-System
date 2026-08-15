@@ -17,9 +17,9 @@ cd cicc
 git checkout develop
 ```
 
-**Always work off `develop`.** Never push directly to `main`, `uat`, or `test`.
+**Always work off `develop`.** Never push directly to `main`.
 
-Branch flow: `feature/<ticket-id>-<desc>` → `develop` → `test` → `uat` → `main`
+Branch flow: `feature/<ticket-id>-<desc>` → `develop` → `main`
 
 See CLAUDE.md §13 for the full branch strategy.
 
@@ -218,7 +218,7 @@ git push -u origin feature/AIMRS-<ticket>-<short-desc>
 - 1 reviewer approval
 - All CI checks green (TypeScript, ESLint, build, tests, coverage)
 
-**Never push directly to `develop`, `test`, `uat`, or `main`.**
+**Never push directly to `develop` or `main`.**
 
 ---
 
