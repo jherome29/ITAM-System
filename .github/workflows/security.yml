@@ -2,9 +2,9 @@ name: Security
 
 on:
   push:
-    branches: [develop, test, uat, main]
+    branches: [develop, main]
   pull_request:
-    branches: [develop, test, uat, main]
+    branches: [develop, main]
   schedule:
     - cron: '0 0 * * *'   # daily at midnight UTC
 
