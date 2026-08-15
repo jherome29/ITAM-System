@@ -45,13 +45,23 @@ import { SnakeNamingStrategy } from './common/snake-naming.strategy';
         type: 'postgres',
         url: config.get<string>('DATABASE_URL'),
         autoLoadEntities: true,
-        // Schema created via SQL scripts — do not let TypeORM alter it
-        synchronize: false,
+        // Schema created via SQL scripts — do not let TypeORM alter it.
+        // Exception: NODE_ENV=test only (CI's throwaway e2e Postgres container,
+        // destroyed after every run) — this is the "throw-away local environment"
+        // carve-out CLAUDE.md §11 allows. Never true in development or production.
+        synchronize: config.get<string>('NODE_ENV') === 'test',
         logging: config.get<string>('NODE_ENV') === 'development',
         // Converts camelCase entity properties to snake_case DB columns (employee_id, etc.)
         namingStrategy: new SnakeNamingStrategy(),
-        // Supabase requires SSL even in development
-        ssl: { rejectUnauthorized: false },
+        // Supabase (dev) and managed production Postgres require SSL with real
+        // certificate validation — rejectUnauthorized:false disables MITM
+        // protection on the primary DB connection and must never be used.
+        // CI's e2e Postgres is a local, unencrypted Docker service container
+        // (NODE_ENV=test) — SSL must be off there or the connection fails outright.
+        ssl:
+          config.get<string>('NODE_ENV') === 'test'
+            ? false
+            : { rejectUnauthorized: true },
       }),
     }),
 
