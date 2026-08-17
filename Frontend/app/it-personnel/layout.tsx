@@ -15,6 +15,6 @@ const LINKS = [
   { path: '/it-personnel/notifications', label: 'Notifications', icon: Bell },
 ];
 
-export default function ItPersonnelLayout({ children }: { children: ReactNode }) {
+export default function ItPersonnelLayout({ children }: Readonly<{ children: ReactNode }>) {
   return <DashboardLayout links={LINKS}>{children}</DashboardLayout>;
 }

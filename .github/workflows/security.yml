@@ -70,14 +70,14 @@ jobs:
 
       # npm audit --workspace is unreliable across npm versions.
       # Run from each directory directly for consistent behavior.
-      # Threshold: critical only — multer (high, DoS) has no upstream fix as of
-      # 2026-06-18; @nestjs/platform-express 11.x depends on multer <=2.1.1.
-      # Revisit when multer >=2.2.0 is released and NestJS updates the dep.
+      # Threshold restored to high on 2026-08-15: multer 2.2.0 (fixed) shipped,
+      # resolving the DoS advisory that forced the critical-only threshold on
+      # 2026-06-18. No known-unfixable high/critical CVEs remain as of this date.
       - name: Backend audit (JSON report)
-        run: cd Backend && npm audit --audit-level=critical --json > /tmp/backend-audit.json || true
+        run: cd Backend && npm audit --audit-level=high --json > /tmp/backend-audit.json || true
 
       - name: Frontend audit (JSON report)
-        run: cd Frontend && npm audit --audit-level=critical --json > /tmp/frontend-audit.json || true
+        run: cd Frontend && npm audit --audit-level=high --json > /tmp/frontend-audit.json || true
 
       - name: Upload audit reports
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -88,13 +88,14 @@ jobs:
             /tmp/frontend-audit.json
           retention-days: 30
 
-      # Fails the job only on critical CVEs — see comment above for why high
-      # is excluded temporarily.
-      - name: Fail on Backend critical CVEs
-        run: cd Backend && npm audit --audit-level=critical
+      # Fails the job on high/critical CVEs. If a future advisory has no
+      # upstream fix, add a scoped `npm audit fix --omit` / advisory-specific
+      # exception here instead of dropping this threshold globally again.
+      - name: Fail on Backend high/critical CVEs
+        run: cd Backend && npm audit --audit-level=high
 
-      - name: Fail on Frontend critical CVEs
-        run: cd Frontend && npm audit --audit-level=critical
+      - name: Fail on Frontend high/critical CVEs
+        run: cd Frontend && npm audit --audit-level=high
 
   # ── OWASP Dependency-Check ────────────────────────────────────────────────
   # continue-on-error: true prevents a slow NVD DB fetch or empty NVD_API_KEY

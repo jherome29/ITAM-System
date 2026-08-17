@@ -19,7 +19,7 @@ const NEXT_TRANSITIONS: Record<string, string[]> = {
   DISPOSED: [],
 };
 
-function Detail({ label, value }: { label: string; value?: string | number | null }) {
+function Detail({ label, value }: Readonly<{ label: string; value?: string | number | null }>) {
   return (
     <div>
       <dt className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</dt>
@@ -28,7 +28,7 @@ function Detail({ label, value }: { label: string; value?: string | number | nul
   );
 }
 
-function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
+function DetailSection({ title, children }: Readonly<{ title: string; children: React.ReactNode }>) {
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-5">
       <h3 className="text-xs font-bold text-[#1a4d7a] uppercase tracking-wider mb-4">{title}</h3>
@@ -46,7 +46,7 @@ function EditableDetail({
   onChange,
   type = 'text',
   options,
-}: {
+}: Readonly<{
   label: string;
   field: string;
   value?: string | number | null;
@@ -55,7 +55,7 @@ function EditableDetail({
   onChange: (field: string, val: string) => void;
   type?: string;
   options?: string[];
-}) {
+}>) {
   const cls = 'w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]';
   return (
     <div>
@@ -215,7 +215,7 @@ export default function AssetDetailPage() {
 
   return (
     <div className="space-y-5 max-w-4xl">
-      <button onClick={() => router.back()} className="flex items-center gap-2 text-sm text-[#1a4d7a] hover:underline">
+      <button type="button" onClick={() => router.back()} className="flex items-center gap-2 text-sm text-[#1a4d7a] hover:underline">
         <ArrowLeft className="w-4 h-4" /> Back to Inventory
       </button>
 
@@ -232,14 +232,14 @@ export default function AssetDetailPage() {
         <div className="flex gap-2 flex-wrap">
           {edit ? (
             <>
-              <button
+              <button type="button"
                 onClick={handleSave}
                 disabled={saving}
                 className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-60 transition-colors"
               >
                 <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Changes'}
               </button>
-              <button
+              <button type="button"
                 onClick={handleCancelEdit}
                 className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
               >
@@ -248,14 +248,14 @@ export default function AssetDetailPage() {
             </>
           ) : (
             <>
-              <button
+              <button type="button"
                 onClick={() => setEdit(true)}
                 className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
               >
                 <Pencil className="w-4 h-4" /> Edit
               </button>
               {!asset.qrCode && (
-                <button
+                <button type="button"
                   onClick={handleGenerateQr}
                   className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                 >
@@ -263,7 +263,7 @@ export default function AssetDetailPage() {
                 </button>
               )}
               {nextStates.length > 0 && (
-                <button
+                <button type="button"
                   onClick={() => setShowLifecycle(true)}
                   className="px-4 py-2 bg-[#1a4d7a] text-white rounded-md text-sm font-medium hover:bg-[#143d61] transition-colors"
                 >
@@ -295,13 +295,13 @@ export default function AssetDetailPage() {
             Lifecycle updated. Consider generating a <strong>{formSuggestion}</strong> form for this transaction.
           </span>
           <div className="flex gap-2 shrink-0">
-            <button
+            <button type="button"
               onClick={() => router.push('/it-personnel/forms')}
               className="px-3 py-1 bg-[#1a4d7a] text-white rounded text-xs font-medium hover:bg-[#143d61] transition-colors"
             >
               Go to Forms
             </button>
-            <button
+            <button type="button"
               onClick={() => setFormSuggestion(null)}
               className="px-3 py-1 border border-blue-300 text-blue-700 rounded text-xs font-medium hover:bg-blue-100 transition-colors"
             >
@@ -474,7 +474,7 @@ export default function AssetDetailPage() {
             </div>
 
             <div className="flex gap-3 mt-6">
-              <button
+              <button type="button"
                 onClick={handleLifecycleUpdate}
                 disabled={
                   updating ||
@@ -487,7 +487,7 @@ export default function AssetDetailPage() {
               >
                 {updating ? 'Updating...' : 'Confirm'}
               </button>
-              <button
+              <button type="button"
                 onClick={() => { setShowLifecycle(false); setLifecycleError(''); setTargetStatus(''); setLifecycleNotes(''); setLifecycleEmployeeId(''); setLifecycleToLocation(''); }}
                 className="flex-1 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
               >

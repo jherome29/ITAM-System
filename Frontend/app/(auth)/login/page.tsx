@@ -7,10 +7,10 @@ import { useAuth } from '@/lib/auth/use-auth';
 
 const ROLE_REDIRECTS: Record<string, string> = {
   employee: '/employee/dashboard',
-  supervisor: '/supervisor/dashboard',
-  it_personnel: '/it-personnel/dashboard',
-  system_admin: '/admin/dashboard',
-  management: '/management/dashboard',
+  supervisor: '/approving-officer/dashboard',
+  it_personnel: '/it-asset-custodian/dashboard',
+  system_admin: '/master-admin/dashboard',
+  management: '/management-audit/dashboard',
 };
 
 export default function LoginPage() {
@@ -23,7 +23,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      router.push(ROLE_REDIRECTS[user.role] ?? '/admin/dashboard');
+      router.push(ROLE_REDIRECTS[user.role] ?? '/employee/dashboard');
     }
   }, [user, isLoading, router]);
 
@@ -33,7 +33,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const u = await login(email, password);
-      window.location.href = ROLE_REDIRECTS[u.role] ?? '/admin/dashboard';
+      window.location.href = ROLE_REDIRECTS[u.role] ?? '/employee/dashboard';
     } catch {
       setError('Invalid credentials. Please try again.');
       setLoading(false);

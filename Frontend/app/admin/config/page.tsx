@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 
 const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors';
 
-const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+const Section = ({ title, children }: Readonly<{ title: string; children: React.ReactNode }>) => (
   <div className="bg-white rounded-lg shadow-sm border border-blue-200">
     <div className="p-5 border-b border-blue-200 bg-blue-50">
       <h2 className="text-base font-semibold text-[#1a4d7a]">{title}</h2>
@@ -15,7 +15,7 @@ const Section = ({ title, children }: { title: string; children: React.ReactNode
   </div>
 );
 
-const Field = ({ label, note, children }: { label: string; note?: string; children: React.ReactNode }) => (
+const Field = ({ label, note, children }: Readonly<{ label: string; note?: string; children: React.ReactNode }>) => (
   <div>
     <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
     {children}
