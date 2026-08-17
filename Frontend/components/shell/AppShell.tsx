@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/auth/use-auth';
 import { SidebarNav } from './SidebarNav';
 import { TopBar } from './TopBar';
 
-export function AppShell({ role, children }: { role: ProposedUserRole; children: ReactNode }) {
+export function AppShell({ role, children }: Readonly<{ role: ProposedUserRole; children: ReactNode }>) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const items = roleNavigation[role];

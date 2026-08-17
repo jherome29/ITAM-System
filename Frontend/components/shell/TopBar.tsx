@@ -10,7 +10,7 @@ import { ProposedUserRole } from '@/lib/roles/proposed-roles';
 import { roleNavigation } from '@/lib/roles/role-navigation';
 import { notificationMockRows } from '@/lib/mock/notifications.mock';
 
-export function TopBar({ role, onMenuClick }: { role: ProposedUserRole; onMenuClick: () => void }) {
+export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole; onMenuClick: () => void }>) {
   const router = useRouter();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);

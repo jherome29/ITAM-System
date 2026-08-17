@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { appConfig } from '@/lib/config';
 import { ProposedUserRole, proposedRoleLabels, roleHomePaths } from '@/lib/roles/proposed-roles';
 
-export function RoleSwitcher({ currentRole }: { currentRole: ProposedUserRole }) {
+export function RoleSwitcher({ currentRole }: Readonly<{ currentRole: ProposedUserRole }>) {
   const router = useRouter();
   const pathname = usePathname();
 

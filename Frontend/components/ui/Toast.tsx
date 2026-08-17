@@ -1,4 +1,4 @@
-export function Toast({ message }: { message: string }) {
+export function Toast({ message }: Readonly<{ message: string }>) {
   if (!message) return null;
 
   return (

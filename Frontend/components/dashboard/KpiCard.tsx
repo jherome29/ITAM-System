@@ -10,7 +10,7 @@ const toneStyles = {
 
 const icons = [Box, Clock3, Wrench, Trash2];
 
-export function KpiCard({ metric, index }: { metric: KpiMetric; index: number }) {
+export function KpiCard({ metric, index }: Readonly<{ metric: KpiMetric; index: number }>) {
   // Inline if/else (not a helper function call) so react-hooks/static-components
   // can still trace Icon back to a stable module-level identifier.
   let Icon = icons[index % icons.length];

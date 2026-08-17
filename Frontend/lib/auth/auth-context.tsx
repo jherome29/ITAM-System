@@ -54,7 +54,7 @@ const mockAccounts: Array<{ email: string; password: string; user: AuthUser }> =
   },
 ];
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [accessToken, setToken] = useState<string | null>(null);

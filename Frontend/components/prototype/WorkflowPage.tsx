@@ -215,7 +215,7 @@ function actionPermissionFor(role: ProposedUserRole): UiPermission {
   return 'create_requisition';
 }
 
-export function WorkflowPage({ role, slug }: { role: ProposedUserRole; slug: string }) {
+export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; slug: string }>) {
   const normalizedSlug = normalizeSlug(slug);
   const content = pageCopy[normalizedSlug] ?? { title: 'Workspace', detail: 'Frontend-only operational prototype.', action: 'Run Action' };
   const readOnly = role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER;
@@ -672,14 +672,14 @@ function Field({
   error,
   type = 'text',
   placeholder,
-}: {
+}: Readonly<{
   label: string;
   value: string;
   onChange: (value: string) => void;
   error?: string;
   type?: string;
   placeholder?: string;
-}) {
+}>) {
   return (
     <label className="text-sm font-semibold text-slate-700">
       {label}

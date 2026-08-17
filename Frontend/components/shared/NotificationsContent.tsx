@@ -6,7 +6,7 @@ import { notificationsApi, type Notification } from '@/lib/api/notifications';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
-function NotifIcon({ type }: { type: string }) {
+function NotifIcon({ type }: Readonly<{ type: string }>) {
   if (type === 'REQUISITION_APPROVED' || type === 'REQUISITION_FULFILLED')
     return <CheckCircle className="w-5 h-5 text-green-600" />;
   if (type === 'REQUISITION_REJECTED')

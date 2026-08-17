@@ -65,7 +65,7 @@ const tabs: Record<InventoryKind, Array<{ label: string; href: string }>> = {
   ],
 };
 
-function AssetIcon({ asset, className }: { asset: MockAsset; className: string }) {
+function AssetIcon({ asset, className }: Readonly<{ asset: MockAsset; className: string }>) {
   if (asset.photoUrl) return <Image src={asset.photoUrl} alt={asset.name} width={112} height={112} unoptimized className={`${className} object-cover`} />;
   const text = `${asset.category} ${asset.type}`.toLowerCase();
   if (text.includes('laptop') || text.includes('workstation')) return <Laptop className={className} />;
@@ -84,7 +84,7 @@ function lifecycleText(asset: MockAsset) {
   return `${asset.condition} · ${asset.status}`;
 }
 
-export function AssetInventoryGallery({ kind }: { kind: InventoryKind }) {
+export function AssetInventoryGallery({ kind }: Readonly<{ kind: InventoryKind }>) {
   const config = pageConfig[kind];
   const [assets, setAssets] = useState(() => assetMockRows.filter((asset) => asset.scope === config.scope));
   const [search, setSearch] = useState('');
@@ -135,11 +135,11 @@ function InventoryResults({
   visible,
   view,
   onOpen,
-}: {
+}: Readonly<{
   visible: MockAsset[];
   view: 'grid' | 'list';
   onOpen: (asset: MockAsset) => void;
-}) {
+}>) {
   if (visible.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
@@ -165,21 +165,21 @@ function InventoryResults({
   );
 }
 
-function AssetCard({ asset, onOpen }: { asset: MockAsset; onOpen: () => void }) {
+function AssetCard({ asset, onOpen }: Readonly<{ asset: MockAsset; onOpen: () => void }>) {
   const attention = asset.status === 'Under Repair' || asset.status === 'Damaged' || asset.condition === 'Low Stock';
   return <button type="button" onClick={onOpen} className="group min-h-40 overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"><div className="flex h-full"><span className="grid w-28 flex-none place-items-center bg-slate-50 text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-700"><AssetIcon asset={asset} className="h-10 w-10" /></span><span className="flex min-w-0 flex-1 flex-col p-4"><span className="line-clamp-2 text-sm font-bold leading-5 text-slate-950">{asset.name}</span><span className="mt-1 block text-xs text-slate-500">{asset.id}</span><span className="mt-1 flex items-center gap-1.5 text-xs text-slate-600"><i className={`h-1.5 w-1.5 rounded-full ${attention ? 'bg-red-500' : 'bg-emerald-500'}`} />{asset.type} · {asset.status}</span><span className="mt-auto block"><span className="mt-3 flex items-center gap-1.5 text-xs text-slate-500"><MapPin className="h-3.5 w-3.5" />{asset.location}</span><span className={`mt-2 block truncate text-xs font-semibold ${attention ? 'text-red-600' : 'text-emerald-700'}`}>{lifecycleText(asset)}</span></span></span></div></button>;
 }
 
-function AssetListRow({ asset, onOpen }: { asset: MockAsset; onOpen: () => void }) {
+function AssetListRow({ asset, onOpen }: Readonly<{ asset: MockAsset; onOpen: () => void }>) {
   return <button type="button" onClick={onOpen} className="grid w-full gap-3 px-4 py-3 text-left hover:bg-slate-50 sm:grid-cols-[44px_minmax(0,1fr)_180px_180px_auto] sm:items-center"><span className="grid h-10 w-10 place-items-center rounded-md bg-slate-100 text-slate-600"><AssetIcon asset={asset} className="h-4 w-4" /></span><span className="min-w-0"><span className="block truncate text-sm font-bold text-slate-950">{asset.name}</span><span className="text-xs text-slate-500">{asset.id} · {asset.serialNumber}</span></span><span className="text-xs text-slate-600">{asset.category}</span><span className="inline-flex items-center gap-1 text-xs text-slate-600"><MapPin className="h-3.5 w-3.5" />{asset.location}</span><StatusChip status={asset.status} /></button>;
 }
 
-function AssetDetails({ asset }: { asset: MockAsset }) {
+function AssetDetails({ asset }: Readonly<{ asset: MockAsset }>) {
   const fields = [['Inventory ID', asset.id], ['Scope', asset.scope], ['Category', asset.category], ['Type', asset.type], ['Serial number', asset.serialNumber], ['Location', asset.location], ['Assigned to', asset.assignedTo ?? 'Unassigned'], ['Condition', asset.condition], ['Status', asset.status], ['Issued date', asset.issuedDate ?? 'Not issued'], ['Warranty expiry', asset.warrantyExpiry ?? 'Not recorded']];
   return <div className="space-y-5"><div className="flex items-center gap-4 rounded-lg bg-slate-50 p-4"><span className="grid h-14 w-14 place-items-center rounded-lg bg-white text-blue-700 shadow-sm"><AssetIcon asset={asset} className="h-6 w-6" /></span><div><p className="text-lg font-bold text-slate-950">{asset.name}</p><p className="mt-1 text-sm text-slate-500">{asset.id} · {asset.type}</p></div></div><dl className="grid gap-4 sm:grid-cols-2">{fields.map(([label, value]) => <div key={label}><dt className="text-xs font-semibold text-slate-500">{label}</dt><dd className="mt-1 text-sm font-semibold text-slate-900">{value}</dd></div>)}</dl><div><p className="text-xs font-semibold text-slate-500">Notes</p><p className="mt-1 text-sm leading-6 text-slate-700">{asset.notes}</p></div></div>;
 }
 
-function CreateInventoryRecord({ kind, onSubmit }: { kind: InventoryKind; onSubmit: (asset: MockAsset) => void }) {
+function CreateInventoryRecord({ kind, onSubmit }: Readonly<{ kind: InventoryKind; onSubmit: (asset: MockAsset) => void }>) {
   const config = pageConfig[kind];
   const formRef = useRef<HTMLFormElement>(null);
   const [step, setStep] = useState(1);

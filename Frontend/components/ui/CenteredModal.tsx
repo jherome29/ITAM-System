@@ -10,13 +10,13 @@ export function CenteredModal({
   description,
   children,
   onClose,
-}: {
+}: Readonly<{
   open: boolean;
   title: string;
   description?: string;
   children: ReactNode;
   onClose: () => void;
-}) {
+}>) {
   useEffect(() => {
     if (!open) return;
 

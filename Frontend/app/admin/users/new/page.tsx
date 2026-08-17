@@ -16,7 +16,7 @@ const ROLES = [
 
 const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors';
 
-const Field = ({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) => (
+const Field = ({ label, required, children }: Readonly<{ label: string; required?: boolean; children: React.ReactNode }>) => (
   <div>
     <label className="block text-sm font-medium text-gray-700 mb-1">{label}{required && <span className="text-red-500 ml-0.5">*</span>}</label>
     {children}

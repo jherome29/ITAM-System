@@ -11,6 +11,6 @@ const LINKS = [
   { path: '/admin/config', label: 'System Config', icon: Settings },
 ];
 
-export default function AdminLayout({ children }: { children: ReactNode }) {
+export default function AdminLayout({ children }: Readonly<{ children: ReactNode }>) {
   return <DashboardLayout links={LINKS}>{children}</DashboardLayout>;
 }

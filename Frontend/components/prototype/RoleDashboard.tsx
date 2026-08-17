@@ -17,7 +17,7 @@ function secondaryActivityTitle(isEmployee: boolean, isReadOnly: boolean) {
   return 'Awaiting Approval';
 }
 
-export function RoleDashboard({ role }: { role: ProposedUserRole }) {
+export function RoleDashboard({ role }: Readonly<{ role: ProposedUserRole }>) {
   const data = getDashboardMockData(role);
   const isReadOnly = role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER;
   const isEmployee = role === ProposedUserRole.EMPLOYEE;

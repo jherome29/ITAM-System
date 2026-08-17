@@ -8,7 +8,7 @@ function hashText(text: string) {
   return text.split('').reduce((sum, char) => sum + (char.codePointAt(0) ?? 0), 0);
 }
 
-function QrPreview({ value }: { value: string }) {
+function QrPreview({ value }: Readonly<{ value: string }>) {
   const seed = hashText(value);
   const cells = Array.from({ length: 49 }, (_, index) => (seed + index * 7) % 5 !== 0);
 
@@ -21,7 +21,7 @@ function QrPreview({ value }: { value: string }) {
   );
 }
 
-function BarcodePreview({ value }: { value: string }) {
+function BarcodePreview({ value }: Readonly<{ value: string }>) {
   const bars = useMemo(
     () => value.split('').flatMap((char, index) => [((char.codePointAt(0) ?? 0) % 4) + 1, (index % 3) + 1]),
     [value],
@@ -36,7 +36,7 @@ function BarcodePreview({ value }: { value: string }) {
   );
 }
 
-export function InventoryLabelPrinter({ assets }: { assets: MockAsset[] }) {
+export function InventoryLabelPrinter({ assets }: Readonly<{ assets: MockAsset[] }>) {
   const [assetId, setAssetId] = useState(assets[0]?.id ?? '');
   const [labelType, setLabelType] = useState<'qr' | 'barcode'>('qr');
   const selected = assets.find((asset) => asset.id === assetId) ?? assets[0];

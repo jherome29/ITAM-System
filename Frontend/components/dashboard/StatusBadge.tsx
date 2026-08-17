@@ -7,7 +7,7 @@ const statusStyles: Record<string, string> = {
   Draft: 'bg-slate-100 text-slate-700 ring-slate-200',
 };
 
-export function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status }: Readonly<{ status: string }>) {
   return (
     <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${statusStyles[status] ?? statusStyles.Draft}`}>
       {status}

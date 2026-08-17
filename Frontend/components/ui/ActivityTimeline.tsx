@@ -1,4 +1,4 @@
-export function ActivityTimeline({ items }: { items: string[] }) {
+export function ActivityTimeline({ items }: Readonly<{ items: string[] }>) {
   return (
     <ol className="space-y-3">
       {items.map((item, index) => (

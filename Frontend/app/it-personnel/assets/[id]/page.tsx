@@ -19,7 +19,7 @@ const NEXT_TRANSITIONS: Record<string, string[]> = {
   DISPOSED: [],
 };
 
-function Detail({ label, value }: { label: string; value?: string | number | null }) {
+function Detail({ label, value }: Readonly<{ label: string; value?: string | number | null }>) {
   return (
     <div>
       <dt className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</dt>
@@ -28,7 +28,7 @@ function Detail({ label, value }: { label: string; value?: string | number | nul
   );
 }
 
-function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
+function DetailSection({ title, children }: Readonly<{ title: string; children: React.ReactNode }>) {
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-5">
       <h3 className="text-xs font-bold text-[#1a4d7a] uppercase tracking-wider mb-4">{title}</h3>
@@ -46,7 +46,7 @@ function EditableDetail({
   onChange,
   type = 'text',
   options,
-}: {
+}: Readonly<{
   label: string;
   field: string;
   value?: string | number | null;
@@ -55,7 +55,7 @@ function EditableDetail({
   onChange: (field: string, val: string) => void;
   type?: string;
   options?: string[];
-}) {
+}>) {
   const cls = 'w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]';
   return (
     <div>

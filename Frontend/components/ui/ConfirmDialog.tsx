@@ -10,7 +10,7 @@ export function ConfirmDialog({
   children,
   onConfirm,
   onCancel,
-}: {
+}: Readonly<{
   open: boolean;
   title: string;
   detail: string;
@@ -18,7 +18,7 @@ export function ConfirmDialog({
   children?: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
-}) {
+}>) {
   if (!open) return null;
 
   return (

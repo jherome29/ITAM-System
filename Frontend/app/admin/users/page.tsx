@@ -10,7 +10,7 @@ import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
 const ROLES = ['EMPLOYEE', 'SUPERVISOR', 'IT_PERSONNEL', 'SYSTEM_ADMIN', 'MANAGEMENT'];
 
-const RoleBadge = ({ role }: { role: string }) => {
+const RoleBadge = ({ role }: Readonly<{ role: string }>) => {
   const colors: Record<string, string> = {
     EMPLOYEE: 'bg-gray-100 text-gray-700',
     SUPERVISOR: 'bg-blue-50 text-blue-700',

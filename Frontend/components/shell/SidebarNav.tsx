@@ -14,14 +14,14 @@ export function SidebarNav({
   mobile,
   onToggle,
   onClose,
-}: {
+}: Readonly<{
   role: ProposedUserRole;
   items: RoleNavItem[];
   collapsed: boolean;
   mobile?: boolean;
   onToggle: () => void;
   onClose?: () => void;
-}) {
+}>) {
   const pathname = usePathname();
   const persona = {
     [ProposedUserRole.EMPLOYEE]: { initials: 'AR', name: 'Ana Reyes' },

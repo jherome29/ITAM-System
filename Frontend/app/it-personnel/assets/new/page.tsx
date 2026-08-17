@@ -12,7 +12,7 @@ const CONDITIONS = ['SERVICEABLE', 'UNSERVICEABLE', 'FOR_REPAIR', 'FOR_DISPOSAL'
 const inputClass =
   'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors bg-white';
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, children }: Readonly<{ title: string; children: ReactNode }>) {
   return (
     <fieldset className="border border-gray-200 rounded-lg p-5 mb-5">
       <legend className="px-2 text-xs font-semibold text-[#1a4d7a] uppercase tracking-wider">{title}</legend>
@@ -21,7 +21,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
+function Field({ label, required, children }: Readonly<{ label: string; required?: boolean; children: ReactNode }>) {
   return (
     <div>
       <label className="block text-xs font-semibold text-gray-600 mb-1">

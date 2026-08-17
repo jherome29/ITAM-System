@@ -10,14 +10,14 @@ export function FormDialog({
   submitLabel = 'Save',
   onSubmit,
   onClose,
-}: {
+}: Readonly<{
   open: boolean;
   title: string;
   children: ReactNode;
   submitLabel?: string;
   onSubmit: () => void;
   onClose: () => void;
-}) {
+}>) {
   if (!open) return null;
 
   return (
