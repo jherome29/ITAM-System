@@ -10,7 +10,7 @@ import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, Prim
 
 type IdentitySlug = 'users' | 'roles' | 'access-reviews' | 'organizational-units';
 
-export function AdminIdentityPages({ slug }: { slug: IdentitySlug }) {
+export function AdminIdentityPages({ slug }: Readonly<{ slug: IdentitySlug }>) {
   if (slug === 'users') return <UsersPage />;
   if (slug === 'roles') return <RolesPage />;
   if (slug === 'access-reviews') return <AccessReviewsPage />;
@@ -46,7 +46,7 @@ function UsersPage() {
   </div>;
 }
 
-function AccountForm({ onSave }: { onSave: (user: AdminUser) => void }) {
+function AccountForm({ onSave }: Readonly<{ onSave: (user: AdminUser) => void }>) {
   return <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const sequence = String(adminUsers.length + Math.floor(Date.now() / 1000) % 900).padStart(3, '0'); onSave({ id: `USR-${sequence}`, employeeId: String(data.get('employeeId')), name: String(data.get('name')), email: String(data.get('email')), office: String(data.get('office')), roles: [String(data.get('role'))], accountType: String(data.get('accountType')) as AdminUser['accountType'], mfa: 'Not enrolled', lastLogin: 'Never', status: 'Active' }); }}><div className="grid gap-4 sm:grid-cols-2"><Field label="Employee ID"><input name="employeeId" required pattern="CICC-[0-9]{4}" title="Use format CICC-0000" className={inputClass} placeholder="CICC-0000" /></Field><Field label="Account type"><select name="accountType" className={inputClass}><option>Employee</option><option>Privileged</option><option>Service</option></select></Field></div><Field label="Full name"><input name="name" required minLength={3} className={inputClass} /></Field><Field label="Government email"><input name="email" required type="email" pattern=".+@cicc\.gov\.ph" title="Use a cicc.gov.ph email address" className={inputClass} placeholder="name@cicc.gov.ph" /></Field><Field label="Organizational unit"><select name="office" className={inputClass}>{organizationUnits.slice(1).map((unit) => <option key={unit.id}>{unit.name}</option>)}</select></Field><Field label="Initial role"><select name="role" className={inputClass}>{adminRoles.map((role) => <option key={role.id}>{role.name}</option>)}</select></Field><div className="border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">Only identity information required for AIMRS access is collected. HR, payroll, leave, and performance data are outside system scope.</div><PrimaryButton type="submit">Create account</PrimaryButton></form>;
 }
 

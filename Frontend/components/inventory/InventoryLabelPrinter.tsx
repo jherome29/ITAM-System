@@ -5,7 +5,7 @@ import { Printer } from 'lucide-react';
 import type { MockAsset } from '@/lib/mock/assets.mock';
 
 function hashText(text: string) {
-  return text.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return text.split('').reduce((sum, char) => sum + (char.codePointAt(0) ?? 0), 0);
 }
 
 function QrPreview({ value }: { value: string }) {
@@ -23,7 +23,7 @@ function QrPreview({ value }: { value: string }) {
 
 function BarcodePreview({ value }: { value: string }) {
   const bars = useMemo(
-    () => value.split('').flatMap((char, index) => [char.charCodeAt(0) % 4 + 1, (index % 3) + 1]),
+    () => value.split('').flatMap((char, index) => [((char.codePointAt(0) ?? 0) % 4) + 1, (index % 3) + 1]),
     [value],
   );
 
