@@ -87,48 +87,63 @@ function normalizeSlug(slug: string) {
   return aliases[slug] ?? slug;
 }
 
-function rowsFor(role: ProposedUserRole, slug: string): Row[] {
-  if (slug === 'notifications') return notificationMockRows.map((item) => ({ ...item, status: item.unread ? 'Unread' : 'Read' }));
-  if (slug === 'audit' || slug === 'technical-logs') return auditMockRows.map((item) => ({ ...item, status: item.severity }));
-  if (slug.includes('report') || slug === 'reports' || slug === 'forms') return reportMockRows.map((item) => ({ ...item, status: item.status }));
-  if (slug === 'maintenance') return maintenanceMockRows.map((item) => ({ ...item, status: item.status }));
-  if (slug === 'physical-inventory' || slug === 'reconciliation') return inventoryMockRows.map((item) => ({ ...item, status: item.status }));
-  if (slug === 'disposal' || slug === 'replacements') return disposalMockRows.map((item) => ({ ...item, status: item.status }));
-  if (slug === 'users' || slug === 'roles') return mockUsers.map((item) => ({ ...item, status: 'Active', role: item.role }));
-  if (slug === 'catalogue') {
-    return assetMockRows
-      .filter((asset) => asset.status === 'Available' || asset.scope === 'SUPPLY')
-      .map(assetToRow);
-  }
-  if (slug === 'assigned-assets') {
-    return assetMockRows.filter((asset) => asset.assignedEmployeeId === employeeId).map(assetToRow);
-  }
-  if (slug === 'assets') {
-    if (role === ProposedUserRole.IT_ASSET_CUSTODIAN) return assetMockRows.filter((asset) => asset.scope === 'ICT').map(assetToRow);
-    if (role === ProposedUserRole.PROPERTY_OFFICER) return assetMockRows.map(assetToRow);
-    return assetMockRows.filter((asset) => asset.scope !== 'ICT').map(assetToRow);
-  }
-  if (slug === 'fixed-assets') return assetMockRows.filter((asset) => asset.scope === 'PROPERTY').map(assetToRow);
-  if (slug === 'supplies') return assetMockRows.filter((asset) => asset.scope === 'SUPPLY').map(assetToRow);
-  if (slug === 'approvals') {
-    return requisitionMockRows
+// Slugs whose rows don't depend on `role` — dispatched via lookup instead of
+// an if-chain to keep rowsFor's cognitive complexity low (typescript:S3776).
+// 'forms' is handled by the report branch in rowsFor, not here.
+const SIMPLE_SLUG_HANDLERS: Record<string, () => Row[]> = {
+  notifications: () => notificationMockRows.map((item) => ({ ...item, status: item.unread ? 'Unread' : 'Read' })),
+  audit: () => auditMockRows.map((item) => ({ ...item, status: item.severity })),
+  'technical-logs': () => auditMockRows.map((item) => ({ ...item, status: item.severity })),
+  maintenance: () => maintenanceMockRows.map((item) => ({ ...item, status: item.status })),
+  'physical-inventory': () => inventoryMockRows.map((item) => ({ ...item, status: item.status })),
+  reconciliation: () => inventoryMockRows.map((item) => ({ ...item, status: item.status })),
+  disposal: () => disposalMockRows.map((item) => ({ ...item, status: item.status })),
+  replacements: () => disposalMockRows.map((item) => ({ ...item, status: item.status })),
+  users: () => mockUsers.map((item) => ({ ...item, status: 'Active', role: item.role })),
+  roles: () => mockUsers.map((item) => ({ ...item, status: 'Active', role: item.role })),
+  catalogue: () => assetMockRows.filter((asset) => asset.status === 'Available' || asset.scope === 'SUPPLY').map(assetToRow),
+  'assigned-assets': () => assetMockRows.filter((asset) => asset.assignedEmployeeId === employeeId).map(assetToRow),
+  'fixed-assets': () => assetMockRows.filter((asset) => asset.scope === 'PROPERTY').map(assetToRow),
+  supplies: () => assetMockRows.filter((asset) => asset.scope === 'SUPPLY').map(assetToRow),
+  approvals: () =>
+    requisitionMockRows
       .filter((request) => request.status === 'Pending Approval' && request.requesterId !== approvingOfficerId)
-      .map(requisitionToRow);
-  }
-  if (slug === 'approval-history') {
-    return requisitionMockRows.filter((request) => ['Approved', 'Rejected', 'Returned for Revision'].includes(request.status)).map(requisitionToRow);
-  }
-  if (slug === 'fulfillment') {
-    return requisitionMockRows
-      .filter((request) => ['Approved', 'Pending Fulfillment'].includes(request.status))
-      .filter((request) => role !== ProposedUserRole.IT_ASSET_CUSTODIAN || request.scope === 'ICT')
-      .filter((request) => role !== ProposedUserRole.PROPERTY_CUSTODIAN || request.scope !== 'ICT')
-      .map(requisitionToRow);
-  }
-  if (slug === 'requisitions') {
-    const own = role === ProposedUserRole.APPROVING_OFFICER ? 'EMP-003' : employeeId;
-    return requisitionMockRows.filter((request) => request.requesterId === own || role === ProposedUserRole.EMPLOYEE).map(requisitionToRow);
-  }
+      .map(requisitionToRow),
+  'approval-history': () =>
+    requisitionMockRows
+      .filter((request) => ['Approved', 'Rejected', 'Returned for Revision'].includes(request.status))
+      .map(requisitionToRow),
+};
+
+function assetsForRole(role: ProposedUserRole): Row[] {
+  if (role === ProposedUserRole.IT_ASSET_CUSTODIAN) return assetMockRows.filter((asset) => asset.scope === 'ICT').map(assetToRow);
+  if (role === ProposedUserRole.PROPERTY_OFFICER) return assetMockRows.map(assetToRow);
+  return assetMockRows.filter((asset) => asset.scope !== 'ICT').map(assetToRow);
+}
+
+function fulfillmentForRole(role: ProposedUserRole): Row[] {
+  return requisitionMockRows
+    .filter((request) => ['Approved', 'Pending Fulfillment'].includes(request.status))
+    .filter((request) => role !== ProposedUserRole.IT_ASSET_CUSTODIAN || request.scope === 'ICT')
+    .filter((request) => role !== ProposedUserRole.PROPERTY_CUSTODIAN || request.scope !== 'ICT')
+    .map(requisitionToRow);
+}
+
+function requisitionsForRole(role: ProposedUserRole): Row[] {
+  const own = role === ProposedUserRole.APPROVING_OFFICER ? 'EMP-003' : employeeId;
+  return requisitionMockRows.filter((request) => request.requesterId === own || role === ProposedUserRole.EMPLOYEE).map(requisitionToRow);
+}
+
+function rowsFor(role: ProposedUserRole, slug: string): Row[] {
+  if (slug.includes('report') || slug === 'forms') return reportMockRows.map((item) => ({ ...item, status: item.status }));
+
+  const handler = SIMPLE_SLUG_HANDLERS[slug];
+  if (handler) return handler();
+
+  if (slug === 'assets') return assetsForRole(role);
+  if (slug === 'fulfillment') return fulfillmentForRole(role);
+  if (slug === 'requisitions') return requisitionsForRole(role);
+
   return requisitionMockRows.map(requisitionToRow);
 }
 
