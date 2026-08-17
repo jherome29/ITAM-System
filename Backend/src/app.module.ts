@@ -45,13 +45,21 @@ import { SnakeNamingStrategy } from './common/snake-naming.strategy';
         type: 'postgres',
         url: config.get<string>('DATABASE_URL'),
         autoLoadEntities: true,
-        // Schema created via SQL scripts — do not let TypeORM alter it
-        synchronize: false,
+        // Schema created via SQL scripts — do not let TypeORM alter it.
+        // Exception: NODE_ENV=test runs against a throw-away CI Postgres
+        // container with no migration-apply step, so e2e tests need TypeORM
+        // to create the schema from entities instead.
+        synchronize: config.get<string>('NODE_ENV') === 'test',
         logging: config.get<string>('NODE_ENV') === 'development',
         // Converts camelCase entity properties to snake_case DB columns (employee_id, etc.)
         namingStrategy: new SnakeNamingStrategy(),
-        // Supabase requires SSL even in development
-        ssl: { rejectUnauthorized: false },
+        // Supabase requires SSL; the CI test container has none (sslmode=disable in its URL).
+        // rejectUnauthorized: true outside test — Supabase's cert is CA-signed, so this
+        // is not a self-signed-cert case that needs the check disabled.
+        ssl:
+          config.get<string>('NODE_ENV') === 'test'
+            ? false
+            : { rejectUnauthorized: true },
       }),
     }),
 
