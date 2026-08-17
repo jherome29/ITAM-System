@@ -11,6 +11,30 @@ import { assetMockRows, type MockAsset, type MockAssetScope } from '@/lib/mock/a
 
 type InventoryKind = 'ict' | 'property' | 'supply';
 
+const activeHrefByKind: Record<InventoryKind, string> = {
+  ict: '/it-asset-custodian/assets',
+  property: '/property-custodian/fixed-assets',
+  supply: '/property-custodian/supplies',
+};
+
+const categoryOptionsByKind: Record<InventoryKind, string[]> = {
+  ict: ['ICT Equipment', 'Network Equipment', 'Communication Devices', 'Forensic Tools'],
+  property: ['Office Equipment', 'Furniture', 'Motor Vehicles', 'Building Equipment'],
+  supply: ['Office Supplies', 'Evidence Supplies', 'Printing Supplies', 'Technical Supplies'],
+};
+
+const idPrefixByScope: Record<MockAssetScope, string> = {
+  ICT: 'ICT',
+  PROPERTY: 'PPE',
+  SUPPLY: 'SUP',
+};
+
+function stepBadgeClass(complete: boolean, active: boolean) {
+  if (complete) return 'bg-emerald-600 text-white';
+  if (active) return 'bg-blue-700 text-white';
+  return 'bg-slate-100 text-slate-500';
+}
+
 const pageConfig: Record<InventoryKind, { eyebrow: string; title: string; detail: string; scope: MockAssetScope; action: string }> = {
   ict: { eyebrow: 'IT Asset Custodian', title: 'ICT Asset Registry', detail: 'Manage devices, ownership, serviceability, warranty, and lifecycle records.', scope: 'ICT', action: 'Add asset' },
   property: { eyebrow: 'Property Custodian', title: 'Fixed Asset Registry', detail: 'Manage accountable property, locations, assignments, and physical condition.', scope: 'PROPERTY', action: 'Add property' },
@@ -75,7 +99,7 @@ export function AssetInventoryGallery({ kind }: { kind: InventoryKind }) {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const visible = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  const activeHref = kind === 'ict' ? '/it-asset-custodian/assets' : kind === 'property' ? '/property-custodian/fixed-assets' : '/property-custodian/supplies';
+  const activeHref = activeHrefByKind[kind];
 
   return <div className="mx-auto max-w-[1500px] space-y-5">
     <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -93,12 +117,46 @@ export function AssetInventoryGallery({ kind }: { kind: InventoryKind }) {
       <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-base font-bold text-slate-950">{kind === 'supply' ? 'Supplies' : 'Assets'} <span className="font-medium text-slate-400">({filtered.length})</span></h2><p className="mt-1 text-xs text-slate-500">Showing {visible.length ? (page - 1) * pageSize + 1 : 0}-{Math.min(page * pageSize, filtered.length)} of {filtered.length} records</p></div><div className="flex items-center gap-1 text-sm"><button type="button" disabled={page === 1} onClick={() => setPage((value) => value - 1)} className="h-8 rounded-md px-2 text-slate-600 hover:bg-slate-100 disabled:text-slate-300">Previous</button>{Array.from({ length: totalPages }, (_, index) => index + 1).map((item) => <button type="button" key={item} onClick={() => setPage(item)} className={`h-8 min-w-8 rounded-md px-2 font-semibold ${page === item ? 'bg-blue-700 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>{item}</button>)}<button type="button" disabled={page === totalPages} onClick={() => setPage((value) => value + 1)} className="h-8 rounded-md px-2 text-slate-600 hover:bg-slate-100 disabled:text-slate-300">Next</button></div></div>
     </section>
 
-    {visible.length === 0 ? <div className="rounded-lg border border-dashed border-slate-300 bg-white px-6 py-14 text-center"><Search className="mx-auto h-6 w-6 text-slate-400" /><p className="mt-3 text-sm font-bold text-slate-900">No matching records</p><p className="mt-1 text-xs text-slate-500">Adjust the search or filters to see more inventory.</p></div> : view === 'grid' ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{visible.map((asset) => <AssetCard key={asset.id} asset={asset} onOpen={() => setSelected(asset)} />)}</div> : <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"><div className="divide-y divide-slate-100">{visible.map((asset) => <AssetListRow key={asset.id} asset={asset} onOpen={() => setSelected(asset)} />)}</div></div>}
+    <InventoryResults visible={visible} view={view} onOpen={setSelected} />
 
     <DetailDrawer open={Boolean(selected)} title={selected?.name ?? 'Inventory record'} onClose={() => setSelected(null)}>{selected && <AssetDetails asset={selected} />}</DetailDrawer>
     <DetailDrawer open={creating} title={config.action} onClose={() => setCreating(false)}><CreateInventoryRecord kind={kind} onSubmit={(asset) => { setAssets((current) => [asset, ...current]); setCreating(false); setToast(asset.status === 'Registered' ? `${asset.id} was saved as a draft record.` : `${asset.id} was added to ${config.title}.`); }} /></DetailDrawer>
     <Toast message={toast} />
   </div>;
+}
+
+function InventoryResults({
+  visible,
+  view,
+  onOpen,
+}: {
+  visible: MockAsset[];
+  view: 'grid' | 'list';
+  onOpen: (asset: MockAsset) => void;
+}) {
+  if (visible.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
+        <Search className="mx-auto h-6 w-6 text-slate-400" />
+        <p className="mt-3 text-sm font-bold text-slate-900">No matching records</p>
+        <p className="mt-1 text-xs text-slate-500">Adjust the search or filters to see more inventory.</p>
+      </div>
+    );
+  }
+  if (view === 'grid') {
+    return (
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {visible.map((asset) => <AssetCard key={asset.id} asset={asset} onOpen={() => onOpen(asset)} />)}
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="divide-y divide-slate-100">
+        {visible.map((asset) => <AssetListRow key={asset.id} asset={asset} onOpen={() => onOpen(asset)} />)}
+      </div>
+    </div>
+  );
 }
 
 function AssetCard({ asset, onOpen }: { asset: MockAsset; onOpen: () => void }) {
@@ -124,7 +182,7 @@ function CreateInventoryRecord({ kind, onSubmit }: { kind: InventoryKind; onSubm
   const [photoError, setPhotoError] = useState('');
   const [documentNames, setDocumentNames] = useState<string[]>([]);
   const [review, setReview] = useState<Record<string, string>>({});
-  const categoryOptions = kind === 'ict' ? ['ICT Equipment', 'Network Equipment', 'Communication Devices', 'Forensic Tools'] : kind === 'property' ? ['Office Equipment', 'Furniture', 'Motor Vehicles', 'Building Equipment'] : ['Office Supplies', 'Evidence Supplies', 'Printing Supplies', 'Technical Supplies'];
+  const categoryOptions = categoryOptionsByKind[kind];
   const steps = ['Asset details', kind === 'supply' ? 'Stock & sourcing' : 'Procurement', 'Photos & review'];
 
   const nextStep = () => {
@@ -145,7 +203,7 @@ function CreateInventoryRecord({ kind, onSubmit }: { kind: InventoryKind; onSubm
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const draft = submitter?.value === 'draft';
     const asset: MockAsset = {
-      id: `${config.scope === 'ICT' ? 'ICT' : config.scope === 'PROPERTY' ? 'PPE' : 'SUP'}-${String(Date.now()).slice(-5)}`,
+      id: `${idPrefixByScope[config.scope]}-${String(Date.now()).slice(-5)}`,
       name: String(data.get('name')),
       scope: config.scope,
       category: String(data.get('category')),
@@ -183,7 +241,7 @@ function CreateInventoryRecord({ kind, onSubmit }: { kind: InventoryKind; onSubm
     };
     onSubmit(asset);
   }}>
-    <ol className="grid grid-cols-3 gap-2" aria-label="Registration progress">{steps.map((label, index) => { const number = index + 1; const complete = step > number; const active = step === number; return <li key={label} className="min-w-0"><div className={`h-1 rounded-full ${step >= number ? 'bg-blue-600' : 'bg-slate-200'}`} /><div className="mt-2 flex items-center gap-2"><span className={`grid h-6 w-6 flex-none place-items-center rounded-full text-[11px] font-bold ${complete ? 'bg-emerald-600 text-white' : active ? 'bg-blue-700 text-white' : 'bg-slate-100 text-slate-500'}`}>{complete ? <Check className="h-3.5 w-3.5" /> : number}</span><span className={`truncate text-xs font-semibold ${active ? 'text-slate-900' : 'text-slate-500'}`}>{label}</span></div></li>; })}</ol>
+    <ol className="grid grid-cols-3 gap-2" aria-label="Registration progress">{steps.map((label, index) => { const number = index + 1; const complete = step > number; const active = step === number; return <li key={label} className="min-w-0"><div className={`h-1 rounded-full ${step >= number ? 'bg-blue-600' : 'bg-slate-200'}`} /><div className="mt-2 flex items-center gap-2"><span className={`grid h-6 w-6 flex-none place-items-center rounded-full text-[11px] font-bold ${stepBadgeClass(complete, active)}`}>{complete ? <Check className="h-3.5 w-3.5" /> : number}</span><span className={`truncate text-xs font-semibold ${active ? 'text-slate-900' : 'text-slate-500'}`}>{label}</span></div></li>; })}</ol>
 
     <section data-step="1" hidden={step !== 1} className="space-y-4"><div><h3 className="text-base font-bold text-slate-950">Identification</h3><p className="mt-1 text-xs text-slate-500">Core information used to identify and classify this record.</p></div><Field label={kind === 'supply' ? 'Supply name' : 'Asset name'}><input required name="name" className={inputClass} /></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Category"><select required name="category" defaultValue="" className={inputClass}><option value="" disabled>Select category</option>{categoryOptions.map((item) => <option key={item}>{item}</option>)}</select></Field><Field label="Type"><input required name="type" placeholder={kind === 'ict' ? 'Laptop, printer, switch' : kind === 'property' ? 'Furniture, vehicle, equipment' : 'Consumable'} className={inputClass} /></Field></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Brand"><input name="brand" className={inputClass} /></Field><Field label="Model"><input name="model" className={inputClass} /></Field></div><div className="grid gap-4 sm:grid-cols-2"><Field label={kind === 'supply' ? 'Item or SKU code' : 'Serial number'}><input required name={kind === 'supply' ? 'itemCode' : 'serial'} className={inputClass} /></Field><Field label={kind === 'supply' ? 'Stock classification' : 'Property or inventory number'}><input name="propertyNumber" placeholder={kind === 'supply' ? 'Common-use or specialized' : 'Generated if left blank'} className={inputClass} /></Field></div></section>
 

@@ -15,7 +15,7 @@ function QrPreview({ value }: { value: string }) {
   return (
     <div id="inventory-print-code" className="grid h-28 w-28 grid-cols-7 gap-1 rounded-md border border-slate-300 bg-white p-2">
       {cells.map((filled, index) => (
-        <span key={index} className={filled ? 'rounded-sm bg-slate-950' : 'rounded-sm bg-white'} />
+        <span key={`cell-${seed}-${index}`} className={filled ? 'rounded-sm bg-slate-950' : 'rounded-sm bg-white'} />
       ))}
     </div>
   );
@@ -30,7 +30,7 @@ function BarcodePreview({ value }: { value: string }) {
   return (
     <div id="inventory-print-code" className="flex h-24 w-56 items-end gap-0.5 rounded-md border border-slate-300 bg-white p-3">
       {bars.map((width, index) => (
-        <span key={index} className="h-full bg-slate-950" style={{ width: `${width}px` }} />
+        <span key={`bar-${index}-${width}`} className="h-full bg-slate-950" style={{ width: `${width}px` }} />
       ))}
     </div>
   );
@@ -88,7 +88,7 @@ export function InventoryLabelPrinter({ assets }: { assets: MockAsset[] }) {
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_360px]">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-sm font-semibold text-slate-700">
-            Asset
+            <span>Asset</span>
             <select
               value={assetId}
               onChange={(event) => setAssetId(event.target.value)}
@@ -102,7 +102,7 @@ export function InventoryLabelPrinter({ assets }: { assets: MockAsset[] }) {
             </select>
           </label>
           <label className="text-sm font-semibold text-slate-700">
-            Label type
+            <span>Label type</span>
             <select
               value={labelType}
               onChange={(event) => setLabelType(event.target.value as 'qr' | 'barcode')}

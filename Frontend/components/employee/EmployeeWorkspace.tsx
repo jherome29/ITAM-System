@@ -81,7 +81,17 @@ function EmployeeAssignedAssets() {
   return <div className="space-y-4"><EmployeeHeader title="My Assigned Assets" detail="Review property issued to you, confirm accountability, and initiate return, damage, or repair workflows." />
     <div className="grid gap-3 sm:grid-cols-3"><MetricCard label="Assigned to me" value={String(assets.length)} detail="Current accountability" tone="blue" icon={PackageCheck} /><MetricCard label="Pending acknowledgment" value={String(assets.filter((item) => item.acknowledgmentStatus === 'Pending').length)} detail="Confirm receipt and condition" tone="red" icon={CheckCircle2} /><MetricCard label="Return due" value={String(assets.filter((item) => item.returnDate).length)} detail="Review expected return dates" tone="amber" icon={CalendarClock} /></div>
     <div className="grid gap-4 lg:grid-cols-2">{assets.map((asset) => <article key={asset.id} className="border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-base font-bold text-slate-950">{asset.name}</p><p className="mt-1 text-xs text-slate-500">{asset.id} - {asset.serialNumber}</p></div><StatusChip status={asset.condition} /></div><dl className="mt-4 grid grid-cols-2 gap-3 text-sm">{[['Issued date', asset.issuedDate ?? '-'], ['Expected return', asset.returnDate ?? 'No fixed date'], ['Division', 'Digital Forensics'], ['Location', asset.location], ['Status', asset.status], ['Acknowledgment', asset.acknowledgmentStatus]].map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 font-semibold text-slate-800">{value}</dd></div>)}</dl><div className="mt-4 flex flex-wrap gap-2">{asset.acknowledgmentStatus === 'Pending' && <PrimaryButton onClick={() => openAction(asset, 'Acknowledge')}>Acknowledge receipt</PrimaryButton>}<SecondaryButton onClick={() => openAction(asset, 'Return')}>Request return</SecondaryButton><SecondaryButton onClick={() => openAction(asset, 'Repair')}>Request repair</SecondaryButton><SecondaryButton onClick={() => openAction(asset, 'Damage')}>Report damage</SecondaryButton></div></article>)}</div>
-    <DetailDrawer open={Boolean(selected && action)} title={`${action ?? ''} - ${selected?.name ?? ''}`} onClose={() => { setSelected(null); setAction(null); }}>{selected && action && <AssetActionForm asset={selected} action={action} onSubmit={() => { if (action === 'Acknowledge') setAssets((current) => current.map((asset) => asset.id === selected.id ? { ...asset, acknowledgmentStatus: 'Acknowledged' } : asset)); setToast(`${action} request recorded for ${selected.name}.`); setSelected(null); setAction(null); }} />}</DetailDrawer><Toast message={toast} /></div>;
+    <DetailDrawer open={Boolean(selected && action)} title={`${action ?? ''} - ${selected?.name ?? ''}`} onClose={() => { setSelected(null); setAction(null); }}>{selected && action && <AssetActionForm asset={selected} action={action} onSubmit={() => {
+  // Only Acknowledge updates asset state in this mock — Return/Damage/Repair
+  // always show the toast and close, matching the rest of this prototype's
+  // pattern. Braced so the conditional scope reads unambiguously.
+  if (action === 'Acknowledge') {
+    setAssets((current) => current.map((asset) => (asset.id === selected.id ? { ...asset, acknowledgmentStatus: 'Acknowledged' } : asset)));
+  }
+  setToast(`${action} request recorded for ${selected.name}.`);
+  setSelected(null);
+  setAction(null);
+}} />}</DetailDrawer><Toast message={toast} /></div>;
 }
 
 function AssetActionForm({ asset, action, onSubmit }: { asset: MockAsset; action: 'Acknowledge' | 'Return' | 'Damage' | 'Repair'; onSubmit: () => void }) {

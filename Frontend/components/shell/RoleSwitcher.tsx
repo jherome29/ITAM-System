@@ -12,7 +12,7 @@ export function RoleSwitcher({ currentRole }: { currentRole: ProposedUserRole })
 
   const handleChange = (value: string) => {
     const role = value as ProposedUserRole;
-    const currentLastSegment = pathname.split('/').filter(Boolean).at(-1);
+    const currentLastSegment = pathname.split('/').findLast(Boolean);
     const nextBase = roleHomePaths[role];
     if (!currentLastSegment || currentLastSegment === 'dashboard') {
       router.push(nextBase);
@@ -24,7 +24,7 @@ export function RoleSwitcher({ currentRole }: { currentRole: ProposedUserRole })
 
   return (
     <label className="hidden items-center gap-2 text-xs font-semibold text-slate-500 lg:flex">
-      Preview role
+      <span>Preview role</span>
       <select
         value={currentRole}
         onChange={(event) => handleChange(event.target.value)}

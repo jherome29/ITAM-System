@@ -11,11 +11,11 @@ const toneStyles = {
 const icons = [Box, Clock3, Wrench, Trash2];
 
 export function KpiCard({ metric, index }: { metric: KpiMetric; index: number }) {
-  const Icon = metric.label.includes('Notification')
-    ? Bell
-    : metric.label.includes('Assigned')
-      ? PackageCheck
-      : icons[index % icons.length];
+  // Inline if/else (not a helper function call) so react-hooks/static-components
+  // can still trace Icon back to a stable module-level identifier.
+  let Icon = icons[index % icons.length];
+  if (metric.label.includes('Notification')) Icon = Bell;
+  else if (metric.label.includes('Assigned')) Icon = PackageCheck;
 
   return (
     <article className="rounded-lg border border-slate-200/90 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">

@@ -5,6 +5,12 @@ import { Activity, AlertTriangle, CheckCircle2, Clock3, Server, ShieldCheck, Use
 import { adminActivityTrend, accessReviews, auditRecords, scheduledJobs, systemEvents } from '@/lib/mock/admin.mock';
 import { AdminPageHeader, MetricCard, Panel, StatusChip } from './AdminUi';
 
+function systemHealthTone(status: string) {
+  if (status === 'Available') return 'text-emerald-600';
+  if (status === 'Unavailable') return 'text-red-600';
+  return 'text-amber-600';
+}
+
 export function AdminDashboard() {
   const maxActivity = Math.max(...adminActivityTrend.flatMap((item) => [item.accounts, item.roles, item.security]));
 
@@ -60,7 +66,7 @@ export function AdminDashboard() {
         </Panel>
         <Panel title="System Health" detail="Current platform services" action={<Link href="/master-admin/technical-logs" className="text-xs font-bold text-blue-700">Diagnostics</Link>}>
           <div className="divide-y divide-slate-100 px-4">
-            {[['Frontend', 'Available', CheckCircle2], ['Backend API', 'Starting', Clock3], ['Database', 'Unavailable', AlertTriangle], ['Scheduled jobs', 'Running with warnings', Activity]].map(([name, status, Icon]) => { const ItemIcon = Icon as typeof Activity; return <div key={String(name)} className="flex items-center gap-3 py-3"><ItemIcon className={`h-4 w-4 ${status === 'Available' ? 'text-emerald-600' : status === 'Unavailable' ? 'text-red-600' : 'text-amber-600'}`} /><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-900">{name as string}</p><p className="text-xs text-slate-500">{status as string}</p></div></div>; })}
+            {[['Frontend', 'Available', CheckCircle2], ['Backend API', 'Starting', Clock3], ['Database', 'Unavailable', AlertTriangle], ['Scheduled jobs', 'Running with warnings', Activity]].map(([name, status, Icon]) => { const ItemIcon = Icon as typeof Activity; return <div key={String(name)} className="flex items-center gap-3 py-3"><ItemIcon className={`h-4 w-4 ${systemHealthTone(status as string)}`} /><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-900">{name as string}</p><p className="text-xs text-slate-500">{status as string}</p></div></div>; })}
           </div>
         </Panel>
         <Panel title="Recent Audit Activity" detail="Latest immutable administrative evidence" action={<Link href="/master-admin/audit" className="text-xs font-bold text-blue-700">Open audit log</Link>}>

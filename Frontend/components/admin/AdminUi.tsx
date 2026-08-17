@@ -97,8 +97,15 @@ export function Panel({ title, detail, action, children, className = '' }: { tit
   );
 }
 
+function inferToneFromStatus(status: string): AdminTone {
+  if (/active|success|healthy|current|published|covered|completed|enabled/i.test(status)) return 'green';
+  if (/error|locked|overdue|gap|denied|open/i.test(status)) return 'red';
+  if (/warning|review|risk|due|draft|dormant|not enrolled/i.test(status)) return 'amber';
+  return 'slate';
+}
+
 export function StatusChip({ status, tone }: { status: string; tone?: AdminTone }) {
-  const inferred: AdminTone = tone ?? (/active|success|healthy|current|published|covered|completed|enabled/i.test(status) ? 'green' : /error|locked|overdue|gap|denied|open/i.test(status) ? 'red' : /warning|review|risk|due|draft|dormant|not enrolled/i.test(status) ? 'amber' : 'slate');
+  const inferred: AdminTone = tone ?? inferToneFromStatus(status);
   return <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${toneStyles[inferred]}`}>{status}</span>;
 }
 

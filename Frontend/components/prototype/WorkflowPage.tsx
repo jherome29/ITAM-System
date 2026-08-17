@@ -147,6 +147,19 @@ function rowsFor(role: ProposedUserRole, slug: string): Row[] {
   return requisitionMockRows.map(requisitionToRow);
 }
 
+function assetDivision(asset: MockAsset): string {
+  if (asset.assignedTo === 'Ana Reyes') return 'Digital Forensics';
+  if (asset.assignedTo === 'Operations Division') return 'Operations';
+  if (asset.scope === 'ICT') return 'ICT Unit';
+  return 'Property Unit';
+}
+
+function assetAccountabilityForm(asset: MockAsset): string {
+  if (asset.scope === 'ICT') return 'ICS/PAR-Preview';
+  if (asset.scope === 'PROPERTY') return 'PAR-Preview';
+  return 'RIS-Preview';
+}
+
 function assetToRow(asset: MockAsset): Row {
   return {
     id: asset.id,
@@ -156,10 +169,10 @@ function assetToRow(asset: MockAsset): Row {
     serialNumber: asset.serialNumber,
     location: asset.location,
     assignedTo: asset.assignedTo ?? 'Unassigned',
-    division: asset.assignedTo === 'Ana Reyes' ? 'Digital Forensics' : asset.assignedTo === 'Operations Division' ? 'Operations' : asset.scope === 'ICT' ? 'ICT Unit' : 'Property Unit',
+    division: assetDivision(asset),
     officeOrSection: asset.assignedTo === 'Ana Reyes' ? 'Evidence Processing' : asset.location,
     dateIssued: asset.issuedDate ?? '-',
-    accountabilityForm: asset.scope === 'ICT' ? 'ICS/PAR-Preview' : asset.scope === 'PROPERTY' ? 'PAR-Preview' : 'RIS-Preview',
+    accountabilityForm: assetAccountabilityForm(asset),
     expectedReturnDate: asset.returnDate ?? '-',
     condition: asset.condition,
     status: asset.status,
@@ -624,7 +637,7 @@ export function WorkflowPage({ role, slug }: { role: ProposedUserRole; slug: str
       >
         {['Reject', 'Return for Revision'].includes(confirmAction ?? '') && (
           <label className="block text-sm font-semibold text-slate-700">
-            Remarks
+            <span>Remarks</span>
             <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
             {errors.remarks && <span className="mt-1 block text-xs text-red-600">{errors.remarks}</span>}
           </label>
@@ -638,13 +651,13 @@ export function WorkflowPage({ role, slug }: { role: ProposedUserRole; slug: str
           <Field label="Required date" value={form.requiredDate} error={errors.requiredDate} type="date" onChange={(value) => setForm((current) => ({ ...current, requiredDate: value }))} />
           <Field label="Mock attachment" value={form.attachment} onChange={(value) => setForm((current) => ({ ...current, attachment: value }))} placeholder="filename.pdf" />
           <label className="sm:col-span-2 text-sm font-semibold text-slate-700">
-            Justification / remarks
+            <span>Justification / remarks</span>
             <textarea value={form.justification} onChange={(event) => setForm((current) => ({ ...current, justification: event.target.value }))} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
             {errors.justification && <span className="mt-1 block text-xs text-red-600">{errors.justification}</span>}
           </label>
           <label className="sm:col-span-2 flex items-start gap-2 text-sm text-slate-700">
             <input type="checkbox" className="mt-1" />
-            I certify that this frontend mock submission is accurate for demonstration purposes.
+            <span>I certify that this frontend mock submission is accurate for demonstration purposes.</span>
           </label>
         </div>
       </FormDialog>
