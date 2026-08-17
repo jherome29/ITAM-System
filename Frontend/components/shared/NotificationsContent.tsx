@@ -35,7 +35,7 @@ export function NotificationsContent() {
     <div className="space-y-6">
       <PageHeader
         title="Notifications"
-        action={<button onClick={markAllRead} className="text-sm text-[#1a4d7a] font-medium hover:underline">Mark all as read</button>}
+        action={<button type="button" onClick={markAllRead} className="text-sm text-[#1a4d7a] font-medium hover:underline">Mark all as read</button>}
       />
       {loading ? (
         <LoadingSkeleton rows={5} />

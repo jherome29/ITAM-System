@@ -74,7 +74,7 @@ export default function NewAssetPage() {
 
   return (
     <div className="max-w-3xl space-y-4">
-      <button onClick={() => router.back()} className="flex items-center gap-2 text-sm text-[#1a4d7a] hover:underline">
+      <button type="button" onClick={() => router.back()} className="flex items-center gap-2 text-sm text-[#1a4d7a] hover:underline">
         <ArrowLeft className="w-4 h-4" /> Back to Inventory
       </button>
       <div>

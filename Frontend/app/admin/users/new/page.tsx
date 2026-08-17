@@ -59,7 +59,7 @@ export default function CreateUserPage() {
   return (
     <div className="max-w-2xl space-y-6">
       <div className="flex items-center gap-3">
-        <button onClick={() => router.back()} className="flex items-center gap-1 text-sm text-[#1a4d7a] hover:underline">
+        <button type="button" onClick={() => router.back()} className="flex items-center gap-1 text-sm text-[#1a4d7a] hover:underline">
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
       </div>

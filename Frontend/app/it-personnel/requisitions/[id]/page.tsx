@@ -57,7 +57,7 @@ export default function FulfillRequisitionPage() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <button onClick={() => router.back()} className="flex items-center gap-2 text-sm text-[#1a4d7a] hover:underline">
+      <button type="button" onClick={() => router.back()} className="flex items-center gap-2 text-sm text-[#1a4d7a] hover:underline">
         <ArrowLeft className="w-4 h-4" /> Back
       </button>
 
@@ -96,11 +96,11 @@ export default function FulfillRequisitionPage() {
 
           {req.status === 'PENDING_FULFILLMENT' && !showHoldForm && (
             <div className="flex gap-3 pt-2">
-              <button onClick={handleFulfill} disabled={fulfilling} className="flex items-center gap-2 bg-green-600 text-white px-6 py-2 rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-60 transition-colors">
+              <button type="button" onClick={handleFulfill} disabled={fulfilling} className="flex items-center gap-2 bg-green-600 text-white px-6 py-2 rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-60 transition-colors">
                 <CheckCircle className="w-4 h-4" />
                 {fulfilling ? 'Processing...' : 'Mark as Fulfilled'}
               </button>
-              <button onClick={() => setShowHoldForm(true)} className="flex items-center gap-2 bg-yellow-500 text-white px-6 py-2 rounded-md text-sm font-medium hover:bg-yellow-600 transition-colors">
+              <button type="button" onClick={() => setShowHoldForm(true)} className="flex items-center gap-2 bg-yellow-500 text-white px-6 py-2 rounded-md text-sm font-medium hover:bg-yellow-600 transition-colors">
                 <AlertCircle className="w-4 h-4" /> Place on Hold
               </button>
             </div>

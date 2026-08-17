@@ -144,7 +144,7 @@ export default function UserManagementPage() {
                         <div className="flex items-center gap-2">
                           <Link href={`/admin/users/${user.id}/role`} className="text-xs text-[#1a4d7a] hover:underline font-medium">Edit Role</Link>
                           {user.isActive && (
-                            <button
+                            <button type="button"
                               onClick={() => handleDeactivate(user.id)}
                               disabled={deactivating === user.id}
                               className="text-xs text-red-600 hover:underline font-medium disabled:opacity-50"
