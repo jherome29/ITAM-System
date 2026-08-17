@@ -1,7 +1,7 @@
 import type { ActivityRow } from '@/lib/mock/dashboard.mock';
 import { StatusBadge } from './StatusBadge';
 
-export function ActivityTable({ rows, emptyMessage = 'No activity to display.' }: { rows: ActivityRow[]; emptyMessage?: string }) {
+export function ActivityTable({ rows, emptyMessage = 'No activity to display.' }: Readonly<{ rows: ActivityRow[]; emptyMessage?: string }>) {
   if (rows.length === 0) {
     return <p className="bg-slate-50 p-5 text-center text-sm text-slate-500">{emptyMessage}</p>;
   }

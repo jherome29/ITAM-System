@@ -19,7 +19,7 @@ const employeeName = 'Ana Reyes';
 
 type EmployeeSlug = 'dashboard' | 'catalogue' | 'requisitions' | 'new-requisition' | 'assigned-assets' | 'returns-incidents' | 'notifications';
 
-export function EmployeeWorkspace({ slug }: { slug: EmployeeSlug }) {
+export function EmployeeWorkspace({ slug }: Readonly<{ slug: EmployeeSlug }>) {
   if (slug === 'dashboard') return <EmployeeDashboard />;
   if (slug === 'catalogue') return <EmployeeCatalogue />;
   if (slug === 'requisitions' || slug === 'new-requisition') return <EmployeeRequisitions initialCreateOpen={slug === 'new-requisition'} />;
@@ -28,7 +28,7 @@ export function EmployeeWorkspace({ slug }: { slug: EmployeeSlug }) {
   return <EmployeeNotifications />;
 }
 
-function EmployeeHeader({ title, detail, action }: { title: string; detail: string; action?: React.ReactNode }) {
+function EmployeeHeader({ title, detail, action }: Readonly<{ title: string; detail: string; action?: React.ReactNode }>) {
   return <AdminPageHeader eyebrow="Employee Workspace" title={title} detail={detail} action={action} />;
 }
 
@@ -47,7 +47,7 @@ function EmployeeCatalogue() {
     <CenteredModal open={Boolean(selected)} title={selected ? `Request ${selected.name}` : 'Request item'} description="Complete the details below to submit this item for approval." onClose={() => setSelected(null)}>{selected && <RequisitionForm defaultItem={selected.name} defaultScope={selected.scope} onSubmit={(request) => { setRequested((current) => [...current, selected.id]); setSelected(null); setToast(`${request.item} request ${request.id} was submitted for approval.`); }} />}</CenteredModal><Toast message={toast} /></div>;
 }
 
-function EmployeeRequisitions({ initialCreateOpen = false }: { initialCreateOpen?: boolean }) {
+function EmployeeRequisitions({ initialCreateOpen = false }: Readonly<{ initialCreateOpen?: boolean }>) {
   const [requests, setRequests] = useState<MockRequisition[]>(() => requisitionMockRows.filter((request) => request.requesterId === employeeId));
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
@@ -64,11 +64,11 @@ function EmployeeRequisitions({ initialCreateOpen = false }: { initialCreateOpen
     <DetailDrawer open={Boolean(selected)} title={selected?.id ?? 'Requisition details'} onClose={() => setSelected(null)}>{selected && <RequisitionDetails request={selected} onResubmit={() => updateRequest(selected.id, { status: 'Pending Approval', remarks: undefined, lastUpdate: 'Today' }, `${selected.id} was resubmitted.`)} />}</DetailDrawer><Toast message={toast} /></div>;
 }
 
-function RequisitionForm({ defaultItem = '', defaultScope = 'ICT', onSubmit }: { defaultItem?: string; defaultScope?: MockRequisition['scope']; onSubmit: (request: MockRequisition) => void }) {
+function RequisitionForm({ defaultItem = '', defaultScope = 'ICT', onSubmit }: Readonly<{ defaultItem?: string; defaultScope?: MockRequisition['scope']; onSubmit: (request: MockRequisition) => void }>) {
   return <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); onSubmit({ id: `REQ-2026-${String(Date.now()).slice(-4)}`, requesterId: employeeId, requester: employeeName, office: 'Digital Forensics', item: String(data.get('item')), scope: String(data.get('scope')) as MockRequisition['scope'], requestType: String(data.get('requestType')) as MockRequisition['requestType'], quantity: Number(data.get('quantity')), priority: String(data.get('priority')) as MockRequisition['priority'], status: 'Pending Approval', submittedDate: new Date().toISOString().slice(0, 10), requiredDate: String(data.get('requiredDate')), approvingOfficer: 'Mila Santos', lastUpdate: 'Today', justification: String(data.get('justification')), timeline: ['Draft created', 'Submitted for approval'], attachments: String(data.get('attachment') || '') ? [String(data.get('attachment'))] : [] }); }}><Field label="Item or requirement"><input name="item" required defaultValue={defaultItem} className={inputClass} /></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Scope"><select name="scope" defaultValue={defaultScope} className={inputClass}><option value="ICT">ICT asset</option><option value="PROPERTY">Fixed property</option><option value="SUPPLY">Supply</option></select></Field><Field label="Request type"><select name="requestType" className={inputClass}><option>New</option><option>Replacement</option><option>Repair</option><option>Return</option></select></Field></div><div className="grid gap-4 sm:grid-cols-3"><Field label="Quantity"><input name="quantity" type="number" min="1" max="99" defaultValue="1" className={inputClass} /></Field><Field label="Priority"><select name="priority" className={inputClass}><option>Normal</option><option>High</option><option>Low</option></select></Field><Field label="Required date"><input name="requiredDate" required type="date" className={inputClass} /></Field></div><Field label="Business justification"><textarea name="justification" required minLength={20} className={`${inputClass} h-28 py-2`} placeholder="Explain the operational need and intended use." /></Field><Field label="Supporting attachment name (optional)"><input name="attachment" className={inputClass} placeholder="diagnostic-report.pdf" /></Field><div className="border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">Submission routes to your assigned Approving Officer. Availability and issuance are confirmed by the responsible custodian after approval.</div><PrimaryButton type="submit" icon={Send}>Submit requisition</PrimaryButton></form>;
 }
 
-function RequisitionDetails({ request, onResubmit }: { request: MockRequisition; onResubmit: () => void }) {
+function RequisitionDetails({ request, onResubmit }: Readonly<{ request: MockRequisition; onResubmit: () => void }>) {
   return <div className="space-y-5"><div className="flex items-start justify-between gap-3"><div><p className="text-lg font-bold text-slate-950">{request.item}</p><p className="mt-1 text-xs text-slate-500">Submitted {request.submittedDate}</p></div><StatusChip status={request.status} /></div><div className="grid grid-cols-2 gap-3">{[['Type', `${request.requestType} - ${request.scope}`], ['Quantity', String(request.quantity)], ['Required date', request.requiredDate], ['Approving officer', request.approvingOfficer]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>)}</div><div><p className="text-xs font-bold text-slate-500">Justification</p><p className="mt-2 text-sm text-slate-700">{request.justification}</p></div>{request.remarks && <div className="border border-amber-200 bg-amber-50 p-3"><p className="text-xs font-bold text-amber-900">Approver remarks</p><p className="mt-1 text-sm text-amber-800">{request.remarks}</p></div>}<Panel title="Progress Timeline"><div className="divide-y divide-slate-100 px-4">{request.timeline.map((item, index) => <div key={`${item}-${index}`} className="flex items-center gap-3 py-3"><span className="grid h-6 w-6 place-items-center rounded-full bg-blue-50 text-xs font-bold text-blue-700">{index + 1}</span><span className="text-sm text-slate-700">{item}</span></div>)}</div></Panel>{request.status === 'Returned for Revision' && <PrimaryButton onClick={onResubmit}>Resubmit for approval</PrimaryButton>}</div>;
 }
 
@@ -81,10 +81,20 @@ function EmployeeAssignedAssets() {
   return <div className="space-y-4"><EmployeeHeader title="My Assigned Assets" detail="Review property issued to you, confirm accountability, and initiate return, damage, or repair workflows." />
     <div className="grid gap-3 sm:grid-cols-3"><MetricCard label="Assigned to me" value={String(assets.length)} detail="Current accountability" tone="blue" icon={PackageCheck} /><MetricCard label="Pending acknowledgment" value={String(assets.filter((item) => item.acknowledgmentStatus === 'Pending').length)} detail="Confirm receipt and condition" tone="red" icon={CheckCircle2} /><MetricCard label="Return due" value={String(assets.filter((item) => item.returnDate).length)} detail="Review expected return dates" tone="amber" icon={CalendarClock} /></div>
     <div className="grid gap-4 lg:grid-cols-2">{assets.map((asset) => <article key={asset.id} className="border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-base font-bold text-slate-950">{asset.name}</p><p className="mt-1 text-xs text-slate-500">{asset.id} - {asset.serialNumber}</p></div><StatusChip status={asset.condition} /></div><dl className="mt-4 grid grid-cols-2 gap-3 text-sm">{[['Issued date', asset.issuedDate ?? '-'], ['Expected return', asset.returnDate ?? 'No fixed date'], ['Division', 'Digital Forensics'], ['Location', asset.location], ['Status', asset.status], ['Acknowledgment', asset.acknowledgmentStatus]].map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 font-semibold text-slate-800">{value}</dd></div>)}</dl><div className="mt-4 flex flex-wrap gap-2">{asset.acknowledgmentStatus === 'Pending' && <PrimaryButton onClick={() => openAction(asset, 'Acknowledge')}>Acknowledge receipt</PrimaryButton>}<SecondaryButton onClick={() => openAction(asset, 'Return')}>Request return</SecondaryButton><SecondaryButton onClick={() => openAction(asset, 'Repair')}>Request repair</SecondaryButton><SecondaryButton onClick={() => openAction(asset, 'Damage')}>Report damage</SecondaryButton></div></article>)}</div>
-    <DetailDrawer open={Boolean(selected && action)} title={`${action ?? ''} - ${selected?.name ?? ''}`} onClose={() => { setSelected(null); setAction(null); }}>{selected && action && <AssetActionForm asset={selected} action={action} onSubmit={() => { if (action === 'Acknowledge') setAssets((current) => current.map((asset) => asset.id === selected.id ? { ...asset, acknowledgmentStatus: 'Acknowledged' } : asset)); setToast(`${action} request recorded for ${selected.name}.`); setSelected(null); setAction(null); }} />}</DetailDrawer><Toast message={toast} /></div>;
+    <DetailDrawer open={Boolean(selected && action)} title={`${action ?? ''} - ${selected?.name ?? ''}`} onClose={() => { setSelected(null); setAction(null); }}>{selected && action && <AssetActionForm asset={selected} action={action} onSubmit={() => {
+  // Only Acknowledge updates asset state in this mock — Return/Damage/Repair
+  // always show the toast and close, matching the rest of this prototype's
+  // pattern. Braced so the conditional scope reads unambiguously.
+  if (action === 'Acknowledge') {
+    setAssets((current) => current.map((asset) => (asset.id === selected.id ? { ...asset, acknowledgmentStatus: 'Acknowledged' } : asset)));
+  }
+  setToast(`${action} request recorded for ${selected.name}.`);
+  setSelected(null);
+  setAction(null);
+}} />}</DetailDrawer><Toast message={toast} /></div>;
 }
 
-function AssetActionForm({ asset, action, onSubmit }: { asset: MockAsset; action: 'Acknowledge' | 'Return' | 'Damage' | 'Repair'; onSubmit: () => void }) {
+function AssetActionForm({ asset, action, onSubmit }: Readonly<{ asset: MockAsset; action: 'Acknowledge' | 'Return' | 'Damage' | 'Repair'; onSubmit: () => void }>) {
   return <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}><div className="border border-slate-200 p-3 text-sm"><p className="font-bold">{asset.id} - {asset.name}</p><p className="mt-1 text-xs text-slate-500">Serial {asset.serialNumber} - issued {asset.issuedDate}</p></div>{action === 'Acknowledge' ? <><label className="flex items-start gap-3 text-sm"><input required type="checkbox" className="mt-1 h-4 w-4 accent-blue-700" /><span>I confirm that I received this asset and that its identifying information and recorded condition are accurate.</span></label><Field label="Condition upon receipt"><select className={inputClass}><option>Serviceable</option><option>Serviceable with remarks</option></select></Field></> : <><Field label={action === 'Return' ? 'Preferred return date' : 'Date observed'}><input required type="date" className={inputClass} /></Field><Field label="Details and justification"><textarea required minLength={15} className={`${inputClass} h-28 py-2`} placeholder="Describe the condition, issue, or reason." /></Field><Field label="Supporting attachment name (optional)"><input className={inputClass} placeholder="photo-or-report.jpg" /></Field></>}<PrimaryButton type="submit">Submit {action.toLowerCase()}</PrimaryButton></form>;
 }
 
@@ -114,7 +124,7 @@ function EmployeeNotifications() {
   </div>;
 }
 
-export function EmployeeRequisitionDetail({ id }: { id: string }) {
+export function EmployeeRequisitionDetail({ id }: Readonly<{ id: string }>) {
   const [request, setRequest] = useState(() => requisitionMockRows.find((item) => item.id === id && item.requesterId === employeeId));
   if (!request) return <div className="space-y-4"><EmployeeHeader title="Requisition not found" detail="This request does not exist or is not assigned to the current employee." /><Link href="/employee/requisitions" className="text-sm font-bold text-blue-700">Return to My Requisitions</Link></div>;
   return <div className="mx-auto max-w-3xl space-y-4"><EmployeeHeader title={request.id} detail="Your requisition details and approval progress." /><Panel title={request.item} action={<StatusChip status={request.status} />}><div className="p-5"><RequisitionDetails request={request} onResubmit={() => setRequest((current) => current ? { ...current, status: 'Pending Approval', remarks: undefined, lastUpdate: 'Today', timeline: [...current.timeline, 'Revised and resubmitted'] } : current)} /></div></Panel><Link href="/employee/requisitions" className="inline-flex text-sm font-bold text-blue-700">Back to My Requisitions</Link></div>;

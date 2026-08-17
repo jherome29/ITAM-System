@@ -7,7 +7,7 @@ const identitySlugs = ['users', 'roles', 'access-reviews', 'organizational-units
 const governanceSlugs = ['approval-configuration', 'custodian-assignments'] as const;
 const platformSlugs = ['reference-data', 'configuration', 'technical-logs', 'security', 'audit'] as const;
 
-export function AdminWorkspace({ slug }: { slug: string }) {
+export function AdminWorkspace({ slug }: Readonly<{ slug: string }>) {
   if (slug === 'dashboard') return <AdminDashboard />;
   if (identitySlugs.includes(slug as (typeof identitySlugs)[number])) {
     return <AdminIdentityPages slug={slug as (typeof identitySlugs)[number]} />;

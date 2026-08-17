@@ -25,7 +25,7 @@ function usefulLifePercent(asset: LaptopAssetRecord) {
   return Math.min(100, Math.round((ageYears(asset.acquisitionDate) / asset.usefulLifeYears) * 100));
 }
 
-export function LaptopAssetDetail({ assetId }: { assetId?: string }) {
+export function LaptopAssetDetail({ assetId }: Readonly<{ assetId?: string }>) {
   const asset = findLaptop(assetId);
   const [tab, setTab] = useState('Overview');
   const [toast, setToast] = useState('');
@@ -165,7 +165,7 @@ export function LaptopAssetDetail({ assetId }: { assetId?: string }) {
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
+function SummaryCard({ label, value }: Readonly<{ label: string; value: string }>) {
   return (
     <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</p>
@@ -174,7 +174,7 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+function Info({ label, value }: Readonly<{ label: string; value: string }>) {
   return (
     <div className="rounded-lg bg-slate-50 p-3">
       <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</p>

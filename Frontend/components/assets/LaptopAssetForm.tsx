@@ -87,7 +87,7 @@ const defaultValues: LaptopAssetFormValues = {
   attachments: [],
 };
 
-export function LaptopAssetForm({ onSaved }: { onSaved?: (assetId: string) => void }) {
+export function LaptopAssetForm({ onSaved }: Readonly<{ onSaved?: (assetId: string) => void }>) {
   const [sectionIndex, setSectionIndex] = useState(0);
   const [toast, setToast] = useState('');
   const {
@@ -337,7 +337,7 @@ function Select({ label, children, ...props }: SelectProps) {
   );
 }
 
-function Summary({ label, value }: { label: string; value: string }) {
+function Summary({ label, value }: Readonly<{ label: string; value: string }>) {
   return (
     <div>
       <p className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</p>

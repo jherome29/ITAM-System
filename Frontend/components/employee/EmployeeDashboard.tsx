@@ -146,11 +146,17 @@ const tones = {
   red: 'border-red-200 bg-red-50 text-red-700',
 };
 
-function AttentionRow({ icon: Icon, title, detail, meta, href, action, tone }: { icon: LucideIcon; title: string; detail: string; meta: string; href: string; action: string; tone: 'amber' | 'red' }) {
+function AttentionRow({ icon: Icon, title, detail, meta, href, action, tone }: Readonly<{ icon: LucideIcon; title: string; detail: string; meta: string; href: string; action: string; tone: 'amber' | 'red' }>) {
   return <article className="grid min-w-0 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-[0_2px_8px_rgba(15,23,42,0.05)] sm:grid-cols-[auto_minmax(0,1fr)]"><span className={`grid h-10 w-10 place-items-center rounded-md border ${tones[tone]}`}><Icon className="h-4 w-4" /></span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-bold text-slate-950">{title}</p><span className="text-xs font-semibold text-slate-500">{meta}</span></div><p className="mt-1 text-xs leading-5 text-slate-600">{detail}</p><Link href={href} className="mt-2 inline-flex min-h-8 items-center gap-1.5 text-sm font-bold text-blue-700 hover:text-blue-900">{action}<ArrowRight className="h-4 w-4" /></Link></div></article>;
 }
 
-function SummaryMetric({ href, label, value, detail, icon: Icon, tone }: { href: string; label: string; value: number; detail: string; icon: LucideIcon; tone: 'blue' | 'amber' | 'green' }) {
+function summaryToneClass(tone: 'blue' | 'amber' | 'green') {
+  if (tone === 'amber') return 'text-amber-700';
+  if (tone === 'green') return 'text-emerald-700';
+  return 'text-blue-700';
+}
+
+function SummaryMetric({ href, label, value, detail, icon: Icon, tone }: Readonly<{ href: string; label: string; value: number; detail: string; icon: LucideIcon; tone: 'blue' | 'amber' | 'green' }>) {
   return (
     <Link href={href} className="group flex min-h-[104px] min-w-0 items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-[0_3px_12px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
       <span className={`grid h-12 w-12 flex-none place-items-center rounded-lg border ${tones[tone]}`}>
@@ -160,17 +166,17 @@ function SummaryMetric({ href, label, value, detail, icon: Icon, tone }: { href:
         <span className="block truncate text-xs font-semibold text-slate-500">{label}</span>
         <span className="mt-1.5 flex min-w-0 items-baseline gap-2">
           <span className="text-[26px] font-extrabold leading-none text-slate-950">{value}</span>
-          <span className={`truncate text-xs font-bold ${tone === 'amber' ? 'text-amber-700' : tone === 'green' ? 'text-emerald-700' : 'text-blue-700'}`}>{detail}</span>
+          <span className={`truncate text-xs font-bold ${summaryToneClass(tone)}`}>{detail}</span>
         </span>
       </span>
     </Link>
   );
 }
 
-function DashboardPanel({ title, detail, action, children }: { title: string; detail?: string; action?: React.ReactNode; children: React.ReactNode }) {
+function DashboardPanel({ title, detail, action, children }: Readonly<{ title: string; detail?: string; action?: React.ReactNode; children: React.ReactNode }>) {
   return <section className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_3px_12px_rgba(15,23,42,0.05)]"><div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-50/70 px-4 py-4"><div><h2 className="text-[15px] font-extrabold text-slate-950">{title}</h2>{detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}</div>{action}</div>{children}</section>;
 }
 
-function QuickAction({ href, icon: Icon, title, detail }: { href: string; icon: LucideIcon; title: string; detail: string }) {
+function QuickAction({ href, icon: Icon, title, detail }: Readonly<{ href: string; icon: LucideIcon; title: string; detail: string }>) {
   return <Link href={href} className="group flex min-h-[82px] items-center gap-3 border-b border-slate-100 p-4 transition last:border-b-0 hover:bg-slate-50 sm:border-r sm:border-b-0 sm:last:border-r-0"><span className="grid h-10 w-10 flex-none place-items-center rounded-lg bg-blue-50 text-blue-700"><Icon className="h-[18px] w-[18px]" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-slate-950 group-hover:text-blue-700">{title}</span><span className="mt-0.5 block text-xs leading-5 text-slate-500">{detail}</span></span><ChevronRight className="h-4 w-4 flex-none text-slate-300 group-hover:text-blue-600" /></Link>;
 }

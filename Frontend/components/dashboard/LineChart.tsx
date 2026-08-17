@@ -11,7 +11,7 @@ function pointsFor(values: number[], width: number, height: number) {
     .join(' ');
 }
 
-export function LineChart({ data }: { data: TrendPoint[] }) {
+export function LineChart({ data }: Readonly<{ data: TrendPoint[] }>) {
   const width = 720;
   const height = 160;
   const requisitions = data.map((item) => item.requisitions);

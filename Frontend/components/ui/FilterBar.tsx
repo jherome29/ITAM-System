@@ -4,11 +4,11 @@ export function FilterBar({
   search,
   onSearch,
   filters,
-}: {
+}: Readonly<{
   search: string;
   onSearch: (value: string) => void;
   filters: Array<{ label: string; value: string; options: string[]; onChange: (value: string) => void }>;
-}) {
+}>) {
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
       <SearchInput value={search} onChange={onSearch} />

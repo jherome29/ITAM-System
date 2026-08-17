@@ -1,6 +1,6 @@
 import { Search } from 'lucide-react';
 
-export function SearchInput({ value, onChange, placeholder = 'Search records' }: { value: string; onChange: (value: string) => void; placeholder?: string }) {
+export function SearchInput({ value, onChange, placeholder = 'Search records' }: Readonly<{ value: string; onChange: (value: string) => void; placeholder?: string }>) {
   return (
     <label className="relative block min-w-60">
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />

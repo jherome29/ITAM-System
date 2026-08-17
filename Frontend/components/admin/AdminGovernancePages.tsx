@@ -7,7 +7,7 @@ import { Toast } from '@/components/ui/Toast';
 import { approvalWorkflows, custodianCoverage } from '@/lib/mock/admin.mock';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
 
-export function AdminGovernancePages({ slug }: { slug: 'approval-configuration' | 'custodian-assignments' }) {
+export function AdminGovernancePages({ slug }: Readonly<{ slug: 'approval-configuration' | 'custodian-assignments' }>) {
   return slug === 'approval-configuration' ? <ApprovalWorkflowsPage /> : <CustodianCoveragePage />;
 }
 

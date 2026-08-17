@@ -11,7 +11,13 @@ import { ProposedUserRole, proposedRoleLabels } from '@/lib/roles/proposed-roles
 import { Plus } from 'lucide-react';
 import Link from 'next/link';
 
-export function RoleDashboard({ role }: { role: ProposedUserRole }) {
+function secondaryActivityTitle(isEmployee: boolean, isReadOnly: boolean) {
+  if (isEmployee) return 'Upcoming Actions';
+  if (isReadOnly) return 'Read-Only Audit Highlights';
+  return 'Awaiting Approval';
+}
+
+export function RoleDashboard({ role }: Readonly<{ role: ProposedUserRole }>) {
   const data = getDashboardMockData(role);
   const isReadOnly = role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER;
   const isEmployee = role === ProposedUserRole.EMPLOYEE;
@@ -56,7 +62,7 @@ export function RoleDashboard({ role }: { role: ProposedUserRole }) {
         <ChartCard title="Recent Requisitions" action={<span className="text-xs font-bold text-blue-700">View All</span>}>
           <ActivityTable rows={data.recentRequisitions} />
         </ChartCard>
-        <ChartCard title={isEmployee ? 'Upcoming Actions' : isReadOnly ? 'Read-Only Audit Highlights' : 'Awaiting Approval'}>
+        <ChartCard title={secondaryActivityTitle(isEmployee, isReadOnly)}>
           <ActivityTable rows={isReadOnly ? data.auditActivity : data.awaitingApproval} />
         </ChartCard>
       </div>

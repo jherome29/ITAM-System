@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { Activity, Archive, CheckCircle2, Clock3, Database, Download, FileClock, KeyRound, LockKeyhole, Plus, RefreshCw, Save, Server, ShieldCheck } from 'lucide-react';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -23,7 +23,7 @@ function downloadCsv(filename: string, rows: Array<Record<string, string | numbe
   URL.revokeObjectURL(url);
 }
 
-export function AdminPlatformPages({ slug }: { slug: PlatformSlug }) {
+export function AdminPlatformPages({ slug }: Readonly<{ slug: PlatformSlug }>) {
   if (slug === 'reference-data') return <MasterDataPage />;
   if (slug === 'configuration') return <SystemSettingsPage />;
   if (slug === 'technical-logs') return <SystemHealthPage />;
@@ -86,8 +86,9 @@ function SecurityPoliciesPage() {
     <Panel title="Active Administrative Sessions" detail="Current privileged sessions available for revocation"><div className="divide-y divide-slate-100"><div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-bold">Ricardo Torres - Master Administrator</p><p className="mt-1 text-xs text-slate-500">Current session - 10.10.2.14 - started today at 8:42 PM</p></div><StatusChip status="Active" /></div><div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-bold">System Administration workstation</p><p className="mt-1 text-xs text-slate-500">Previous token invalidated by newer login</p></div><StatusChip status="Terminated" /></div></div></Panel><Toast message={toast} /></div>;
 }
 
-function PolicyToggle({ label, detail, checked = false }: { label: string; detail: string; checked?: boolean }) {
-  return <label className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4"><span><span className="block text-sm font-bold text-slate-900">{label}</span><span className="mt-1 block text-xs text-slate-500">{detail}</span></span><input type="checkbox" defaultChecked={checked} className="mt-1 h-5 w-5 flex-none accent-blue-700" /></label>;
+function PolicyToggle({ label, detail, checked = false }: Readonly<{ label: string; detail: string; checked?: boolean }>) {
+  const inputId = useId();
+  return <label htmlFor={inputId} className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4"><span><span className="block text-sm font-bold text-slate-900">{label}</span><span className="mt-1 block text-xs text-slate-500">{detail}</span></span><input id={inputId} type="checkbox" defaultChecked={checked} aria-label={label} className="mt-1 h-5 w-5 flex-none accent-blue-700" /></label>;
 }
 
 function AuditLogPage() {

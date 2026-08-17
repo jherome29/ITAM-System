@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
 
-export function DetailDrawer({ open, title, children, onClose }: { open: boolean; title: string; children: ReactNode; onClose: () => void }) {
+export function DetailDrawer({ open, title, children, onClose }: Readonly<{ open: boolean; title: string; children: ReactNode; onClose: () => void }>) {
   if (!open) return null;
 
   return (

@@ -329,7 +329,7 @@ export default function FormsPage() {
             <Clock className="w-5 h-5 text-[#1a4d7a]" />
             <h2 className="text-base font-semibold text-[#1a4d7a]">Previously Generated Forms</h2>
           </div>
-          <button
+          <button type="button"
             onClick={handleRefreshHistory}
             className="flex items-center gap-1.5 text-xs text-[#1a4d7a] hover:text-[#143d61] transition-colors"
           >
@@ -361,7 +361,7 @@ export default function FormsPage() {
                     )}
                   </p>
                 </div>
-                <button
+                <button type="button"
                   onClick={() => handleRedownload(form)}
                   disabled={downloadingId === form.id || form.filePath !== 'stored'}
                   title={form.filePath !== 'stored' ? 'PDF not stored — regenerate from the form above' : 'Download stored PDF'}

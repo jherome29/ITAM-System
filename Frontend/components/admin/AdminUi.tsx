@@ -19,12 +19,12 @@ export function AdminPageHeader({
   title,
   detail,
   action,
-}: {
+}: Readonly<{
   eyebrow?: string;
   title: string;
   detail: string;
   action?: ReactNode;
-}) {
+}>) {
   return (
     <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
@@ -58,7 +58,7 @@ export function PrimaryButton({
   );
 }
 
-export function SecondaryButton({ icon: Icon, children, onClick }: { icon?: LucideIcon; children: ReactNode; onClick?: () => void }) {
+export function SecondaryButton({ icon: Icon, children, onClick }: Readonly<{ icon?: LucideIcon; children: ReactNode; onClick?: () => void }>) {
   return (
     <button type="button" onClick={onClick} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
       {Icon && <Icon className="h-4 w-4" />}
@@ -67,7 +67,7 @@ export function SecondaryButton({ icon: Icon, children, onClick }: { icon?: Luci
   );
 }
 
-export function MetricCard({ label, value, detail, tone, icon: Icon }: { label: string; value: string; detail: string; tone: AdminTone; icon: LucideIcon }) {
+export function MetricCard({ label, value, detail, tone, icon: Icon }: Readonly<{ label: string; value: string; detail: string; tone: AdminTone; icon: LucideIcon }>) {
   return (
     <article className="rounded-lg border border-slate-200/90 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
       <div className="flex items-start justify-between gap-3">
@@ -82,7 +82,7 @@ export function MetricCard({ label, value, detail, tone, icon: Icon }: { label: 
   );
 }
 
-export function Panel({ title, detail, action, children, className = '' }: { title: string; detail?: string; action?: ReactNode; children: ReactNode; className?: string }) {
+export function Panel({ title, detail, action, children, className = '' }: Readonly<{ title: string; detail?: string; action?: ReactNode; children: ReactNode; className?: string }>) {
   return (
     <section className={`min-w-0 overflow-hidden rounded-lg border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)] ${className}`}>
       <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -97,8 +97,15 @@ export function Panel({ title, detail, action, children, className = '' }: { tit
   );
 }
 
-export function StatusChip({ status, tone }: { status: string; tone?: AdminTone }) {
-  const inferred: AdminTone = tone ?? (/active|success|healthy|current|published|covered|completed|enabled/i.test(status) ? 'green' : /error|locked|overdue|gap|denied|open/i.test(status) ? 'red' : /warning|review|risk|due|draft|dormant|not enrolled/i.test(status) ? 'amber' : 'slate');
+function inferToneFromStatus(status: string): AdminTone {
+  if (/active|success|healthy|current|published|covered|completed|enabled/i.test(status)) return 'green';
+  if (/error|locked|overdue|gap|denied|open/i.test(status)) return 'red';
+  if (/warning|review|risk|due|draft|dormant|not enrolled/i.test(status)) return 'amber';
+  return 'slate';
+}
+
+export function StatusChip({ status, tone }: Readonly<{ status: string; tone?: AdminTone }>) {
+  const inferred: AdminTone = tone ?? inferToneFromStatus(status);
   return <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${toneStyles[inferred]}`}>{status}</span>;
 }
 
@@ -110,7 +117,7 @@ export function SearchToolbar({
   filterOptions = ['All'],
   onFilterChange,
   children,
-}: {
+}: Readonly<{
   value: string;
   onChange: (value: string) => void;
   filterLabel?: string;
@@ -118,7 +125,7 @@ export function SearchToolbar({
   filterOptions?: string[];
   onFilterChange?: (value: string) => void;
   children?: ReactNode;
-}) {
+}>) {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-slate-200/90 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)] sm:flex-row sm:items-center">
       <label className="relative min-w-0 flex-1 sm:max-w-sm">
@@ -138,7 +145,7 @@ export function SearchToolbar({
   );
 }
 
-export function ActionMenu({ actions }: { actions: Array<{ label: string; onClick: () => void; danger?: boolean }> }) {
+export function ActionMenu({ actions }: Readonly<{ actions: Array<{ label: string; onClick: () => void; danger?: boolean }> }>) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -168,14 +175,14 @@ export function ActionMenu({ actions }: { actions: Array<{ label: string; onClic
   );
 }
 
-export function TableWrap({ children }: { children: ReactNode }) {
+export function TableWrap({ children }: Readonly<{ children: ReactNode }>) {
   return <div className="w-full max-w-full overflow-x-auto">{children}</div>;
 }
 
 export const thClass = 'whitespace-nowrap bg-slate-50 px-4 py-3 text-left text-[11px] font-bold uppercase text-slate-500';
 export const tdClass = 'whitespace-nowrap border-t border-slate-100 px-4 py-3 text-sm text-slate-700';
 
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({ label, children }: Readonly<{ label: string; children: ReactNode }>) {
   return <label className="block"><span className="mb-1.5 block text-xs font-bold text-slate-600">{label}</span>{children}</label>;
 }
 

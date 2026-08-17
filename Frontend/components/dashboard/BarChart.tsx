@@ -1,6 +1,6 @@
 import type { CategoryValue } from '@/lib/mock/dashboard.mock';
 
-export function BarChart({ data }: { data: CategoryValue[] }) {
+export function BarChart({ data }: Readonly<{ data: CategoryValue[] }>) {
   const max = Math.max(...data.map((item) => item.value), 1);
 
   return (

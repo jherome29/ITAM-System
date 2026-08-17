@@ -1,6 +1,6 @@
 import type { ConditionSlice } from '@/lib/mock/dashboard.mock';
 
-export function DonutChart({ data }: { data: ConditionSlice[] }) {
+export function DonutChart({ data }: Readonly<{ data: ConditionSlice[] }>) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
   const slices = data.map((item, index) => {
     const previous = data.slice(0, index).reduce((sum, slice) => sum + (slice.value / total) * 75, 0);

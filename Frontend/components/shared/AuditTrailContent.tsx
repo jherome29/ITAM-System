@@ -60,7 +60,7 @@ export function AuditTrailContent() {
     <div className="space-y-6">
       <PageHeader
         title="Audit Trail"
-        action={<button onClick={handleExport} className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors"><Download className="w-4 h-4" /> Export CSV</button>}
+        action={<button type="button" onClick={handleExport} className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors"><Download className="w-4 h-4" /> Export CSV</button>}
       />
       <div className="bg-white rounded-lg shadow-sm border border-blue-200">
         <div className="p-5 border-b border-blue-200 bg-blue-50 flex items-center gap-2">
@@ -123,9 +123,9 @@ export function AuditTrailContent() {
           </div>
         )}
         <div className="p-4 border-t border-gray-100 flex items-center justify-between">
-          <button onClick={() => { setLoading(true); setPage((p) => Math.max(1, p - 1)); }} disabled={page === 1 || loading} className="text-sm text-[#1a4d7a] hover:underline disabled:text-gray-400 disabled:no-underline">← Previous</button>
+          <button type="button" onClick={() => { setLoading(true); setPage((p) => Math.max(1, p - 1)); }} disabled={page === 1 || loading} className="text-sm text-[#1a4d7a] hover:underline disabled:text-gray-400 disabled:no-underline">← Previous</button>
           <span className="text-sm text-gray-500">Page {page}</span>
-          <button onClick={() => { setLoading(true); setPage((p) => p + 1); }} disabled={filtered.length < PAGE_SIZE || loading} className="text-sm text-[#1a4d7a] hover:underline disabled:text-gray-400 disabled:no-underline">Next →</button>
+          <button type="button" onClick={() => { setLoading(true); setPage((p) => p + 1); }} disabled={filtered.length < PAGE_SIZE || loading} className="text-sm text-[#1a4d7a] hover:underline disabled:text-gray-400 disabled:no-underline">Next →</button>
         </div>
       </div>
     </div>

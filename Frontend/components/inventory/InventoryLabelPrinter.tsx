@@ -5,38 +5,38 @@ import { Printer } from 'lucide-react';
 import type { MockAsset } from '@/lib/mock/assets.mock';
 
 function hashText(text: string) {
-  return text.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return text.split('').reduce((sum, char) => sum + (char.codePointAt(0) ?? 0), 0);
 }
 
-function QrPreview({ value }: { value: string }) {
+function QrPreview({ value }: Readonly<{ value: string }>) {
   const seed = hashText(value);
   const cells = Array.from({ length: 49 }, (_, index) => (seed + index * 7) % 5 !== 0);
 
   return (
     <div id="inventory-print-code" className="grid h-28 w-28 grid-cols-7 gap-1 rounded-md border border-slate-300 bg-white p-2">
       {cells.map((filled, index) => (
-        <span key={index} className={filled ? 'rounded-sm bg-slate-950' : 'rounded-sm bg-white'} />
+        <span key={`cell-${seed}-${index}`} className={filled ? 'rounded-sm bg-slate-950' : 'rounded-sm bg-white'} />
       ))}
     </div>
   );
 }
 
-function BarcodePreview({ value }: { value: string }) {
+function BarcodePreview({ value }: Readonly<{ value: string }>) {
   const bars = useMemo(
-    () => value.split('').flatMap((char, index) => [char.charCodeAt(0) % 4 + 1, (index % 3) + 1]),
+    () => value.split('').flatMap((char, index) => [((char.codePointAt(0) ?? 0) % 4) + 1, (index % 3) + 1]),
     [value],
   );
 
   return (
     <div id="inventory-print-code" className="flex h-24 w-56 items-end gap-0.5 rounded-md border border-slate-300 bg-white p-3">
       {bars.map((width, index) => (
-        <span key={index} className="h-full bg-slate-950" style={{ width: `${width}px` }} />
+        <span key={`bar-${index}-${width}`} className="h-full bg-slate-950" style={{ width: `${width}px` }} />
       ))}
     </div>
   );
 }
 
-export function InventoryLabelPrinter({ assets }: { assets: MockAsset[] }) {
+export function InventoryLabelPrinter({ assets }: Readonly<{ assets: MockAsset[] }>) {
   const [assetId, setAssetId] = useState(assets[0]?.id ?? '');
   const [labelType, setLabelType] = useState<'qr' | 'barcode'>('qr');
   const selected = assets.find((asset) => asset.id === assetId) ?? assets[0];
@@ -88,7 +88,7 @@ export function InventoryLabelPrinter({ assets }: { assets: MockAsset[] }) {
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_360px]">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-sm font-semibold text-slate-700">
-            Asset
+            <span>Asset</span>
             <select
               value={assetId}
               onChange={(event) => setAssetId(event.target.value)}
@@ -102,7 +102,7 @@ export function InventoryLabelPrinter({ assets }: { assets: MockAsset[] }) {
             </select>
           </label>
           <label className="text-sm font-semibold text-slate-700">
-            Label type
+            <span>Label type</span>
             <select
               value={labelType}
               onChange={(event) => setLabelType(event.target.value as 'qr' | 'barcode')}

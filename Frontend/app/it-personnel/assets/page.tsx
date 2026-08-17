@@ -119,7 +119,7 @@ export default function AssetsInventoryPage() {
 
         {totalPages > 1 && (
           <div className="flex items-center justify-center gap-3 p-4 border-t border-gray-100">
-            <button
+            <button type="button"
               onClick={() => { setLoading(true); setPage((p) => Math.max(1, p - 1)); }}
               disabled={page === 1}
               className="px-4 py-1.5 rounded-md border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -127,7 +127,7 @@ export default function AssetsInventoryPage() {
               ← Prev
             </button>
             <span className="text-sm text-gray-500">Page {page} of {totalPages}</span>
-            <button
+            <button type="button"
               onClick={() => { setLoading(true); setPage((p) => Math.min(totalPages, p + 1)); }}
               disabled={page === totalPages}
               className="px-4 py-1.5 rounded-md border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"

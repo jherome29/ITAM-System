@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { ErrorState } from '@/components/states/ErrorState';
 import type { ProposedUserRole } from '@/lib/roles/proposed-roles';
 
-export function RoleRouteGuard({ allowed, role, children }: { allowed: ProposedUserRole[]; role: ProposedUserRole; children: ReactNode }) {
+export function RoleRouteGuard({ allowed, role, children }: Readonly<{ allowed: ProposedUserRole[]; role: ProposedUserRole; children: ReactNode }>) {
   // Frontend-only prototype.
   // Backend authorization and persistence will be implemented in a later phase.
   if (!allowed.includes(role)) {

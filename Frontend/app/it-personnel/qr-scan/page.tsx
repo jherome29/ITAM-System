@@ -100,7 +100,7 @@ export default function QrScanPage() {
               </div>
             </div>
             <div className="p-4 border-t border-gray-100">
-              <button
+              <button type="button"
                 onClick={() => router.push(`/it-personnel/assets/${result.id}`)}
                 className="w-full py-2 bg-[#1a4d7a] text-white rounded-md text-sm font-medium hover:bg-[#143d61] transition-colors"
               >

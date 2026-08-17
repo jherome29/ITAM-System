@@ -48,7 +48,7 @@ export const attachmentSchema = z.object({
   mockUrl: z.string().optional(),
 });
 
-export const laptopAssetSchema = z
+const laptopAssetBaseSchema = z
   .object({
     assetSubtype: z.string(),
     assetId: z.string().optional(),
@@ -134,38 +134,57 @@ export const laptopAssetSchema = z
     dataSanitizationStatus: z.enum(['Not Required', 'Pending', 'Completed']).optional(),
     remarks: z.string().optional(),
     attachments: z.array(attachmentSchema),
-  })
-  .superRefine((value, ctx) => {
-    if (!value.serialNumber && !value.serviceTag) {
-      ctx.addIssue({ code: 'custom', path: ['serialNumber'], message: 'Serial number or service tag is required.' });
-    }
-    if (value.serialNumber && laptopMockRows.some((row) => row.serialNumber === value.serialNumber)) {
-      ctx.addIssue({ code: 'custom', path: ['serialNumber'], message: 'Serial number must be unique in mock data.' });
-    }
-    if (laptopMockRows.some((row) => row.propertyNumber === value.propertyNumber)) {
-      ctx.addIssue({ code: 'custom', path: ['propertyNumber'], message: 'Property number must be unique in mock data.' });
-    }
-    if (value.manufactureYear && value.manufactureYear > currentYear) {
-      ctx.addIssue({ code: 'custom', path: ['manufactureYear'], message: 'Manufacture year cannot be in the future.' });
-    }
-    if (value.productReleaseYear && value.productReleaseYear > currentYear) {
-      ctx.addIssue({ code: 'custom', path: ['productReleaseYear'], message: 'Product release year cannot be in the future.' });
-    }
-    if (value.manufactureDate && value.acquisitionDate && value.acquisitionDate < value.manufactureDate) {
-      ctx.addIssue({ code: 'custom', path: ['acquisitionDate'], message: 'Acquisition date cannot be earlier than manufacture date.' });
-    }
-    if (value.warrantyStartDate && value.warrantyExpiryDate && value.warrantyExpiryDate < value.warrantyStartDate) {
-      ctx.addIssue({ code: 'custom', path: ['warrantyExpiryDate'], message: 'Warranty expiry cannot be earlier than warranty start.' });
-    }
-    if (value.macAddress && !isMacAddress(value.macAddress)) {
-      ctx.addIssue({ code: 'custom', path: ['macAddress'], message: 'MAC address must use format AA:BB:CC:DD:EE:FF.' });
-    }
-    if (value.status === 'Issued' && !value.accountableEmployeeId) {
-      ctx.addIssue({ code: 'custom', path: ['accountableEmployeeId'], message: 'Issued assets require an accountable employee.' });
-    }
-    if (value.status === 'Available' && value.accountableEmployeeId) {
-      ctx.addIssue({ code: 'custom', path: ['accountableEmployeeId'], message: 'Available assets cannot have an accountable employee.' });
-    }
   });
+
+type LaptopAssetBaseValues = z.infer<typeof laptopAssetBaseSchema>;
+
+// Each helper below owns one independent validation concern — split out of a
+// single superRefine to keep cognitive complexity low (typescript:S3776).
+// None of these depend on each other; order doesn't matter.
+
+function validateIdentifiers(value: LaptopAssetBaseValues, ctx: z.RefinementCtx) {
+  if (!value.serialNumber && !value.serviceTag) {
+    ctx.addIssue({ code: 'custom', path: ['serialNumber'], message: 'Serial number or service tag is required.' });
+  }
+  if (value.serialNumber && laptopMockRows.some((row) => row.serialNumber === value.serialNumber)) {
+    ctx.addIssue({ code: 'custom', path: ['serialNumber'], message: 'Serial number must be unique in mock data.' });
+  }
+  if (laptopMockRows.some((row) => row.propertyNumber === value.propertyNumber)) {
+    ctx.addIssue({ code: 'custom', path: ['propertyNumber'], message: 'Property number must be unique in mock data.' });
+  }
+}
+
+function validateDates(value: LaptopAssetBaseValues, ctx: z.RefinementCtx) {
+  if (value.manufactureYear && value.manufactureYear > currentYear) {
+    ctx.addIssue({ code: 'custom', path: ['manufactureYear'], message: 'Manufacture year cannot be in the future.' });
+  }
+  if (value.productReleaseYear && value.productReleaseYear > currentYear) {
+    ctx.addIssue({ code: 'custom', path: ['productReleaseYear'], message: 'Product release year cannot be in the future.' });
+  }
+  if (value.manufactureDate && value.acquisitionDate && value.acquisitionDate < value.manufactureDate) {
+    ctx.addIssue({ code: 'custom', path: ['acquisitionDate'], message: 'Acquisition date cannot be earlier than manufacture date.' });
+  }
+  if (value.warrantyStartDate && value.warrantyExpiryDate && value.warrantyExpiryDate < value.warrantyStartDate) {
+    ctx.addIssue({ code: 'custom', path: ['warrantyExpiryDate'], message: 'Warranty expiry cannot be earlier than warranty start.' });
+  }
+}
+
+function validateNetworkAndStatus(value: LaptopAssetBaseValues, ctx: z.RefinementCtx) {
+  if (value.macAddress && !isMacAddress(value.macAddress)) {
+    ctx.addIssue({ code: 'custom', path: ['macAddress'], message: 'MAC address must use format AA:BB:CC:DD:EE:FF.' });
+  }
+  if (value.status === 'Issued' && !value.accountableEmployeeId) {
+    ctx.addIssue({ code: 'custom', path: ['accountableEmployeeId'], message: 'Issued assets require an accountable employee.' });
+  }
+  if (value.status === 'Available' && value.accountableEmployeeId) {
+    ctx.addIssue({ code: 'custom', path: ['accountableEmployeeId'], message: 'Available assets cannot have an accountable employee.' });
+  }
+}
+
+export const laptopAssetSchema = laptopAssetBaseSchema.superRefine((value, ctx) => {
+  validateIdentifiers(value, ctx);
+  validateDates(value, ctx);
+  validateNetworkAndStatus(value, ctx);
+});
 
 export type LaptopAssetFormValues = z.infer<typeof laptopAssetSchema>;

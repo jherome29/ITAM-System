@@ -87,49 +87,77 @@ function normalizeSlug(slug: string) {
   return aliases[slug] ?? slug;
 }
 
-function rowsFor(role: ProposedUserRole, slug: string): Row[] {
-  if (slug === 'notifications') return notificationMockRows.map((item) => ({ ...item, status: item.unread ? 'Unread' : 'Read' }));
-  if (slug === 'audit' || slug === 'technical-logs') return auditMockRows.map((item) => ({ ...item, status: item.severity }));
-  if (slug.includes('report') || slug === 'reports' || slug === 'forms') return reportMockRows.map((item) => ({ ...item, status: item.status }));
-  if (slug === 'maintenance') return maintenanceMockRows.map((item) => ({ ...item, status: item.status }));
-  if (slug === 'physical-inventory' || slug === 'reconciliation') return inventoryMockRows.map((item) => ({ ...item, status: item.status }));
-  if (slug === 'disposal' || slug === 'replacements') return disposalMockRows.map((item) => ({ ...item, status: item.status }));
-  if (slug === 'users' || slug === 'roles') return mockUsers.map((item) => ({ ...item, status: 'Active', role: item.role }));
-  if (slug === 'catalogue') {
-    return assetMockRows
-      .filter((asset) => asset.status === 'Available' || asset.scope === 'SUPPLY')
-      .map(assetToRow);
-  }
-  if (slug === 'assigned-assets') {
-    return assetMockRows.filter((asset) => asset.assignedEmployeeId === employeeId).map(assetToRow);
-  }
-  if (slug === 'assets') {
-    if (role === ProposedUserRole.IT_ASSET_CUSTODIAN) return assetMockRows.filter((asset) => asset.scope === 'ICT').map(assetToRow);
-    if (role === ProposedUserRole.PROPERTY_OFFICER) return assetMockRows.map(assetToRow);
-    return assetMockRows.filter((asset) => asset.scope !== 'ICT').map(assetToRow);
-  }
-  if (slug === 'fixed-assets') return assetMockRows.filter((asset) => asset.scope === 'PROPERTY').map(assetToRow);
-  if (slug === 'supplies') return assetMockRows.filter((asset) => asset.scope === 'SUPPLY').map(assetToRow);
-  if (slug === 'approvals') {
-    return requisitionMockRows
+// Slugs whose rows don't depend on `role` — dispatched via lookup instead of
+// an if-chain to keep rowsFor's cognitive complexity low (typescript:S3776).
+// 'forms' is handled by the report branch in rowsFor, not here.
+const SIMPLE_SLUG_HANDLERS: Record<string, () => Row[]> = {
+  notifications: () => notificationMockRows.map((item) => ({ ...item, status: item.unread ? 'Unread' : 'Read' })),
+  audit: () => auditMockRows.map((item) => ({ ...item, status: item.severity })),
+  'technical-logs': () => auditMockRows.map((item) => ({ ...item, status: item.severity })),
+  maintenance: () => maintenanceMockRows.map((item) => ({ ...item, status: item.status })),
+  'physical-inventory': () => inventoryMockRows.map((item) => ({ ...item, status: item.status })),
+  reconciliation: () => inventoryMockRows.map((item) => ({ ...item, status: item.status })),
+  disposal: () => disposalMockRows.map((item) => ({ ...item, status: item.status })),
+  replacements: () => disposalMockRows.map((item) => ({ ...item, status: item.status })),
+  users: () => mockUsers.map((item) => ({ ...item, status: 'Active', role: item.role })),
+  roles: () => mockUsers.map((item) => ({ ...item, status: 'Active', role: item.role })),
+  catalogue: () => assetMockRows.filter((asset) => asset.status === 'Available' || asset.scope === 'SUPPLY').map(assetToRow),
+  'assigned-assets': () => assetMockRows.filter((asset) => asset.assignedEmployeeId === employeeId).map(assetToRow),
+  'fixed-assets': () => assetMockRows.filter((asset) => asset.scope === 'PROPERTY').map(assetToRow),
+  supplies: () => assetMockRows.filter((asset) => asset.scope === 'SUPPLY').map(assetToRow),
+  approvals: () =>
+    requisitionMockRows
       .filter((request) => request.status === 'Pending Approval' && request.requesterId !== approvingOfficerId)
-      .map(requisitionToRow);
-  }
-  if (slug === 'approval-history') {
-    return requisitionMockRows.filter((request) => ['Approved', 'Rejected', 'Returned for Revision'].includes(request.status)).map(requisitionToRow);
-  }
-  if (slug === 'fulfillment') {
-    return requisitionMockRows
-      .filter((request) => ['Approved', 'Pending Fulfillment'].includes(request.status))
-      .filter((request) => role !== ProposedUserRole.IT_ASSET_CUSTODIAN || request.scope === 'ICT')
-      .filter((request) => role !== ProposedUserRole.PROPERTY_CUSTODIAN || request.scope !== 'ICT')
-      .map(requisitionToRow);
-  }
-  if (slug === 'requisitions') {
-    const own = role === ProposedUserRole.APPROVING_OFFICER ? 'EMP-003' : employeeId;
-    return requisitionMockRows.filter((request) => request.requesterId === own || role === ProposedUserRole.EMPLOYEE).map(requisitionToRow);
-  }
+      .map(requisitionToRow),
+  'approval-history': () =>
+    requisitionMockRows
+      .filter((request) => ['Approved', 'Rejected', 'Returned for Revision'].includes(request.status))
+      .map(requisitionToRow),
+};
+
+function assetsForRole(role: ProposedUserRole): Row[] {
+  if (role === ProposedUserRole.IT_ASSET_CUSTODIAN) return assetMockRows.filter((asset) => asset.scope === 'ICT').map(assetToRow);
+  if (role === ProposedUserRole.PROPERTY_OFFICER) return assetMockRows.map(assetToRow);
+  return assetMockRows.filter((asset) => asset.scope !== 'ICT').map(assetToRow);
+}
+
+function fulfillmentForRole(role: ProposedUserRole): Row[] {
+  return requisitionMockRows
+    .filter((request) => ['Approved', 'Pending Fulfillment'].includes(request.status))
+    .filter((request) => role !== ProposedUserRole.IT_ASSET_CUSTODIAN || request.scope === 'ICT')
+    .filter((request) => role !== ProposedUserRole.PROPERTY_CUSTODIAN || request.scope !== 'ICT')
+    .map(requisitionToRow);
+}
+
+function requisitionsForRole(role: ProposedUserRole): Row[] {
+  const own = role === ProposedUserRole.APPROVING_OFFICER ? 'EMP-003' : employeeId;
+  return requisitionMockRows.filter((request) => request.requesterId === own || role === ProposedUserRole.EMPLOYEE).map(requisitionToRow);
+}
+
+function rowsFor(role: ProposedUserRole, slug: string): Row[] {
+  if (slug.includes('report') || slug === 'forms') return reportMockRows.map((item) => ({ ...item, status: item.status }));
+
+  const handler = SIMPLE_SLUG_HANDLERS[slug];
+  if (handler) return handler();
+
+  if (slug === 'assets') return assetsForRole(role);
+  if (slug === 'fulfillment') return fulfillmentForRole(role);
+  if (slug === 'requisitions') return requisitionsForRole(role);
+
   return requisitionMockRows.map(requisitionToRow);
+}
+
+function assetDivision(asset: MockAsset): string {
+  if (asset.assignedTo === 'Ana Reyes') return 'Digital Forensics';
+  if (asset.assignedTo === 'Operations Division') return 'Operations';
+  if (asset.scope === 'ICT') return 'ICT Unit';
+  return 'Property Unit';
+}
+
+function assetAccountabilityForm(asset: MockAsset): string {
+  if (asset.scope === 'ICT') return 'ICS/PAR-Preview';
+  if (asset.scope === 'PROPERTY') return 'PAR-Preview';
+  return 'RIS-Preview';
 }
 
 function assetToRow(asset: MockAsset): Row {
@@ -141,10 +169,10 @@ function assetToRow(asset: MockAsset): Row {
     serialNumber: asset.serialNumber,
     location: asset.location,
     assignedTo: asset.assignedTo ?? 'Unassigned',
-    division: asset.assignedTo === 'Ana Reyes' ? 'Digital Forensics' : asset.assignedTo === 'Operations Division' ? 'Operations' : asset.scope === 'ICT' ? 'ICT Unit' : 'Property Unit',
+    division: assetDivision(asset),
     officeOrSection: asset.assignedTo === 'Ana Reyes' ? 'Evidence Processing' : asset.location,
     dateIssued: asset.issuedDate ?? '-',
-    accountabilityForm: asset.scope === 'ICT' ? 'ICS/PAR-Preview' : asset.scope === 'PROPERTY' ? 'PAR-Preview' : 'RIS-Preview',
+    accountabilityForm: assetAccountabilityForm(asset),
     expectedReturnDate: asset.returnDate ?? '-',
     condition: asset.condition,
     status: asset.status,
@@ -187,7 +215,7 @@ function actionPermissionFor(role: ProposedUserRole): UiPermission {
   return 'create_requisition';
 }
 
-export function WorkflowPage({ role, slug }: { role: ProposedUserRole; slug: string }) {
+export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; slug: string }>) {
   const normalizedSlug = normalizeSlug(slug);
   const content = pageCopy[normalizedSlug] ?? { title: 'Workspace', detail: 'Frontend-only operational prototype.', action: 'Run Action' };
   const readOnly = role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER;
@@ -609,7 +637,7 @@ export function WorkflowPage({ role, slug }: { role: ProposedUserRole; slug: str
       >
         {['Reject', 'Return for Revision'].includes(confirmAction ?? '') && (
           <label className="block text-sm font-semibold text-slate-700">
-            Remarks
+            <span>Remarks</span>
             <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
             {errors.remarks && <span className="mt-1 block text-xs text-red-600">{errors.remarks}</span>}
           </label>
@@ -623,13 +651,13 @@ export function WorkflowPage({ role, slug }: { role: ProposedUserRole; slug: str
           <Field label="Required date" value={form.requiredDate} error={errors.requiredDate} type="date" onChange={(value) => setForm((current) => ({ ...current, requiredDate: value }))} />
           <Field label="Mock attachment" value={form.attachment} onChange={(value) => setForm((current) => ({ ...current, attachment: value }))} placeholder="filename.pdf" />
           <label className="sm:col-span-2 text-sm font-semibold text-slate-700">
-            Justification / remarks
+            <span>Justification / remarks</span>
             <textarea value={form.justification} onChange={(event) => setForm((current) => ({ ...current, justification: event.target.value }))} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
             {errors.justification && <span className="mt-1 block text-xs text-red-600">{errors.justification}</span>}
           </label>
           <label className="sm:col-span-2 flex items-start gap-2 text-sm text-slate-700">
             <input type="checkbox" className="mt-1" />
-            I certify that this frontend mock submission is accurate for demonstration purposes.
+            <span>I certify that this frontend mock submission is accurate for demonstration purposes.</span>
           </label>
         </div>
       </FormDialog>
@@ -644,14 +672,14 @@ function Field({
   error,
   type = 'text',
   placeholder,
-}: {
+}: Readonly<{
   label: string;
   value: string;
   onChange: (value: string) => void;
   error?: string;
   type?: string;
   placeholder?: string;
-}) {
+}>) {
   return (
     <label className="text-sm font-semibold text-slate-700">
       {label}
