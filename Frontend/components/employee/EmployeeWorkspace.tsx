@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, CalendarClock, CheckCircle2, ClipboardList, FileWarning, PackageCheck, Plus, Search, Send } from 'lucide-react';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { CenteredModal } from '@/components/ui/CenteredModal';
+import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from '@/components/admin/AdminUi';
+import { assetsApi, type Asset } from '@/lib/api/assets';
 import { assetMockRows } from '@/lib/mock/assets.mock';
 import type { MockAsset } from '@/lib/mock/assets.mock';
 import { notificationMockRows } from '@/lib/mock/notifications.mock';
@@ -32,19 +34,39 @@ function EmployeeHeader({ title, detail, action }: Readonly<{ title: string; det
   return <AdminPageHeader eyebrow="Employee Workspace" title={title} detail={detail} action={action} />;
 }
 
+// Real Asset.assetType values ('ICT' | 'Fixed' | 'Supplies') don't line up 1:1 with
+// RequisitionForm's mock-era scope enum ('ICT' | 'PROPERTY' | 'SUPPLY') — map at the
+// call site rather than touching the shared form, which other sub-components still use.
+function assetTypeToRequisitionScope(assetType: string): MockRequisition['scope'] {
+  if (assetType === 'ICT') return 'ICT';
+  if (assetType === 'Supplies') return 'SUPPLY';
+  return 'PROPERTY';
+}
+
 function EmployeeCatalogue() {
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
-  const [selected, setSelected] = useState<MockAsset | null>(null);
+  const [selected, setSelected] = useState<Asset | null>(null);
   const [requested, setRequested] = useState<string[]>([]);
   const [toast, setToast] = useState('');
-  const requestable = assetMockRows.filter((asset) => asset.status === 'Available' || asset.scope === 'SUPPLY');
-  const rows = requestable.filter((asset) => (filter === 'All' || asset.scope === filter || asset.category === filter) && Object.values(asset).join(' ').toLowerCase().includes(search.toLowerCase()));
+
+  useEffect(() => {
+    // GET /v1/assets/catalogue already scopes results to AVAILABLE assets server-side.
+    assetsApi.catalogue()
+      .then((res) => setAssets(res.data.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const rows = assets.filter((asset) => (filter === 'All' || asset.assetType === filter || asset.assetClass === filter) && Object.values(asset).join(' ').toLowerCase().includes(search.toLowerCase()));
+
   return <div className="space-y-4"><EmployeeHeader title="Asset Catalogue" detail="Browse assets and supplies available for requisition. Availability is confirmed by the responsible custodian after approval." />
-    <div className="grid gap-3 sm:grid-cols-3"><MetricCard label="Requestable items" value={String(requestable.length)} detail="Current catalogue preview" tone="blue" icon={Search} /><MetricCard label="ICT available" value={String(requestable.filter((item) => item.scope === 'ICT').length)} detail="Subject to fulfillment check" tone="green" icon={PackageCheck} /><MetricCard label="Low-stock supplies" value={String(requestable.filter((item) => item.condition === 'Low Stock').length)} detail="May require partial fulfillment" tone="amber" icon={AlertTriangle} /></div>
-    <SearchToolbar value={search} onChange={setSearch} filterLabel="All catalogue items" filterValue={filter} filterOptions={['All', 'ICT', 'PROPERTY', 'SUPPLY', 'ICT Equipment', 'Communication Devices', 'Supplies']} onFilterChange={setFilter} />
-    <Panel title="Request Catalogue" detail={`${rows.length} items match your filters`}><TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>Item</th><th className={thClass}>Category</th><th className={thClass}>Type</th><th className={thClass}>Availability</th><th className={thClass}>Location</th><th className={thClass}>Condition</th><th className={`${thClass} text-right`}>Request</th></tr></thead><tbody>{rows.map((asset) => <tr key={asset.id} className="hover:bg-slate-50"><td className={tdClass}><p className="font-bold text-slate-950">{asset.name}</p><p className="text-xs text-slate-500">{asset.id}</p></td><td className={tdClass}>{asset.category}</td><td className={tdClass}>{asset.type}</td><td className={tdClass}>{asset.stockOnHand !== undefined ? `${asset.stockOnHand} ${asset.unit}` : asset.status}</td><td className={tdClass}>{asset.location}</td><td className={tdClass}><StatusChip status={asset.condition} /></td><td className={`${tdClass} text-right`}><button type="button" disabled={requested.includes(asset.id)} onClick={() => setSelected(asset)} className="h-8 rounded-md bg-blue-700 px-3 text-xs font-bold text-white hover:bg-blue-800 disabled:bg-emerald-600">{requested.includes(asset.id) ? 'Requested' : 'Request item'}</button></td></tr>)}</tbody></table></TableWrap></Panel>
-    <CenteredModal open={Boolean(selected)} title={selected ? `Request ${selected.name}` : 'Request item'} description="Complete the details below to submit this item for approval." onClose={() => setSelected(null)}>{selected && <RequisitionForm defaultItem={selected.name} defaultScope={selected.scope} onSubmit={(request) => { setRequested((current) => [...current, selected.id]); setSelected(null); setToast(`${request.item} request ${request.id} was submitted for approval.`); }} />}</CenteredModal><Toast message={toast} /></div>;
+    <div className="grid gap-3 sm:grid-cols-3"><MetricCard label="Requestable items" value={String(assets.length)} detail="Current catalogue preview" tone="blue" icon={Search} /><MetricCard label="ICT available" value={String(assets.filter((item) => item.assetType === 'ICT').length)} detail="Subject to fulfillment check" tone="green" icon={PackageCheck} /><MetricCard label="Property & supplies" value={String(assets.filter((item) => item.assetType !== 'ICT').length)} detail="Non-ICT catalogue items" tone="amber" icon={AlertTriangle} /></div>
+    <SearchToolbar value={search} onChange={setSearch} filterLabel="All catalogue items" filterValue={filter} filterOptions={['All', 'ICT', 'Fixed', 'Supplies', 'PPE', 'SEP', 'IES']} onFilterChange={setFilter} />
+    {loading ? <Panel title="Request Catalogue" detail="Loading catalogue..."><div className="p-4"><LoadingSkeleton rows={8} /></div></Panel> : rows.length === 0 ? <Panel title="Request Catalogue" detail="0 items match your filters"><div className="p-8 text-center text-sm text-slate-500">No catalogue items are currently available for requisition.</div></Panel> : <Panel title="Request Catalogue" detail={`${rows.length} items match your filters`}><TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>Item</th><th className={thClass}>Category</th><th className={thClass}>Type</th><th className={thClass}>Availability</th><th className={thClass}>Location</th><th className={thClass}>Condition</th><th className={`${thClass} text-right`}>Request</th></tr></thead><tbody>{rows.map((asset) => <tr key={asset.id} className="hover:bg-slate-50"><td className={tdClass}><p className="font-bold text-slate-950">{asset.itemDescription}</p><p className="text-xs text-slate-500">{[asset.brand, asset.itemCode].filter(Boolean).join(' · ') || asset.id}</p></td><td className={tdClass}>{asset.assetClass}</td><td className={tdClass}>{asset.assetType}</td><td className={tdClass}>{asset.status?.replace(/_/g, ' ')}</td><td className={tdClass}>{asset.officeLocation || asset.officeOrSection || '—'}</td><td className={tdClass}><StatusChip status={asset.condition?.replace(/_/g, ' ') || 'Unspecified'} /></td><td className={`${tdClass} text-right`}><button type="button" disabled={requested.includes(asset.id)} onClick={() => setSelected(asset)} className="h-8 rounded-md bg-blue-700 px-3 text-xs font-bold text-white hover:bg-blue-800 disabled:bg-emerald-600">{requested.includes(asset.id) ? 'Requested' : 'Request item'}</button></td></tr>)}</tbody></table></TableWrap></Panel>}
+    <CenteredModal open={Boolean(selected)} title={selected ? `Request ${selected.itemDescription}` : 'Request item'} description="Complete the details below to submit this item for approval." onClose={() => setSelected(null)}>{selected && <RequisitionForm defaultItem={selected.itemDescription} defaultScope={assetTypeToRequisitionScope(selected.assetType)} onSubmit={(request) => { setRequested((current) => [...current, selected.id]); setSelected(null); setToast(`${request.item} request ${request.id} was submitted for approval.`); }} />}</CenteredModal><Toast message={toast} /></div>;
 }
 
 function EmployeeRequisitions({ initialCreateOpen = false }: Readonly<{ initialCreateOpen?: boolean }>) {
