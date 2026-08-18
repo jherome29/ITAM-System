@@ -10,6 +10,7 @@ import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
 import { InventoryLabelPrinter } from '@/components/inventory/InventoryLabelPrinter';
+import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';
 import { assetMockRows } from '@/lib/mock/assets.mock';
 import type { MockAsset } from '@/lib/mock/assets.mock';
@@ -223,6 +224,16 @@ function requisitionApiToRow(request: Requisition): Row {
   };
 }
 
+function auditApiToRow(log: AuditLog): Row {
+  return {
+    id: log.id,
+    action: log.action,
+    actor: log.userId,
+    date: new Date(log.timestamp).toLocaleDateString(),
+    severity: log.userRole,
+  };
+}
+
 function actionPermissionFor(role: ProposedUserRole): UiPermission {
   if (role === ProposedUserRole.MASTER_ADMIN) return 'manage_users';
   if (role === ProposedUserRole.APPROVING_OFFICER) return 'approve_requisition';
@@ -239,22 +250,31 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
   const isInventoryAccountabilityPage = ['assets', 'assigned-assets', 'physical-inventory', 'custody'].includes(normalizedSlug);
   // Single source of truth for which role+slug combinations fetch real data instead of
   // mock rows. Referenced by the rows/loading initializers and the effect guard below —
-  // extending this to another role+slug pair (e.g. Task 18's MANAGEMENT_AUDIT_VIEWER +
-  // 'audit') only needs a change here, not three synchronized edits.
+  // extending this to another role+slug pair only needs a change here, not three
+  // synchronized edits.
   const isLiveFetchPage =
-    role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions');
+    (role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')) ||
+    (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit');
   const [rows, setRows] = useState<Row[]>(() => (isLiveFetchPage ? [] : rowsFor(role, normalizedSlug)));
   const [loading, setLoading] = useState(isLiveFetchPage);
 
   useEffect(() => {
     if (!isLiveFetchPage) return;
 
+    if (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') {
+      auditApi.list(1, 100)
+        .then((res) => setRows(res.data.data.map(auditApiToRow)))
+        .catch(() => {})
+        .finally(() => setLoading(false));
+      return;
+    }
+
     const fetcher = normalizedSlug === 'approvals' ? requisitionsApi.list() : requisitionsApi.mine();
     fetcher
       .then((res) => setRows(res.data.data.map(requisitionApiToRow)))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [isLiveFetchPage, normalizedSlug]);
+  }, [isLiveFetchPage, normalizedSlug, role]);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
