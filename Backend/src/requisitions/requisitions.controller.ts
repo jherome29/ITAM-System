@@ -51,6 +51,8 @@ export class RequisitionsController {
     UserRole.IT_PERSONNEL,
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
   )
   async findAll(
     @Req() req: AuthReq,
@@ -101,6 +103,8 @@ export class RequisitionsController {
     UserRole.IT_PERSONNEL,
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
   )
   async getStats(@Req() req: AuthReq) {
     const result = await this.svc.getStats(req.user.id, req.user.role);
@@ -118,6 +122,8 @@ export class RequisitionsController {
     UserRole.IT_PERSONNEL,
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
   )
   async findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthReq) {
     const result = await this.svc.findOne(id, req.user.id, req.user.role);
@@ -197,7 +203,7 @@ export class RequisitionsController {
    */
   @Post(':id/hold')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.IT_PERSONNEL)
+  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
   async putOnHold(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('reason') reason: string,
@@ -220,7 +226,7 @@ export class RequisitionsController {
    */
   @Post(':id/fulfill')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.IT_PERSONNEL)
+  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
   async fulfill(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: FulfillRequisitionDto,
