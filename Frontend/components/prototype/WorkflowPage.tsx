@@ -1,14 +1,16 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityTimeline } from '@/components/ui/ActivityTimeline';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { FilterBar } from '@/components/ui/FilterBar';
 import { FormDialog } from '@/components/ui/FormDialog';
+import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
 import { InventoryLabelPrinter } from '@/components/inventory/InventoryLabelPrinter';
+import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';
 import { assetMockRows } from '@/lib/mock/assets.mock';
 import type { MockAsset } from '@/lib/mock/assets.mock';
 import { auditMockRows } from '@/lib/mock/audit.mock';
@@ -206,6 +208,21 @@ function requisitionToRow(request: MockRequisition): Row {
   };
 }
 
+function requisitionApiToRow(request: Requisition): Row {
+  return {
+    id: request.id,
+    requesterId: request.requestedById,
+    item: request.items.map((i) => i.itemDescription).join(', '),
+    requestType: request.requisitionType,
+    quantity: request.items.reduce((sum, i) => sum + i.quantity, 0),
+    status: request.status,
+    submittedDate: request.submittedAt,
+    requiredDate: request.requiredDate,
+    justification: request.justification,
+    remarks: request.supervisorComments ?? '',
+  };
+}
+
 function actionPermissionFor(role: ProposedUserRole): UiPermission {
   if (role === ProposedUserRole.MASTER_ADMIN) return 'manage_users';
   if (role === ProposedUserRole.APPROVING_OFFICER) return 'approve_requisition';
@@ -220,7 +237,26 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
   const content = pageCopy[normalizedSlug] ?? { title: 'Workspace', detail: 'Frontend-only operational prototype.', action: 'Run Action' };
   const readOnly = role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER;
   const isInventoryAccountabilityPage = ['assets', 'assigned-assets', 'physical-inventory', 'custody'].includes(normalizedSlug);
-  const [rows, setRows] = useState<Row[]>(() => rowsFor(role, normalizedSlug));
+  const [rows, setRows] = useState<Row[]>(() =>
+    role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')
+      ? []
+      : rowsFor(role, normalizedSlug),
+  );
+  const [loading, setLoading] = useState(
+    role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions'),
+  );
+
+  useEffect(() => {
+    if (role !== ProposedUserRole.APPROVING_OFFICER) return;
+    if (normalizedSlug !== 'approvals' && normalizedSlug !== 'requisitions') return;
+
+    const fetcher = normalizedSlug === 'approvals' ? requisitionsApi.list() : requisitionsApi.mine();
+    fetcher
+      .then((res) => setRows(res.data.data.map(requisitionApiToRow)))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [role, normalizedSlug]);
+
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [sortKey, setSortKey] = useState('id');
@@ -341,6 +377,8 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
   const canPrimaryAct = !readOnly && content.action;
   const primaryPermission = actionPermissionFor(role);
   const selectedIsSelfApproval = role === ProposedUserRole.APPROVING_OFFICER && selected?.requesterId === approvingOfficerId;
+
+  if (loading) return <LoadingSkeleton rows={8} />;
 
   return (
     <div className="space-y-5">
