@@ -133,6 +133,9 @@ jobs:
       - name: ESLint
         run: cd Frontend && npx eslint . --max-warnings 0
 
+      - name: Unit tests
+        run: cd Frontend && npm run test
+
       - name: Build
         run: cd Frontend && npm run build
         env:
