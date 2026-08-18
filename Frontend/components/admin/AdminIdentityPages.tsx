@@ -1,11 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { KeyRound, Plus, ShieldCheck, UserCheck, Users } from 'lucide-react';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
+import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
-import { accessReviews, adminRoles, adminUsers, organizationUnits, permissionGroups } from '@/lib/mock/admin.mock';
-import type { AdminRole, AdminUser } from '@/lib/mock/admin.mock';
+import { usersApi, type CreateUserDto, type User } from '@/lib/api/users';
+import { accessReviews, adminRoles, organizationUnits, permissionGroups } from '@/lib/mock/admin.mock';
+import type { AdminRole } from '@/lib/mock/admin.mock';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
 
 type IdentitySlug = 'users' | 'roles' | 'access-reviews' | 'organizational-units';
@@ -17,37 +19,132 @@ export function AdminIdentityPages({ slug }: Readonly<{ slug: IdentitySlug }>) {
   return <OrganizationPage />;
 }
 
+// Real backend UserRole enum values (packages/shared/src/enums/index.ts) — the
+// `role` field on CreateUserDto is validated server-side with @IsEnum(UserRole),
+// so these values must match exactly (not the frontend-only ProposedUserRole labels).
+const USER_ROLE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'employee', label: 'Employee' },
+  { value: 'supervisor', label: 'Supervisor' },
+  { value: 'it_personnel', label: 'IT Personnel' },
+  { value: 'system_admin', label: 'System Administrator' },
+  { value: 'management', label: 'Management' },
+  { value: 'property_custodian', label: 'Property Custodian' },
+  { value: 'property_officer', label: 'Property Officer' },
+];
+
 function UsersPage() {
-  const [users, setUsers] = useState<AdminUser[]>(adminUsers);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('All');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState('');
-  const rows = useMemo(() => users
-    .filter((user) => filter === 'All' || user.status === filter || user.accountType === filter || user.mfa === filter)
-    .filter((user) => Object.values(user).flat().join(' ').toLowerCase().includes(search.toLowerCase())), [filter, search, users]);
+
+  const fetchUsers = (q?: string) => {
+    usersApi.list(1, 50, q)
+      .then((res) => setUsers(res.data.data))
+      .catch(() => setToast('Failed to load users.'))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchUsers(); }, []);
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    setLoading(true);
+    fetchUsers(value || undefined);
+  };
+
   const selected = users.find((user) => user.id === selectedId);
-  const updateUser = (id: string, changes: Partial<AdminUser>, message: string) => {
-    setUsers((current) => current.map((user) => user.id === id ? { ...user, ...changes } : user));
-    setToast(message);
+  const userName = (user: User) => `${user.firstName} ${user.lastName}`;
+
+  const handleDeactivate = async (id: string, name: string) => {
+    try {
+      await usersApi.deactivate(id);
+      setUsers((current) => current.map((user) => user.id === id ? { ...user, isActive: false } : user));
+      setToast(`${name} account deactivated.`);
+    } catch {
+      setToast(`Failed to deactivate ${name}.`);
+    }
+  };
+
+  const handleUnlock = async (id: string, name: string) => {
+    try {
+      await usersApi.unlock(id);
+      fetchUsers(search || undefined);
+      setToast(`${name} unlocked.`);
+    } catch {
+      setToast(`Failed to unlock ${name}.`);
+    }
+  };
+
+  const handleResetPassword = async (id: string, name: string) => {
+    const newPassword = window.prompt(`New password for ${name} (must meet complexity rules):`);
+    if (!newPassword) return;
+    try {
+      await usersApi.resetPassword(id, newPassword);
+      setToast(`Password reset for ${name}.`);
+    } catch {
+      setToast(`Failed to reset password for ${name}.`);
+    }
   };
 
   return <div className="space-y-4">
-    <AdminPageHeader title="Users & Accounts" detail="Manage the minimum identity data required for system access, account lifecycle, MFA enrollment, and role governance." action={<PrimaryButton icon={Plus} onClick={() => setCreating(true)}>Create account</PrimaryButton>} />
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><MetricCard label="Active accounts" value="125" detail="Three lifecycle actions pending" tone="blue" icon={Users} /><MetricCard label="Privileged" value="24" detail="Quarterly review required" tone="amber" icon={KeyRound} /><MetricCard label="Locked" value="1" detail="Manual review needed" tone="red" icon={ShieldCheck} /><MetricCard label="Dormant" value="8" detail="Inactive for 45+ days" tone="amber" icon={UserCheck} /><MetricCard label="MFA coverage" value="94%" detail="7 users not enrolled" tone="green" icon={ShieldCheck} /></div>
-    <SearchToolbar value={search} onChange={setSearch} filterLabel="All accounts" filterValue={filter} filterOptions={['All', 'Active', 'Locked', 'Dormant', 'Privileged', 'Not enrolled']} onFilterChange={setFilter} />
-    <Panel title="Account Directory" detail={`${rows.length} accounts shown - deactivation preserves audit history`}>
-      <TableWrap><table className="min-w-[1180px] w-full"><thead><tr><th className={thClass}>User</th><th className={thClass}>Office</th><th className={thClass}>Roles</th><th className={thClass}>Account type</th><th className={thClass}>MFA</th><th className={thClass}>Last login</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{rows.map((user) => <tr key={user.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelectedId(user.id)} className="text-left"><span className="block font-bold text-slate-950">{user.name}</span><span className="text-xs text-slate-500">{user.employeeId} - {user.email}</span></button></td><td className={tdClass}>{user.office}</td><td className={tdClass}>{user.roles.join(', ')}</td><td className={tdClass}>{user.accountType}</td><td className={tdClass}><StatusChip status={user.mfa} /></td><td className={tdClass}>{user.lastLogin}</td><td className={tdClass}><StatusChip status={user.status} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View account', onClick: () => setSelectedId(user.id) }, { label: 'Reset password', onClick: () => setToast(`Password reset issued for ${user.name}.`) }, { label: 'Terminate sessions', onClick: () => setToast(`Active sessions terminated for ${user.name}.`) }, { label: user.status === 'Locked' ? 'Unlock account' : 'Deactivate account', danger: user.status !== 'Locked', onClick: () => updateUser(user.id, { status: user.status === 'Locked' ? 'Active' : 'Scheduled deactivation' }, `${user.name} account status updated.`) }]} /></td></tr>)}</tbody></table></TableWrap>
+    <AdminPageHeader title="Users & Accounts" detail="Manage the identity data required for AIMRS access and account lifecycle." action={<PrimaryButton icon={Plus} onClick={() => setCreating(true)}>Create account</PrimaryButton>} />
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <MetricCard label="Total accounts" value={String(users.length)} detail="" tone="blue" icon={Users} />
+      <MetricCard label="Active" value={String(users.filter((user) => user.isActive).length)} detail="" tone="green" icon={UserCheck} />
+      <MetricCard label="Inactive" value={String(users.filter((user) => !user.isActive).length)} detail="" tone="red" icon={ShieldCheck} />
+    </div>
+    <SearchToolbar value={search} onChange={handleSearchChange} />
+    <Panel title="Account Directory" detail={`${users.length} accounts shown - deactivation preserves audit history`}>
+      {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>User</th><th className={thClass}>Office</th><th className={thClass}>Role</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{users.length === 0 ? <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-400">No accounts found.</td></tr> : users.map((user) => <tr key={user.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelectedId(user.id)} className="text-left"><span className="block font-bold text-slate-950">{userName(user)}</span><span className="text-xs text-slate-500">{user.employeeId} - {user.email}</span></button></td><td className={tdClass}>{user.division} / {user.officeOrSection}</td><td className={tdClass}>{user.role}</td><td className={tdClass}><StatusChip status={user.isActive ? 'Active' : 'Inactive'} tone={user.isActive ? 'green' : 'red'} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View account', onClick: () => setSelectedId(user.id) }, { label: 'Reset password', onClick: () => handleResetPassword(user.id, userName(user)) }, user.isActive ? { label: 'Deactivate account', danger: true, onClick: () => handleDeactivate(user.id, userName(user)) } : { label: 'Unlock account', onClick: () => handleUnlock(user.id, userName(user)) }]} /></td></tr>)}</tbody></table></TableWrap>}
     </Panel>
-    <DetailDrawer open={Boolean(selected)} title={selected?.name ?? 'Account details'} onClose={() => setSelectedId(null)}>{selected && <div className="space-y-5"><div className="grid grid-cols-2 gap-3">{[['Employee ID', selected.employeeId], ['Account ID', selected.id], ['Email', selected.email], ['Office', selected.office], ['Account type', selected.accountType], ['Last login', selected.lastLogin]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>)}</div><Panel title="Access and security"><div className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Assigned roles</span><span className="text-sm font-bold">{selected.roles.join(', ')}</span></div><div className="flex items-center justify-between"><span className="text-sm text-slate-600">MFA</span><StatusChip status={selected.mfa} /></div><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Account status</span><StatusChip status={selected.status} /></div></div></Panel><div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => setToast('Edit mode opened in mock state.')}>Edit profile</SecondaryButton><SecondaryButton onClick={() => setToast('Password reset prepared.')}>Reset password</SecondaryButton><SecondaryButton onClick={() => setToast('Sessions terminated.')}>Terminate sessions</SecondaryButton></div><p className="text-xs text-slate-500">Production actions require backend authorization and create append-only audit events.</p></div>}</DetailDrawer>
-    <DetailDrawer open={creating} title="Create account" onClose={() => setCreating(false)}><AccountForm onSave={(user) => { setUsers((current) => [user, ...current]); setCreating(false); setToast(`${user.name} was added to the account directory.`); }} /></DetailDrawer>
+    <DetailDrawer open={Boolean(selected)} title={selected ? userName(selected) : 'Account details'} onClose={() => setSelectedId(null)}>{selected && <div className="space-y-5"><div className="grid grid-cols-2 gap-3">{[['Employee ID', selected.employeeId], ['Account ID', selected.id], ['Email', selected.email], ['Role', selected.role], ['Division', selected.division], ['Office / Section', selected.officeOrSection]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>)}</div><Panel title="Account status"><div className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Status</span><StatusChip status={selected.isActive ? 'Active' : 'Inactive'} tone={selected.isActive ? 'green' : 'red'} /></div></div></Panel><div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => handleResetPassword(selected.id, userName(selected))}>Reset password</SecondaryButton>{selected.isActive ? <SecondaryButton onClick={() => handleDeactivate(selected.id, userName(selected))}>Deactivate account</SecondaryButton> : <SecondaryButton onClick={() => handleUnlock(selected.id, userName(selected))}>Unlock account</SecondaryButton>}</div><p className="text-xs text-slate-500">Actions call the live users API and create append-only audit events.</p></div>}</DetailDrawer>
+    <DetailDrawer open={creating} title="Create account" onClose={() => setCreating(false)}><AccountForm onSave={(user) => { setUsers((current) => [user, ...current]); setCreating(false); setToast(`${userName(user)} was added to the account directory.`); }} /></DetailDrawer>
     <Toast message={toast} />
   </div>;
 }
 
-function AccountForm({ onSave }: Readonly<{ onSave: (user: AdminUser) => void }>) {
-  return <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const sequence = String(adminUsers.length + Math.floor(Date.now() / 1000) % 900).padStart(3, '0'); onSave({ id: `USR-${sequence}`, employeeId: String(data.get('employeeId')), name: String(data.get('name')), email: String(data.get('email')), office: String(data.get('office')), roles: [String(data.get('role'))], accountType: String(data.get('accountType')) as AdminUser['accountType'], mfa: 'Not enrolled', lastLogin: 'Never', status: 'Active' }); }}><div className="grid gap-4 sm:grid-cols-2"><Field label="Employee ID"><input name="employeeId" required pattern="CICC-[0-9]{4}" title="Use format CICC-0000" className={inputClass} placeholder="CICC-0000" /></Field><Field label="Account type"><select name="accountType" className={inputClass}><option>Employee</option><option>Privileged</option><option>Service</option></select></Field></div><Field label="Full name"><input name="name" required minLength={3} className={inputClass} /></Field><Field label="Government email"><input name="email" required type="email" pattern=".+@cicc\.gov\.ph" title="Use a cicc.gov.ph email address" className={inputClass} placeholder="name@cicc.gov.ph" /></Field><Field label="Organizational unit"><select name="office" className={inputClass}>{organizationUnits.slice(1).map((unit) => <option key={unit.id}>{unit.name}</option>)}</select></Field><Field label="Initial role"><select name="role" className={inputClass}>{adminRoles.map((role) => <option key={role.id}>{role.name}</option>)}</select></Field><div className="border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">Only identity information required for AIMRS access is collected. HR, payroll, leave, and performance data are outside system scope.</div><PrimaryButton type="submit">Create account</PrimaryButton></form>;
+function AccountForm({ onSave }: Readonly<{ onSave: (user: User) => void }>) {
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  return <form className="space-y-4" onSubmit={async (event) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError('');
+    const data = new FormData(event.currentTarget);
+    const dto: CreateUserDto = {
+      email: String(data.get('email')),
+      password: String(data.get('password')),
+      firstName: String(data.get('firstName')),
+      lastName: String(data.get('lastName')),
+      employeeId: String(data.get('employeeId')),
+      role: String(data.get('role')),
+      division: String(data.get('division')),
+      officeOrSection: String(data.get('officeOrSection')),
+    };
+    try {
+      const res = await usersApi.create(dto);
+      onSave(res.data);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to create account.'));
+    } finally {
+      setSubmitting(false);
+    }
+  }}>
+    <div className="grid gap-4 sm:grid-cols-2"><Field label="First name"><input name="firstName" required minLength={1} className={inputClass} /></Field><Field label="Last name"><input name="lastName" required minLength={1} className={inputClass} /></Field></div>
+    <Field label="Employee ID"><input name="employeeId" required className={inputClass} placeholder="CICC-0000" /></Field>
+    <Field label="Government email"><input name="email" required type="email" pattern=".+@cicc\.gov\.ph" title="Use a cicc.gov.ph email address" className={inputClass} placeholder="name@cicc.gov.ph" /></Field>
+    <Field label="Temporary password"><input name="password" required type="password" minLength={12} className={inputClass} /><p className="mt-1 text-xs text-slate-500">Minimum 12 characters, including uppercase, lowercase, number, and special character.</p></Field>
+    <div className="grid gap-4 sm:grid-cols-2"><Field label="Division"><input name="division" required className={inputClass} /></Field><Field label="Office / Section"><input name="officeOrSection" required className={inputClass} /></Field></div>
+    <Field label="Role"><select name="role" className={inputClass}>{USER_ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select></Field>
+    <div className="border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">Only identity information required for AIMRS access is collected. HR, payroll, leave, and performance data are outside system scope.</div>
+    {error && <div className="text-sm text-red-700">{error}</div>}
+    <PrimaryButton type="submit" disabled={submitting}>{submitting ? 'Creating…' : 'Create account'}</PrimaryButton>
+  </form>;
 }
 
 function RolesPage() {
