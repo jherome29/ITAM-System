@@ -38,10 +38,16 @@ export class AssetsController {
   /**
    * GET /api/v1/assets
    * Full inventory list — paginated.
-   * Roles: IT Personnel, System Admin, Management
+   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
    */
   @Get()
-  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
   async findAll(
     @Query('page') page = 1,
     @Query('limit') limit = 20,
@@ -73,10 +79,16 @@ export class AssetsController {
    * GET /api/v1/assets/stats
    * Grouped asset counts by status, class, and type.
    * Powers the IT Personnel and Management dashboards.
-   * Roles: IT Personnel, System Admin, Management
+   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
    */
   @Get('stats')
-  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
   async getStats() {
     const result = await this.assetsService.getStats();
     return { message: 'Asset statistics retrieved', data: result };
@@ -85,10 +97,16 @@ export class AssetsController {
   /**
    * GET /api/v1/assets/:id
    * Single asset with full lifecycle history.
-   * Roles: IT Personnel, System Admin, Management
+   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
    */
   @Get(':id')
-  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     const asset = await this.assetsService.findOne(id);
     return { message: 'Asset retrieved successfully', data: asset };
@@ -97,11 +115,11 @@ export class AssetsController {
   /**
    * POST /api/v1/assets
    * Register a new asset with all required CICC fields (section 5.3).
-   * Roles: IT Personnel only
+   * Roles: IT Personnel, Property Custodian
    * SVC: Obtain/Build
    */
   @Post()
-  @Roles(UserRole.IT_PERSONNEL)
+  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
   async create(@Body() dto: CreateAssetDto, @Req() req: AuthenticatedRequest) {
     const asset = await this.assetsService.create(
       dto,
@@ -115,10 +133,10 @@ export class AssetsController {
   /**
    * PATCH /api/v1/assets/:id
    * Update editable asset fields. Does NOT change lifecycle status.
-   * Roles: IT Personnel only
+   * Roles: IT Personnel, Property Custodian
    */
   @Patch(':id')
-  @Roles(UserRole.IT_PERSONNEL)
+  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateAssetDto,
@@ -139,7 +157,7 @@ export class AssetsController {
    * Update asset lifecycle status.
    * State machine enforced — invalid transitions return 400.
    * Every change generates an audit log entry.
-   * Roles: IT Personnel only
+   * Roles: IT Personnel, Property Custodian
    * SVC: Deliver and Support
    *
    * Valid transitions (CLAUDE.md section 5.4):
@@ -153,7 +171,7 @@ export class AssetsController {
    *   disposed    → (terminal — no transitions)
    */
   @Patch(':id/lifecycle')
-  @Roles(UserRole.IT_PERSONNEL)
+  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
   async updateLifecycle(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateLifecycleDto,
@@ -175,12 +193,12 @@ export class AssetsController {
   /**
    * POST /api/v1/assets/:id/qr
    * Generate QR code and barcode identifiers for the asset.
-   * Roles: IT Personnel only
+   * Roles: IT Personnel, Property Custodian
    * SVC: Obtain/Build
    */
   @Post(':id/qr')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.IT_PERSONNEL)
+  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
   async generateQr(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: AuthenticatedRequest,
