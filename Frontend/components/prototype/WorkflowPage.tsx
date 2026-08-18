@@ -237,25 +237,24 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
   const content = pageCopy[normalizedSlug] ?? { title: 'Workspace', detail: 'Frontend-only operational prototype.', action: 'Run Action' };
   const readOnly = role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER;
   const isInventoryAccountabilityPage = ['assets', 'assigned-assets', 'physical-inventory', 'custody'].includes(normalizedSlug);
-  const [rows, setRows] = useState<Row[]>(() =>
-    role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')
-      ? []
-      : rowsFor(role, normalizedSlug),
-  );
-  const [loading, setLoading] = useState(
-    role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions'),
-  );
+  // Single source of truth for which role+slug combinations fetch real data instead of
+  // mock rows. Referenced by the rows/loading initializers and the effect guard below —
+  // extending this to another role+slug pair (e.g. Task 18's MANAGEMENT_AUDIT_VIEWER +
+  // 'audit') only needs a change here, not three synchronized edits.
+  const isLiveFetchPage =
+    role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions');
+  const [rows, setRows] = useState<Row[]>(() => (isLiveFetchPage ? [] : rowsFor(role, normalizedSlug)));
+  const [loading, setLoading] = useState(isLiveFetchPage);
 
   useEffect(() => {
-    if (role !== ProposedUserRole.APPROVING_OFFICER) return;
-    if (normalizedSlug !== 'approvals' && normalizedSlug !== 'requisitions') return;
+    if (!isLiveFetchPage) return;
 
     const fetcher = normalizedSlug === 'approvals' ? requisitionsApi.list() : requisitionsApi.mine();
     fetcher
       .then((res) => setRows(res.data.data.map(requisitionApiToRow)))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [role, normalizedSlug]);
+  }, [isLiveFetchPage, normalizedSlug]);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
