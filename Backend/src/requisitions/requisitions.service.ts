@@ -83,7 +83,17 @@ export class RequisitionsService {
             RequisitionStatus.PENDING_FULFILLMENT,
             RequisitionStatus.ON_HOLD,
           ],
-        }).andWhere('items.assetType = :itScope', { itScope: AssetType.ICT });
+        }).andWhere(
+          // Filtering the joined `items` alias directly would constrain what
+          // leftJoinAndSelect('r.items', 'items') hydrates (silently hiding
+          // non-matching sibling items) and would skew skip/take pagination,
+          // since a multi-item requisition yields multiple raw rows before
+          // TypeORM re-collapses them. An EXISTS subquery instead filters
+          // which requisitions (the `r` side) match, leaving `items` hydration
+          // and pagination untouched — same shape as the `r.status` filter above.
+          'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type = :itScope)',
+          { itScope: AssetType.ICT },
+        );
         break;
       case UserRole.PROPERTY_CUSTODIAN:
         qb.where('r.status IN (:...statuses)', {
@@ -91,14 +101,16 @@ export class RequisitionsService {
             RequisitionStatus.PENDING_FULFILLMENT,
             RequisitionStatus.ON_HOLD,
           ],
-        }).andWhere('items.assetType IN (:...pcScope)', {
-          pcScope: resolveAssetTypeScope(UserRole.PROPERTY_CUSTODIAN),
-        });
+        }).andWhere(
+          'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...pcScope))',
+          { pcScope: resolveAssetTypeScope(UserRole.PROPERTY_CUSTODIAN) },
+        );
         break;
       case UserRole.PROPERTY_OFFICER:
-        qb.andWhere('items.assetType IN (:...poScope)', {
-          poScope: resolveAssetTypeScope(UserRole.PROPERTY_OFFICER),
-        });
+        qb.andWhere(
+          'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...poScope))',
+          { poScope: resolveAssetTypeScope(UserRole.PROPERTY_OFFICER) },
+        );
         break;
       // SYSTEM_ADMIN and MANAGEMENT see all
     }

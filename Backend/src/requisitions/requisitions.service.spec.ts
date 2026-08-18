@@ -588,9 +588,10 @@ describe('RequisitionsService', () => {
       expect(qb.where).toHaveBeenCalledWith('r.status IN (:...statuses)', {
         statuses: [RequisitionStatus.PENDING_FULFILLMENT, RequisitionStatus.ON_HOLD],
       });
-      expect(qb.andWhere).toHaveBeenCalledWith('items.assetType = :itScope', {
-        itScope: AssetType.ICT,
-      });
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type = :itScope)',
+        { itScope: AssetType.ICT },
+      );
     });
 
     it('scopes to fulfillment queue with Fixed/Supplies items for PROPERTY_CUSTODIAN role', async () => {
@@ -602,9 +603,10 @@ describe('RequisitionsService', () => {
       expect(qb.where).toHaveBeenCalledWith('r.status IN (:...statuses)', {
         statuses: [RequisitionStatus.PENDING_FULFILLMENT, RequisitionStatus.ON_HOLD],
       });
-      expect(qb.andWhere).toHaveBeenCalledWith('items.assetType IN (:...pcScope)', {
-        pcScope: [AssetType.FIXED, AssetType.SUPPLIES],
-      });
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...pcScope))',
+        { pcScope: [AssetType.FIXED, AssetType.SUPPLIES] },
+      );
     });
 
     it('scopes PROPERTY_OFFICER to Fixed/Supplies items across all statuses', async () => {
@@ -614,9 +616,10 @@ describe('RequisitionsService', () => {
       await service.findAll('po-1', UserRole.PROPERTY_OFFICER);
 
       expect(qb.where).not.toHaveBeenCalled();
-      expect(qb.andWhere).toHaveBeenCalledWith('items.assetType IN (:...poScope)', {
-        poScope: [AssetType.FIXED, AssetType.SUPPLIES],
-      });
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...poScope))',
+        { poScope: [AssetType.FIXED, AssetType.SUPPLIES] },
+      );
     });
 
     it('returns all requisitions for SYSTEM_ADMIN without role filter', async () => {
