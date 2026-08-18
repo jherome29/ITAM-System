@@ -37,6 +37,7 @@ describe('Requisition workflow (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api'); // matches main.ts bootstrap() — not implied by AppModule alone
     await app.init();
 
     userRepo = moduleFixture.get(getRepositoryToken(UserEntity));
