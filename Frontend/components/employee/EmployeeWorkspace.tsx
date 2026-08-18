@@ -13,8 +13,6 @@ import { requisitionsApi, type Requisition, type CreateRequisitionDto } from '@/
 import { assetMockRows } from '@/lib/mock/assets.mock';
 import type { MockAsset } from '@/lib/mock/assets.mock';
 import { notificationMockRows } from '@/lib/mock/notifications.mock';
-import { requisitionMockRows } from '@/lib/mock/requisitions.mock';
-import type { MockRequisition } from '@/lib/mock/requisitions.mock';
 import { EmployeeDashboard } from './EmployeeDashboard';
 
 const employeeId = 'EMP-001';
@@ -146,11 +144,9 @@ function RequisitionForm({ defaultItemDescription = '', defaultAssetType = 'ICT'
   </form>;
 }
 
-// Real-data detail view for EmployeeRequisitions' drawer. Kept separate from the
-// MockRequisition-typed RequisitionDetails below (which EmployeeRequisitionDetail — a
-// different route/component, out of scope here and slated for its own task — still reads
-// via requisitionMockRows) rather than converting that shared function's prop type, so this
-// task's changes don't reach into a component reserved for separate work. Reconstructs the
+// Real-data detail view shared by EmployeeRequisitions' inline drawer and the
+// EmployeeRequisitionDetail route page below, so both surfaces render the same
+// Requisition shape identically instead of duplicating this JSX. Reconstructs the
 // former mock "Progress Timeline" from real timestamp fields instead of dropping it, since
 // submittedAt/supervisorDecidedAt/fulfilledAt carry the same lifecycle information.
 function RequisitionDetailView({ request }: Readonly<{ request: Requisition }>) {
@@ -166,10 +162,6 @@ function RequisitionDetailView({ request }: Readonly<{ request: Requisition }>) 
     {request.supervisorComments && <div className="border border-amber-200 bg-amber-50 p-3"><p className="text-xs font-bold text-amber-900">Approver remarks</p><p className="mt-1 text-sm text-amber-800">{request.supervisorComments}</p></div>}
     <Panel title="Progress Timeline"><div className="divide-y divide-slate-100 px-4">{timeline.map((step, index) => <div key={step.label} className="flex items-center gap-3 py-3"><span className="grid h-6 w-6 place-items-center rounded-full bg-blue-50 text-xs font-bold text-blue-700">{index + 1}</span><span className="text-sm text-slate-700">{step.label}</span><span className="ml-auto text-xs text-slate-500">{String(step.at).slice(0, 10)}</span></div>)}</div></Panel>
   </div>;
-}
-
-function RequisitionDetails({ request, onResubmit }: Readonly<{ request: MockRequisition; onResubmit: () => void }>) {
-  return <div className="space-y-5"><div className="flex items-start justify-between gap-3"><div><p className="text-lg font-bold text-slate-950">{request.item}</p><p className="mt-1 text-xs text-slate-500">Submitted {request.submittedDate}</p></div><StatusChip status={request.status} /></div><div className="grid grid-cols-2 gap-3">{[['Type', `${request.requestType} - ${request.scope}`], ['Quantity', String(request.quantity)], ['Required date', request.requiredDate], ['Approving officer', request.approvingOfficer]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>)}</div><div><p className="text-xs font-bold text-slate-500">Justification</p><p className="mt-2 text-sm text-slate-700">{request.justification}</p></div>{request.remarks && <div className="border border-amber-200 bg-amber-50 p-3"><p className="text-xs font-bold text-amber-900">Approver remarks</p><p className="mt-1 text-sm text-amber-800">{request.remarks}</p></div>}<Panel title="Progress Timeline"><div className="divide-y divide-slate-100 px-4">{request.timeline.map((item, index) => <div key={`${item}-${index}`} className="flex items-center gap-3 py-3"><span className="grid h-6 w-6 place-items-center rounded-full bg-blue-50 text-xs font-bold text-blue-700">{index + 1}</span><span className="text-sm text-slate-700">{item}</span></div>)}</div></Panel>{request.status === 'Returned for Revision' && <PrimaryButton onClick={onResubmit}>Resubmit for approval</PrimaryButton>}</div>;
 }
 
 function EmployeeAssignedAssets() {
@@ -225,7 +217,20 @@ function EmployeeNotifications() {
 }
 
 export function EmployeeRequisitionDetail({ id }: Readonly<{ id: string }>) {
-  const [request, setRequest] = useState(() => requisitionMockRows.find((item) => item.id === id && item.requesterId === employeeId));
+  const [request, setRequest] = useState<Requisition | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // GET /v1/requisitions/:id is scoped server-side to requests the caller is
+    // permitted to see, so a missing/forbidden record surfaces the same
+    // "not found" state below rather than needing a client-side ownership check.
+    requisitionsApi.getOne(id)
+      .then((res) => setRequest(res.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  if (loading) return <div className="mx-auto max-w-3xl space-y-4"><EmployeeHeader title="Requisition details" detail="Loading your requisition..." /><Panel title="Requisition details"><div className="p-5"><LoadingSkeleton rows={6} /></div></Panel></div>;
   if (!request) return <div className="space-y-4"><EmployeeHeader title="Requisition not found" detail="This request does not exist or is not assigned to the current employee." /><Link href="/employee/requisitions" className="text-sm font-bold text-blue-700">Return to My Requisitions</Link></div>;
-  return <div className="mx-auto max-w-3xl space-y-4"><EmployeeHeader title={request.id} detail="Your requisition details and approval progress." /><Panel title={request.item} action={<StatusChip status={request.status} />}><div className="p-5"><RequisitionDetails request={request} onResubmit={() => setRequest((current) => current ? { ...current, status: 'Pending Approval', remarks: undefined, lastUpdate: 'Today', timeline: [...current.timeline, 'Revised and resubmitted'] } : current)} /></div></Panel><Link href="/employee/requisitions" className="inline-flex text-sm font-bold text-blue-700">Back to My Requisitions</Link></div>;
+  return <div className="mx-auto max-w-3xl space-y-4"><EmployeeHeader title={request.requestNumber} detail="Your requisition details and approval progress." /><Panel title="Requisition Details"><div className="p-5"><RequisitionDetailView request={request} /></div></Panel><Link href="/employee/requisitions" className="inline-flex text-sm font-bold text-blue-700">Back to My Requisitions</Link></div>;
 }
