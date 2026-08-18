@@ -18,6 +18,7 @@ import {
   UserRole,
   AuditAction,
   NotificationAlertType,
+  AssetType,
 } from '../../../packages/shared/src/enums';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -578,17 +579,43 @@ describe('RequisitionsService', () => {
       );
     });
 
-    it('scopes to fulfillment queue for IT_PERSONNEL role', async () => {
+    it('scopes to fulfillment queue with ICT-only items for IT_PERSONNEL role', async () => {
       const qb = makeListQb();
       mockReqRepo.createQueryBuilder.mockReturnValue(qb);
 
       await service.findAll('it-1', UserRole.IT_PERSONNEL);
 
       expect(qb.where).toHaveBeenCalledWith('r.status IN (:...statuses)', {
-        statuses: [
-          RequisitionStatus.PENDING_FULFILLMENT,
-          RequisitionStatus.ON_HOLD,
-        ],
+        statuses: [RequisitionStatus.PENDING_FULFILLMENT, RequisitionStatus.ON_HOLD],
+      });
+      expect(qb.andWhere).toHaveBeenCalledWith('items.assetType = :itScope', {
+        itScope: AssetType.ICT,
+      });
+    });
+
+    it('scopes to fulfillment queue with Fixed/Supplies items for PROPERTY_CUSTODIAN role', async () => {
+      const qb = makeListQb();
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findAll('pc-1', UserRole.PROPERTY_CUSTODIAN);
+
+      expect(qb.where).toHaveBeenCalledWith('r.status IN (:...statuses)', {
+        statuses: [RequisitionStatus.PENDING_FULFILLMENT, RequisitionStatus.ON_HOLD],
+      });
+      expect(qb.andWhere).toHaveBeenCalledWith('items.assetType IN (:...pcScope)', {
+        pcScope: [AssetType.FIXED, AssetType.SUPPLIES],
+      });
+    });
+
+    it('scopes PROPERTY_OFFICER to Fixed/Supplies items across all statuses', async () => {
+      const qb = makeListQb();
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findAll('po-1', UserRole.PROPERTY_OFFICER);
+
+      expect(qb.where).not.toHaveBeenCalled();
+      expect(qb.andWhere).toHaveBeenCalledWith('items.assetType IN (:...poScope)', {
+        poScope: [AssetType.FIXED, AssetType.SUPPLIES],
       });
     });
 

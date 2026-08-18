@@ -23,8 +23,10 @@ import {
   AuditAction,
   UserRole,
   NotificationAlertType,
+  AssetType,
 } from '../../../packages/shared/src/enums';
 import { SLA_APPROVAL_HOURS } from '../../../packages/shared/src/constants';
+import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 
 // SVC: Engage & Design and Transition — multi-level approval workflow
 // Approval routing (CLAUDE.md section 6, Module 2):
@@ -81,6 +83,21 @@ export class RequisitionsService {
             RequisitionStatus.PENDING_FULFILLMENT,
             RequisitionStatus.ON_HOLD,
           ],
+        }).andWhere('items.assetType = :itScope', { itScope: AssetType.ICT });
+        break;
+      case UserRole.PROPERTY_CUSTODIAN:
+        qb.where('r.status IN (:...statuses)', {
+          statuses: [
+            RequisitionStatus.PENDING_FULFILLMENT,
+            RequisitionStatus.ON_HOLD,
+          ],
+        }).andWhere('items.assetType IN (:...pcScope)', {
+          pcScope: resolveAssetTypeScope(UserRole.PROPERTY_CUSTODIAN),
+        });
+        break;
+      case UserRole.PROPERTY_OFFICER:
+        qb.andWhere('items.assetType IN (:...poScope)', {
+          poScope: resolveAssetTypeScope(UserRole.PROPERTY_OFFICER),
         });
         break;
       // SYSTEM_ADMIN and MANAGEMENT see all
