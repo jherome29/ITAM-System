@@ -19,6 +19,7 @@ import { UpdateLifecycleDto } from './dto/update-lifecycle.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 import { UserRole } from '../../../packages/shared/src/enums';
 import { UserEntity } from '../users/entities/user.entity';
 
@@ -53,12 +54,15 @@ export class AssetsController {
     @Query('limit') limit = 20,
     @Query('search') search?: string,
     @Query('status') status?: string,
+    @Req() req?: AuthenticatedRequest,
   ) {
+    const assetTypeScope = req ? resolveAssetTypeScope(req.user.role) : undefined;
     const result = await this.assetsService.findAll(
       +page,
       +limit,
       search,
       status,
+      assetTypeScope,
     );
     return { message: 'Assets retrieved successfully', data: result };
   }

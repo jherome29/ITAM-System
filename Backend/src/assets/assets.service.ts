@@ -14,6 +14,7 @@ import { UpdateAssetDto } from './dto/update-asset.dto';
 import { UpdateLifecycleDto } from './dto/update-lifecycle.dto';
 import {
   AssetStatus,
+  AssetType,
   AuditAction,
   UserRole,
 } from '../../../packages/shared/src/enums';
@@ -76,12 +77,22 @@ export class AssetsService {
   ) {}
 
   // ── List all assets (paginated, optional search + status filter) ──────────
-  async findAll(page = 1, limit = 20, search?: string, status?: string) {
+  async findAll(
+    page = 1,
+    limit = 20,
+    search?: string,
+    status?: string,
+    assetTypeScope?: AssetType[],
+  ) {
     const qb = this.assetRepo
       .createQueryBuilder('a')
       .orderBy('a.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit);
+
+    if (assetTypeScope && assetTypeScope.length > 0) {
+      qb.andWhere('a.assetType IN (:...assetTypeScope)', { assetTypeScope });
+    }
 
     if (status) {
       qb.andWhere('a.status = :status', { status: status.toLowerCase() });

@@ -406,6 +406,25 @@ describe('AssetsService', () => {
       await service.findAll(1, 20, 'Dell', 'issued');
       expect(qb.andWhere).toHaveBeenCalledTimes(2);
     });
+
+    it('applies assetType scope filter when assetTypeScope is provided', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(1, 20, undefined, undefined, [AssetType.FIXED, AssetType.SUPPLIES]);
+      expect(qb.andWhere).toHaveBeenCalledWith('a.assetType IN (:...assetTypeScope)', {
+        assetTypeScope: [AssetType.FIXED, AssetType.SUPPLIES],
+      });
+    });
+
+    it('does not add an assetType filter when assetTypeScope is undefined', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll();
+      expect(qb.andWhere).not.toHaveBeenCalledWith(
+        expect.stringContaining('assetType IN'),
+        expect.anything(),
+      );
+    });
   });
 
   // ── findCatalogue() — available-only list ─────────────────────────────────
