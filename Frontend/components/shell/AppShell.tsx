@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { roleNavigation } from '@/lib/roles/role-navigation';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
 import { useAuth } from '@/lib/auth/use-auth';
+import { shouldRedirectToLogin } from '@/lib/auth/guard';
 import { SidebarNav } from './SidebarNav';
 import { TopBar } from './TopBar';
 
@@ -24,7 +25,7 @@ export function AppShell({ role, children }: Readonly<{ role: ProposedUserRole; 
   const router = useRouter();
 
   useEffect(() => {
-    if (!isLoading && !user) {
+    if (shouldRedirectToLogin(user, isLoading)) {
       router.replace('/login');
     }
   }, [isLoading, user, router]);
