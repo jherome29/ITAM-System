@@ -1,13 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { KeyRound, Plus, ShieldCheck, UserCheck, Users } from 'lucide-react';
+import { Plus, ShieldCheck, UserCheck, Users } from 'lucide-react';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { usersApi, type CreateUserDto, type User } from '@/lib/api/users';
-import { accessReviews, adminRoles, organizationUnits, permissionGroups } from '@/lib/mock/admin.mock';
-import type { AdminRole } from '@/lib/mock/admin.mock';
+import { accessReviews, organizationUnits } from '@/lib/mock/admin.mock';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
 
 type IdentitySlug = 'users' | 'roles' | 'access-reviews' | 'organizational-units';
@@ -148,20 +147,62 @@ function AccountForm({ onSave }: Readonly<{ onSave: (user: User) => void }>) {
 }
 
 function RolesPage() {
-  const [roles, setRoles] = useState<AdminRole[]>(adminRoles);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('All');
-  const [selected, setSelected] = useState<(typeof adminRoles)[number] | null>(null);
-  const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState('');
-  const rows = roles.filter((role) => (filter === 'All' || role.privilege === filter || role.reviewStatus === filter) && Object.values(role).join(' ').toLowerCase().includes(search.toLowerCase()));
-  return <div className="space-y-4"><AdminPageHeader title="Roles & Permissions" detail="Define role purpose, organizational scope, and effective permissions using least-privilege and separation-of-duty controls." action={<PrimaryButton icon={Plus} onClick={() => setCreating(true)}>Create role</PrimaryButton>} />
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Defined roles" value="7" detail="One administrative role" tone="blue" icon={KeyRound} /><MetricCard label="Privileged users" value="24" detail="Across five elevated roles" tone="amber" icon={Users} /><MetricCard label="Reviews due" value="2" detail="One role overdue" tone="red" icon={UserCheck} /><MetricCard label="Conflicts detected" value="1" detail="Approval and fulfillment overlap" tone="red" icon={ShieldCheck} /></div>
-    <SearchToolbar value={search} onChange={setSearch} filterLabel="All roles" filterValue={filter} filterOptions={['All', 'Standard', 'Elevated', 'Administrative', 'Read only', 'Review due', 'Overdue']} onFilterChange={setFilter} />
-    <Panel title="Role Catalogue" detail="Role ownership, scope, population, and review status"><TableWrap><table className="w-full"><thead><tr><th className={thClass}>Role</th><th className={thClass}>Scope</th><th className={thClass}>Users</th><th className={thClass}>Permissions</th><th className={thClass}>Privilege</th><th className={thClass}>Owner</th><th className={thClass}>Last reviewed</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{rows.map((role) => <tr key={role.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelected(role)} className="text-left font-bold text-slate-950">{role.name}<span className="block text-xs font-normal text-slate-500">{role.id}</span></button></td><td className={tdClass}>{role.scope}</td><td className={tdClass}>{role.users}</td><td className={tdClass}>{role.permissions}</td><td className={tdClass}><StatusChip status={role.privilege} /></td><td className={tdClass}>{role.owner}</td><td className={tdClass}>{role.lastReviewed}<span className="mt-1 block"><StatusChip status={role.reviewStatus} /></span></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View permissions', onClick: () => setSelected(role) }, { label: 'Assign user', onClick: () => setToast(`Assignment workflow opened for ${role.name}.`) }, { label: 'Start access review', onClick: () => setToast(`Access review prepared for ${role.name}.`) }]} /></td></tr>)}</tbody></table></TableWrap></Panel>
-    <Panel title="Permission Matrix" detail="Effective capability by operational role; backend guards remain the security enforcement point"><TableWrap><table className="w-full"><thead><tr><th className={thClass}>Capability group</th><th className={thClass}>Employee</th><th className={thClass}>Approving officer</th><th className={thClass}>IT custodian</th><th className={thClass}>Property custodian</th><th className={thClass}>Master admin</th></tr></thead><tbody>{permissionGroups.map((item) => <tr key={item.group}><td className={`${tdClass} font-bold text-slate-900`}>{item.group}</td><td className={tdClass}>{item.employee}</td><td className={tdClass}>{item.approver}</td><td className={tdClass}>{item.ict}</td><td className={tdClass}>{item.property}</td><td className={tdClass}>{item.admin}</td></tr>)}</tbody></table></TableWrap></Panel>
-    <DetailDrawer open={Boolean(selected)} title={selected?.name ?? 'Role'} onClose={() => setSelected(null)}>{selected && <div className="space-y-4"><div className="border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><strong>Effective access preview:</strong> {selected.scope}. Changes require backend RBAC implementation before production use.</div>{[['Role owner', selected.owner], ['Assigned users', String(selected.users)], ['Permission count', String(selected.permissions)], ['Privilege level', selected.privilege], ['Last reviewed', selected.lastReviewed]].map(([label, value]) => <div key={label} className="flex justify-between gap-4 border-b border-slate-100 pb-3 text-sm"><span className="text-slate-500">{label}</span><span className="text-right font-semibold text-slate-900">{value}</span></div>)}<PrimaryButton onClick={() => setToast(`${selected.name} was opened as a new editable draft.`)}>Create editable draft</PrimaryButton></div>}</DetailDrawer>
-    <DetailDrawer open={creating} title="Create role" onClose={() => setCreating(false)}><form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const role: AdminRole = { id: `ROL-${String(roles.length + 1).padStart(3, '0')}`, name: String(data.get('name')), scope: String(data.get('scope')), users: 0, permissions: Number(data.get('permissions')), privilege: String(data.get('privilege')) as AdminRole['privilege'], owner: String(data.get('owner')), lastReviewed: 'Not reviewed', reviewStatus: 'Review due' }; setRoles((current) => [...current, role]); setCreating(false); setToast(`${role.name} role draft was created.`); }}><Field label="Role name"><input name="name" required minLength={3} className={inputClass} /></Field><Field label="Organizational scope"><input name="scope" required className={inputClass} placeholder="Own records, assigned unit, or agency-wide" /></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Privilege level"><select name="privilege" className={inputClass}><option>Standard</option><option>Elevated</option><option>Administrative</option><option>Read only</option></select></Field><Field label="Permission count"><input name="permissions" type="number" min="1" max="50" defaultValue="1" className={inputClass} /></Field></div><Field label="Role owner"><input name="owner" required className={inputClass} placeholder="Accountable office or unit" /></Field><div className="border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">The role remains a draft until its permissions are reviewed for least privilege and separation-of-duty conflicts.</div><PrimaryButton type="submit">Create role draft</PrimaryButton></form></DetailDrawer><Toast message={toast} /></div>;
+  const [pendingRoleById, setPendingRoleById] = useState<Record<string, string>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    usersApi.list(1, 100)
+      .then((res) => setUsers(res.data.data))
+      .catch(() => setToast('Failed to load users.'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const rows = users.filter((user) =>
+    `${user.firstName} ${user.lastName} ${user.email} ${user.role}`.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  const saveRole = async (user: User) => {
+    const newRole = pendingRoleById[user.id];
+    if (!newRole || newRole === user.role) return;
+    setSavingId(user.id);
+    try {
+      const res = await usersApi.updateRole(user.id, newRole);
+      setUsers((current) => current.map((u) => (u.id === user.id ? res.data : u)));
+      setToast(`${user.firstName} ${user.lastName}'s role updated to ${newRole.replace(/_/g, ' ')}.`);
+    } catch {
+      setToast(`Failed to update ${user.firstName} ${user.lastName}'s role.`);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  return <div className="space-y-4">
+    <AdminPageHeader title="Roles & Assignment" detail="Assign one of the system's fixed roles to a user. Roles and their permissions are defined in code, not configurable here." />
+    <SearchToolbar value={search} onChange={setSearch} filterLabel="All users" />
+    <Panel title="User Role Assignment" detail={`${rows.length} accounts shown`}>
+      {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="w-full"><thead><tr>
+        <th className={thClass}>User</th><th className={thClass}>Current role</th><th className={thClass}>New role</th><th className={`${thClass} text-right`}>Action</th>
+      </tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={4} className="px-4 py-10 text-center text-sm text-slate-400">No accounts found.</td></tr> : rows.map((user) => <tr key={user.id}>
+        <td className={tdClass}>{user.firstName} {user.lastName}<span className="block text-xs text-slate-500">{user.employeeId}</span></td>
+        <td className={tdClass}>{user.role.replace(/_/g, ' ')}</td>
+        <td className={tdClass}>
+          <select
+            className={inputClass}
+            defaultValue={user.role}
+            onChange={(e) => setPendingRoleById((current) => ({ ...current, [user.id]: e.target.value }))}
+          >
+            {USER_ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+          </select>
+        </td>
+        <td className={`${tdClass} text-right`}><SecondaryButton onClick={() => saveRole(user)}>{savingId === user.id ? 'Saving…' : 'Save'}</SecondaryButton></td>
+      </tr>)}</tbody></table></TableWrap>}
+    </Panel>
+    <Toast message={toast} />
+  </div>;
 }
 
 function AccessReviewsPage() {
