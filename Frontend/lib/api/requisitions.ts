@@ -67,11 +67,15 @@ export const requisitionsApi = {
   create: (dto: CreateRequisitionDto) =>
     client.post<ApiResponse<Requisition>>('/v1/requisitions', dto).then((r) => r.data),
 
-  approve: (id: string, comment?: string) =>
-    client.post<ApiResponse<Requisition>>(`/v1/requisitions/${id}/approve`, { comment }).then((r) => r.data),
+  // Field name must be `comments` (plural) — matches ApproveRequisitionDto /
+  // RejectRequisitionDto on the backend. main.ts has forbidNonWhitelisted:
+  // true, so a mismatched key here causes every reject (and every approve
+  // with a comment) to fail with 400.
+  approve: (id: string, comments?: string) =>
+    client.post<ApiResponse<Requisition>>(`/v1/requisitions/${id}/approve`, { comments }).then((r) => r.data),
 
-  reject: (id: string, comment: string) =>
-    client.post<ApiResponse<Requisition>>(`/v1/requisitions/${id}/reject`, { comment }).then((r) => r.data),
+  reject: (id: string, comments: string) =>
+    client.post<ApiResponse<Requisition>>(`/v1/requisitions/${id}/reject`, { comments }).then((r) => r.data),
 
   hold: (id: string, reason: string) =>
     client.post<ApiResponse<Requisition>>(`/v1/requisitions/${id}/hold`, { reason }).then((r) => r.data),
