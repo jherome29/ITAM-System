@@ -22,11 +22,12 @@ This is the real gap. The data model and CRUD exist; the *rules* CICC actually n
 - **No alternate approver support.** Documented as a requirement; doesn't exist in the data model or anywhere in the code.
 - **No physical count / reconciliation.** The forms for it exist as templates, but there's no way to actually record a count and compare it against system records — the "report" is just today's live asset list.
 - **2 of 8 management reports don't exist**: Asset Utilization Summary and Audit Trail Report (as an export — the live audit log itself works).
+- **Generated COA forms don't match the official templates.** Checked 5 of the 18 against their actual reference files in `FORMS/` (the source templates the generators were supposedly built from). All 18 share one generic layout (header + meta fields + table + signature block) instead of reproducing each form's real field list. Some are close — RIS and PTR have the right number of signatories in roughly the right roles, just minor field/column differences. Others aren't: PAR and ICS add an "Approved by"/"Head of Division" signature block that doesn't exist on the real form, plus extra fields and reordered/added table columns. WMR is the worst — the real Appendix 65 has a whole second section, "Certificate of Inspection," with disposition-method checkboxes (destroyed / sold / transferred) and a witness signature, plus a "Record of Sales" table — none of that exists in the generated version at all. These are real government forms; an auditor comparing output to the official template would notice immediately. Not checked yet: the other 13 forms.
 - **Everything else already known and deferred on purpose**: IT Asset Custodian's and the two Property roles' own screens, most of Master Admin, Reconciliation/Corrections screens — these are UI-redesign leftovers not yet connected, tracked separately.
 
 ## What's actually solid despite the gaps above
 
-Forms/reports generation itself is in good shape — all 18 official COA forms generate real PDFs from real data, and 6 of 8 management reports are fully wired.
+Forms/reports generation *mechanism* is in good shape — all 18 forms generate real PDFs from real data, correctly stored and re-downloadable, no crashes. Whether each form's actual *layout* matches its official COA template is a separate, weaker claim — see the forms-fidelity gap above. 6 of 8 management reports are fully wired.
 
 ## Suggested order of next work
 
@@ -34,8 +35,9 @@ Forms/reports generation itself is in good shape — all 18 official COA forms g
 1. **Notifications + SLA job** — one scheduled task unlocks two "not built" items at once, and it's the most visible gap in daily use (people expect alerts to just work).
 2. **Replacement validation** — a real compliance/audit-readiness gap, not just a nice-to-have; worth closing before any real requisition volume goes through the replacement path.
 3. **Disposal workflow** — turn the status flag into an actual documented flow with the required fields (matches your COA/audit obligations).
-4. **Alternate approver** — smaller, but blocks a documented requirement outright.
-5. **Wire the remaining "look real but aren't" pages** — the deferred UI screens from this round (IT Asset Custodian, Property roles' own pages, rest of Master Admin) — and while doing that pass, specifically re-check each one's action buttons the way we just did here, not just its data loading.
-6. **Physical count / reconciliation + the 2 missing reports** — lower urgency, but needed before any real audit-readiness claim.
+4. **Fix the COA form templates against their actual references** — go through each of the 18 generators in `Backend/src/reports/forms/` against its matching file in `FORMS/`, field by field, not just "does a PDF come out." WMR needs its missing Certificate of Inspection section entirely; PAR and ICS need their extra signatory removed and columns corrected. This is exactly the kind of thing that looks fine until CICC or COA actually compares it to the real form.
+5. **Alternate approver** — smaller, but blocks a documented requirement outright.
+6. **Wire the remaining "look real but aren't" pages** — the deferred UI screens from this round (IT Asset Custodian, Property roles' own pages, rest of Master Admin) — and while doing that pass, specifically re-check each one's action buttons the way we just did here, not just its data loading.
+7. **Physical count / reconciliation + the 2 missing reports** — lower urgency, but needed before any real audit-readiness claim.
 
 Everything above is backend-logic-plus-a-little-UI, not another redesign — the design work is done, this is about making the system actually do what it already claims to do.
