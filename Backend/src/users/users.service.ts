@@ -9,7 +9,8 @@ import {
   AssignRoleDto,
   ResetPasswordDto,
 } from './dto/user.dto';
-import { UserRole } from '../../../packages/shared/src/enums';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
 import { BCRYPT_ROUNDS } from '../../../packages/shared/src/constants';
 
 // SVC: Plan — user account management (System Admin only)
@@ -19,6 +20,7 @@ export class UsersService {
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
+    private readonly auditService: AuditService,
   ) {}
 
   async findAll(page = 1, limit = 50, search?: string) {
@@ -58,7 +60,12 @@ export class UsersService {
     });
   }
 
-  async create(dto: CreateUserDto): Promise<UserEntity> {
+  async create(
+    dto: CreateUserDto,
+    performedById: string,
+    performedByRole: UserRole,
+    ipAddress: string,
+  ): Promise<UserEntity> {
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
     const user = this.userRepo.create({
       employeeId: dto.employeeId,
@@ -70,24 +77,78 @@ export class UsersService {
       division: dto.division,
       officeOrSection: dto.officeOrSection,
     });
-    return this.userRepo.save(user);
+    const saved = await this.userRepo.save(user);
+
+    // Every account creation must generate an audit log entry (CLAUDE.md section 8.3)
+    await this.auditService.log({
+      userId: performedById,
+      userRole: performedByRole,
+      action: AuditAction.USER_CREATED,
+      affectedRecordId: saved.id,
+      affectedRecordType: 'user',
+      ipAddress,
+      metadata: {
+        employeeId: saved.employeeId,
+        role: saved.role,
+      },
+    });
+
+    return saved;
   }
 
-  async update(id: string, dto: UpdateUserDto): Promise<UserEntity> {
+  async update(
+    id: string,
+    dto: UpdateUserDto,
+    performedById: string,
+    performedByRole: UserRole,
+    ipAddress: string,
+  ): Promise<UserEntity> {
     await this.findOne(id);
     await this.userRepo.update(id, dto);
+
+    await this.auditService.log({
+      userId: performedById,
+      userRole: performedByRole,
+      action: AuditAction.USER_UPDATED,
+      affectedRecordId: id,
+      affectedRecordType: 'user',
+      ipAddress,
+      metadata: { updatedFields: Object.keys(dto) },
+    });
+
     return this.findOne(id);
   }
 
-  async assignRole(id: string, dto: AssignRoleDto): Promise<UserEntity> {
-    await this.findOne(id);
+  async assignRole(
+    id: string,
+    dto: AssignRoleDto,
+    performedById: string,
+    performedByRole: UserRole,
+    ipAddress: string,
+  ): Promise<UserEntity> {
+    const user = await this.findOne(id);
+    const previousRole = user.role;
     await this.userRepo.update(id, { role: dto.role });
+
+    await this.auditService.log({
+      userId: performedById,
+      userRole: performedByRole,
+      action: AuditAction.ROLE_ASSIGNED,
+      affectedRecordId: id,
+      affectedRecordType: 'user',
+      ipAddress,
+      metadata: { previousRole, newRole: dto.role },
+    });
+
     return this.findOne(id);
   }
 
   async resetPassword(
     id: string,
     dto: ResetPasswordDto,
+    performedById: string,
+    performedByRole: UserRole,
+    ipAddress: string,
   ): Promise<{ message: string }> {
     const user = await this.findOne(id);
     const passwordHash = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS);
@@ -97,15 +158,48 @@ export class UsersService {
       lockedUntil: null,
       tokenVersion: user.tokenVersion + 1,
     });
+
+    // NOTE: No dedicated AuditAction exists for password resets — reusing
+    // USER_UPDATED with a metadata marker. Flagged for the team: consider
+    // adding a PASSWORD_RESET value to AuditAction (packages/shared).
+    await this.auditService.log({
+      userId: performedById,
+      userRole: performedByRole,
+      action: AuditAction.USER_UPDATED,
+      affectedRecordId: id,
+      affectedRecordType: 'user',
+      ipAddress,
+      metadata: { action: 'password_reset' },
+    });
+
     return { message: 'Password reset successfully' };
   }
 
-  async unlock(id: string): Promise<{ message: string }> {
+  async unlock(
+    id: string,
+    performedById: string,
+    performedByRole: UserRole,
+    ipAddress: string,
+  ): Promise<{ message: string }> {
     const user = await this.findOne(id);
     await this.userRepo.update(id, {
       failedLoginAttempts: 0,
       lockedUntil: null,
     });
+
+    // NOTE: No dedicated AuditAction exists for account unlocks — reusing
+    // USER_UPDATED with a metadata marker. Flagged for the team: consider
+    // adding an ACCOUNT_UNLOCKED value to AuditAction (packages/shared).
+    await this.auditService.log({
+      userId: performedById,
+      userRole: performedByRole,
+      action: AuditAction.USER_UPDATED,
+      affectedRecordId: id,
+      affectedRecordType: 'user',
+      ipAddress,
+      metadata: { action: 'account_unlocked' },
+    });
+
     return { message: `Account ${user.employeeId} unlocked` };
   }
 
@@ -114,12 +208,28 @@ export class UsersService {
    * Deletion would break the audit trail referencing this user.
    * SVC: Plan — account lifecycle management
    */
-  async deactivate(id: string): Promise<{ message: string }> {
+  async deactivate(
+    id: string,
+    performedById: string,
+    performedByRole: UserRole,
+    ipAddress: string,
+  ): Promise<{ message: string }> {
     const user = await this.findOne(id);
     if (!user.isActive) {
       throw new NotFoundException(`User "${id}" is already inactive`);
     }
     await this.userRepo.update(id, { isActive: false });
+
+    await this.auditService.log({
+      userId: performedById,
+      userRole: performedByRole,
+      action: AuditAction.USER_DEACTIVATED,
+      affectedRecordId: id,
+      affectedRecordType: 'user',
+      ipAddress,
+      metadata: { employeeId: user.employeeId },
+    });
+
     return {
       message: `User ${user.employeeId} (${user.firstName} ${user.lastName}) deactivated`,
     };

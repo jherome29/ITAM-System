@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   UseGuards,
+  Req,
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
@@ -20,6 +21,12 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../../../packages/shared/src/enums';
+import { UserEntity } from './entities/user.entity';
+
+interface AuthenticatedRequest {
+  user: UserEntity;
+  ip: string;
+}
 
 // SVC: Plan — user account management
 // All routes: SYSTEM_ADMIN only (except GET list which also allows MANAGEMENT read)
@@ -52,8 +59,8 @@ export class UsersController {
   /** POST /api/v1/users — Create user account (Admin only) */
   @Post()
   @Roles(UserRole.SYSTEM_ADMIN)
-  async create(@Body() dto: CreateUserDto) {
-    const user = await this.svc.create(dto);
+  async create(@Body() dto: CreateUserDto, @Req() req: AuthenticatedRequest) {
+    const user = await this.svc.create(dto, req.user.id, req.user.role, req.ip);
     return { message: 'User account created', data: user };
   }
 
@@ -63,8 +70,15 @@ export class UsersController {
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserDto,
+    @Req() req: AuthenticatedRequest,
   ) {
-    const user = await this.svc.update(id, dto);
+    const user = await this.svc.update(
+      id,
+      dto,
+      req.user.id,
+      req.user.role,
+      req.ip,
+    );
     return { message: 'User updated', data: user };
   }
 
@@ -74,8 +88,15 @@ export class UsersController {
   async assignRole(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AssignRoleDto,
+    @Req() req: AuthenticatedRequest,
   ) {
-    const user = await this.svc.assignRole(id, dto);
+    const user = await this.svc.assignRole(
+      id,
+      dto,
+      req.user.id,
+      req.user.role,
+      req.ip,
+    );
     return { message: `Role assigned: ${dto.role}`, data: user };
   }
 
@@ -85,24 +106,47 @@ export class UsersController {
   async resetPassword(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ResetPasswordDto,
+    @Req() req: AuthenticatedRequest,
   ) {
-    const result = await this.svc.resetPassword(id, dto);
+    const result = await this.svc.resetPassword(
+      id,
+      dto,
+      req.user.id,
+      req.user.role,
+      req.ip,
+    );
     return { message: result.message, data: null };
   }
 
   /** PATCH /api/v1/users/:id/unlock — Unlock a locked account */
   @Patch(':id/unlock')
   @Roles(UserRole.SYSTEM_ADMIN)
-  async unlock(@Param('id', ParseUUIDPipe) id: string) {
-    const result = await this.svc.unlock(id);
+  async unlock(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const result = await this.svc.unlock(
+      id,
+      req.user.id,
+      req.user.role,
+      req.ip,
+    );
     return { message: result.message, data: null };
   }
 
   /** PATCH /api/v1/users/:id/deactivate — Deactivate (no deletion) */
   @Patch(':id/deactivate')
   @Roles(UserRole.SYSTEM_ADMIN)
-  async deactivate(@Param('id', ParseUUIDPipe) id: string) {
-    const result = await this.svc.deactivate(id);
+  async deactivate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const result = await this.svc.deactivate(
+      id,
+      req.user.id,
+      req.user.role,
+      req.ip,
+    );
     return { message: result.message, data: null };
   }
 }
