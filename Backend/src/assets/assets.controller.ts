@@ -19,6 +19,7 @@ import { UpdateLifecycleDto } from './dto/update-lifecycle.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 import { UserRole } from '../../../packages/shared/src/enums';
 import { UserEntity } from '../users/entities/user.entity';
 
@@ -38,12 +39,33 @@ export class AssetsController {
   /**
    * GET /api/v1/assets
    * Full inventory list — paginated.
-   * Roles: IT Personnel, System Admin, Management
+   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
    */
   @Get()
-  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)
-  async findAll(@Query('page') page = 1, @Query('limit') limit = 20) {
-    const result = await this.assetsService.findAll(+page, +limit);
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
+  async findAll(
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Req() req?: AuthenticatedRequest,
+  ) {
+    const assetTypeScope = req
+      ? resolveAssetTypeScope(req.user.role)
+      : undefined;
+    const result = await this.assetsService.findAll(
+      +page,
+      +limit,
+      search,
+      status,
+      assetTypeScope,
+    );
     return { message: 'Assets retrieved successfully', data: result };
   }
 
@@ -63,41 +85,60 @@ export class AssetsController {
    * GET /api/v1/assets/stats
    * Grouped asset counts by status, class, and type.
    * Powers the IT Personnel and Management dashboards.
-   * Roles: IT Personnel, System Admin, Management
+   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
    */
   @Get('stats')
-  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)
-  async getStats() {
-    const result = await this.assetsService.getStats();
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
+  async getStats(@Req() req: AuthenticatedRequest) {
+    const assetTypeScope = resolveAssetTypeScope(req.user.role);
+    const result = await this.assetsService.getStats(assetTypeScope);
     return { message: 'Asset statistics retrieved', data: result };
   }
 
   /**
    * GET /api/v1/assets/:id
    * Single asset with full lifecycle history.
-   * Roles: IT Personnel, System Admin, Management
+   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
    */
   @Get(':id')
-  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    const asset = await this.assetsService.findOne(id);
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const assetTypeScope = resolveAssetTypeScope(req.user.role);
+    const asset = await this.assetsService.findOne(id, assetTypeScope);
     return { message: 'Asset retrieved successfully', data: asset };
   }
 
   /**
    * POST /api/v1/assets
    * Register a new asset with all required CICC fields (section 5.3).
-   * Roles: IT Personnel only
+   * Roles: IT Personnel, Property Custodian
    * SVC: Obtain/Build
    */
   @Post()
-  @Roles(UserRole.IT_PERSONNEL)
+  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
   async create(@Body() dto: CreateAssetDto, @Req() req: AuthenticatedRequest) {
+    const assetTypeScope = resolveAssetTypeScope(req.user.role);
     const asset = await this.assetsService.create(
       dto,
       req.user.id,
       req.user.role,
       req.ip,
+      assetTypeScope,
     );
     return { message: 'Asset registered successfully', data: asset };
   }
@@ -105,21 +146,23 @@ export class AssetsController {
   /**
    * PATCH /api/v1/assets/:id
    * Update editable asset fields. Does NOT change lifecycle status.
-   * Roles: IT Personnel only
+   * Roles: IT Personnel, Property Custodian
    */
   @Patch(':id')
-  @Roles(UserRole.IT_PERSONNEL)
+  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateAssetDto,
     @Req() req: AuthenticatedRequest,
   ) {
+    const assetTypeScope = resolveAssetTypeScope(req.user.role);
     const asset = await this.assetsService.update(
       id,
       dto,
       req.user.id,
       req.user.role,
       req.ip,
+      assetTypeScope,
     );
     return { message: 'Asset updated successfully', data: asset };
   }
@@ -129,7 +172,7 @@ export class AssetsController {
    * Update asset lifecycle status.
    * State machine enforced — invalid transitions return 400.
    * Every change generates an audit log entry.
-   * Roles: IT Personnel only
+   * Roles: IT Personnel, Property Custodian
    * SVC: Deliver and Support
    *
    * Valid transitions (CLAUDE.md section 5.4):
@@ -143,18 +186,20 @@ export class AssetsController {
    *   disposed    → (terminal — no transitions)
    */
   @Patch(':id/lifecycle')
-  @Roles(UserRole.IT_PERSONNEL)
+  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
   async updateLifecycle(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateLifecycleDto,
     @Req() req: AuthenticatedRequest,
   ) {
+    const assetTypeScope = resolveAssetTypeScope(req.user.role);
     const asset = await this.assetsService.updateLifecycle(
       id,
       dto,
       req.user.id,
       req.user.role,
       req.ip,
+      assetTypeScope,
     );
     return {
       message: `Asset status updated to "${dto.status}"`,
@@ -165,21 +210,23 @@ export class AssetsController {
   /**
    * POST /api/v1/assets/:id/qr
    * Generate QR code and barcode identifiers for the asset.
-   * Roles: IT Personnel only
+   * Roles: IT Personnel, Property Custodian
    * SVC: Obtain/Build
    */
   @Post(':id/qr')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.IT_PERSONNEL)
+  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
   async generateQr(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: AuthenticatedRequest,
   ) {
+    const assetTypeScope = resolveAssetTypeScope(req.user.role);
     const result = await this.assetsService.generateQr(
       id,
       req.user.id,
       req.user.role,
       req.ip,
+      assetTypeScope,
     );
     return { message: 'QR code generated successfully', data: result };
   }

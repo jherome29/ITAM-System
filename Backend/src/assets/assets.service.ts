@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -14,6 +15,7 @@ import { UpdateAssetDto } from './dto/update-asset.dto';
 import { UpdateLifecycleDto } from './dto/update-lifecycle.dto';
 import {
   AssetStatus,
+  AssetType,
   AuditAction,
   UserRole,
 } from '../../../packages/shared/src/enums';
@@ -75,13 +77,37 @@ export class AssetsService {
     private readonly usersService: UsersService,
   ) {}
 
-  // ── List all assets (paginated) ────────────────────────────────────────────
-  async findAll(page = 1, limit = 20) {
-    const [data, total] = await this.assetRepo.findAndCount({
-      order: { createdAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+  // ── List all assets (paginated, optional search + status filter) ──────────
+  async findAll(
+    page = 1,
+    limit = 20,
+    search?: string,
+    status?: string,
+    assetTypeScope?: AssetType[],
+  ) {
+    const qb = this.assetRepo
+      .createQueryBuilder('a')
+      .orderBy('a.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    if (assetTypeScope && assetTypeScope.length > 0) {
+      qb.andWhere('a.assetType IN (:...assetTypeScope)', { assetTypeScope });
+    }
+
+    if (status) {
+      qb.andWhere('a.status = :status', { status: status.toLowerCase() });
+    }
+
+    if (search) {
+      const q = `%${search}%`;
+      qb.andWhere(
+        '(LOWER(a.itemDescription) LIKE LOWER(:q) OR LOWER(a.propertyNumber) LIKE LOWER(:q) OR LOWER(a.serialNumber) LIKE LOWER(:q) OR LOWER(a.brand) LIKE LOWER(:q))',
+        { q },
+      );
+    }
+
+    const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
@@ -99,35 +125,67 @@ export class AssetsService {
 
   // ── Asset stats — IT Personnel & Management dashboard counts ──────────────
   // SVC: Improve — inventory overview KPIs
-  async getStats(): Promise<{
+  async getStats(assetTypeScope?: AssetType[]): Promise<{
     total: number;
-    byStatus: Record<string, number>;
+    available: number;
+    issued: number;
+    returned: number;
+    underRepair: number;
+    flaggedForDisposal: number;
+    transferred: number;
+    disposed: number;
     byClass: Record<string, number>;
     byType: Record<string, number>;
   }> {
+    const hasScope = !!assetTypeScope && assetTypeScope.length > 0;
+
     // Count by status
-    const statusRows = await this.assetRepo
+    const statusQb = this.assetRepo
       .createQueryBuilder('a')
       .select('a.status', 'status')
       .addSelect('COUNT(*)', 'count')
-      .groupBy('a.status')
-      .getRawMany<{ status: string; count: string }>();
+      .groupBy('a.status');
+    if (hasScope) {
+      statusQb.andWhere('a.assetType IN (:...assetTypeScope)', {
+        assetTypeScope,
+      });
+    }
+    const statusRows = await statusQb.getRawMany<{
+      status: string;
+      count: string;
+    }>();
 
     // Count by asset class
-    const classRows = await this.assetRepo
+    const classQb = this.assetRepo
       .createQueryBuilder('a')
       .select('a.assetClass', 'assetClass')
       .addSelect('COUNT(*)', 'count')
-      .groupBy('a.assetClass')
-      .getRawMany<{ assetClass: string; count: string }>();
+      .groupBy('a.assetClass');
+    if (hasScope) {
+      classQb.andWhere('a.assetType IN (:...assetTypeScope)', {
+        assetTypeScope,
+      });
+    }
+    const classRows = await classQb.getRawMany<{
+      assetClass: string;
+      count: string;
+    }>();
 
     // Count by asset type
-    const typeRows = await this.assetRepo
+    const typeQb = this.assetRepo
       .createQueryBuilder('a')
       .select('a.assetType', 'assetType')
       .addSelect('COUNT(*)', 'count')
-      .groupBy('a.assetType')
-      .getRawMany<{ assetType: string; count: string }>();
+      .groupBy('a.assetType');
+    if (hasScope) {
+      typeQb.andWhere('a.assetType IN (:...assetTypeScope)', {
+        assetTypeScope,
+      });
+    }
+    const typeRows = await typeQb.getRawMany<{
+      assetType: string;
+      count: string;
+    }>();
 
     const byStatus: Record<string, number> = {};
     statusRows.forEach((r) => {
@@ -146,17 +204,45 @@ export class AssetsService {
 
     const total = Object.values(byStatus).reduce((s, c) => s + c, 0);
 
-    return { total, byStatus, byClass, byType };
+    return {
+      total,
+      available: byStatus[AssetStatus.AVAILABLE] ?? 0,
+      issued: byStatus[AssetStatus.ISSUED] ?? 0,
+      returned: byStatus[AssetStatus.RETURNED] ?? 0,
+      underRepair: byStatus[AssetStatus.UNDER_REPAIR] ?? 0,
+      flaggedForDisposal: byStatus[AssetStatus.FLAGGED_FOR_DISPOSAL] ?? 0,
+      transferred: byStatus[AssetStatus.TRANSFERRED] ?? 0,
+      disposed: byStatus[AssetStatus.DISPOSED] ?? 0,
+      byClass,
+      byType,
+    };
   }
 
   // ── Single asset with full lifecycle history ───────────────────────────────
-  async findOne(id: string): Promise<AssetEntity> {
+  // `assetTypeScope`, when provided, restricts which asset types the caller
+  // may read/act on (mirrors findAll()'s scoping — see asset-type-scope.util).
+  // Every write-side method below routes through here first, so an
+  // out-of-scope asset is rejected before any mutation is attempted.
+  async findOne(
+    id: string,
+    assetTypeScope?: AssetType[],
+  ): Promise<AssetEntity> {
     const asset = await this.assetRepo.findOne({
       where: { id },
       relations: { locationHistory: true },
     });
     if (!asset)
       throw new NotFoundException(`Asset with ID "${id}" was not found`);
+    if (
+      assetTypeScope &&
+      assetTypeScope.length > 0 &&
+      !assetTypeScope.includes(asset.assetType)
+    ) {
+      throw new ForbiddenException(
+        `Asset "${id}" has asset type "${asset.assetType}", which is outside ` +
+          `your permitted scope [${assetTypeScope.join(', ')}]`,
+      );
+    }
     return asset;
   }
 
@@ -167,7 +253,20 @@ export class AssetsService {
     performedById: string,
     userRole: UserRole,
     ipAddress: string,
+    assetTypeScope?: AssetType[],
   ): Promise<AssetEntity> {
+    // No existing record to run findOne()'s scope check against yet — check
+    // the incoming DTO's assetType directly before anything is persisted.
+    if (
+      assetTypeScope &&
+      assetTypeScope.length > 0 &&
+      !assetTypeScope.includes(dto.assetType)
+    ) {
+      throw new ForbiddenException(
+        `Cannot register an asset of type "${dto.assetType}"; your role is ` +
+          `permitted to register [${assetTypeScope.join(', ')}] only`,
+      );
+    }
     const asset = this.assetRepo.create({
       ...dto,
       status: AssetStatus.REGISTERED,
@@ -200,8 +299,9 @@ export class AssetsService {
     performedById: string,
     userRole: UserRole,
     ipAddress: string,
+    assetTypeScope?: AssetType[],
   ): Promise<AssetEntity> {
-    await this.findOne(id); // throws NotFoundException if not found
+    await this.findOne(id, assetTypeScope); // throws Not Found / Forbidden
     await this.assetRepo.update(id, dto);
 
     await this.auditService.log({
@@ -214,7 +314,7 @@ export class AssetsService {
       metadata: { updatedFields: Object.keys(dto) },
     });
 
-    return this.findOne(id);
+    return this.findOne(id, assetTypeScope);
   }
 
   // ── Lifecycle transition (IT Personnel only) ───────────────────────────────
@@ -225,8 +325,9 @@ export class AssetsService {
     performedById: string,
     userRole: UserRole,
     ipAddress: string,
+    assetTypeScope?: AssetType[],
   ): Promise<AssetEntity> {
-    const asset = await this.findOne(id);
+    const asset = await this.findOne(id, assetTypeScope);
     const targetStatus = dto.status;
 
     // ── Business rule: validate state machine transition ──────────────────
@@ -318,8 +419,9 @@ export class AssetsService {
     performedById: string,
     userRole: UserRole,
     ipAddress: string,
+    assetTypeScope?: AssetType[],
   ): Promise<{ qrCode: string; barcodeValue: string; assetId: string }> {
-    const asset = await this.findOne(id);
+    const asset = await this.findOne(id, assetTypeScope);
 
     // Generate deterministic identifiers based on property number + UUID
     const base = asset.propertyNumber || id.replace(/-/g, '').substring(0, 12);

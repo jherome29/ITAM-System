@@ -2,9 +2,9 @@ name: Security
 
 on:
   push:
-    branches: [develop, test, uat, main]
+    branches: [develop, main]
   pull_request:
-    branches: [develop, test, uat, main]
+    branches: [develop, main]
   schedule:
     - cron: '0 0 * * *'   # daily at midnight UTC
 
@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -62,7 +62,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -70,6 +70,9 @@ jobs:
 
       # npm audit --workspace is unreliable across npm versions.
       # Run from each directory directly for consistent behavior.
+      # Threshold restored to high on 2026-08-15: multer 2.2.0 (fixed) shipped,
+      # resolving the DoS advisory that forced the critical-only threshold on
+      # 2026-06-18. No known-unfixable high/critical CVEs remain as of this date.
       - name: Backend audit (JSON report)
         run: cd Backend && npm audit --audit-level=high --json > /tmp/backend-audit.json || true
 
@@ -85,7 +88,9 @@ jobs:
             /tmp/frontend-audit.json
           retention-days: 30
 
-      # These steps actually fail the job if high/critical CVEs exist
+      # Fails the job on high/critical CVEs. If a future advisory has no
+      # upstream fix, add a scoped `npm audit fix --omit` / advisory-specific
+      # exception here instead of dropping this threshold globally again.
       - name: Fail on Backend high/critical CVEs
         run: cd Backend && npm audit --audit-level=high
 
@@ -104,7 +109,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       # OWASP DC runs in a Docker container that mounts the workspace.

@@ -7,11 +7,20 @@ import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
 describe('AuditService', () => {
   let service: AuditService;
 
+  const mockQb = {
+    orderBy: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    take: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    getManyAndCount: jest.fn(),
+  };
+
   const mockRepo = {
     create: jest.fn(),
     save: jest.fn(),
     findAndCount: jest.fn(),
     find: jest.fn(),
+    createQueryBuilder: jest.fn(() => mockQb),
   };
 
   beforeEach(async () => {
@@ -73,13 +82,11 @@ describe('AuditService', () => {
 
   describe('findAll()', () => {
     it('returns paginated audit logs newest first', async () => {
-      mockRepo.findAndCount.mockResolvedValue([[{ id: 'a1' }], 1]);
+      mockQb.getManyAndCount.mockResolvedValue([[{ id: 'a1' }], 1]);
       const result = await service.findAll(1, 20);
       expect(result.total).toBe(1);
       expect(result.data).toHaveLength(1);
-      expect(mockRepo.findAndCount).toHaveBeenCalledWith(
-        expect.objectContaining({ order: { timestamp: 'DESC' } }),
-      );
+      expect(mockQb.orderBy).toHaveBeenCalledWith('a.timestamp', 'DESC');
     });
   });
 

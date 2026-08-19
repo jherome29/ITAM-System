@@ -23,13 +23,14 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [accessToken, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const clearSession = useCallback(() => {
+    sessionStorage.removeItem('aimrs_at');
     setUser(null);
     setToken(null);
     setAccessToken(null);
@@ -41,7 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearSession]);
 
   useEffect(() => {
-    const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+    const base = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 
     // If login() stashed a token to survive the hard-nav reload, use it immediately.
     // Do NOT remove it here — Strict Mode double-invokes effects in dev, and the
@@ -49,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Remove it only after the profile call settles.
     const stashed = sessionStorage.getItem('aimrs_at');
     if (stashed) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- session restore on mount; must set token synchronously before profile fetch
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restore the real API token before requesting the profile
       setToken(stashed);
       setAccessToken(stashed);
       authApi.profile()

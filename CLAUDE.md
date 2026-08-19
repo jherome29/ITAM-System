@@ -531,31 +531,32 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 
 ### Git Strategy
 
-#### Branch Model (GitFlow — 5 branches)
+#### Branch Model (3 branches)
 
-All promotions between long-lived branches require a PR. No direct pushes to `develop`, `test`, `uat`, or `main`.
+> **2026-08-15:** Simplified from the original 5-branch GitFlow (`develop → test → uat → main`).
+> The `test` and `uat` branches were never actually used — both sat at the same commit as
+> `main` with zero unique history — so they were dropped rather than carried forward as
+> unused ceremony. UAT-with-CICC and internal testing are still full activities (CLAUDE.md
+> §12); they just run against `develop`/CI rather than a dedicated long-lived branch each.
 
-Promotion flow: `feature/<ticket-id>-<desc>` → `develop` → `test` → `uat` → `main`
+All promotions between long-lived branches require a PR. No direct pushes to `develop` or `main`.
+
+Promotion flow: `feature/<ticket-id>-<desc>` → `develop` → `main`
 
 | Branch | Purpose | CI gates | Reviews required |
 |---|---|---|---|
 | `main` | Production — CICC handover build | All CI + all security checks | 2 |
-| `uat` | User Acceptance Testing — CICC stakeholders | All CI + all security checks | 1 |
-| `test` | Internal testing — Jest, JMeter, security validation | All CI + secret-scan + CodeQL | 1 |
-| `develop` | Integration — all feature work lands here first | All CI checks | 1 |
+| `develop` | Integration — all feature work lands here first | `shared-pkg`, `backend-ci`, `frontend-ci`, `backend-e2e` | 1 |
 | `feature/<ticket-id>-<desc>` | Individual feature work | CI runs on push, no gate | 0 |
 
 #### Branch Protection Summary
 - `feature/*` — no protection (developer pushes freely)
 - `develop` — requires PR + 1 review + `backend-ci`, `frontend-ci`, `backend-e2e`, `shared-pkg` green
-- `test` — requires PR + 1 review + all `develop` checks + `secret-scan`, `codeql` green
-- `uat` — requires PR + 1 review + all `test` checks + `dependency-audit`, `owasp-dc` green
-- `main` — requires PR + 2 reviews + all checks green + force pushes blocked
+- `main` — requires PR + 2 reviews + **all** checks green (adds `secret-scan`, `codeql`, `dependency-audit`, `owasp-dc` on top of `develop`'s checks — these used to be split across `test`/`uat`, now they all gate the final promotion to production) + force pushes blocked
 
 #### Deploy Environments (activated when CICC provides server access)
-- `test` branch → `test-server` GitHub Environment (auto-deploy on push)
-- `uat` branch → `uat-server` GitHub Environment (manual approval gate required)
 - `main` branch → `prod-server` GitHub Environment (manual approval gate required)
+- No dedicated deploy environment for `develop` — internal/JMeter/security testing runs against CI and local/Docker environments rather than a persistently deployed staging server (see CLAUDE.md §12)
 
 ### Sprint Structure (Agile Scrum)
 - **Sprint length:** 2 weeks

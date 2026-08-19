@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { AssetsService } from './assets.service';
 import { AssetEntity } from './entities/asset.entity';
 import { AssetTransactionEntity } from './entities/asset-transaction.entity';
@@ -110,6 +114,47 @@ describe('AssetsService', () => {
         }),
       );
     });
+
+    // ── Fix 1 — create-time scope enforcement ─────────────────────────────
+    it('throws ForbiddenException when dto.assetType is outside the caller scope', async () => {
+      const dto = {
+        itemDescription: 'Laptop',
+        assetClass: AssetClass.PPE,
+        assetType: AssetType.ICT,
+        condition: AssetCondition.SERVICEABLE,
+      } as any;
+
+      await expect(
+        service.create(dto, 'pc-1', UserRole.PROPERTY_CUSTODIAN, '127.0.0.1', [
+          AssetType.FIXED,
+          AssetType.SUPPLIES,
+        ]),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockAssetRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('allows creation when dto.assetType is within the caller scope', async () => {
+      const dto = {
+        itemDescription: 'Office Chair',
+        assetClass: AssetClass.SEP,
+        assetType: AssetType.FIXED,
+        condition: AssetCondition.SERVICEABLE,
+      } as any;
+
+      const created = makeAsset({
+        assetType: AssetType.FIXED,
+        status: AssetStatus.REGISTERED,
+      });
+      mockAssetRepo.create.mockReturnValue(created);
+      mockAssetRepo.save.mockResolvedValue(created);
+
+      await expect(
+        service.create(dto, 'pc-1', UserRole.PROPERTY_CUSTODIAN, '127.0.0.1', [
+          AssetType.FIXED,
+          AssetType.SUPPLIES,
+        ]),
+      ).resolves.toMatchObject({ status: AssetStatus.REGISTERED });
+    });
   });
 
   // ── Section 12.1 — State machine valid transitions ────────────────────────
@@ -201,6 +246,27 @@ describe('AssetsService', () => {
         ),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('throws ForbiddenException before any mutation when the asset is outside the caller scope', async () => {
+      const asset = makeAsset({
+        id: 'asset-1',
+        assetType: AssetType.ICT,
+        status: AssetStatus.AVAILABLE,
+      });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+
+      await expect(
+        service.updateLifecycle(
+          'asset-1',
+          { status: AssetStatus.ISSUED },
+          'pc-1',
+          UserRole.PROPERTY_CUSTODIAN,
+          '127.0.0.1',
+          [AssetType.FIXED, AssetType.SUPPLIES],
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockAssetRepo.save).not.toHaveBeenCalled();
+    });
   });
 
   // ── Section 12.1 — State machine invalid transitions ──────────────────────
@@ -290,6 +356,36 @@ describe('AssetsService', () => {
     );
   });
 
+  // ── findOne() — scope enforcement (Fix 1) ─────────────────────────────────
+  describe('findOne() — scope enforcement', () => {
+    it('throws ForbiddenException when the asset type is outside the caller scope', async () => {
+      const asset = makeAsset({ assetType: AssetType.ICT });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+
+      await expect(
+        service.findOne(asset.id, [AssetType.FIXED, AssetType.SUPPLIES]),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('returns the asset when its type is within the caller scope', async () => {
+      const asset = makeAsset({ assetType: AssetType.ICT });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+
+      await expect(
+        service.findOne(asset.id, [AssetType.ICT]),
+      ).resolves.toMatchObject({ id: asset.id });
+    });
+
+    it('does not restrict access when no scope is provided (Admin/Management)', async () => {
+      const asset = makeAsset({ assetType: AssetType.ICT });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+
+      await expect(service.findOne(asset.id)).resolves.toMatchObject({
+        id: asset.id,
+      });
+    });
+  });
+
   // ── QR code generation ────────────────────────────────────────────────────
   it('generateQr() returns qrCode and barcodeValue and logs audit', async () => {
     const asset = makeAsset();
@@ -309,6 +405,22 @@ describe('AssetsService', () => {
     expect(mockAuditService.log).toHaveBeenCalledWith(
       expect.objectContaining({ action: AuditAction.QR_GENERATED }),
     );
+  });
+
+  it('generateQr() throws ForbiddenException when the asset is outside the caller scope', async () => {
+    const asset = makeAsset({ assetType: AssetType.ICT });
+    mockAssetRepo.findOne.mockResolvedValue(asset);
+
+    await expect(
+      service.generateQr(
+        asset.id,
+        'pc-1',
+        UserRole.PROPERTY_CUSTODIAN,
+        '127.0.0.1',
+        [AssetType.FIXED, AssetType.SUPPLIES],
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockAssetRepo.update).not.toHaveBeenCalled();
   });
 
   // ── Section: update() ──────────────────────────────────────────────────────
@@ -360,6 +472,171 @@ describe('AssetsService', () => {
           '127.0.0.1',
         ),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws ForbiddenException when the asset is outside the caller scope', async () => {
+      const asset = makeAsset({ assetType: AssetType.ICT });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+
+      await expect(
+        service.update(
+          asset.id,
+          { brand: 'X' },
+          'pc-1',
+          UserRole.PROPERTY_CUSTODIAN,
+          '127.0.0.1',
+          [AssetType.FIXED, AssetType.SUPPLIES],
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockAssetRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── findAll() — paginated list with optional filters ──────────────────────
+  describe('findAll()', () => {
+    const makeQb = () => ({
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+    });
+
+    it('returns paginated list with no filters applied', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      const result = await service.findAll();
+      expect(qb.getManyAndCount).toHaveBeenCalled();
+      expect(result).toMatchObject({ data: [], total: 0, page: 1, limit: 20 });
+    });
+
+    it('applies status filter when status param is provided', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(1, 20, undefined, 'available');
+      expect(qb.andWhere).toHaveBeenCalledWith('a.status = :status', {
+        status: 'available',
+      });
+    });
+
+    it('applies search LIKE filter when search param is provided', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(1, 20, 'Dell');
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('LIKE'),
+        expect.objectContaining({ q: '%Dell%' }),
+      );
+    });
+
+    it('applies both status and search filters when both are provided', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(1, 20, 'Dell', 'issued');
+      expect(qb.andWhere).toHaveBeenCalledTimes(2);
+    });
+
+    it('applies assetType scope filter when assetTypeScope is provided', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(1, 20, undefined, undefined, [
+        AssetType.FIXED,
+        AssetType.SUPPLIES,
+      ]);
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'a.assetType IN (:...assetTypeScope)',
+        {
+          assetTypeScope: [AssetType.FIXED, AssetType.SUPPLIES],
+        },
+      );
+    });
+
+    it('does not add an assetType filter when assetTypeScope is undefined', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll();
+      expect(qb.andWhere).not.toHaveBeenCalledWith(
+        expect.stringContaining('assetType IN'),
+        expect.anything(),
+      );
+    });
+  });
+
+  // ── findCatalogue() — available-only list ─────────────────────────────────
+  describe('findCatalogue()', () => {
+    it('returns only available assets with pagination', async () => {
+      mockAssetRepo.findAndCount.mockResolvedValue([[], 0]);
+      const result = await service.findCatalogue();
+      expect(mockAssetRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { status: AssetStatus.AVAILABLE } }),
+      );
+      expect(result).toMatchObject({ data: [], total: 0, page: 1, limit: 20 });
+    });
+  });
+
+  // ── getStats() — inventory dashboard KPI counts ───────────────────────────
+  describe('getStats()', () => {
+    const makeStatsQb = (rawRows: Record<string, string>[]) => ({
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue(rawRows),
+    });
+
+    it('returns counts broken down by status, class, and type', async () => {
+      mockAssetRepo.createQueryBuilder
+        .mockReturnValueOnce(
+          makeStatsQb([{ status: AssetStatus.AVAILABLE, count: '10' }]),
+        )
+        .mockReturnValueOnce(makeStatsQb([{ assetClass: 'PPE', count: '7' }]))
+        .mockReturnValueOnce(makeStatsQb([{ assetType: 'ICT', count: '10' }]));
+
+      const result = await service.getStats();
+      expect(result.total).toBe(10);
+      expect(result.available).toBe(10);
+      expect(result.issued).toBe(0); // ?? 0 fallback for missing keys
+      expect(result.byClass).toEqual({ PPE: 7 });
+      expect(result.byType).toEqual({ ICT: 10 });
+    });
+
+    it('returns all zeros and empty maps when no assets exist', async () => {
+      mockAssetRepo.createQueryBuilder
+        .mockReturnValueOnce(makeStatsQb([]))
+        .mockReturnValueOnce(makeStatsQb([]))
+        .mockReturnValueOnce(makeStatsQb([]));
+
+      const result = await service.getStats();
+      expect(result.total).toBe(0);
+      expect(result.available).toBe(0);
+      expect(result.byClass).toEqual({});
+    });
+
+    it('applies the assetType scope filter to all three grouped queries when provided', async () => {
+      const statusQb = makeStatsQb([
+        { status: AssetStatus.AVAILABLE, count: '3' },
+      ]);
+      const classQb = makeStatsQb([{ assetClass: 'SEP', count: '3' }]);
+      const typeQb = makeStatsQb([{ assetType: 'Fixed', count: '3' }]);
+      mockAssetRepo.createQueryBuilder
+        .mockReturnValueOnce(statusQb)
+        .mockReturnValueOnce(classQb)
+        .mockReturnValueOnce(typeQb);
+
+      const result = await service.getStats([
+        AssetType.FIXED,
+        AssetType.SUPPLIES,
+      ]);
+
+      const expectedCall = [
+        'a.assetType IN (:...assetTypeScope)',
+        { assetTypeScope: [AssetType.FIXED, AssetType.SUPPLIES] },
+      ] as const;
+      expect(statusQb.andWhere).toHaveBeenCalledWith(...expectedCall);
+      expect(classQb.andWhere).toHaveBeenCalledWith(...expectedCall);
+      expect(typeQb.andWhere).toHaveBeenCalledWith(...expectedCall);
+      expect(result.total).toBe(3);
+      expect(result.byType).toEqual({ Fixed: 3 });
     });
   });
 });

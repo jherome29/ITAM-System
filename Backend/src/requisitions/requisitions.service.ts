@@ -23,8 +23,10 @@ import {
   AuditAction,
   UserRole,
   NotificationAlertType,
+  AssetType,
 } from '../../../packages/shared/src/enums';
 import { SLA_APPROVAL_HOURS } from '../../../packages/shared/src/constants';
+import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 
 // SVC: Engage & Design and Transition — multi-level approval workflow
 // Approval routing (CLAUDE.md section 6, Module 2):
@@ -50,11 +52,13 @@ export class RequisitionsService {
 
   // ── Role-filtered list ─────────────────────────────────────────────────────
   // employees → own; supervisors → pending_supervisor; IT → pending_fulfillment; admin/mgmt → all
+  // Optional `statusFilter` narrows within the role-allowed set.
   async findAll(
     requestingUserId: string,
     requestingRole: UserRole,
     page = 1,
     limit = 20,
+    statusFilter?: string,
   ) {
     const qb = this.reqRepo
       .createQueryBuilder('r')
@@ -79,9 +83,40 @@ export class RequisitionsService {
             RequisitionStatus.PENDING_FULFILLMENT,
             RequisitionStatus.ON_HOLD,
           ],
-        });
+        }).andWhere(
+          // Filtering the joined `items` alias directly would constrain what
+          // leftJoinAndSelect('r.items', 'items') hydrates (silently hiding
+          // non-matching sibling items) and would skew skip/take pagination,
+          // since a multi-item requisition yields multiple raw rows before
+          // TypeORM re-collapses them. An EXISTS subquery instead filters
+          // which requisitions (the `r` side) match, leaving `items` hydration
+          // and pagination untouched — same shape as the `r.status` filter above.
+          'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type = :itScope)',
+          { itScope: AssetType.ICT },
+        );
+        break;
+      case UserRole.PROPERTY_CUSTODIAN:
+        qb.where('r.status IN (:...statuses)', {
+          statuses: [
+            RequisitionStatus.PENDING_FULFILLMENT,
+            RequisitionStatus.ON_HOLD,
+          ],
+        }).andWhere(
+          'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...pcScope))',
+          { pcScope: resolveAssetTypeScope(UserRole.PROPERTY_CUSTODIAN) },
+        );
+        break;
+      case UserRole.PROPERTY_OFFICER:
+        qb.andWhere(
+          'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...poScope))',
+          { poScope: resolveAssetTypeScope(UserRole.PROPERTY_OFFICER) },
+        );
         break;
       // SYSTEM_ADMIN and MANAGEMENT see all
+    }
+
+    if (statusFilter) {
+      qb.andWhere('r.status = :sf', { sf: statusFilter.toLowerCase() });
     }
 
     const [data, total] = await qb.getManyAndCount();
@@ -100,89 +135,86 @@ export class RequisitionsService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  // ── Requisition stats — Employee/Supervisor dashboard counts ──────────────
+  // ── Requisition stats — dashboard counts in flat shape matching frontend ────
   // SVC: Improve — personal requisition status overview
   async getStats(
     userId: string,
     userRole: UserRole,
   ): Promise<{
-    mine: Record<string, number>;
-    mineTotal: number;
-    // Supervisor-only:
-    pendingSupervisorCount?: number;
-    // IT-only:
-    pendingFulfillmentCount?: number;
-    onHoldCount?: number;
-    // SLA:
-    slaBreachedCount: number;
+    total: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+    fulfilled: number;
+    onHold: number;
   }> {
-    // User's own requisitions grouped by status
-    const myRows = await this.reqRepo
+    // For employees/supervisors: count their own requisitions by status
+    // For IT/Admin/Mgmt: count all requisitions by status
+    const qb = this.reqRepo
       .createQueryBuilder('r')
       .select('r.status', 'status')
       .addSelect('COUNT(*)', 'count')
-      .where('r.requestedById = :userId', { userId })
-      .groupBy('r.status')
-      .getRawMany<{ status: string; count: string }>();
+      .groupBy('r.status');
 
-    const mine: Record<string, number> = {};
-    myRows.forEach((r) => {
-      mine[r.status] = parseInt(r.count, 10);
-    });
-    const mineTotal = Object.values(mine).reduce((s, c) => s + c, 0);
-
-    // SLA breached (pending_supervisor past deadline)
-    const slaBreachedCount = await this.reqRepo.count({
-      where: {
-        status: RequisitionStatus.PENDING_SUPERVISOR,
-        // slaDeadline < NOW — use raw query for this
-      },
-    });
-
-    const result: {
-      mine: Record<string, number>;
-      mineTotal: number;
-      pendingSupervisorCount?: number;
-      pendingFulfillmentCount?: number;
-      onHoldCount?: number;
-      slaBreachedCount: number;
-    } = { mine, mineTotal, slaBreachedCount };
-
-    // Supervisor: add their pending queue count
-    if (userRole === UserRole.SUPERVISOR) {
-      result.pendingSupervisorCount = await this.reqRepo.count({
-        where: {
-          supervisorId: userId,
-          status: RequisitionStatus.PENDING_SUPERVISOR,
-        },
-      });
+    if (userRole === UserRole.EMPLOYEE || userRole === UserRole.SUPERVISOR) {
+      qb.where('r.requestedById = :userId', { userId });
     }
 
-    // IT Personnel: pending fulfillment + on hold counts
-    if (
-      userRole === UserRole.IT_PERSONNEL ||
-      userRole === UserRole.SYSTEM_ADMIN
-    ) {
-      result.pendingFulfillmentCount = await this.reqRepo.count({
-        where: { status: RequisitionStatus.PENDING_FULFILLMENT },
-      });
-      result.onHoldCount = await this.reqRepo.count({
-        where: { status: RequisitionStatus.ON_HOLD },
-      });
+    // Scope to the caller's asset-type custody, mirroring findAll()'s
+    // EXISTS-subquery pattern (same join shape used there for
+    // IT_PERSONNEL/PROPERTY_CUSTODIAN/PROPERTY_OFFICER). SYSTEM_ADMIN and
+    // MANAGEMENT get undefined back from resolveAssetTypeScope and stay
+    // unscoped, matching findAll()'s "see all" behavior for those roles.
+    const assetTypeScope = resolveAssetTypeScope(userRole);
+    if (assetTypeScope && assetTypeScope.length > 0) {
+      qb.andWhere(
+        'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...statsScope))',
+        { statsScope: assetTypeScope },
+      );
     }
 
-    return result;
+    const rows = await qb.getRawMany<{ status: string; count: string }>();
+
+    const byStatus: Record<string, number> = {};
+    rows.forEach((r) => {
+      byStatus[r.status] = Number.parseInt(r.count, 10);
+    });
+
+    const total = Object.values(byStatus).reduce((s, c) => s + c, 0);
+
+    return {
+      total,
+      pending:
+        (byStatus[RequisitionStatus.PENDING_SUPERVISOR] ?? 0) +
+        (byStatus[RequisitionStatus.PENDING_FULFILLMENT] ?? 0),
+      approved: byStatus[RequisitionStatus.PENDING_FULFILLMENT] ?? 0,
+      rejected: byStatus[RequisitionStatus.REJECTED] ?? 0,
+      fulfilled: byStatus[RequisitionStatus.FULFILLED] ?? 0,
+      onHold: byStatus[RequisitionStatus.ON_HOLD] ?? 0,
+    };
   }
 
   // ── Single requisition with full approval timeline ─────────────────────────
   async findOne(
     id: string,
+    requestingUserId?: string,
+    requestingRole?: UserRole,
   ): Promise<RequisitionEntity & { approvals: RequisitionApprovalEntity[] }> {
     const req = await this.reqRepo.findOne({
       where: { id },
       relations: { items: true },
     });
     if (!req) throw new NotFoundException(`Requisition "${id}" not found`);
+
+    // IDOR guard — Employees may only view their own requisitions (OWASP ASVS 4.2.1)
+    if (
+      requestingRole === UserRole.EMPLOYEE &&
+      req.requestedById !== requestingUserId
+    ) {
+      throw new ForbiddenException(
+        'You do not have permission to view this requisition',
+      );
+    }
 
     const approvals = await this.approvalRepo.find({
       where: { requisitionId: id },
@@ -391,6 +423,44 @@ export class RequisitionsService {
     return saved;
   }
 
+  // ── Scope guard for whole-requisition status transitions (fulfill/hold) ───
+  // NOTE — this is deliberately STRICTER than findAll()'s visibility rule,
+  // and deliberately asymmetric with it. Do not "harmonize" the two:
+  //   - findAll() is read-only and uses an inclusive "ANY item matches scope"
+  //     rule, so a caller with a partial interest in a mixed requisition can
+  //     still see it in their queue.
+  //   - fulfill()/putOnHold() perform a whole-requisition status transition —
+  //     RequisitionStatus has no partial-fulfillment state — so authorization
+  //     here must be conjunctive: EVERY item on the requisition must be
+  //     within the caller's asset-type scope, or the transition is rejected.
+  //     Otherwise a caller could fulfill/hold (and thus control the fate of)
+  //     line items outside their custodial authority just because one item
+  //     on the same requisition happened to be in scope.
+  //
+  // Known, accepted, currently-dormant limitation: under this rule a
+  // genuinely mixed-assetType requisition (e.g. one ICT item + one Fixed
+  // item) becomes fulfillable by no one, since SYSTEM_ADMIN/MANAGEMENT are
+  // not on the fulfill/hold guard lists either. This is unreachable today —
+  // the real requisition-submission form only ever submits a single line
+  // item — so it's a real but dormant gap, not fixed here. Candidate future
+  // fixes: a partial-fulfillment status, per-item fulfillment, or create-time
+  // validation that all items on one requisition share a single custodial
+  // scope.
+  private assertItemsInScope(req: RequisitionEntity, userRole: UserRole): void {
+    const scope = resolveAssetTypeScope(userRole);
+    if (!scope) return; // unscoped role — nothing to enforce
+    const outOfScope = req.items.filter(
+      (item) => !scope.includes(item.assetType),
+    );
+    if (outOfScope.length > 0) {
+      throw new ForbiddenException(
+        `Cannot act on requisition "${req.requestNumber}": item(s) ` +
+          `[${outOfScope.map((item) => item.itemDescription).join(', ')}] ` +
+          `fall outside your permitted asset-type scope [${scope.join(', ')}]`,
+      );
+    }
+  }
+
   // ── IT Personnel marks on hold (asset unavailable) ────────────────────────
   // Status: pending_fulfillment → on_hold
   async putOnHold(
@@ -401,6 +471,7 @@ export class RequisitionsService {
     ipAddress: string,
   ): Promise<RequisitionEntity> {
     const req = await this.findOne(id);
+    this.assertItemsInScope(req, userRole);
 
     if (req.status !== RequisitionStatus.PENDING_FULFILLMENT) {
       throw new BadRequestException(
@@ -445,6 +516,7 @@ export class RequisitionsService {
     ipAddress: string,
   ): Promise<RequisitionEntity> {
     const req = await this.findOne(id);
+    this.assertItemsInScope(req, userRole);
 
     const fulfillableStatuses = [
       RequisitionStatus.PENDING_FULFILLMENT,

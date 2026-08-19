@@ -75,7 +75,8 @@ cd Frontend && npm run dev
 | Database (Dev) | Supabase (managed PostgreSQL) |
 | Database (Prod) | CICC-managed PostgreSQL (raw) |
 | Containerization | Docker + Docker Compose |
-| Testing | Jest (≥70% coverage) + JMeter |
+| Testing | Jest (91 tests, 65% branch coverage) + JMeter |
+| Report Generation | pdfkit (PDF) + exceljs (Excel/XLSX) |
 
 ## API Endpoints
 
@@ -98,8 +99,20 @@ cd Backend && npm run test
 # Integration tests
 cd Backend && npm run test:e2e
 
-# Coverage report (must be ≥70%)
+# Coverage report (must meet thresholds — see CHECKS.md)
 cd Backend && npm run test:cov
+```
+
+## Starting the Backend (Windows Note)
+
+If `npm run start:dev` fails with `EADDRINUSE: address already in use :::3001`, a ghost node process is holding the port. Kill it first:
+
+```powershell
+# Find and kill the process holding port 3001
+$pid = (Get-NetTCPConnection -LocalPort 3001 -ErrorAction SilentlyContinue).OwningProcess
+if ($pid) { Stop-Process -Id $pid -Force }
+# Then retry
+cd Backend && npm run start:dev
 ```
 
 ## Key Constraints

@@ -11,6 +11,6 @@ const LINKS = [
   { path: '/supervisor/notifications', label: 'Notifications', icon: Bell },
 ];
 
-export default function SupervisorLayout({ children }: { children: ReactNode }) {
+export default function SupervisorLayout({ children }: Readonly<{ children: ReactNode }>) {
   return <DashboardLayout links={LINKS}>{children}</DashboardLayout>;
 }

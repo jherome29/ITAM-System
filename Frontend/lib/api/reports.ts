@@ -68,8 +68,11 @@ export const reportsApi = {
   kpi: () =>
     client.get<ApiResponse<KpiData>>('/v1/reports/kpi').then((r) => r.data),
 
-  generate: (dto: GenerateReportDto) =>
-    client.post<ApiResponse<ReportMeta>>('/v1/reports/generate', dto).then((r) => r.data),
+  /** Generate a management report and return it as a downloadable Blob. */
+  generate: (dto: GenerateReportDto): Promise<Blob> =>
+    client
+      .post('/v1/reports/generate', dto, { responseType: 'blob' })
+      .then((r) => r.data as Blob),
 
   /** Generates a COA official form PDF and returns it as a Blob for direct download. */
   generateFormBlob: (dto: GenerateFormDto): Promise<Blob> =>

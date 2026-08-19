@@ -11,6 +11,6 @@ const LINKS = [
   { path: '/management/notifications', label: 'Notifications', icon: Bell },
 ];
 
-export default function ManagementLayout({ children }: { children: ReactNode }) {
+export default function ManagementLayout({ children }: Readonly<{ children: ReactNode }>) {
   return <DashboardLayout links={LINKS}>{children}</DashboardLayout>;
 }

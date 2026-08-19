@@ -6,6 +6,8 @@ export enum UserRole {
   IT_PERSONNEL = 'it_personnel',
   SYSTEM_ADMIN = 'system_admin',
   MANAGEMENT = 'management',
+  PROPERTY_CUSTODIAN = 'property_custodian',
+  PROPERTY_OFFICER = 'property_officer',
 }
 
 export enum AssetClass {

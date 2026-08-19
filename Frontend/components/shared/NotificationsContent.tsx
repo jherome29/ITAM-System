@@ -6,7 +6,7 @@ import { notificationsApi, type Notification } from '@/lib/api/notifications';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
-function NotifIcon({ type }: { type: string }) {
+function NotifIcon({ type }: Readonly<{ type: string }>) {
   if (type === 'REQUISITION_APPROVED' || type === 'REQUISITION_FULFILLED')
     return <CheckCircle className="w-5 h-5 text-green-600" />;
   if (type === 'REQUISITION_REJECTED')
@@ -35,7 +35,7 @@ export function NotificationsContent() {
     <div className="space-y-6">
       <PageHeader
         title="Notifications"
-        action={<button onClick={markAllRead} className="text-sm text-[#1a4d7a] font-medium hover:underline">Mark all as read</button>}
+        action={<button type="button" onClick={markAllRead} className="text-sm text-[#1a4d7a] font-medium hover:underline">Mark all as read</button>}
       />
       {loading ? (
         <LoadingSkeleton rows={5} />

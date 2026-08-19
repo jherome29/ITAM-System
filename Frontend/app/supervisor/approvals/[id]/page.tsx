@@ -61,7 +61,7 @@ export default function RequisitionReviewPage() {
 
   return (
     <div className="max-w-3xl space-y-4">
-      <button onClick={() => router.back()} className="flex items-center gap-2 text-sm text-[#1a4d7a] hover:underline">
+      <button type="button" onClick={() => router.back()} className="flex items-center gap-2 text-sm text-[#1a4d7a] hover:underline">
         <ArrowLeft className="w-4 h-4" /> Back
       </button>
 
@@ -128,7 +128,7 @@ export default function RequisitionReviewPage() {
 
           {req.status === 'PENDING_SUPERVISOR' && (
             <div className="flex gap-3 pt-2">
-              <button
+              <button type="button"
                 onClick={handleApprove}
                 disabled={actionLoading}
                 className="flex items-center gap-2 bg-green-600 text-white px-6 py-2 rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-60 transition-colors duration-150"
@@ -136,7 +136,7 @@ export default function RequisitionReviewPage() {
                 <CheckCircle className="w-4 h-4" />
                 {actionLoading ? 'Processing...' : 'Approve'}
               </button>
-              <button
+              <button type="button"
                 onClick={handleReject}
                 disabled={actionLoading}
                 className="flex items-center gap-2 bg-red-600 text-white px-6 py-2 rounded-md text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors duration-150"
@@ -144,7 +144,7 @@ export default function RequisitionReviewPage() {
                 <XCircle className="w-4 h-4" />
                 {actionLoading ? 'Processing...' : 'Reject'}
               </button>
-              <button
+              <button type="button"
                 onClick={() => router.back()}
                 className="bg-gray-100 text-gray-700 px-6 py-2 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors duration-150"
               >

@@ -32,7 +32,7 @@ export function setOnTokenExpired(cb: () => void) {
 }
 
 const client = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api',
+  baseURL: process.env.NEXT_PUBLIC_API_URL ?? '/api',
   withCredentials: true,
 });
 
@@ -70,7 +70,7 @@ client.interceptors.response.use(
 
       try {
         const { data } = await axios.post<ApiResponse<{ accessToken: string }>>(
-          `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api'}/v1/auth/refresh`,
+          `${process.env.NEXT_PUBLIC_API_URL ?? '/api'}/v1/auth/refresh`,
           {},
           { withCredentials: true }
         );

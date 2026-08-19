@@ -14,6 +14,8 @@
 | Supervisor | supervisor@cicc.gov.ph | Supervisor@CICC2026! |
 | Employee | employee@cicc.gov.ph | Employee@CICC2026! |
 | Management | management@cicc.gov.ph | Management@CICC2026! |
+| Property Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@CICC2026! |
+| Property Officer | property.officer@cicc.gov.ph | PropertyOfficer@CICC2026! |
 
 > **Note:** If an account gets locked after too many failed login attempts, a System Administrator can unlock it via `PATCH /api/v1/users/:id/unlock` or reset the password via `PATCH /api/v1/users/:id/reset-password`.
 
