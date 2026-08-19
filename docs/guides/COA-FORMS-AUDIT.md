@@ -28,13 +28,18 @@ form actually requires.
 
 ## Functionally broken, not just wrong layout
 
-- **RPCI / RPCPPE (Appendix 66, 73)** — the "physical count" columns are
-  faked in the generator code itself: `QTY PER CARD` and `QTY PER COUNT` are
-  both hardcoded to `'1'`, and `SHORTAGE`/`OVERAGE` are hardcoded to `''`
-  (`rpci.generator.ts` line ~58, `rpcppe.generator.ts` similar). There's no
-  mechanism to actually record a physical count and compare it against
-  system records — this confirms and details the "No physical count /
-  reconciliation" gap already on the priority list, not a new issue, but
+- **RPCI (Appendix 66)** — the "physical count" columns are faked in the
+  generator code itself: `QTY PER CARD` and `QTY PER COUNT` are both
+  hardcoded to `'1'`, and `SHORTAGE`/`OVERAGE` are hardcoded to `''`
+  (`rpci.generator.ts` line ~58). **RPCPPE (Appendix 73) is different and
+  arguably worse** — `rpcppe.generator.ts` has no card/count/shortage/overage
+  columns at all (verified directly: its table is Property No./Description/
+  Serial No./Date Acquired/Acquisition Cost/Condition/Location/Accountable
+  Officer — a plain asset listing, not a reconciliation table in any form,
+  faked or otherwise). Neither generator can actually record a physical
+  count and compare it against system records — this confirms and details
+  the "No physical count / reconciliation" gap already on the priority list,
+  not a new issue, but
   worth knowing it's not just "the UI to input a count doesn't exist yet" —
   the generator would silently show zero discrepancy for every asset even if
   one existed. Separately, the official form's third signatory is
