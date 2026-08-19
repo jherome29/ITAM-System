@@ -20,7 +20,7 @@ interface AuthReq {
   user: UserEntity;
 }
 
-// All 5 roles can receive and manage their own notifications
+// All 7 roles can receive and manage their own notifications
 
 @Controller('v1/notifications')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -30,6 +30,8 @@ interface AuthReq {
   UserRole.IT_PERSONNEL,
   UserRole.SYSTEM_ADMIN,
   UserRole.MANAGEMENT,
+  UserRole.PROPERTY_CUSTODIAN,
+  UserRole.PROPERTY_OFFICER,
 )
 export class NotificationsController {
   constructor(private readonly svc: NotificationsService) {}
