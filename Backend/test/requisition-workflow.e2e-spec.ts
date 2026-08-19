@@ -116,6 +116,11 @@ describe('Requisition workflow (e2e)', () => {
     // 1. Employee submits a requisition, nominating the test supervisor
     const employeeToken = await loginAs('e2e.employee@cicc.gov.ph');
 
+    // supervisorId is intentionally NOT sent — it's resolved server-side from
+    // the requester's own division/officeOrSection (both employee and
+    // supervisor fixtures share "Test Division" / "Test Section" above), not
+    // requester-nominated. CreateRequisitionDto no longer accepts the field
+    // at all (forbidNonWhitelisted would reject it if sent).
     const createRes = await request(app.getHttpServer())
       .post('/api/v1/requisitions')
       .set('Authorization', `Bearer ${employeeToken}`)
@@ -125,7 +130,6 @@ describe('Requisition workflow (e2e)', () => {
         requiredDate: new Date(
           Date.now() + 7 * 24 * 60 * 60 * 1000,
         ).toISOString(),
-        supervisorId,
         items: [
           {
             assetType: AssetType.ICT,
@@ -139,6 +143,7 @@ describe('Requisition workflow (e2e)', () => {
 
     const requisitionId: string = createRes.body.data.id;
     expect(createRes.body.data.status).toBe('pending_supervisor');
+    expect(createRes.body.data.supervisorId).toBe(supervisorId);
 
     // 2. Supervisor approves it
     const supervisorToken = await loginAs('e2e.supervisor@cicc.gov.ph');
