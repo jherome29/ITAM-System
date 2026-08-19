@@ -56,10 +56,16 @@ export class AuditController {
   /**
    * GET /api/v1/audit/record/:recordId
    * Full history of a specific record (asset, requisition, user, etc.).
-   * Roles: System Admin, Management, IT Personnel
+   * Roles: System Admin, Management, IT Personnel, Property Custodian, Property Officer
    */
   @Get('record/:recordId')
-  @Roles(UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT, UserRole.IT_PERSONNEL)
+  @Roles(
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
   async findByRecord(@Param('recordId', ParseUUIDPipe) recordId: string) {
     const result = await this.svc.findByRecord(recordId);
     return { message: 'Record audit history retrieved', data: result };

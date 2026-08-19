@@ -97,10 +97,14 @@ export function Panel({ title, detail, action, children, className = '' }: Reado
   );
 }
 
+// Word-boundary anchored so a keyword must appear as its own word (e.g. the
+// literal word "active"), not merely as a substring of a longer word — this
+// is what previously made "Inactive" match "active" via .includes()-style
+// substring testing and get misclassified as a positive/green status.
 function inferToneFromStatus(status: string): AdminTone {
-  if (/active|success|healthy|current|published|covered|completed|enabled/i.test(status)) return 'green';
-  if (/error|locked|overdue|gap|denied|open/i.test(status)) return 'red';
-  if (/warning|review|risk|due|draft|dormant|not enrolled/i.test(status)) return 'amber';
+  if (/\b(active|success|healthy|current|published|covered|completed|enabled)\b/i.test(status)) return 'green';
+  if (/\b(error|locked|overdue|gap|denied|open)\b/i.test(status)) return 'red';
+  if (/\b(warning|review|risk|due|draft|dormant|not enrolled)\b/i.test(status)) return 'amber';
   return 'slate';
 }
 

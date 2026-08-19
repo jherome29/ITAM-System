@@ -1,11 +1,13 @@
 'use client';
 
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Activity, Archive, CheckCircle2, Clock3, Database, Download, FileClock, KeyRound, LockKeyhole, Plus, RefreshCw, Save, Server, ShieldCheck } from 'lucide-react';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
-import { auditRecords, masterDataGroups, scheduledJobs, systemEvents } from '@/lib/mock/admin.mock';
+import { auditApi, type AuditLog } from '@/lib/api/audit';
+import { masterDataGroups, scheduledJobs, systemEvents } from '@/lib/mock/admin.mock';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
 
 type PlatformSlug = 'reference-data' | 'configuration' | 'technical-logs' | 'security' | 'audit';
@@ -92,14 +94,43 @@ function PolicyToggle({ label, detail, checked = false }: Readonly<{ label: stri
 }
 
 function AuditLogPage() {
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<(typeof auditRecords)[number] | null>(null);
+  const [selected, setSelected] = useState<AuditLog | null>(null);
   const [toast, setToast] = useState('');
-  const rows = auditRecords.filter((record) => Object.values(record).join(' ').toLowerCase().includes(search.toLowerCase()));
-  return <div className="space-y-4"><AdminPageHeader title="Audit Log" detail="Inspect append-only evidence of authentication, authorization, asset, requisition, report, and administrative activity." action={<SecondaryButton icon={Download} onClick={() => { downloadCsv('aimrs-audit-log.csv', rows); setToast('Filtered audit log downloaded as CSV.'); }}>Export log</SecondaryButton>} />
-    <div className="flex items-start gap-3 border border-blue-200 bg-blue-50 px-4 py-3"><Archive className="mt-0.5 h-5 w-5 flex-none text-blue-700" /><div><p className="text-sm font-bold text-blue-950">Immutable audit evidence</p><p className="mt-0.5 text-xs text-blue-800">Audit records cannot be edited or deleted. All timestamps are displayed in Asia/Manila while production records retain UTC timestamps.</p></div></div>
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Events today" value="84" detail="Across all system modules" tone="blue" icon={Activity} /><MetricCard label="Denied actions" value="3" detail="Authentication and authorization" tone="red" icon={ShieldCheck} /><MetricCard label="Privileged changes" value="7" detail="All linked to actor and source" tone="amber" icon={KeyRound} /><MetricCard label="Retention" value="Permanent" detail="Append-only COA evidence" tone="green" icon={FileClock} /></div>
-    <SearchToolbar value={search} onChange={setSearch} filterLabel="Action, actor, and outcome" />
-    <Panel title="Audit Events" detail={`${rows.length} mock events shown - production records are backend-generated`}><TableWrap><table className="min-w-[1120px] w-full"><thead><tr><th className={thClass}>Timestamp</th><th className={thClass}>Actor</th><th className={thClass}>Role at time</th><th className={thClass}>Action</th><th className={thClass}>Affected record</th><th className={thClass}>Source</th><th className={thClass}>Outcome</th><th className={`${thClass} text-right`}>Inspect</th></tr></thead><tbody>{rows.map((record) => <tr key={record.id} className="hover:bg-slate-50"><td className={tdClass}>{record.timestamp}<span className="block text-xs text-slate-500">{record.id}</span></td><td className={`${tdClass} font-semibold text-slate-950`}>{record.actor}</td><td className={tdClass}>{record.role}</td><td className={`${tdClass} font-mono text-xs`}>{record.action}</td><td className={`${tdClass} font-mono text-xs`}>{record.record}</td><td className={`${tdClass} font-mono text-xs`}>{record.source}</td><td className={tdClass}><StatusChip status={record.outcome} /></td><td className={`${tdClass} text-right`}><button type="button" onClick={() => setSelected(record)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`Inspect ${record.id}`}><FileClock className="h-4 w-4" /></button></td></tr>)}</tbody></table></TableWrap></Panel>
-    <DetailDrawer open={Boolean(selected)} title={selected?.id ?? 'Audit event'} onClose={() => setSelected(null)}>{selected && <div className="space-y-4">{Object.entries(selected).map(([key, value]) => <div key={key} className="flex justify-between gap-4 border-b border-slate-100 pb-3 text-sm"><span className="capitalize text-slate-500">{key}</span><span className="text-right font-mono text-xs font-semibold">{value}</span></div>)}<Panel title="Event integrity"><div className="space-y-2 p-4 text-xs text-slate-600"><p><strong>Write mode:</strong> Append only</p><p><strong>Update:</strong> Not permitted</p><p><strong>Delete:</strong> Not permitted</p><p><strong>Production metadata:</strong> Includes UTC timestamp, user ID, role, source IP, record ID, and safe before/after values where applicable.</p></div></Panel></div>}</DetailDrawer><Toast message={toast} /></div>;
+
+  useEffect(() => {
+    auditApi.list(1, 100)
+      .then((res) => setLogs(res.data.data))
+      .catch(() => setToast('Failed to load audit log.'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const rows = logs.filter((log) =>
+    `${log.userId} ${log.userRole} ${log.action} ${log.affectedRecordType ?? ''} ${log.affectedRecordId ?? ''} ${log.ipAddress}`.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  const uniqueUsers = new Set(logs.map((log) => log.userId)).size;
+  const uniqueActions = new Set(logs.map((log) => log.action)).size;
+
+  const handleExport = () => {
+    downloadCsv('aimrs-audit-log.csv', rows.map((log) => ({
+      Timestamp: new Date(log.timestamp).toISOString(),
+      'User ID': log.userId,
+      'Role at time': log.userRole,
+      Action: log.action,
+      'Record type': log.affectedRecordType ?? '',
+      'Record ID': log.affectedRecordId ?? '',
+      'IP address': log.ipAddress,
+    })));
+    setToast('Filtered audit log downloaded as CSV.');
+  };
+
+  return <div className="space-y-4"><AdminPageHeader title="Audit Log" detail="Inspect append-only evidence of authentication, authorization, asset, requisition, report, and administrative activity." action={<SecondaryButton icon={Download} onClick={handleExport}>Export log</SecondaryButton>} />
+    <div className="flex items-start gap-3 border border-blue-200 bg-blue-50 px-4 py-3"><Archive className="mt-0.5 h-5 w-5 flex-none text-blue-700" /><div><p className="text-sm font-bold text-blue-950">Immutable audit evidence</p><p className="mt-0.5 text-xs text-blue-800">Audit records cannot be edited or deleted. Every logged action succeeded by definition; timestamps are recorded in UTC.</p></div></div>
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><MetricCard label="Events loaded" value={String(logs.length)} detail="Most recent audit records from the API" tone="blue" icon={Activity} /><MetricCard label="Unique users" value={String(uniqueUsers)} detail="Distinct accounts represented" tone="blue" icon={KeyRound} /><MetricCard label="Unique actions" value={String(uniqueActions)} detail="Distinct action types represented" tone="blue" icon={FileClock} /></div>
+    <SearchToolbar value={search} onChange={setSearch} filterLabel="User, role, action, or record" />
+    <Panel title="Audit Events" detail={loading ? 'Loading audit events…' : `${rows.length} audit events shown`}>{loading ? <div className="p-6"><LoadingSkeleton rows={8} /></div> : <TableWrap><table className="min-w-[960px] w-full"><thead><tr><th className={thClass}>Timestamp</th><th className={thClass}>User ID</th><th className={thClass}>Role at time</th><th className={thClass}>Action</th><th className={thClass}>Affected record</th><th className={thClass}>IP address</th><th className={`${thClass} text-right`}>Inspect</th></tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400">No audit logs found.</td></tr> : rows.map((log) => <tr key={log.id} className="hover:bg-slate-50"><td className={tdClass}>{new Date(log.timestamp).toLocaleString()}<span className="block text-xs text-slate-500">{log.id.slice(0, 8)}…</span></td><td className={`${tdClass} font-semibold text-slate-950`}>{log.userId}</td><td className={tdClass}>{log.userRole}</td><td className={`${tdClass} font-mono text-xs`}>{log.action}</td><td className={`${tdClass} font-mono text-xs`}>{log.affectedRecordType ?? '—'} {log.affectedRecordId ? `${log.affectedRecordId.slice(0, 8)}…` : ''}</td><td className={`${tdClass} font-mono text-xs`}>{log.ipAddress}</td><td className={`${tdClass} text-right`}><button type="button" onClick={() => setSelected(log)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`Inspect ${log.id}`}><FileClock className="h-4 w-4" /></button></td></tr>)}</tbody></table></TableWrap>}</Panel>
+    <DetailDrawer open={Boolean(selected)} title={selected?.action ?? 'Audit event'} onClose={() => setSelected(null)}>{selected && <div className="space-y-4">{[['ID', selected.id], ['Timestamp', new Date(selected.timestamp).toLocaleString()], ['User ID', selected.userId], ['Role at time', selected.userRole], ['Action', selected.action], ['Affected record type', selected.affectedRecordType ?? '—'], ['Affected record ID', selected.affectedRecordId ?? '—'], ['IP address', selected.ipAddress], ['Metadata', selected.metadata ? JSON.stringify(selected.metadata) : '—']].map(([key, value]) => <div key={key} className="flex justify-between gap-4 border-b border-slate-100 pb-3 text-sm"><span className="capitalize text-slate-500">{key}</span><span className="text-right font-mono text-xs font-semibold">{value}</span></div>)}<Panel title="Event integrity"><div className="space-y-2 p-4 text-xs text-slate-600"><p><strong>Write mode:</strong> Append only</p><p><strong>Update:</strong> Not permitted</p><p><strong>Delete:</strong> Not permitted</p><p><strong>Metadata:</strong> Includes UTC timestamp, user ID, role, source IP, record ID, and safe before/after values where applicable.</p></div></Panel></div>}</DetailDrawer><Toast message={toast} /></div>;
 }

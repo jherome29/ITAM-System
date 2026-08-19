@@ -6,6 +6,8 @@ export const frontendRoleMapping: Record<string, ProposedUserRole> = {
   it_personnel: ProposedUserRole.IT_ASSET_CUSTODIAN,
   system_admin: ProposedUserRole.MASTER_ADMIN,
   management: ProposedUserRole.MANAGEMENT_AUDIT_VIEWER,
+  property_custodian: ProposedUserRole.PROPERTY_CUSTODIAN,
+  property_officer: ProposedUserRole.PROPERTY_OFFICER,
 };
 
 export function mapBackendRoleToProposedRole(role?: string | null): ProposedUserRole {
