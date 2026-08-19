@@ -8,20 +8,19 @@ Read this file first, then **CLAUDE.md** (the single source of truth for the who
 
 ---
 
-## 1. The Branch Situation Right Now (read this before you clone)
+## 1. Which Branch to Clone
 
-There are two branches that matter, and they are **not** at the same point:
+```bash
+git clone <repo-url>
+cd cicc
+git checkout develop
+```
 
-| Branch | What it has |
-|---|---|
-| `FE-Updated-not-finished` | The 7-role frontend redesign (mock data), plus SonarCloud/security cleanup. This is the older of the two. |
-| `feature/property-roles-and-backend-wiring` | Everything in `FE-Updated-not-finished`, **plus**: 2 new roles (Property Custodian, Property Officer) wired into the real backend, real login for all 7 roles (mock login code fully removed), several redesigned pages wired to real APIs instead of mock data, and a security fix-wave (write-side asset-type scoping, missing RBAC guards). Not yet merged anywhere. |
+**Always work off `develop`.** `main` is production/handover — never push directly to either. See §8 below for the full flow.
 
-`feature/property-roles-and-backend-wiring` is a strict superset — every commit on `FE-Updated-not-finished` is already in it. Nothing has been lost or forked; the second branch just hasn't been merged back yet. **Check `git log --oneline -1` on whichever branch you're on before assuming what's "done" — don't rely on this file's section 4 alone, it describes both.**
+If you have an old local clone with a branch called `FE-Updated-not-finished`: that branch is superseded. Everything it had — the 7-role frontend redesign — plus the backend wiring for it, the 2 new roles (Property Custodian, Property Officer), real login for all 7 roles, and a security fix-wave are all merged into `main` and `develop` now. There's no reason to build from that branch anymore; delete your local copy of it if you have one.
 
-If you don't know which one to build on: ask whoever's driving before starting new work. Building on the older branch means redoing work that already exists on the newer one.
-
-For a fast, plain-language read of what's actually wired to the backend vs. still fake, see **`SYSTEM-STATUS.md`** at the repo root — kept up to date on the newer branch, current as of this handoff.
+For a fast, plain-language read of what's actually wired to the backend vs. still fake, see **`SYSTEM-STATUS.md`** at the repo root.
 
 ---
 
@@ -87,7 +86,7 @@ cd Frontend && npm run dev
 | Employee | employee@cicc.gov.ph | Employee@CICC2026! |
 | Management | management@cicc.gov.ph | Management@CICC2026! |
 
-The `property_custodian` and `property_officer` roles **already exist in the shared dev database** (enum values added, 2 seed accounts created) even though the frontend/backend code for them only lives on `feature/property-roles-and-backend-wiring`. Ask a teammate for those 2 accounts' credentials if you're working on that branch — they're not written down here since the DB is shared infrastructure.
+There are also 2 accounts for the newer **Property Custodian** and **Property Officer** roles, scoped to Fixed + Supplies assets. Ask a teammate for those credentials — they're not written down here since the DB is shared infrastructure.
 
 > If an account is locked (too many failed logins), a System Admin can unlock it: `PATCH /api/v1/users/:id/unlock`, or force a password reset: `PATCH /api/v1/users/:id/reset-password`.
 
@@ -97,26 +96,21 @@ Full role details and page routes: **`docs/guides/ROLES.md`**
 
 ## 4. What Has Been Built
 
-### Solid, on both branches
-- Auth: JWT + httpOnly refresh tokens, bcrypt, account lockout, RBAC guards
-- Assets module: registry, lifecycle state machine, QR generation, search + status filter
-- Requisitions module: submit → approve → fulfill workflow (tested at the API level), SLA deadline field, stats
-- Audit module: append-only log, action filter, per-record lookup
+### Solid, all on `main`
+- Auth: JWT + httpOnly refresh tokens, bcrypt, account lockout, RBAC guards, real login for all 7 roles — no mock accounts anywhere in the codebase anymore
+- 7 roles: the original 5 (Employee, Supervisor, IT Personnel, System Admin, Management) plus Property Custodian and Property Officer, scoped to Fixed + Supplies assets
+- Assets module: registry, lifecycle state machine, QR generation, search + status filter, asset-type scope enforcement on every write path (not just reads)
+- Requisitions module: submit → approve/reject → fulfill workflow, real end to end as of 2026-08-19 — both the API and the actual UI (Supervisor's queue, the Approving Officer's real-time queue, and IT Personnel's fulfillment page all work against real data with real actions now, not just tested at the API level)
+- Audit module: append-only log, action filter, per-record lookup — now including User Management (was the one module missing it; fixed 2026-08-19)
 - Notifications module: in-system alerts, mark read, mark all read (nothing auto-creates them yet — see gap list)
 - Users module: CRUD, role assignment, deactivate, reset password, unlock, search
-- Reports module: real PDF (pdfkit) + Excel (exceljs), all 18 COA forms
-- 5-role frontend (Employee, Supervisor, IT Personnel, System Admin, Management) — original UI, all real
-
-### Only on `feature/property-roles-and-backend-wiring` (unmerged)
-- Property Custodian / Property Officer as real backend roles, scoped to Fixed + Supplies assets
-- Asset-type scope enforcement added to every asset/requisition write path (not just reads)
-- Real login wired for the 7-role redesigned frontend — no mock accounts anywhere anymore
-- Employee's redesigned pages, Approving Officer's queue, and parts of Master Admin (Users/Roles/Audit) wired to real APIs
+- Reports module: real PDF (pdfkit) + Excel (exceljs), all 18 COA forms (generation mechanism is solid; several forms' *layout* diverges from the official template — see `docs/guides/COA-FORMS-AUDIT.md`)
+- Employee's redesigned pages, the Approving Officer's queue (including real actions now), and parts of Master Admin (Users/Roles/Audit) wired to real APIs instead of mock data
+- Asset registration: a real, reachable, working page now exists in navigation for IT Asset Custodian and Property Custodian
 
 ### Known-fake despite looking real (see `SYSTEM-STATUS.md` for the full list)
-- Approving Officer's Approve/Reject buttons in the redesigned UI don't call the backend — local state only, reverts on refresh
-- No reachable page that saves a newly registered asset to the database (the one that does isn't linked in navigation)
-- Most of the redesigned dashboards are still mock data behind a real-looking UI
+- `/admin/config` ("System Configuration") is a complete facade — no API call at all, false-success message, no backend endpoint exists yet to wire it to
+- Most of the redesigned dashboards are still mock data behind a real-looking UI (the Management dashboard specifically mixes real KPIs with two hardcoded, unlabeled mock chart panels)
 
 ---
 
@@ -126,7 +120,7 @@ Don't duplicate the gap list here — **`SYSTEM-STATUS.md`** at the repo root is
 
 | Priority | Item |
 |---|---|
-| 0 | Fix Approve/Reject buttons + the asset-registration dead end (see above — these look done, aren't) |
+| 0 | Fix `/admin/config`'s false-success message — needs a new backend config endpoint, not just wiring |
 | 1 | Notifications + SLA cron job — nothing watches for alert conditions yet |
 | 2 | Replacement requisition validation (useful-life / condition / loss-damage) |
 | 3 | Disposal workflow (currently just a status flag, no required fields) |
@@ -201,7 +195,16 @@ Before opening any PR, run every check in **`CHECKS.md`** in order — or tell C
 - **Dev database:** Shared Supabase instance — do not drop tables, other teammates are using it live.
 - **Schema changes:** write a `.sql` file in `Database/schemas/` (or `Database/migrations/` for post-launch changes) and run it manually in the Supabase SQL Editor. `synchronize: false` means nothing happens automatically.
 - **Production:** raw PostgreSQL managed by CICC IT. No Supabase SDK features in application code — see `Database/README.md`.
-- The `user_role` Postgres enum currently includes `property_custodian` and `property_officer` in the shared dev DB, ahead of what most branches' code expects. This is expected and safe — extra enum values don't break code that doesn't reference them yet.
+- The `user_role` Postgres enum includes `property_custodian` and `property_officer`, matching the code now merged into `main`.
+
+---
+
+## 11. Docker Notes (read before you touch `docker-compose build`)
+
+Two things worth knowing, found the hard way on 2026-08-19:
+
+1. **There are two separate dependency trees in this repo.** Local dev, tests, and CI all install through the **root npm workspace** — `npm install`/`npm ci` at the repo root, which is what §2 above tells you to run. But `Backend/Dockerfile` and `Frontend/Dockerfile` each do their own **standalone** `COPY package*.json ./` + `npm ci`, using `Backend/package-lock.json` / `Frontend/package-lock.json` directly — completely separate from the root lockfile, and npm workspaces doesn't touch them. These two lockfiles can silently drift out of sync with their own `package.json` if nobody's actually building the Docker images regularly. If `docker-compose build` ever fails with `npm ci` complaining the lockfile is out of sync, that's why — regenerate the specific lockfile (`cd Backend && rm package-lock.json && npm install`, twice if the first pass doesn't round-trip cleanly through `npm ci`) rather than assuming something's wrong with your machine.
+2. **If `npm ci` fails inside the container with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`** on every registry fetch: that's TLS interception on your network (proxy, antivirus, campus/office network filtering) whose root CA your Windows host trusts but the container's own minimal certificate store doesn't. Not a code problem — it'll happen on any machine behind that kind of network, regardless of what's in the lockfile. No fix from inside this repo; either build from a network without that interception, or add the intercepting CA to the image's trust store (out of scope for now, nobody's needed to build the actual container image day-to-day yet).
 
 ---
 
