@@ -135,6 +135,71 @@ describe('UsersService', () => {
     });
   });
 
+  describe('findSupervisorForSection()', () => {
+    it('returns the supervisor matching the exact officeOrSection', async () => {
+      const supervisor = makeUser({
+        id: 'sup-1',
+        role: UserRole.SUPERVISOR,
+        officeOrSection: 'Digital Forensics',
+        division: 'Operations',
+      });
+      mockRepo.findOne.mockResolvedValueOnce(supervisor);
+
+      const result = await service.findSupervisorForSection(
+        'Digital Forensics',
+        'Operations',
+      );
+
+      expect(result).toBe(supervisor);
+      expect(mockRepo.findOne).toHaveBeenCalledWith({
+        where: {
+          role: UserRole.SUPERVISOR,
+          officeOrSection: 'Digital Forensics',
+          isActive: true,
+        },
+      });
+      // Section match found — division fallback query must not run
+      expect(mockRepo.findOne).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to a division match when no exact section match exists', async () => {
+      const supervisor = makeUser({
+        id: 'sup-2',
+        role: UserRole.SUPERVISOR,
+        officeOrSection: 'Other Section',
+        division: 'Operations',
+      });
+      mockRepo.findOne
+        .mockResolvedValueOnce(null) // no section match
+        .mockResolvedValueOnce(supervisor); // division fallback match
+
+      const result = await service.findSupervisorForSection(
+        'Digital Forensics',
+        'Operations',
+      );
+
+      expect(result).toBe(supervisor);
+      expect(mockRepo.findOne).toHaveBeenNthCalledWith(2, {
+        where: {
+          role: UserRole.SUPERVISOR,
+          division: 'Operations',
+          isActive: true,
+        },
+      });
+    });
+
+    it('returns null when no supervisor matches either the section or division', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+
+      const result = await service.findSupervisorForSection(
+        'Digital Forensics',
+        'Operations',
+      );
+
+      expect(result).toBeNull();
+    });
+  });
+
   describe('create()', () => {
     it('hashes the password before saving and returns created user', async () => {
       const { default: bcrypt } = await import('bcrypt');

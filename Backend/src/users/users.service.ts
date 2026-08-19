@@ -60,6 +60,35 @@ export class UsersService {
     });
   }
 
+  /**
+   * Resolve the Supervisor accountable for a requester's section, per
+   * CLAUDE.md §6 ("Supervisor — reviews and approves/rejects requests from
+   * their section"). Requesters never nominate their own approver — the org
+   * chart determines it. Prefers an exact officeOrSection match; falls back
+   * to any active Supervisor in the same division if no section match exists.
+   */
+  async findSupervisorForSection(
+    officeOrSection: string,
+    division: string,
+  ): Promise<UserEntity | null> {
+    const bySection = await this.userRepo.findOne({
+      where: {
+        role: UserRole.SUPERVISOR,
+        officeOrSection,
+        isActive: true,
+      },
+    });
+    if (bySection) return bySection;
+
+    return this.userRepo.findOne({
+      where: {
+        role: UserRole.SUPERVISOR,
+        division,
+        isActive: true,
+      },
+    });
+  }
+
   async create(
     dto: CreateUserDto,
     performedById: string,

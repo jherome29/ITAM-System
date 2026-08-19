@@ -126,7 +126,7 @@ export default function RequisitionReviewPage() {
             />
           </div>
 
-          {req.status === 'PENDING_SUPERVISOR' && (
+          {req.status === 'pending_supervisor' && (
             <div className="flex gap-3 pt-2">
               <button type="button"
                 onClick={handleApprove}

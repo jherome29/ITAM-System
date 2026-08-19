@@ -54,10 +54,6 @@ export class CreateRequisitionDto {
   @IsDateString()
   requiredDate!: string;
 
-  @IsOptional()
-  @IsString()
-  supervisorId?: string; // Requester nominates their supervisor
-
   @IsArray()
   @ArrayMinSize(1, { message: 'At least one item is required' })
   @ValidateNested({ each: true })

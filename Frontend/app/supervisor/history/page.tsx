@@ -16,7 +16,7 @@ export default function ApprovalHistoryPage() {
       .list(1, 100)
       .then((r) => {
         const resolved = r.data.data.filter((req) =>
-          ['FULFILLED', 'REJECTED', 'CANCELLED'].includes(req.status)
+          ['fulfilled', 'rejected', 'cancelled'].includes(req.status)
         );
         setRequisitions(resolved);
       })
@@ -79,7 +79,7 @@ export default function ApprovalHistoryPage() {
                       <td className="px-6 py-4 text-sm text-gray-700">{req.items.map((i) => i.itemDescription).join(', ')}</td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-1.5">
-                          {req.status === 'REJECTED' ? (
+                          {req.status === 'rejected' ? (
                             <XCircle className="w-4 h-4 text-red-500" />
                           ) : (
                             <CheckCircle className="w-4 h-4 text-green-600" />
