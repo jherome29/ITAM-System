@@ -56,7 +56,9 @@ export class AssetsController {
     @Query('status') status?: string,
     @Req() req?: AuthenticatedRequest,
   ) {
-    const assetTypeScope = req ? resolveAssetTypeScope(req.user.role) : undefined;
+    const assetTypeScope = req
+      ? resolveAssetTypeScope(req.user.role)
+      : undefined;
     const result = await this.assetsService.findAll(
       +page,
       +limit,
@@ -93,8 +95,9 @@ export class AssetsController {
     UserRole.PROPERTY_CUSTODIAN,
     UserRole.PROPERTY_OFFICER,
   )
-  async getStats() {
-    const result = await this.assetsService.getStats();
+  async getStats(@Req() req: AuthenticatedRequest) {
+    const assetTypeScope = resolveAssetTypeScope(req.user.role);
+    const result = await this.assetsService.getStats(assetTypeScope);
     return { message: 'Asset statistics retrieved', data: result };
   }
 
@@ -111,8 +114,12 @@ export class AssetsController {
     UserRole.PROPERTY_CUSTODIAN,
     UserRole.PROPERTY_OFFICER,
   )
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    const asset = await this.assetsService.findOne(id);
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const assetTypeScope = resolveAssetTypeScope(req.user.role);
+    const asset = await this.assetsService.findOne(id, assetTypeScope);
     return { message: 'Asset retrieved successfully', data: asset };
   }
 
@@ -125,11 +132,13 @@ export class AssetsController {
   @Post()
   @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
   async create(@Body() dto: CreateAssetDto, @Req() req: AuthenticatedRequest) {
+    const assetTypeScope = resolveAssetTypeScope(req.user.role);
     const asset = await this.assetsService.create(
       dto,
       req.user.id,
       req.user.role,
       req.ip,
+      assetTypeScope,
     );
     return { message: 'Asset registered successfully', data: asset };
   }
@@ -146,12 +155,14 @@ export class AssetsController {
     @Body() dto: UpdateAssetDto,
     @Req() req: AuthenticatedRequest,
   ) {
+    const assetTypeScope = resolveAssetTypeScope(req.user.role);
     const asset = await this.assetsService.update(
       id,
       dto,
       req.user.id,
       req.user.role,
       req.ip,
+      assetTypeScope,
     );
     return { message: 'Asset updated successfully', data: asset };
   }
@@ -181,12 +192,14 @@ export class AssetsController {
     @Body() dto: UpdateLifecycleDto,
     @Req() req: AuthenticatedRequest,
   ) {
+    const assetTypeScope = resolveAssetTypeScope(req.user.role);
     const asset = await this.assetsService.updateLifecycle(
       id,
       dto,
       req.user.id,
       req.user.role,
       req.ip,
+      assetTypeScope,
     );
     return {
       message: `Asset status updated to "${dto.status}"`,
@@ -207,11 +220,13 @@ export class AssetsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: AuthenticatedRequest,
   ) {
+    const assetTypeScope = resolveAssetTypeScope(req.user.role);
     const result = await this.assetsService.generateQr(
       id,
       req.user.id,
       req.user.role,
       req.ip,
+      assetTypeScope,
     );
     return { message: 'QR code generated successfully', data: result };
   }
