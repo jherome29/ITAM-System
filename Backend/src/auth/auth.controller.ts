@@ -28,6 +28,8 @@ const ALL_ROLES = [
   UserRole.IT_PERSONNEL,
   UserRole.SYSTEM_ADMIN,
   UserRole.MANAGEMENT,
+  UserRole.PROPERTY_CUSTODIAN,
+  UserRole.PROPERTY_OFFICER,
 ];
 
 @Controller('v1/auth')
