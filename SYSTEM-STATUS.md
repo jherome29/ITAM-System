@@ -27,7 +27,15 @@ This is the real gap. The data model and CRUD exist; the *rules* CICC actually n
 
 ## What's actually solid despite the gaps above
 
-Forms/reports generation *mechanism* is in good shape — all 18 forms generate real PDFs from real data, correctly stored and re-downloadable, no crashes. Whether each form's actual *layout* matches its official COA template is a separate, weaker claim — see the forms-fidelity gap above. 6 of 8 management reports are fully wired.
+Forms/reports generation *mechanism* is in good shape — all 18 forms generate real PDFs from real data, correctly stored and re-downloadable, no crashes. Whether each form's actual *layout* matches its official COA template is a separate, weaker claim — see the forms-fidelity gap above.
+
+Of the 6 "wired" management reports: **Asset Master List, Requisition History Log, and Disposal Documentation Report are genuinely solid** — they query exactly what they claim to. **Asset Issuance Record and Asset Return Record have a real, quieter gap**: both filter assets by *current* status (`WHERE status = 'issued'` / `'returned'`) rather than by historical event, so an asset that was issued and later returned silently disappears from the "Issuance Record" — it's a snapshot of current state mislabeled as a historical log, not an actual record of issuance events over time. **Physical Count Summary confirms the already-known gap exactly** — it's a plain `SELECT * FROM assets`, no count/reconciliation logic at all, same root cause as RPCI/RPCPPE above.
+
+## Verified clean (2026-08-19 deep-check pass)
+
+- **All 8 backend controllers have correct RBAC guards on every route** — except one real bug found and fixed: `auth.controller.ts`'s `ALL_ROLES` constant (gating `/logout` and `/profile`) was never updated when Property Custodian/Officer were added, so those 2 roles got 403'd on every session-restore call, silently booting them to login on every page refresh. Fixed.
+- **Full `CHECKS.md` pipeline re-run against current `main`, all 11 steps clean**: TypeScript, ESLint, build, tests, and dependency audit for both Backend and Frontend, plus the root secret scan. Backend: 155/155 tests passing, 85% statement / 78% branch coverage — comfortably above the 65%/55% thresholds.
+- **Swept the frontend for other instances of the Approve/Reject "looks real, isn't" pattern** — found none beyond what's already documented. The only other "mock mode" text hits are in `LaptopAssetDetail.tsx`, which is openly, transparently mock (imports from `lib/mock/`, buttons literally labeled "Edit Mock Record") — an instance of the already-known "IT Asset Custodian's own screens" gap, not a new hidden one. The 4 shared components (`AuditTrailContent`, `NotificationsContent`, `ReportsContent`, `RequisitionTable`) all check out clean, including a client-side CSV export that's a legitimate feature, not a fake stand-in.
 
 ## Suggested order of next work
 
