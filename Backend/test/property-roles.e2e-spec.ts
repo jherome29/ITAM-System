@@ -12,6 +12,7 @@ describe('Property roles (e2e)', () => {
       imports: [AppModule],
     }).compile();
     app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api'); // matches main.ts bootstrap() — not implied by AppModule alone
     await app.init();
   });
 
