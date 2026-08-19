@@ -3,7 +3,8 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UserEntity } from './entities/user.entity';
-import { UserRole } from '../../../packages/shared/src/enums';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
 
 const makeUser = (overrides: Partial<UserEntity> = {}): UserEntity =>
   ({
@@ -45,11 +46,21 @@ describe('UsersService', () => {
     createQueryBuilder: jest.fn(() => mockQb),
   };
 
+  const mockAuditService = {
+    log: jest.fn().mockResolvedValue(undefined),
+  };
+
+  // Stand-in actor for audit metadata — the System Admin performing the action
+  const actorId = 'admin-1';
+  const actorRole = UserRole.SYSTEM_ADMIN;
+  const ipAddress = '127.0.0.1';
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UsersService,
         { provide: getRepositoryToken(UserEntity), useValue: mockRepo },
+        { provide: AuditService, useValue: mockAuditService },
       ],
     }).compile();
 
@@ -131,16 +142,21 @@ describe('UsersService', () => {
       mockRepo.create.mockReturnValue(user);
       mockRepo.save.mockResolvedValue(user);
 
-      await service.create({
-        employeeId: 'EMP-002',
-        firstName: 'Jose',
-        lastName: 'Rizal',
-        email: 'jose@cicc.gov.ph',
-        password: 'SecurePass123!',
-        role: UserRole.EMPLOYEE,
-        division: 'CISD',
-        officeOrSection: 'Records',
-      });
+      await service.create(
+        {
+          employeeId: 'EMP-002',
+          firstName: 'Jose',
+          lastName: 'Rizal',
+          email: 'jose@cicc.gov.ph',
+          password: 'SecurePass123!',
+          role: UserRole.EMPLOYEE,
+          division: 'CISD',
+          officeOrSection: 'Records',
+        },
+        actorId,
+        actorRole,
+        ipAddress,
+      );
 
       const createArg = mockRepo.create.mock.calls[0][0];
       expect(createArg.passwordHash).toBeDefined();
@@ -150,6 +166,39 @@ describe('UsersService', () => {
         createArg.passwordHash,
       );
       expect(valid).toBe(true);
+    });
+
+    it('logs a USER_CREATED audit entry with the new user as the affected record', async () => {
+      const user = makeUser();
+      mockRepo.create.mockReturnValue(user);
+      mockRepo.save.mockResolvedValue(user);
+
+      await service.create(
+        {
+          employeeId: 'EMP-002',
+          firstName: 'Jose',
+          lastName: 'Rizal',
+          email: 'jose@cicc.gov.ph',
+          password: 'SecurePass123!',
+          role: UserRole.EMPLOYEE,
+          division: 'CISD',
+          officeOrSection: 'Records',
+        },
+        actorId,
+        actorRole,
+        ipAddress,
+      );
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: actorId,
+          userRole: actorRole,
+          action: AuditAction.USER_CREATED,
+          affectedRecordId: user.id,
+          affectedRecordType: 'user',
+          ipAddress,
+        }),
+      );
     });
   });
 
@@ -163,14 +212,52 @@ describe('UsersService', () => {
         firstName: 'Updated',
       });
 
-      await service.update('u-1', { firstName: 'Updated' });
+      await service.update(
+        'u-1',
+        { firstName: 'Updated' },
+        actorId,
+        actorRole,
+        ipAddress,
+      );
       expect(mockRepo.update).toHaveBeenCalled();
     });
 
     it('throws NotFoundException when updating a non-existent user', async () => {
       mockRepo.findOne.mockResolvedValue(null);
-      await expect(service.update('no-id', { firstName: 'X' })).rejects.toThrow(
-        NotFoundException,
+      await expect(
+        service.update(
+          'no-id',
+          { firstName: 'X' },
+          actorId,
+          actorRole,
+          ipAddress,
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('logs a USER_UPDATED audit entry with the updated fields', async () => {
+      const user = makeUser();
+      mockRepo.findOne.mockResolvedValue(user);
+      mockRepo.update.mockResolvedValue(undefined);
+
+      await service.update(
+        'u-1',
+        { firstName: 'Updated' },
+        actorId,
+        actorRole,
+        ipAddress,
+      );
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: actorId,
+          userRole: actorRole,
+          action: AuditAction.USER_UPDATED,
+          affectedRecordId: 'u-1',
+          affectedRecordType: 'user',
+          ipAddress,
+          metadata: { updatedFields: ['firstName'] },
+        }),
       );
     });
   });
@@ -181,7 +268,13 @@ describe('UsersService', () => {
       mockRepo.findOne.mockResolvedValue(user);
       mockRepo.update.mockResolvedValue(undefined);
 
-      await service.assignRole('u-1', { role: UserRole.SUPERVISOR });
+      await service.assignRole(
+        'u-1',
+        { role: UserRole.SUPERVISOR },
+        actorId,
+        actorRole,
+        ipAddress,
+      );
       expect(mockRepo.update).toHaveBeenCalledWith('u-1', {
         role: UserRole.SUPERVISOR,
       });
@@ -190,8 +283,89 @@ describe('UsersService', () => {
     it('throws NotFoundException for unknown user', async () => {
       mockRepo.findOne.mockResolvedValue(null);
       await expect(
-        service.assignRole('no-id', { role: UserRole.SUPERVISOR }),
+        service.assignRole(
+          'no-id',
+          { role: UserRole.SUPERVISOR },
+          actorId,
+          actorRole,
+          ipAddress,
+        ),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('logs a ROLE_ASSIGNED audit entry with previous and new role', async () => {
+      const user = makeUser({ role: UserRole.EMPLOYEE });
+      mockRepo.findOne.mockResolvedValue(user);
+      mockRepo.update.mockResolvedValue(undefined);
+
+      await service.assignRole(
+        'u-1',
+        { role: UserRole.SUPERVISOR },
+        actorId,
+        actorRole,
+        ipAddress,
+      );
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: actorId,
+          userRole: actorRole,
+          action: AuditAction.ROLE_ASSIGNED,
+          affectedRecordId: 'u-1',
+          affectedRecordType: 'user',
+          ipAddress,
+          metadata: {
+            previousRole: UserRole.EMPLOYEE,
+            newRole: UserRole.SUPERVISOR,
+          },
+        }),
+      );
+    });
+  });
+
+  describe('resetPassword()', () => {
+    it('logs an audit entry for the password reset', async () => {
+      const user = makeUser({ tokenVersion: 0 });
+      mockRepo.findOne.mockResolvedValue(user);
+      mockRepo.update.mockResolvedValue(undefined);
+
+      await service.resetPassword(
+        'u-1',
+        { newPassword: 'AnotherSecurePass123!' },
+        actorId,
+        actorRole,
+        ipAddress,
+      );
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: actorId,
+          userRole: actorRole,
+          affectedRecordId: 'u-1',
+          affectedRecordType: 'user',
+          ipAddress,
+        }),
+      );
+    });
+  });
+
+  describe('unlock()', () => {
+    it('logs an audit entry for the account unlock', async () => {
+      const user = makeUser();
+      mockRepo.findOne.mockResolvedValue(user);
+      mockRepo.update.mockResolvedValue(undefined);
+
+      await service.unlock('u-1', actorId, actorRole, ipAddress);
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: actorId,
+          userRole: actorRole,
+          affectedRecordId: 'u-1',
+          affectedRecordType: 'user',
+          ipAddress,
+        }),
+      );
     });
   });
 
@@ -200,21 +374,47 @@ describe('UsersService', () => {
       mockRepo.findOne.mockResolvedValue(makeUser({ isActive: true }));
       mockRepo.update.mockResolvedValue(undefined);
 
-      const result = await service.deactivate('u-1');
+      const result = await service.deactivate(
+        'u-1',
+        actorId,
+        actorRole,
+        ipAddress,
+      );
       expect(mockRepo.update).toHaveBeenCalledWith('u-1', { isActive: false });
       expect(result.message).toBeDefined();
     });
 
     it('throws NotFoundException when user not found', async () => {
       mockRepo.findOne.mockResolvedValue(null);
-      await expect(service.deactivate('no-id')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.deactivate('no-id', actorId, actorRole, ipAddress),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('throws when user is already inactive', async () => {
       mockRepo.findOne.mockResolvedValue(makeUser({ isActive: false }));
-      await expect(service.deactivate('u-1')).rejects.toThrow();
+      await expect(
+        service.deactivate('u-1', actorId, actorRole, ipAddress),
+      ).rejects.toThrow();
+    });
+
+    it('logs a USER_DEACTIVATED audit entry', async () => {
+      const user = makeUser({ isActive: true });
+      mockRepo.findOne.mockResolvedValue(user);
+      mockRepo.update.mockResolvedValue(undefined);
+
+      await service.deactivate('u-1', actorId, actorRole, ipAddress);
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: actorId,
+          userRole: actorRole,
+          action: AuditAction.USER_DEACTIVATED,
+          affectedRecordId: 'u-1',
+          affectedRecordType: 'user',
+          ipAddress,
+        }),
+      );
     });
   });
 });
