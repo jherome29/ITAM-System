@@ -160,6 +160,19 @@ export class RequisitionsService {
       qb.where('r.requestedById = :userId', { userId });
     }
 
+    // Scope to the caller's asset-type custody, mirroring findAll()'s
+    // EXISTS-subquery pattern (same join shape used there for
+    // IT_PERSONNEL/PROPERTY_CUSTODIAN/PROPERTY_OFFICER). SYSTEM_ADMIN and
+    // MANAGEMENT get undefined back from resolveAssetTypeScope and stay
+    // unscoped, matching findAll()'s "see all" behavior for those roles.
+    const assetTypeScope = resolveAssetTypeScope(userRole);
+    if (assetTypeScope && assetTypeScope.length > 0) {
+      qb.andWhere(
+        'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...statsScope))',
+        { statsScope: assetTypeScope },
+      );
+    }
+
     const rows = await qb.getRawMany<{ status: string; count: string }>();
 
     const byStatus: Record<string, number> = {};
@@ -410,6 +423,44 @@ export class RequisitionsService {
     return saved;
   }
 
+  // ── Scope guard for whole-requisition status transitions (fulfill/hold) ───
+  // NOTE — this is deliberately STRICTER than findAll()'s visibility rule,
+  // and deliberately asymmetric with it. Do not "harmonize" the two:
+  //   - findAll() is read-only and uses an inclusive "ANY item matches scope"
+  //     rule, so a caller with a partial interest in a mixed requisition can
+  //     still see it in their queue.
+  //   - fulfill()/putOnHold() perform a whole-requisition status transition —
+  //     RequisitionStatus has no partial-fulfillment state — so authorization
+  //     here must be conjunctive: EVERY item on the requisition must be
+  //     within the caller's asset-type scope, or the transition is rejected.
+  //     Otherwise a caller could fulfill/hold (and thus control the fate of)
+  //     line items outside their custodial authority just because one item
+  //     on the same requisition happened to be in scope.
+  //
+  // Known, accepted, currently-dormant limitation: under this rule a
+  // genuinely mixed-assetType requisition (e.g. one ICT item + one Fixed
+  // item) becomes fulfillable by no one, since SYSTEM_ADMIN/MANAGEMENT are
+  // not on the fulfill/hold guard lists either. This is unreachable today —
+  // the real requisition-submission form only ever submits a single line
+  // item — so it's a real but dormant gap, not fixed here. Candidate future
+  // fixes: a partial-fulfillment status, per-item fulfillment, or create-time
+  // validation that all items on one requisition share a single custodial
+  // scope.
+  private assertItemsInScope(req: RequisitionEntity, userRole: UserRole): void {
+    const scope = resolveAssetTypeScope(userRole);
+    if (!scope) return; // unscoped role — nothing to enforce
+    const outOfScope = req.items.filter(
+      (item) => !scope.includes(item.assetType),
+    );
+    if (outOfScope.length > 0) {
+      throw new ForbiddenException(
+        `Cannot act on requisition "${req.requestNumber}": item(s) ` +
+          `[${outOfScope.map((item) => item.itemDescription).join(', ')}] ` +
+          `fall outside your permitted asset-type scope [${scope.join(', ')}]`,
+      );
+    }
+  }
+
   // ── IT Personnel marks on hold (asset unavailable) ────────────────────────
   // Status: pending_fulfillment → on_hold
   async putOnHold(
@@ -420,6 +471,7 @@ export class RequisitionsService {
     ipAddress: string,
   ): Promise<RequisitionEntity> {
     const req = await this.findOne(id);
+    this.assertItemsInScope(req, userRole);
 
     if (req.status !== RequisitionStatus.PENDING_FULFILLMENT) {
       throw new BadRequestException(
@@ -464,6 +516,7 @@ export class RequisitionsService {
     ipAddress: string,
   ): Promise<RequisitionEntity> {
     const req = await this.findOne(id);
+    this.assertItemsInScope(req, userRole);
 
     const fulfillableStatuses = [
       RequisitionStatus.PENDING_FULFILLMENT,

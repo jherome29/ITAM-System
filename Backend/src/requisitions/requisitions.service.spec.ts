@@ -421,6 +421,113 @@ describe('RequisitionsService', () => {
         service.fulfill(req.id, 'it-1', UserRole.IT_PERSONNEL, {}, '127.0.0.1'),
       ).rejects.toThrow(BadRequestException);
     });
+
+    // ── Whole-requisition scope enforcement (Fix 2) ──────────────────────────
+    it('allows IT_PERSONNEL to fulfill a requisition whose items are all ICT', async () => {
+      const req = makeReq({
+        status: RequisitionStatus.PENDING_FULFILLMENT,
+        items: [
+          { itemDescription: 'Laptop', assetType: AssetType.ICT },
+        ] as unknown as RequisitionItemEntity[],
+      });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+      mockReqRepo.save.mockResolvedValue({
+        ...req,
+        status: RequisitionStatus.FULFILLED,
+      });
+
+      await expect(
+        service.fulfill(req.id, 'it-1', UserRole.IT_PERSONNEL, {}, '127.0.0.1'),
+      ).resolves.toMatchObject({ status: RequisitionStatus.FULFILLED });
+    });
+
+    it('throws ForbiddenException when IT_PERSONNEL tries to fulfill a requisition containing a Fixed item', async () => {
+      const req = makeReq({
+        status: RequisitionStatus.PENDING_FULFILLMENT,
+        items: [
+          { itemDescription: 'Office Chair', assetType: AssetType.FIXED },
+        ] as unknown as RequisitionItemEntity[],
+      });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+
+      await expect(
+        service.fulfill(req.id, 'it-1', UserRole.IT_PERSONNEL, {}, '127.0.0.1'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockReqRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('throws ForbiddenException when PROPERTY_CUSTODIAN tries to fulfill a requisition with a mixed ICT + Fixed item set', async () => {
+      const req = makeReq({
+        status: RequisitionStatus.PENDING_FULFILLMENT,
+        items: [
+          { itemDescription: 'Office Chair', assetType: AssetType.FIXED },
+          { itemDescription: 'Laptop', assetType: AssetType.ICT },
+        ] as unknown as RequisitionItemEntity[],
+      });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+
+      await expect(
+        service.fulfill(
+          req.id,
+          'pc-1',
+          UserRole.PROPERTY_CUSTODIAN,
+          {},
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('putOnHold() — IT Personnel / Property Custodian hold flow', () => {
+    it('transitions PENDING_FULFILLMENT → ON_HOLD when all items are in scope', async () => {
+      const req = makeReq({
+        status: RequisitionStatus.PENDING_FULFILLMENT,
+        items: [
+          { itemDescription: 'Laptop', assetType: AssetType.ICT },
+        ] as unknown as RequisitionItemEntity[],
+      });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+      mockReqRepo.save.mockResolvedValue({
+        ...req,
+        status: RequisitionStatus.ON_HOLD,
+      });
+
+      const result = await service.putOnHold(
+        req.id,
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        'Awaiting new stock',
+        '127.0.0.1',
+      );
+
+      expect(result.status).toBe(RequisitionStatus.ON_HOLD);
+    });
+
+    it('throws ForbiddenException when PROPERTY_CUSTODIAN tries to hold a requisition with an ICT item outside their scope', async () => {
+      const req = makeReq({
+        status: RequisitionStatus.PENDING_FULFILLMENT,
+        items: [
+          { itemDescription: 'Laptop', assetType: AssetType.ICT },
+        ] as unknown as RequisitionItemEntity[],
+      });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+
+      await expect(
+        service.putOnHold(
+          req.id,
+          'pc-1',
+          UserRole.PROPERTY_CUSTODIAN,
+          'Unavailable',
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockReqRepo.save).not.toHaveBeenCalled();
+    });
   });
 
   describe('findOne()', () => {
@@ -469,6 +576,7 @@ describe('RequisitionsService', () => {
   describe('getStats()', () => {
     const makeStatsQb = (rawRows: { status: string; count: string }[]) => ({
       where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
       groupBy: jest.fn().mockReturnThis(),
@@ -510,7 +618,7 @@ describe('RequisitionsService', () => {
       expect(result.rejected).toBe(1);
     });
 
-    it('returns system-wide stats for IT Personnel (no scope filter)', async () => {
+    it('returns asset-type-scoped stats for IT Personnel (ICT only, no requestedById filter)', async () => {
       const qb = makeStatsQb([
         { status: RequisitionStatus.PENDING_FULFILLMENT, count: '4' },
         { status: RequisitionStatus.ON_HOLD, count: '2' },
@@ -521,18 +629,37 @@ describe('RequisitionsService', () => {
       const result = await service.getStats('it-1', UserRole.IT_PERSONNEL);
 
       expect(qb.where).not.toHaveBeenCalled();
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('ri.asset_type IN (:...statsScope)'),
+        { statsScope: [AssetType.ICT] },
+      );
       expect(result.total).toBe(7);
       expect(result.approved).toBe(4);
       expect(result.onHold).toBe(2);
       expect(result.rejected).toBe(1);
     });
 
-    it('returns all-zero stats when no requisitions exist', async () => {
+    it('scopes PROPERTY_CUSTODIAN stats to Fixed/Supplies asset types', async () => {
+      const qb = makeStatsQb([
+        { status: RequisitionStatus.PENDING_FULFILLMENT, count: '1' },
+      ]);
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.getStats('pc-1', UserRole.PROPERTY_CUSTODIAN);
+
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('ri.asset_type IN (:...statsScope)'),
+        { statsScope: [AssetType.FIXED, AssetType.SUPPLIES] },
+      );
+    });
+
+    it('returns all-zero stats when no requisitions exist (SYSTEM_ADMIN — unscoped)', async () => {
       const qb = makeStatsQb([]);
       mockReqRepo.createQueryBuilder.mockReturnValue(qb);
 
       const result = await service.getStats('admin-1', UserRole.SYSTEM_ADMIN);
 
+      expect(qb.andWhere).not.toHaveBeenCalled();
       expect(result).toEqual({
         total: 0,
         pending: 0,
@@ -586,7 +713,10 @@ describe('RequisitionsService', () => {
       await service.findAll('it-1', UserRole.IT_PERSONNEL);
 
       expect(qb.where).toHaveBeenCalledWith('r.status IN (:...statuses)', {
-        statuses: [RequisitionStatus.PENDING_FULFILLMENT, RequisitionStatus.ON_HOLD],
+        statuses: [
+          RequisitionStatus.PENDING_FULFILLMENT,
+          RequisitionStatus.ON_HOLD,
+        ],
       });
       expect(qb.andWhere).toHaveBeenCalledWith(
         'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type = :itScope)',
@@ -601,7 +731,10 @@ describe('RequisitionsService', () => {
       await service.findAll('pc-1', UserRole.PROPERTY_CUSTODIAN);
 
       expect(qb.where).toHaveBeenCalledWith('r.status IN (:...statuses)', {
-        statuses: [RequisitionStatus.PENDING_FULFILLMENT, RequisitionStatus.ON_HOLD],
+        statuses: [
+          RequisitionStatus.PENDING_FULFILLMENT,
+          RequisitionStatus.ON_HOLD,
+        ],
       });
       expect(qb.andWhere).toHaveBeenCalledWith(
         'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...pcScope))',
