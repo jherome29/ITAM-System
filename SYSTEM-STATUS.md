@@ -20,13 +20,14 @@ This is the real gap. The data model and CRUD exist; the *rules* CICC actually n
 - **Replacement requisitions aren't validated.** The system is supposed to check useful-life, condition, or loss/damage before approving a "replacement" request — it doesn't check anything right now.
 - **Disposal is a status flag, not a workflow.** Flagging an asset "for disposal" just changes its status. There's no required justification, condition assessment, or recommended-action fields actually enforced.
 - **No alternate approver support.** Documented as a requirement; doesn't exist in the data model or anywhere in the code.
-- **No physical count / reconciliation.** The forms for it exist as templates, but there's no way to actually record a count and compare it against system records — the "report" is just today's live asset list.
+- **No physical count / reconciliation.** Worse than just "no UI for it" — confirmed at the code level that `RPCI`/`RPCPPE`'s "count" columns are hardcoded (`QTY PER CARD` and `QTY PER COUNT` both always `'1'`, shortage/overage always blank), so even the generated report can't show a real discrepancy. There's no mechanism anywhere to actually record a count and compare it against system records.
 - **2 of 8 management reports don't exist**: Asset Utilization Summary and Audit Trail Report (as an export — the live audit log itself works).
+- **All 18 generated COA forms diverge from their official templates, checked and confirmed for every one** — full breakdown in `docs/guides/COA-FORMS-AUDIT.md`. Roughly a third are close (RIS, RSPI, RSMI, PTR — right signatory count/roles, minor field gaps). Most add an unofficial extra signature block the shared template defaults to, that the real form doesn't have (PAR, ICS, IAR, both Receipt-of-Returned forms, RLSDDP). A few are more seriously off: WMR is missing an entire required section (Certificate of Inspection — disposition method, witness signature); IIRUP drops its accounting columns and required Witness signature; Move-In/Move-Out have wrong attachment options and a **hardcoded Property-Type checkbox that always shows "Office" even for personal items** — a real bug, not just formatting. Sticker Card isn't even the right *document* — Appendix 58 is officially a Stock Card (a receipt/issue ledger), the generator makes a physical asset tag instead. These are real government forms; an auditor comparing output to the official template would notice immediately.
 - **Everything else already known and deferred on purpose**: IT Asset Custodian's and the two Property roles' own screens, most of Master Admin, Reconciliation/Corrections screens — these are UI-redesign leftovers not yet connected, tracked separately.
 
 ## What's actually solid despite the gaps above
 
-Forms/reports generation itself is in good shape — all 18 official COA forms generate real PDFs from real data, and 6 of 8 management reports are fully wired.
+Forms/reports generation *mechanism* is in good shape — all 18 forms generate real PDFs from real data, correctly stored and re-downloadable, no crashes. Whether each form's actual *layout* matches its official COA template is a separate, weaker claim — see the forms-fidelity gap above. 6 of 8 management reports are fully wired.
 
 ## Suggested order of next work
 
@@ -34,8 +35,9 @@ Forms/reports generation itself is in good shape — all 18 official COA forms g
 1. **Notifications + SLA job** — one scheduled task unlocks two "not built" items at once, and it's the most visible gap in daily use (people expect alerts to just work).
 2. **Replacement validation** — a real compliance/audit-readiness gap, not just a nice-to-have; worth closing before any real requisition volume goes through the replacement path.
 3. **Disposal workflow** — turn the status flag into an actual documented flow with the required fields (matches your COA/audit obligations).
-4. **Alternate approver** — smaller, but blocks a documented requirement outright.
-5. **Wire the remaining "look real but aren't" pages** — the deferred UI screens from this round (IT Asset Custodian, Property roles' own pages, rest of Master Admin) — and while doing that pass, specifically re-check each one's action buttons the way we just did here, not just its data loading.
-6. **Physical count / reconciliation + the 2 missing reports** — lower urgency, but needed before any real audit-readiness claim.
+4. **Fix the COA form templates against their actual references** — see `docs/guides/COA-FORMS-AUDIT.md` for the full per-form breakdown of all 18. Fix the Move-In/Move-Out hardcoded Property-Type bug first (it misrepresents real data, not just a layout gap); WMR and IIRUP need their missing sections rebuilt; the rest is systematic field/signatory correction against each form's actual reference file. This is exactly the kind of thing that looks fine until CICC or COA actually compares it to the real form.
+5. **Alternate approver** — smaller, but blocks a documented requirement outright.
+6. **Wire the remaining "look real but aren't" pages** — the deferred UI screens from this round (IT Asset Custodian, Property roles' own pages, rest of Master Admin) — and while doing that pass, specifically re-check each one's action buttons the way we just did here, not just its data loading.
+7. **Physical count / reconciliation + the 2 missing reports** — lower urgency, but needed before any real audit-readiness claim.
 
 Everything above is backend-logic-plus-a-little-UI, not another redesign — the design work is done, this is about making the system actually do what it already claims to do.
