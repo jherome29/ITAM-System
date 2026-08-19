@@ -62,7 +62,13 @@ export class ReportsController {
    * Paginated list of generated management reports.
    */
   @Get()
-  @Roles(UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT, UserRole.IT_PERSONNEL)
+  @Roles(
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
   async findAll(@Query('page') page = 1, @Query('limit') limit = 50) {
     const result = await this.svc.findAll(+page, +limit);
     return { message: 'Reports retrieved', data: result };
@@ -73,7 +79,13 @@ export class ReportsController {
    * Paginated list of generated COA forms.
    */
   @Get('forms')
-  @Roles(UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT, UserRole.IT_PERSONNEL)
+  @Roles(
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
   async findAllForms(@Query('page') page = 1, @Query('limit') limit = 50) {
     const result = await this.svc.findAllForms(+page, +limit);
     return { message: 'Forms retrieved', data: result };
@@ -97,7 +109,12 @@ export class ReportsController {
    */
   @Post('generate')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
   async generate(
     @Body() dto: GenerateReportDto,
     @Req() req: AuthReq,
@@ -130,7 +147,13 @@ export class ReportsController {
    * Stream a previously stored COA form PDF from the database.
    */
   @Get('forms/:id/download')
-  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
   async downloadForm(
     @Param('id', ParseUUIDPipe) id: string,
     @Res() res: Response,
@@ -154,7 +177,11 @@ export class ReportsController {
    */
   @Post('forms/generate')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN)
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
   async generateForm(
     @Body() dto: GenerateFormDto,
     @Req() req: AuthReq,

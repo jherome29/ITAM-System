@@ -100,19 +100,48 @@ describe('RolesGuard', () => {
 
   // ── Property Custodian / Property Officer grants ─────────────────────────
   it('allows PROPERTY_CUSTODIAN on an IT_PERSONNEL+PROPERTY_CUSTODIAN endpoint', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue([UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN]);
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockReturnValue([UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN]);
     expect(guard.canActivate(makeCtx(UserRole.PROPERTY_CUSTODIAN))).toBe(true);
   });
 
   it('denies PROPERTY_OFFICER on a mutating endpoint that only lists IT_PERSONNEL and PROPERTY_CUSTODIAN', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue([UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN]);
-    expect(() => guard.canActivate(makeCtx(UserRole.PROPERTY_OFFICER))).toThrow(ForbiddenException);
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockReturnValue([UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN]);
+    expect(() => guard.canActivate(makeCtx(UserRole.PROPERTY_OFFICER))).toThrow(
+      ForbiddenException,
+    );
   });
 
   it('allows PROPERTY_OFFICER on a read endpoint that lists it explicitly', () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue([
-      UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT, UserRole.PROPERTY_CUSTODIAN, UserRole.PROPERTY_OFFICER,
-    ]);
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockReturnValue([
+        UserRole.IT_PERSONNEL,
+        UserRole.SYSTEM_ADMIN,
+        UserRole.MANAGEMENT,
+        UserRole.PROPERTY_CUSTODIAN,
+        UserRole.PROPERTY_OFFICER,
+      ]);
     expect(guard.canActivate(makeCtx(UserRole.PROPERTY_OFFICER))).toBe(true);
+  });
+
+  // ── Fix 3 — POST /v1/reports/forms/generate deliberately omits PROPERTY_OFFICER ──
+  // Property Officer is read-only by omission from every mutating route's guard
+  // list (see reports.controller.ts). This asserts that omission actually denies
+  // access, so the invariant can't silently regress if the guard list is edited.
+  it('denies PROPERTY_OFFICER on the reports/forms/generate guard list (IT_PERSONNEL, SYSTEM_ADMIN, PROPERTY_CUSTODIAN)', () => {
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockReturnValue([
+        UserRole.IT_PERSONNEL,
+        UserRole.SYSTEM_ADMIN,
+        UserRole.PROPERTY_CUSTODIAN,
+      ]);
+    expect(() => guard.canActivate(makeCtx(UserRole.PROPERTY_OFFICER))).toThrow(
+      ForbiddenException,
+    );
   });
 });
