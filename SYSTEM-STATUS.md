@@ -60,3 +60,7 @@ Of the 6 "wired" management reports: **Asset Master List, Requisition History Lo
 7. **Physical count / reconciliation + the 2 missing reports** — lower urgency, but needed before any real audit-readiness claim.
 
 Everything above is backend-logic-plus-a-little-UI, not another redesign — the design work is done, this is about making the system actually do what it already claims to do.
+
+## About Phase 5 (Testing & Evaluation)
+
+The project timeline says this phase started Aug 16 — it's not actually time yet, calendar aside. Phase 5 (`docs/phases/PHASE-5-TESTING.md`: OWASP ZAP, JMeter load testing, formal Jest security suite, UAT with CICC) tests whether a *working* system is fast/secure/reliable enough — not whether it works at all. Running it now against a system whose core approval workflow doesn't function through the UI means redoing most of it later. Finish the priority-0/0a/0b items above first, then start Phase 5.
