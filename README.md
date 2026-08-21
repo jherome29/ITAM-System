@@ -75,7 +75,7 @@ cd Frontend && npm run dev
 | Database (Dev) | Supabase (managed PostgreSQL) |
 | Database (Prod) | CICC-managed PostgreSQL (raw) |
 | Containerization | Docker + Docker Compose |
-| Testing | Jest (91 tests, 65% branch coverage) + JMeter |
+| Testing | Jest (170 backend tests + 23 frontend tests, as of 2026-08-21) + JMeter |
 | Report Generation | pdfkit (PDF) + exceljs (Excel/XLSX) |
 
 ## API Endpoints

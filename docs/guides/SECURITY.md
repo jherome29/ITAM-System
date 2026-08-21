@@ -650,27 +650,41 @@ export class AuditService {
   }
 }
 
-// Required audit events — log ALL of these:
+// Required audit events — log ALL of these.
+// IMPORTANT: the real enum (packages/shared/src/enums/index.ts) is lowercase
+// snake_case, not the illustrative UPPER_CASE shown in early drafts of this
+// doc. audit_logs.action is a native Postgres enum column — an uppercase
+// literal here doesn't just fail an equality check, it throws a DB-level
+// enum-cast error. A 2026-08-21 sweep found and fixed several real, live
+// instances of frontend code written against this now-corrected wrong
+// casing (audit-trail filters, notification-type checks) — copy the real
+// enum below, never retype these values by hand.
 export enum AuditAction {
-  USER_LOGIN = 'USER_LOGIN',
-  USER_LOGOUT = 'USER_LOGOUT',
-  USER_LOGIN_FAILED = 'USER_LOGIN_FAILED',
-  USER_LOCKED = 'USER_LOCKED',
-  ASSET_CREATED = 'ASSET_CREATED',
-  ASSET_STATUS_CHANGED = 'ASSET_STATUS_CHANGED',
-  ASSET_ISSUED = 'ASSET_ISSUED',
-  ASSET_RETURNED = 'ASSET_RETURNED',
-  ASSET_TRANSFERRED = 'ASSET_TRANSFERRED',
-  ASSET_FLAGGED_DISPOSAL = 'ASSET_FLAGGED_DISPOSAL',
-  REQUISITION_SUBMITTED = 'REQUISITION_SUBMITTED',
-  REQUISITION_APPROVED = 'REQUISITION_APPROVED',
-  REQUISITION_REJECTED = 'REQUISITION_REJECTED',
-  REQUISITION_FULFILLED = 'REQUISITION_FULFILLED',
-  USER_CREATED = 'USER_CREATED',
-  USER_ROLE_CHANGED = 'USER_ROLE_CHANGED',
-  USER_DEACTIVATED = 'USER_DEACTIVATED',
-  REPORT_GENERATED = 'REPORT_GENERATED',
-  FORM_GENERATED = 'FORM_GENERATED',
+  USER_LOGIN = 'user_login',
+  USER_LOGOUT = 'user_logout',
+  USER_LOGIN_FAILED = 'user_login_failed',
+  USER_LOCKED = 'user_locked',
+  ASSET_CREATED = 'asset_created',
+  ASSET_UPDATED = 'asset_updated',
+  ASSET_ISSUED = 'asset_issued',
+  ASSET_RETURNED = 'asset_returned',
+  ASSET_TRANSFERRED = 'asset_transferred',
+  ASSET_FLAGGED_REPAIR = 'asset_flagged_repair',
+  ASSET_FLAGGED_DISPOSAL = 'asset_flagged_disposal',
+  ASSET_DISPOSED = 'asset_disposed',
+  QR_GENERATED = 'qr_generated',
+  REQUISITION_SUBMITTED = 'requisition_submitted',
+  REQUISITION_APPROVED = 'requisition_approved',
+  REQUISITION_REJECTED = 'requisition_rejected',
+  REQUISITION_ON_HOLD = 'requisition_on_hold',
+  REQUISITION_FULFILLED = 'requisition_fulfilled',
+  REQUISITION_CANCELLED = 'requisition_cancelled',
+  USER_CREATED = 'user_created',
+  USER_UPDATED = 'user_updated',
+  USER_DEACTIVATED = 'user_deactivated',
+  ROLE_ASSIGNED = 'role_assigned', // NOT "USER_ROLE_CHANGED" — a stale name that never matched the real enum
+  REPORT_GENERATED = 'report_generated',
+  FORM_GENERATED = 'form_generated',
 }
 ```
 

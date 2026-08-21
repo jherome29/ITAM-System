@@ -20,6 +20,8 @@ git checkout develop
 
 If you have an old local clone with a branch called `FE-Updated-not-finished`: that branch is superseded. Everything it had — the 7-role frontend redesign — plus the backend wiring for it, the 2 new roles (Property Custodian, Property Officer), real login for all 7 roles, and a security fix-wave are all merged into `main` and `develop` now. There's no reason to build from that branch anymore; delete your local copy of it if you have one.
 
+**Open branch awaiting merge, 2026-08-21:** `fix/dead-ui-controls-and-logout-crash` (2 commits on top of `develop`) — found via a systematic re-audit (parallel agent sweep across every role's frontend + all 8 backend controllers) for the same class of bug as the branch name's first fix: real, wired features that are silently broken, either by dead UI controls or by uppercase-vs-real-lowercase-enum mismatches. Fixes: the logout button/endpoint (dead link + a `req.user.sub`-vs-`.id` backend crash), a notifications IDOR (any user could mark any other user's notification read), and ~10 more correctness bugs across report generation, asset lifecycle updates, user creation/role assignment, audit-trail filtering, notification icons, status badges, the Employee dashboard/notifications (were still mock, now real), and Master Admin's unbuilt pages (now honestly disclosed as mock instead of implying they saved). Full list and rationale in the two commit messages. Pull this in before doing further work in any of those areas.
+
 For a fast, plain-language read of what's actually wired to the backend vs. still fake, see **`SYSTEM-STATUS.md`** at the repo root.
 
 ---
@@ -85,8 +87,10 @@ cd Frontend && npm run dev
 | Supervisor | supervisor@cicc.gov.ph | Supervisor@CICC2026! |
 | Employee | employee@cicc.gov.ph | Employee@CICC2026! |
 | Management | management@cicc.gov.ph | Management@CICC2026! |
+| Property Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
+| Property Officer | property.officer@cicc.gov.ph | PropertyOfficer@2026! |
 
-There are also 2 accounts for the newer **Property Custodian** and **Property Officer** roles, scoped to Fixed + Supplies assets. Ask a teammate for those credentials — they're not written down here since the DB is shared infrastructure.
+The 2 Property role accounts, scoped to Fixed + Supplies assets, already existed in the shared dev DB but had no known-working password until 2026-08-21, when they were reset via the real `PATCH /api/v1/users/:id/reset-password` endpoint and verified with a live login. If these no longer work, someone has reset them again since — check with the team rather than assuming this doc is wrong.
 
 > If an account is locked (too many failed logins), a System Admin can unlock it: `PATCH /api/v1/users/:id/unlock`, or force a password reset: `PATCH /api/v1/users/:id/reset-password`.
 
@@ -105,12 +109,15 @@ Full role details and page routes: **`docs/guides/ROLES.md`**
 - Notifications module: in-system alerts, mark read, mark all read (nothing auto-creates them yet — see gap list)
 - Users module: CRUD, role assignment, deactivate, reset password, unlock, search
 - Reports module: real PDF (pdfkit) + Excel (exceljs), all 18 COA forms (generation mechanism is solid; several forms' *layout* diverges from the official template — see `docs/guides/COA-FORMS-AUDIT.md`)
-- Employee's redesigned pages, the Approving Officer's queue (including real actions now), and parts of Master Admin (Users/Roles/Audit) wired to real APIs instead of mock data
+- Employee's redesigned pages (dashboard included, as of 2026-08-21 — was the last mock-only Employee page), the Approving Officer's queue (including real actions now), and parts of Master Admin (Users/Roles/Audit) wired to real APIs instead of mock data
 - Asset registration: a real, reachable, working page now exists in navigation for IT Asset Custodian and Property Custodian
+- As of 2026-08-21: report generation, IT Personnel's asset lifecycle update button, user creation, and role assignment were all found *wired to the real API but silently broken* by uppercase-vs-real-lowercase-enum mismatches (`packages/shared/src/enums` is all lowercase) — every one of these previously failed or 400'd despite looking functional. Fixed; see `fix/dead-ui-controls-and-logout-crash`.
 
 ### Known-fake despite looking real (see `SYSTEM-STATUS.md` for the full list)
 - `/admin/config` ("System Configuration") is a complete facade — no API call at all, false-success message, no backend endpoint exists yet to wire it to
-- Most of the redesigned dashboards are still mock data behind a real-looking UI (the Management dashboard specifically mixes real KPIs with two hardcoded, unlabeled mock chart panels)
+- The Management dashboard mixes real KPIs with two hardcoded, unlabeled mock chart panels
+- Master Admin's governance/platform pages (approval workflows, custodian assignments, master data, system health, org units, access reviews) have no backend to wire to at all — as of 2026-08-21 they honestly disclose "...in frontend mock state" instead of implying the action persisted (previously they didn't disclose this)
+- IT Asset Custodian's and the two Property roles' own registry/dashboard screens — still mostly mock, tracked separately
 
 ---
 
