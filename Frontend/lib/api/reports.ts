@@ -30,9 +30,8 @@ export interface KpiData {
 }
 
 export interface GenerateReportDto {
-  type: string;
+  reportType: string;
   format: 'pdf' | 'excel';
-  filters?: Record<string, string>;
 }
 
 export interface GenerateFormDto {

@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotificationsService } from './notifications.service';
 import { NotificationEntity } from './entities/notification.entity';
@@ -43,12 +44,20 @@ describe('NotificationsService', () => {
   });
 
   describe('markRead()', () => {
-    it('sets isRead=true for the given notification ID', async () => {
-      mockRepo.update.mockResolvedValue(undefined);
-      await service.markRead('notif-uuid-1');
-      expect(mockRepo.update).toHaveBeenCalledWith('notif-uuid-1', {
-        isRead: true,
-      });
+    it('sets isRead=true for the given notification ID, scoped to the owning recipient', async () => {
+      mockRepo.update.mockResolvedValue({ affected: 1 });
+      await service.markRead('notif-uuid-1', 'user-1');
+      expect(mockRepo.update).toHaveBeenCalledWith(
+        { id: 'notif-uuid-1', recipientId: 'user-1' },
+        { isRead: true },
+      );
+    });
+
+    it('throws NotFoundException when the notification does not belong to the caller', async () => {
+      mockRepo.update.mockResolvedValue({ affected: 0 });
+      await expect(
+        service.markRead('notif-uuid-1', 'someone-elses-id'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

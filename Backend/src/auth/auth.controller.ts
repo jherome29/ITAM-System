@@ -110,7 +110,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(...ALL_ROLES)
   async logout(
-    @Req() req: Request & { user: { sub: string; role: UserRole } },
+    @Req() req: Request & { user: { id: string; role: UserRole } },
     @Res({ passthrough: true }) res: Response,
   ) {
     const ipAddress =
@@ -118,7 +118,7 @@ export class AuthController {
       req.socket.remoteAddress ??
       'unknown';
 
-    await this.authService.logout(req.user.sub, req.user.role, ipAddress, res);
+    await this.authService.logout(req.user.id, req.user.role, ipAddress, res);
     return { message: 'Logged out successfully', data: null };
   }
 
