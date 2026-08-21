@@ -6,12 +6,13 @@ import { UserPlus, ArrowLeft } from 'lucide-react';
 import { usersApi, type CreateUserDto } from '@/lib/api/users';
 import { PageHeader } from '@/components/ui/PageHeader';
 
+// Values must match the real (lowercase) UserRole enum — CreateUserDto.role is @IsEnum(UserRole).
 const ROLES = [
-  { value: 'EMPLOYEE', label: 'Employee' },
-  { value: 'SUPERVISOR', label: 'Supervisor' },
-  { value: 'IT_PERSONNEL', label: 'IT Personnel' },
-  { value: 'SYSTEM_ADMIN', label: 'System Administrator' },
-  { value: 'MANAGEMENT', label: 'Management' },
+  { value: 'employee', label: 'Employee' },
+  { value: 'supervisor', label: 'Supervisor' },
+  { value: 'it_personnel', label: 'IT Personnel' },
+  { value: 'system_admin', label: 'System Administrator' },
+  { value: 'management', label: 'Management' },
 ];
 
 const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors';
@@ -33,7 +34,7 @@ export default function CreateUserPage() {
     firstName: '',
     lastName: '',
     employeeId: '',
-    role: 'EMPLOYEE',
+    role: 'employee',
     division: '',
     officeOrSection: '',
   });
@@ -93,8 +94,8 @@ export default function CreateUserPage() {
           </Field>
 
           <Field label="Temporary Password" required>
-            <input type="password" value={form.password} onChange={set('password')} className={inputClass} minLength={8} required />
-            <p className="text-xs text-gray-400 mt-1">Minimum 8 characters. User should change on first login.</p>
+            <input type="password" value={form.password} onChange={set('password')} className={inputClass} minLength={12} required />
+            <p className="text-xs text-gray-400 mt-1">Minimum 12 characters, with uppercase, lowercase, a number, and a special character. User should change on first login.</p>
           </Field>
 
           <Field label="Role" required>

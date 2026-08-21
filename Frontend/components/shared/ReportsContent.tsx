@@ -30,7 +30,7 @@ export function ReportsContent() {
     setError('');
     setSuccess('');
     try {
-      const blob = await reportsApi.generate({ type: selectedReport, format });
+      const blob = await reportsApi.generate({ reportType: selectedReport, format });
       const ext = format === 'excel' ? 'xlsx' : 'pdf';
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

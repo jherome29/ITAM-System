@@ -12,6 +12,7 @@ export default function AdminDashboard() {
   const [userCount, setUserCount] = useState<number | string>('—');
   const [recentLogs, setRecentLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     Promise.all([usersApi.list(1, 1), auditApi.list(1, 10)])
@@ -20,13 +21,14 @@ export default function AdminDashboard() {
         setUserCount(userData?.total ?? (Array.isArray(u.data) ? (u.data as unknown[]).length : '—'));
         setRecentLogs(a.data.data);
       })
-      .catch(() => {})
+      .catch(() => setError('Failed to load dashboard data. Please refresh the page.'))
       .finally(() => setLoading(false));
   }, []);
 
   return (
     <div className="space-y-6">
       <PageHeader title="System Administrator Dashboard" />
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">{error}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard icon={Users} iconColor="text-blue-600" label="Total Users" value={userCount} />

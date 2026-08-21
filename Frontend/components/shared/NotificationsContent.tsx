@@ -7,9 +7,9 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
 function NotifIcon({ type }: Readonly<{ type: string }>) {
-  if (type === 'REQUISITION_APPROVED' || type === 'REQUISITION_FULFILLED')
+  if (type === 'requisition_approved' || type === 'requisition_fulfilled')
     return <CheckCircle className="w-5 h-5 text-green-600" />;
-  if (type === 'REQUISITION_REJECTED')
+  if (type === 'requisition_rejected')
     return <XCircle className="w-5 h-5 text-red-500" />;
   return <AlertCircle className="w-5 h-5 text-blue-500" />;
 }
@@ -17,12 +17,13 @@ function NotifIcon({ type }: Readonly<{ type: string }>) {
 export function NotificationsContent() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     notificationsApi
       .list()
       .then((r) => setNotifications(r.data.notifications))
-      .catch(() => {})
+      .catch(() => setError('Failed to load notifications. Please try again.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -37,6 +38,9 @@ export function NotificationsContent() {
         title="Notifications"
         action={<button type="button" onClick={markAllRead} className="text-sm text-[#1a4d7a] font-medium hover:underline">Mark all as read</button>}
       />
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
       {loading ? (
         <LoadingSkeleton rows={5} />
       ) : notifications.length === 0 ? (

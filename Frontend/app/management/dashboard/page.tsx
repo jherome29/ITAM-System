@@ -23,17 +23,19 @@ const MONTHLY_MOCK = [
 export default function ManagementDashboard() {
   const [kpi, setKpi] = useState<KpiData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     reportsApi.kpi()
       .then((res) => setKpi(res.data))
-      .catch(() => {})
+      .catch(() => setError('Failed to load KPI data. Please refresh the page.'))
       .finally(() => setLoading(false));
   }, []);
 
   return (
     <div className="space-y-6">
       <PageHeader title="Management Dashboard" />
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">{error}</div>}
 
       {loading ? (
         <div className="p-4"><LoadingSkeleton rows={4} /></div>

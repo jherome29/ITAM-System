@@ -1,5 +1,7 @@
-import { EmployeeWorkspace } from '@/components/employee/EmployeeWorkspace';
+'use client';
+
+import { NotificationsContent } from '@/components/shared/NotificationsContent';
 
 export default function EmployeeNotificationsPage() {
-  return <EmployeeWorkspace slug="notifications" />;
+  return <NotificationsContent />;
 }
