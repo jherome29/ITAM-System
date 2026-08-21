@@ -232,6 +232,22 @@ export class RequisitionsService {
     userRole: UserRole,
     ipAddress: string,
   ): Promise<RequisitionEntity> {
+    // Resolve the requester's own Supervisor server-side — per CLAUDE.md §6
+    // requesters do not nominate an approver, the org chart (division /
+    // officeOrSection) determines it. Without this, supervisorId stays null
+    // forever and the Supervisor's pending-approvals queue is always empty
+    // (findAll() filters on r.supervisorId = :id).
+    const requester = await this.usersService.findOne(requestedById);
+    const supervisor = await this.usersService.findSupervisorForSection(
+      requester.officeOrSection,
+      requester.division,
+    );
+    if (!supervisor) {
+      throw new BadRequestException(
+        'No supervisor is configured for your section — contact your System Administrator.',
+      );
+    }
+
     // Generate request number: REQ-YYYY-NNNN
     const count = await this.reqRepo.count();
     const requestNumber = `REQ-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
@@ -246,7 +262,7 @@ export class RequisitionsService {
       requisitionType: dto.requisitionType,
       justification: dto.justification,
       requiredDate: new Date(dto.requiredDate),
-      supervisorId: dto.supervisorId ?? null,
+      supervisorId: supervisor.id,
       status: RequisitionStatus.PENDING_SUPERVISOR,
       submittedAt,
       slaDeadline,
@@ -259,17 +275,15 @@ export class RequisitionsService {
     );
     await this.itemRepo.save(items);
 
-    // Notify supervisor if nominated
-    if (dto.supervisorId) {
-      await this.notificationsService.notify(
-        dto.supervisorId,
-        NotificationAlertType.PENDING_APPROVAL,
-        'New Requisition Awaiting Approval',
-        `Requisition ${requestNumber} requires your approval. Required by: ${dto.requiredDate}.`,
-        saved.id,
-        'requisition',
-      );
-    }
+    // Notify the resolved supervisor
+    await this.notificationsService.notify(
+      supervisor.id,
+      NotificationAlertType.PENDING_APPROVAL,
+      'New Requisition Awaiting Approval',
+      `Requisition ${requestNumber} requires your approval. Required by: ${dto.requiredDate}.`,
+      saved.id,
+      'requisition',
+    );
 
     // Audit log
     await this.auditService.log({
@@ -306,7 +320,13 @@ export class RequisitionsService {
       );
     }
 
-    if (req.supervisorId && req.supervisorId !== supervisorId) {
+    // SYSTEM_ADMIN is permitted by the controller's @Roles guard to approve
+    // on any supervisor's behalf — skip the ownership check for that role.
+    if (
+      userRole !== UserRole.SYSTEM_ADMIN &&
+      req.supervisorId &&
+      req.supervisorId !== supervisorId
+    ) {
       throw new ForbiddenException(
         'You are not the designated supervisor for this requisition.',
       );
@@ -381,6 +401,19 @@ export class RequisitionsService {
     if (req.status !== RequisitionStatus.PENDING_SUPERVISOR) {
       throw new BadRequestException(
         `Cannot reject requisition with status "${req.status}".`,
+      );
+    }
+
+    // Same ownership guard as approve() — a Supervisor may only reject the
+    // requisitions nominated to them; SYSTEM_ADMIN bypasses per the
+    // controller's @Roles guard.
+    if (
+      userRole !== UserRole.SYSTEM_ADMIN &&
+      req.supervisorId &&
+      req.supervisorId !== supervisorId
+    ) {
+      throw new ForbiddenException(
+        'You are not the designated supervisor for this requisition.',
       );
     }
 

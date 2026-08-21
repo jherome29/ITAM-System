@@ -99,6 +99,8 @@ describe('RequisitionsService', () => {
 
   const mockUsersService = {
     findByRole: jest.fn().mockResolvedValue([]),
+    findOne: jest.fn(),
+    findSupervisorForSection: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -147,6 +149,20 @@ describe('RequisitionsService', () => {
   // ── Section 12.4 — Submit → Approve → Fulfill flow ──────────────────────
 
   describe('create() — submit new requisition', () => {
+    const requester = {
+      id: 'emp-uuid-1',
+      officeOrSection: 'Digital Forensics',
+      division: 'Operations',
+    };
+    const resolvedSupervisor = { id: 'sup-uuid-1' };
+
+    beforeEach(() => {
+      mockUsersService.findOne.mockResolvedValue(requester);
+      mockUsersService.findSupervisorForSection.mockResolvedValue(
+        resolvedSupervisor,
+      );
+    });
+
     it('sets status to PENDING_SUPERVISOR and audits submission', async () => {
       mockReqRepo.count.mockResolvedValue(0);
 
@@ -160,7 +176,6 @@ describe('RequisitionsService', () => {
         requisitionType: RequisitionType.NEW,
         justification: 'Need a laptop',
         requiredDate: '2026-07-01',
-        supervisorId: 'sup-uuid-1',
         items: [
           {
             assetType: 'ICT',
@@ -217,6 +232,58 @@ describe('RequisitionsService', () => {
       );
 
       expect(result.requestNumber).toMatch(/^REQ-\d{4}-\d{4}$/);
+    });
+
+    // ── Server-side supervisor resolution (Fix 1) ────────────────────────────
+    it('resolves supervisorId server-side from the requester officeOrSection/division', async () => {
+      mockReqRepo.count.mockResolvedValue(0);
+      const saved = makeReq({ status: RequisitionStatus.PENDING_SUPERVISOR });
+      mockReqRepo.create.mockReturnValue(saved);
+      mockReqRepo.save.mockResolvedValue(saved);
+      mockItemRepo.create.mockReturnValue({});
+      mockItemRepo.save.mockResolvedValue([]);
+
+      await service.create(
+        {
+          requisitionType: RequisitionType.NEW,
+          justification: 'Need a laptop',
+          requiredDate: '2026-07-01',
+          items: [{}],
+        } as any,
+        'emp-uuid-1',
+        UserRole.EMPLOYEE,
+        '127.0.0.1',
+      );
+
+      expect(mockUsersService.findOne).toHaveBeenCalledWith('emp-uuid-1');
+      expect(mockUsersService.findSupervisorForSection).toHaveBeenCalledWith(
+        requester.officeOrSection,
+        requester.division,
+      );
+      expect(mockReqRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ supervisorId: resolvedSupervisor.id }),
+      );
+    });
+
+    it('throws BadRequestException when no supervisor is configured for the section', async () => {
+      mockUsersService.findSupervisorForSection.mockResolvedValue(null);
+
+      await expect(
+        service.create(
+          {
+            requisitionType: RequisitionType.NEW,
+            justification: 'Need a laptop',
+            requiredDate: '2026-07-01',
+            items: [{}],
+          } as any,
+          'emp-uuid-1',
+          UserRole.EMPLOYEE,
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockReqRepo.create).not.toHaveBeenCalled();
+      expect(mockAuditService.log).not.toHaveBeenCalled();
     });
   });
 
@@ -307,6 +374,34 @@ describe('RequisitionsService', () => {
         ),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    // ── SYSTEM_ADMIN ownership bypass (Fix 4) ────────────────────────────────
+    it('allows SYSTEM_ADMIN to approve on behalf of a different nominated supervisor', async () => {
+      const req = makeReq({
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        supervisorId: 'sup-uuid-1',
+      });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+      mockApprovalRepo.create.mockReturnValue({});
+      mockApprovalRepo.save.mockResolvedValue({});
+      mockReqRepo.save.mockResolvedValue({
+        ...req,
+        status: RequisitionStatus.PENDING_FULFILLMENT,
+      });
+
+      await expect(
+        service.approve(
+          req.id,
+          'admin-uuid-1',
+          UserRole.SYSTEM_ADMIN,
+          {},
+          '127.0.0.1',
+        ),
+      ).resolves.toMatchObject({
+        status: RequisitionStatus.PENDING_FULFILLMENT,
+      });
+    });
   });
 
   describe('reject() — supervisor rejection flow', () => {
@@ -357,6 +452,52 @@ describe('RequisitionsService', () => {
           '127.0.0.1',
         ),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    // ── Ownership guard, closing the authorization gap (Fix 4) ──────────────
+    it('throws 403 if a different supervisor tries to reject', async () => {
+      const req = makeReq({
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        supervisorId: 'sup-uuid-1',
+      });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+
+      await expect(
+        service.reject(
+          req.id,
+          'different-sup',
+          UserRole.SUPERVISOR,
+          { comments: 'No' },
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockReqRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('allows SYSTEM_ADMIN to reject on behalf of a different nominated supervisor', async () => {
+      const req = makeReq({
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        supervisorId: 'sup-uuid-1',
+      });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+      mockApprovalRepo.create.mockReturnValue({});
+      mockApprovalRepo.save.mockResolvedValue({});
+      mockReqRepo.save.mockResolvedValue({
+        ...req,
+        status: RequisitionStatus.REJECTED,
+      });
+
+      await expect(
+        service.reject(
+          req.id,
+          'admin-uuid-1',
+          UserRole.SYSTEM_ADMIN,
+          { comments: 'Not justified' },
+          '127.0.0.1',
+        ),
+      ).resolves.toMatchObject({ status: RequisitionStatus.REJECTED });
     });
   });
 

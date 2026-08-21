@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityTimeline } from '@/components/ui/ActivityTimeline';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
@@ -255,26 +255,27 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
   const isLiveFetchPage =
     (role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')) ||
     (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit');
+  // The Approving Officer's own approvals queue is the one confirm-action flow in this
+  // shared component that must persist for real — see submitApprovalDecision below.
+  // Every other role/slug (including this same officer's 'requisitions' tab, which has
+  // no real cancel/submit endpoint) keeps using the generic mock runAction path.
+  const isApprovingOfficerLiveApprovals =
+    isLiveFetchPage && role === ProposedUserRole.APPROVING_OFFICER && normalizedSlug === 'approvals';
   const [rows, setRows] = useState<Row[]>(() => (isLiveFetchPage ? [] : rowsFor(role, normalizedSlug)));
   const [loading, setLoading] = useState(isLiveFetchPage);
 
+  const fetchLiveRows = useCallback((): Promise<void> => {
+    if (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') {
+      return auditApi.list(1, 100).then((res) => setRows(res.data.data.map(auditApiToRow)));
+    }
+    const fetcher = normalizedSlug === 'approvals' ? requisitionsApi.list() : requisitionsApi.mine();
+    return fetcher.then((res) => setRows(res.data.data.map(requisitionApiToRow)));
+  }, [normalizedSlug, role]);
+
   useEffect(() => {
     if (!isLiveFetchPage) return;
-
-    if (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') {
-      auditApi.list(1, 100)
-        .then((res) => setRows(res.data.data.map(auditApiToRow)))
-        .catch(() => {})
-        .finally(() => setLoading(false));
-      return;
-    }
-
-    const fetcher = normalizedSlug === 'approvals' ? requisitionsApi.list() : requisitionsApi.mine();
-    fetcher
-      .then((res) => setRows(res.data.data.map(requisitionApiToRow)))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [isLiveFetchPage, normalizedSlug, role]);
+    fetchLiveRows().catch(() => {}).finally(() => setLoading(false));
+  }, [isLiveFetchPage, fetchLiveRows]);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -285,6 +286,7 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
   const [formOpen, setFormOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [actionSubmitting, setActionSubmitting] = useState(false);
   const [form, setForm] = useState({ item: '', quantity: '1', requiredDate: '', justification: '', reason: '', attachment: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [scanValue, setScanValue] = useState('');
@@ -354,6 +356,37 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
     setRemarks('');
     setErrors({});
     notify(`${action} completed in frontend mock mode.`);
+  };
+
+  // Real, persisted counterpart to runAction — used ONLY for the Approving Officer's
+  // live approvals queue (see isApprovingOfficerLiveApprovals). Calls the actual
+  // requisitions API instead of mutating local mock state.
+  const submitApprovalDecision = async (action: 'Approve' | 'Reject') => {
+    if (!selected || actionSubmitting) return;
+    const trimmedRemarks = remarks.trim();
+    if (action === 'Reject' && !trimmedRemarks) {
+      setErrors({ remarks: 'Rejection reason is required.' });
+      return;
+    }
+    setActionSubmitting(true);
+    try {
+      const id = String(selected.id);
+      if (action === 'Approve') {
+        await requisitionsApi.approve(id, trimmedRemarks || undefined);
+      } else {
+        await requisitionsApi.reject(id, trimmedRemarks);
+      }
+      setConfirmAction(null);
+      setSelected(null);
+      setRemarks('');
+      setErrors({});
+      notify(action === 'Approve' ? 'Requisition approved.' : 'Requisition rejected.');
+      await fetchLiveRows().catch(() => {});
+    } catch {
+      notify(`Failed to ${action.toLowerCase()} the requisition. Please try again.`);
+    } finally {
+      setActionSubmitting(false);
+    }
   };
 
   const validateForm = () => {
@@ -687,9 +720,20 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
       <ConfirmDialog
         open={Boolean(confirmAction)}
         title={`${confirmAction} record`}
-        detail="This updates frontend mock state only. Backend authorization and persistence will be implemented later."
-        confirmLabel={confirmAction ?? 'Confirm'}
-        onConfirm={() => confirmAction && runAction(confirmAction)}
+        detail={
+          isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')
+            ? 'This calls the live requisitions API and updates the real record.'
+            : 'This updates frontend mock state only. Backend authorization and persistence will be implemented later.'
+        }
+        confirmLabel={actionSubmitting ? 'Processing…' : (confirmAction ?? 'Confirm')}
+        onConfirm={() => {
+          if (!confirmAction) return;
+          if (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) {
+            void submitApprovalDecision(confirmAction);
+            return;
+          }
+          runAction(confirmAction);
+        }}
         onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); }}
       >
         {['Reject', 'Return for Revision'].includes(confirmAction ?? '') && (

@@ -6,8 +6,12 @@ import { ArrowLeft } from 'lucide-react';
 import { assetsApi } from '@/lib/api/assets';
 
 const ASSET_CLASSES = ['PPE', 'SEP', 'IES'] as const;
-const ASSET_TYPES = ['ICT', 'FURNITURE', 'EQUIPMENT', 'VEHICLE', 'OTHER'] as const;
-const CONDITIONS = ['SERVICEABLE', 'UNSERVICEABLE', 'FOR_REPAIR', 'FOR_DISPOSAL'] as const;
+// Must match packages/shared/src/enums AssetType exactly — CreateAssetDto validates
+// with @IsEnum(AssetType), so any other value (e.g. legacy 'FURNITURE'/'VEHICLE') 400s.
+const ASSET_TYPES = ['ICT', 'Fixed', 'Supplies'] as const;
+// Must match packages/shared/src/enums AssetCondition exactly (lowercase snake_case) —
+// CreateAssetDto validates with @IsEnum(AssetCondition).
+const CONDITIONS = ['serviceable', 'unserviceable', 'for_repair', 'for_disposal'] as const;
 
 const inputClass =
   'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors bg-white';
@@ -42,7 +46,7 @@ export default function NewAssetPage() {
     brand: '', serialNumber: '', propertyNumber: '', components: '',
     acquisitionCost: '', acquisitionDate: '',
     accountableOfficer: '', division: '', officeOrSection: '', officeLocation: '',
-    condition: 'SERVICEABLE' as string, supplier: '', dateOfDelivery: '',
+    condition: 'serviceable' as string, supplier: '', dateOfDelivery: '',
     assetClass: '' as string, assetType: '' as string,
   });
 
@@ -158,7 +162,7 @@ export default function NewAssetPage() {
         <Section title="Physical Condition">
           <Field label="Condition" required>
             <select className={inputClass} value={form.condition} onChange={(e) => set('condition', e.target.value)}>
-              {CONDITIONS.map((c) => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
+              {CONDITIONS.map((c) => <option key={c} value={c}>{c.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase())}</option>)}
             </select>
           </Field>
         </Section>

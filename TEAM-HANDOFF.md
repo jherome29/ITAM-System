@@ -100,17 +100,17 @@ Full role details and page routes: **`docs/guides/ROLES.md`**
 - Auth: JWT + httpOnly refresh tokens, bcrypt, account lockout, RBAC guards, real login for all 7 roles — no mock accounts anywhere in the codebase anymore
 - 7 roles: the original 5 (Employee, Supervisor, IT Personnel, System Admin, Management) plus Property Custodian and Property Officer, scoped to Fixed + Supplies assets
 - Assets module: registry, lifecycle state machine, QR generation, search + status filter, asset-type scope enforcement on every write path (not just reads)
-- Requisitions module: submit → approve → fulfill workflow (tested at the API level), SLA deadline field, stats
-- Audit module: append-only log, action filter, per-record lookup
+- Requisitions module: submit → approve/reject → fulfill workflow, real end to end as of 2026-08-19 — both the API and the actual UI (Supervisor's queue, the Approving Officer's real-time queue, and IT Personnel's fulfillment page all work against real data with real actions now, not just tested at the API level)
+- Audit module: append-only log, action filter, per-record lookup — now including User Management (was the one module missing it; fixed 2026-08-19)
 - Notifications module: in-system alerts, mark read, mark all read (nothing auto-creates them yet — see gap list)
 - Users module: CRUD, role assignment, deactivate, reset password, unlock, search
-- Reports module: real PDF (pdfkit) + Excel (exceljs), all 18 COA forms
-- Employee's redesigned pages, Approving Officer's queue, and parts of Master Admin (Users/Roles/Audit) wired to real APIs instead of mock data
+- Reports module: real PDF (pdfkit) + Excel (exceljs), all 18 COA forms (generation mechanism is solid; several forms' *layout* diverges from the official template — see `docs/guides/COA-FORMS-AUDIT.md`)
+- Employee's redesigned pages, the Approving Officer's queue (including real actions now), and parts of Master Admin (Users/Roles/Audit) wired to real APIs instead of mock data
+- Asset registration: a real, reachable, working page now exists in navigation for IT Asset Custodian and Property Custodian
 
 ### Known-fake despite looking real (see `SYSTEM-STATUS.md` for the full list)
-- Approving Officer's Approve/Reject buttons in the redesigned UI don't call the backend — local state only, reverts on refresh
-- No reachable page that saves a newly registered asset to the database (the one that does isn't linked in navigation)
-- Most of the redesigned dashboards are still mock data behind a real-looking UI
+- `/admin/config` ("System Configuration") is a complete facade — no API call at all, false-success message, no backend endpoint exists yet to wire it to
+- Most of the redesigned dashboards are still mock data behind a real-looking UI (the Management dashboard specifically mixes real KPIs with two hardcoded, unlabeled mock chart panels)
 
 ---
 
@@ -120,7 +120,7 @@ Don't duplicate the gap list here — **`SYSTEM-STATUS.md`** at the repo root is
 
 | Priority | Item |
 |---|---|
-| 0 | Fix Approve/Reject buttons + the asset-registration dead end (see above — these look done, aren't) |
+| 0 | Fix `/admin/config`'s false-success message — needs a new backend config endpoint, not just wiring |
 | 1 | Notifications + SLA cron job — nothing watches for alert conditions yet |
 | 2 | Replacement requisition validation (useful-life / condition / loss-damage) |
 | 3 | Disposal workflow (currently just a status flag, no required fields) |

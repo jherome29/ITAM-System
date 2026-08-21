@@ -94,7 +94,7 @@ export default function FulfillRequisitionPage() {
             <p className="text-sm text-gray-800">{req.justification}</p>
           </div>
 
-          {req.status === 'PENDING_FULFILLMENT' && !showHoldForm && (
+          {req.status === 'pending_fulfillment' && !showHoldForm && (
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={handleFulfill} disabled={fulfilling} className="flex items-center gap-2 bg-green-600 text-white px-6 py-2 rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-60 transition-colors">
                 <CheckCircle className="w-4 h-4" />
