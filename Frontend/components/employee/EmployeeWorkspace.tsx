@@ -12,20 +12,18 @@ import { assetsApi, type Asset } from '@/lib/api/assets';
 import { requisitionsApi, type Requisition, type CreateRequisitionDto } from '@/lib/api/requisitions';
 import { assetMockRows } from '@/lib/mock/assets.mock';
 import type { MockAsset } from '@/lib/mock/assets.mock';
-import { notificationMockRows } from '@/lib/mock/notifications.mock';
 import { EmployeeDashboard } from './EmployeeDashboard';
 
 const employeeId = 'EMP-001';
 
-type EmployeeSlug = 'dashboard' | 'catalogue' | 'requisitions' | 'new-requisition' | 'assigned-assets' | 'returns-incidents' | 'notifications';
+type EmployeeSlug = 'dashboard' | 'catalogue' | 'requisitions' | 'new-requisition' | 'assigned-assets' | 'returns-incidents';
 
 export function EmployeeWorkspace({ slug }: Readonly<{ slug: EmployeeSlug }>) {
   if (slug === 'dashboard') return <EmployeeDashboard />;
   if (slug === 'catalogue') return <EmployeeCatalogue />;
   if (slug === 'requisitions' || slug === 'new-requisition') return <EmployeeRequisitions initialCreateOpen={slug === 'new-requisition'} />;
   if (slug === 'assigned-assets') return <EmployeeAssignedAssets />;
-  if (slug === 'returns-incidents') return <EmployeeIncidents />;
-  return <EmployeeNotifications />;
+  return <EmployeeIncidents />;
 }
 
 function EmployeeHeader({ title, detail, action }: Readonly<{ title: string; detail: string; action?: React.ReactNode }>) {
@@ -204,16 +202,6 @@ function EmployeeIncidents() {
     <SearchToolbar value={search} onChange={setSearch} filterLabel="All report types" filterValue={filter} filterOptions={['All', 'Return request', 'Repair request', 'Damage report', 'Loss report', 'Theft report', 'Under review', 'Submitted']} onFilterChange={setFilter} />
     <Panel title="My Reports" detail={`${rows.length} return and incident records`}><TableWrap><table className="min-w-[760px] w-full"><thead><tr><th className={thClass}>Report</th><th className={thClass}>Type</th><th className={thClass}>Asset</th><th className={thClass}>Reported</th><th className={thClass}>Details</th><th className={thClass}>Status</th></tr></thead><tbody>{rows.map((report) => <tr key={report.id}><td className={`${tdClass} font-bold text-slate-950`}>{report.id}</td><td className={tdClass}>{report.type}</td><td className={tdClass}>{report.asset}</td><td className={tdClass}>{report.reported}</td><td className={`${tdClass} max-w-xs truncate`}>{report.details}</td><td className={tdClass}><StatusChip status={report.status} /></td></tr>)}</tbody></table></TableWrap></Panel>
     <DetailDrawer open={creating} title="File return or incident report" onClose={() => setCreating(false)}><form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const report: Incident = { id: `INC-2026-${String(reports.length + 5).padStart(3, '0')}`, type: String(data.get('type')), asset: String(data.get('asset')), reported: String(data.get('date')), details: String(data.get('details')), status: 'Submitted' }; setReports((current) => [report, ...current]); setCreating(false); setToast(`${report.id} was filed successfully.`); }}><Field label="Report type"><select name="type" className={inputClass}><option>Return request</option><option>Repair request</option><option>Damage report</option><option>Loss report</option><option>Theft report</option></select></Field><Field label="Assigned asset"><select name="asset" className={inputClass}>{assetMockRows.filter((asset) => asset.assignedEmployeeId === employeeId).map((asset) => <option key={asset.id}>{asset.name}</option>)}</select></Field><Field label="Date of return or incident"><input name="date" required type="date" className={inputClass} /></Field><Field label="Details"><textarea name="details" required minLength={20} className={`${inputClass} h-28 py-2`} /></Field><Field label="Attachment name (optional)"><input className={inputClass} placeholder="photo-or-incident-report.pdf" /></Field><PrimaryButton type="submit">Submit report</PrimaryButton></form></DetailDrawer><Toast message={toast} /></div>;
-}
-
-function EmployeeNotifications() {
-  const [items, setItems] = useState(notificationMockRows);
-  const [filter, setFilter] = useState<'All' | 'Unread'>('All');
-  const visible = filter === 'Unread' ? items.filter((item) => item.unread) : items;
-  return <div className="space-y-4"><EmployeeHeader title="Notifications" detail="Review request, asset, return, and incident updates related to your own records." action={<SecondaryButton onClick={() => setItems((current) => current.map((item) => ({ ...item, unread: false })))}>Mark all read</SecondaryButton>} />
-    <div className="flex border-b border-slate-200" role="tablist">{(['All', 'Unread'] as const).map((item) => <button key={item} type="button" role="tab" aria-selected={filter === item} onClick={() => setFilter(item)} className={`border-b-2 px-4 py-2 text-sm font-bold ${filter === item ? 'border-blue-700 text-blue-700' : 'border-transparent text-slate-500'}`}>{item}{item === 'Unread' ? ` (${items.filter((entry) => entry.unread).length})` : ''}</button>)}</div>
-    <Panel title="Notification Inbox" detail={`${visible.length} notifications shown`}><div className="divide-y divide-slate-100">{visible.length === 0 ? <div className="p-8 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600" /><p className="mt-3 text-sm font-bold">You are all caught up</p><p className="mt-1 text-xs text-slate-500">There are no unread notifications.</p></div> : visible.map((item) => <article key={item.id} className={`flex gap-3 p-4 ${item.unread ? 'bg-blue-50/50' : ''}`}><span className={`mt-1.5 h-2 w-2 flex-none rounded-full ${item.unread ? 'bg-blue-600' : 'bg-slate-300'}`} /><div className="min-w-0 flex-1"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-sm font-bold text-slate-950">{item.title}</p><p className="mt-1 text-sm text-slate-600">{item.message}</p><p className="mt-2 text-xs font-semibold text-slate-500">{item.category} - {item.relatedId} - {item.date}</p></div><button type="button" onClick={() => setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, unread: !entry.unread } : entry))} className="text-left text-xs font-bold text-blue-700">Mark {item.unread ? 'read' : 'unread'}</button></div></div></article>)}</div></Panel>
-  </div>;
 }
 
 export function EmployeeRequisitionDetail({ id }: Readonly<{ id: string }>) {

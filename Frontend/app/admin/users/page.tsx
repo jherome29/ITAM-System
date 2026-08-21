@@ -8,15 +8,18 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
-const ROLES = ['EMPLOYEE', 'SUPERVISOR', 'IT_PERSONNEL', 'SYSTEM_ADMIN', 'MANAGEMENT'];
+// Real (lowercase) UserRole values — user.role from the API is always lowercase.
+const ROLES = ['employee', 'supervisor', 'it_personnel', 'system_admin', 'management'];
 
 const RoleBadge = ({ role }: Readonly<{ role: string }>) => {
   const colors: Record<string, string> = {
-    EMPLOYEE: 'bg-gray-100 text-gray-700',
-    SUPERVISOR: 'bg-blue-50 text-blue-700',
-    IT_PERSONNEL: 'bg-purple-50 text-purple-700',
-    SYSTEM_ADMIN: 'bg-red-50 text-red-700',
-    MANAGEMENT: 'bg-green-50 text-green-700',
+    employee: 'bg-gray-100 text-gray-700',
+    supervisor: 'bg-blue-50 text-blue-700',
+    it_personnel: 'bg-purple-50 text-purple-700',
+    system_admin: 'bg-red-50 text-red-700',
+    management: 'bg-green-50 text-green-700',
+    property_custodian: 'bg-teal-50 text-teal-700',
+    property_officer: 'bg-indigo-50 text-indigo-700',
   };
   return (
     <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[role] ?? 'bg-gray-100 text-gray-700'}`}>

@@ -25,6 +25,7 @@ import type { MockRequisition } from '@/lib/mock/requisitions.mock';
 import { mockUsers } from '@/lib/mock/users.mock';
 import { ProposedUserRole, proposedRoleLabels } from '@/lib/roles/proposed-roles';
 import type { UiPermission } from '@/lib/roles/role-permissions';
+import { useAuth } from '@/lib/auth/use-auth';
 
 type Row = Record<string, string | number | boolean | string[] | undefined>;
 
@@ -244,6 +245,7 @@ function actionPermissionFor(role: ProposedUserRole): UiPermission {
 }
 
 export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; slug: string }>) {
+  const { user: currentUser } = useAuth();
   const normalizedSlug = normalizeSlug(slug);
   const content = pageCopy[normalizedSlug] ?? { title: 'Workspace', detail: 'Frontend-only operational prototype.', action: 'Run Action' };
   const readOnly = role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER;
@@ -264,17 +266,38 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
   const [rows, setRows] = useState<Row[]>(() => (isLiveFetchPage ? [] : rowsFor(role, normalizedSlug)));
   const [loading, setLoading] = useState(isLiveFetchPage);
 
+  // This component does client-side search/sort/filter over `rows`, which requires the
+  // full matching working set in memory — a single server page wouldn't search/sort
+  // correctly against data it doesn't have. Fetching a large single page (rather than
+  // defaulting to the API's page size of 15) is the pragmatic fix here; true server-side
+  // pagination would need this component's search/sort to move server-side too.
+  const LIVE_FETCH_LIMIT = 200;
+  const [liveFetchTruncated, setLiveFetchTruncated] = useState(false);
+
   const fetchLiveRows = useCallback((): Promise<void> => {
     if (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') {
-      return auditApi.list(1, 100).then((res) => setRows(res.data.data.map(auditApiToRow)));
+      return auditApi.list(1, LIVE_FETCH_LIMIT).then((res) => {
+        setRows(res.data.data.map(auditApiToRow));
+        setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
+      });
     }
-    const fetcher = normalizedSlug === 'approvals' ? requisitionsApi.list() : requisitionsApi.mine();
-    return fetcher.then((res) => setRows(res.data.data.map(requisitionApiToRow)));
+    const fetcher = normalizedSlug === 'approvals'
+      ? requisitionsApi.list(1, LIVE_FETCH_LIMIT)
+      : requisitionsApi.mine(1, LIVE_FETCH_LIMIT);
+    return fetcher.then((res) => {
+      setRows(res.data.data.map(requisitionApiToRow));
+      setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
+    });
   }, [normalizedSlug, role]);
+
+  const [liveFetchError, setLiveFetchError] = useState('');
 
   useEffect(() => {
     if (!isLiveFetchPage) return;
-    fetchLiveRows().catch(() => {}).finally(() => setLoading(false));
+    fetchLiveRows()
+      .then(() => setLiveFetchError(''))
+      .catch(() => setLiveFetchError('Failed to load data. Please refresh the page.'))
+      .finally(() => setLoading(false));
   }, [isLiveFetchPage, fetchLiveRows]);
 
   const [search, setSearch] = useState('');
@@ -381,7 +404,7 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
       setRemarks('');
       setErrors({});
       notify(action === 'Approve' ? 'Requisition approved.' : 'Requisition rejected.');
-      await fetchLiveRows().catch(() => {});
+      await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
     } catch {
       notify(`Failed to ${action.toLowerCase()} the requisition. Please try again.`);
     } finally {
@@ -428,7 +451,10 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
 
   const canPrimaryAct = !readOnly && content.action;
   const primaryPermission = actionPermissionFor(role);
-  const selectedIsSelfApproval = role === ProposedUserRole.APPROVING_OFFICER && selected?.requesterId === approvingOfficerId;
+  // Live-fetched rows carry a real requester UUID, not the mock 'EMP-003' id — compare
+  // against the actual logged-in user's id on the live approvals page.
+  const selfId = isApprovingOfficerLiveApprovals ? currentUser?.id : approvingOfficerId;
+  const selectedIsSelfApproval = role === ProposedUserRole.APPROVING_OFFICER && selected?.requesterId === selfId;
 
   if (loading) return <LoadingSkeleton rows={8} />;
 
@@ -462,6 +488,18 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
           </button>
         )}
       </div>
+
+      {liveFetchError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          {liveFetchError}
+        </div>
+      )}
+
+      {liveFetchTruncated && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+          Showing the first {LIVE_FETCH_LIMIT} records. There may be more — narrow your search to find items beyond this list.
+        </div>
+      )}
 
       {readOnly && (
         <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700">

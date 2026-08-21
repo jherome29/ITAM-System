@@ -7,12 +7,13 @@ import { usersApi, type User } from '@/lib/api/users';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
+// Values must match the real (lowercase) UserRole enum — AssignRoleDto.role is @IsEnum(UserRole).
 const ROLES = [
-  { value: 'EMPLOYEE', label: 'Employee', desc: 'Submit requisitions, browse catalogue, track own requests.' },
-  { value: 'SUPERVISOR', label: 'Supervisor', desc: 'First-level approver. Reviews and approves/rejects requests.' },
-  { value: 'IT_PERSONNEL', label: 'IT Personnel', desc: 'Asset custodian. Manages registry, lifecycle, forms, and issuance.' },
-  { value: 'SYSTEM_ADMIN', label: 'System Administrator', desc: 'Full system access. User management, audit trail, config.' },
-  { value: 'MANAGEMENT', label: 'Management', desc: 'Read-only oversight. Dashboards, reports, and audit access.' },
+  { value: 'employee', label: 'Employee', desc: 'Submit requisitions, browse catalogue, track own requests.' },
+  { value: 'supervisor', label: 'Supervisor', desc: 'First-level approver. Reviews and approves/rejects requests.' },
+  { value: 'it_personnel', label: 'IT Personnel', desc: 'Asset custodian. Manages registry, lifecycle, forms, and issuance.' },
+  { value: 'system_admin', label: 'System Administrator', desc: 'Full system access. User management, audit trail, config.' },
+  { value: 'management', label: 'Management', desc: 'Read-only oversight. Dashboards, reports, and audit access.' },
 ];
 
 export default function RoleAssignmentPage() {

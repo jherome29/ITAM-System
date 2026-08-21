@@ -56,8 +56,8 @@ export class NotificationsController {
    */
   @Patch(':id/read')
   @HttpCode(HttpStatus.OK)
-  async markRead(@Param('id', ParseUUIDPipe) id: string) {
-    await this.svc.markRead(id);
+  async markRead(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthReq) {
+    await this.svc.markRead(id, req.user.id);
     return { message: 'Notification marked as read', data: null };
   }
 

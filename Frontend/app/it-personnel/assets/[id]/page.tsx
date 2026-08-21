@@ -8,16 +8,22 @@ import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
+// Keys/values must match the real (lowercase) AssetStatus enum in packages/shared/src/enums —
+// the backend rejects any other casing via @IsEnum on UpdateLifecycleDto.
 const NEXT_TRANSITIONS: Record<string, string[]> = {
-  REGISTERED: ['AVAILABLE'],
-  AVAILABLE: ['ISSUED', 'TRANSFERRED', 'UNDER_REPAIR', 'FLAGGED_FOR_DISPOSAL'],
-  ISSUED: ['RETURNED', 'UNDER_REPAIR', 'FLAGGED_FOR_DISPOSAL'],
-  RETURNED: ['AVAILABLE', 'UNDER_REPAIR'],
-  TRANSFERRED: ['AVAILABLE'],
-  UNDER_REPAIR: ['AVAILABLE', 'FLAGGED_FOR_DISPOSAL'],
-  FLAGGED_FOR_DISPOSAL: ['DISPOSED'],
-  DISPOSED: [],
+  registered: ['available'],
+  available: ['issued', 'transferred', 'under_repair', 'flagged_for_disposal'],
+  issued: ['returned', 'under_repair', 'flagged_for_disposal'],
+  returned: ['available', 'under_repair'],
+  transferred: ['available'],
+  under_repair: ['available', 'flagged_for_disposal'],
+  flagged_for_disposal: ['disposed'],
+  disposed: [],
 };
+
+function optionLabel(value: string): string {
+  return value.split('_').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ');
+}
 
 function Detail({ label, value }: Readonly<{ label: string; value?: string | number | null }>) {
   return (
@@ -64,7 +70,7 @@ function EditableDetail({
         options ? (
           <select value={editValue ?? ''} onChange={(e) => onChange(field, e.target.value)} className={cls}>
             <option value="">— select —</option>
-            {options.map((o) => <option key={o} value={o}>{o.replace(/_/g, ' ')}</option>)}
+            {options.map((o) => <option key={o} value={o}>{optionLabel(o)}</option>)}
           </select>
         ) : (
           <input
@@ -169,11 +175,11 @@ export default function AssetDetailPage() {
       auditApi.byRecord(id).then((r) => setTransactions(r.data?.data ?? [])).catch(() => {});
       // Suggest relevant COA form
       const cls = res.data.assetClass;
-      if (statusSnapshot === 'ISSUED') {
+      if (statusSnapshot === 'issued') {
         setFormSuggestion(cls === 'PPE' ? 'PAR' : 'ICS');
-      } else if (statusSnapshot === 'TRANSFERRED') {
+      } else if (statusSnapshot === 'transferred') {
         setFormSuggestion('PTR');
-      } else if (statusSnapshot === 'FLAGGED_FOR_DISPOSAL') {
+      } else if (statusSnapshot === 'flagged_for_disposal') {
         setFormSuggestion('IIRUP');
       }
     } catch (err: unknown) {
@@ -327,7 +333,7 @@ export default function AssetDetailPage() {
           <EditableDetail label="Division" field="division" value={asset.division} editValue={editForm.division} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
           <EditableDetail label="Office / Section" field="officeOrSection" value={asset.officeOrSection} editValue={editForm.officeOrSection} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
           <EditableDetail label="Location" field="officeLocation" value={asset.officeLocation} editValue={editForm.officeLocation} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
-          <EditableDetail label="Condition" field="condition" value={asset.condition?.replace(/_/g, ' ')} editValue={editForm.condition} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} options={['SERVICEABLE', 'UNSERVICEABLE', 'FOR_REPAIR', 'FOR_DISPOSAL']} />
+          <EditableDetail label="Condition" field="condition" value={asset.condition ? optionLabel(asset.condition) : asset.condition} editValue={editForm.condition} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} options={['serviceable', 'unserviceable', 'for_repair', 'for_disposal']} />
           <EditableDetail label="Components" field="components" value={asset.components} editValue={editForm.components} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
         </DetailSection>
 
@@ -410,13 +416,13 @@ export default function AssetDetailPage() {
                 >
                   <option value="">— select status —</option>
                   {nextStates.map((s) => (
-                    <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                    <option key={s} value={s}>{optionLabel(s)}</option>
                   ))}
                 </select>
               </div>
 
               {/* ISSUED: Employee ID input */}
-              {targetStatus === 'ISSUED' && (
+              {targetStatus === 'issued' && (
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                     Recipient Employee ID <span className="text-red-500">*</span>
@@ -433,7 +439,7 @@ export default function AssetDetailPage() {
               )}
 
               {/* TRANSFERRED: To Location input */}
-              {targetStatus === 'TRANSFERRED' && (
+              {targetStatus === 'transferred' && (
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                     Receiving Office / Section <span className="text-red-500">*</span>
@@ -451,16 +457,16 @@ export default function AssetDetailPage() {
               {/* Notes field — required for FLAGGED_FOR_DISPOSAL, optional for others */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                  Notes {targetStatus === 'FLAGGED_FOR_DISPOSAL' && <span className="text-red-500">* (required — justify disposal)</span>}
+                  Notes {targetStatus === 'flagged_for_disposal' && <span className="text-red-500">* (required — justify disposal)</span>}
                 </label>
                 <textarea
                   rows={3}
                   value={lifecycleNotes}
                   onChange={(e) => setLifecycleNotes(e.target.value)}
                   placeholder={
-                    targetStatus === 'FLAGGED_FOR_DISPOSAL'
+                    targetStatus === 'flagged_for_disposal'
                       ? 'Required: describe condition, reason for disposal, and recommended action'
-                      : targetStatus === 'UNDER_REPAIR'
+                      : targetStatus === 'under_repair'
                       ? 'Optional: describe the issue or defect'
                       : 'Optional notes'
                   }
@@ -479,9 +485,9 @@ export default function AssetDetailPage() {
                 disabled={
                   updating ||
                   !targetStatus ||
-                  (targetStatus === 'ISSUED' && !lifecycleEmployeeId.trim()) ||
-                  (targetStatus === 'TRANSFERRED' && !lifecycleToLocation.trim()) ||
-                  (targetStatus === 'FLAGGED_FOR_DISPOSAL' && !lifecycleNotes.trim())
+                  (targetStatus === 'issued' && !lifecycleEmployeeId.trim()) ||
+                  (targetStatus === 'transferred' && !lifecycleToLocation.trim()) ||
+                  (targetStatus === 'flagged_for_disposal' && !lifecycleNotes.trim())
                 }
                 className="flex-1 px-4 py-2 bg-[#1a4d7a] text-white rounded-md text-sm font-medium hover:bg-[#143d61] disabled:opacity-50 transition-colors"
               >

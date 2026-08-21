@@ -6,13 +6,19 @@ import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
+// Values must match the real (lowercase) AuditAction enum in packages/shared/src/enums —
+// the backend does an exact, case-sensitive match against a native Postgres enum column.
 const ACTION_OPTIONS = [
-  'USER_LOGIN', 'USER_LOGOUT', 'USER_CREATED', 'USER_ROLE_CHANGED', 'USER_DEACTIVATED',
-  'ASSET_CREATED', 'ASSET_UPDATED', 'ASSET_ISSUED', 'ASSET_RETURNED', 'ASSET_TRANSFERRED',
-  'ASSET_FLAGGED_FOR_REPAIR', 'ASSET_FLAGGED_FOR_DISPOSAL',
-  'REQUISITION_SUBMITTED', 'REQUISITION_APPROVED', 'REQUISITION_REJECTED', 'REQUISITION_FULFILLED',
-  'REPORT_GENERATED', 'FORM_GENERATED',
+  'user_login', 'user_logout', 'user_created', 'role_assigned', 'user_deactivated',
+  'asset_created', 'asset_updated', 'asset_issued', 'asset_returned', 'asset_transferred',
+  'asset_flagged_repair', 'asset_flagged_disposal',
+  'requisition_submitted', 'requisition_approved', 'requisition_rejected', 'requisition_fulfilled',
+  'report_generated', 'form_generated',
 ];
+
+function actionLabel(action: string): string {
+  return action.split('_').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ');
+}
 
 export function AuditTrailContent() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -20,12 +26,13 @@ export function AuditTrailContent() {
   const [actionFilter, setActionFilter] = useState('');
   const [userFilter, setUserFilter] = useState('');
   const [page, setPage] = useState(1);
+  const [error, setError] = useState('');
   const PAGE_SIZE = 25;
 
   useEffect(() => {
     auditApi.list(page, PAGE_SIZE, actionFilter || undefined)
-      .then((res) => setLogs(res.data.data))
-      .catch(() => {})
+      .then((res) => { setLogs(res.data.data); setError(''); })
+      .catch(() => setError('Failed to load audit logs. Please try again.'))
       .finally(() => setLoading(false));
   }, [page, actionFilter]);
 
@@ -72,7 +79,7 @@ export function AuditTrailContent() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Action Type</label>
             <select value={actionFilter} onChange={(e) => { setLoading(true); setActionFilter(e.target.value); setPage(1); }} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]">
               <option value="">All Actions</option>
-              {ACTION_OPTIONS.map((a) => <option key={a} value={a}>{a.replace(/_/g, ' ')}</option>)}
+              {ACTION_OPTIONS.map((a) => <option key={a} value={a}>{actionLabel(a)}</option>)}
             </select>
           </div>
           <div>
@@ -87,6 +94,9 @@ export function AuditTrailContent() {
           <h2 className="text-base font-semibold text-[#1a4d7a]">Log Entries</h2>
           <span className="ml-auto text-xs text-gray-500">{filtered.length} records</span>
         </div>
+        {error && (
+          <div className="mx-5 mt-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        )}
         {loading ? (
           <div className="p-6"><LoadingSkeleton rows={10} /></div>
         ) : (
@@ -125,7 +135,7 @@ export function AuditTrailContent() {
         <div className="p-4 border-t border-gray-100 flex items-center justify-between">
           <button type="button" onClick={() => { setLoading(true); setPage((p) => Math.max(1, p - 1)); }} disabled={page === 1 || loading} className="text-sm text-[#1a4d7a] hover:underline disabled:text-gray-400 disabled:no-underline">← Previous</button>
           <span className="text-sm text-gray-500">Page {page}</span>
-          <button type="button" onClick={() => { setLoading(true); setPage((p) => p + 1); }} disabled={filtered.length < PAGE_SIZE || loading} className="text-sm text-[#1a4d7a] hover:underline disabled:text-gray-400 disabled:no-underline">Next →</button>
+          <button type="button" onClick={() => { setLoading(true); setPage((p) => p + 1); }} disabled={logs.length < PAGE_SIZE || loading} className="text-sm text-[#1a4d7a] hover:underline disabled:text-gray-400 disabled:no-underline">Next →</button>
         </div>
       </div>
     </div>

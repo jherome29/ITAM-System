@@ -24,16 +24,11 @@ export function SidebarNav({
   onClose?: () => void;
 }>) {
   const pathname = usePathname();
-  const { logout } = useAuth();
-  const persona = {
-    [ProposedUserRole.EMPLOYEE]: { initials: 'AR', name: 'Ana Reyes' },
-    [ProposedUserRole.APPROVING_OFFICER]: { initials: 'MS', name: 'Mila Santos' },
-    [ProposedUserRole.IT_ASSET_CUSTODIAN]: { initials: 'PC', name: 'Paolo Cruz' },
-    [ProposedUserRole.PROPERTY_CUSTODIAN]: { initials: 'LG', name: 'Leah Garcia' },
-    [ProposedUserRole.PROPERTY_OFFICER]: { initials: 'MD', name: 'Marisol Dela Cruz' },
-    [ProposedUserRole.MASTER_ADMIN]: { initials: 'RT', name: 'Dir. Ricardo Torres' },
-    [ProposedUserRole.MANAGEMENT_AUDIT_VIEWER]: { initials: 'ED', name: 'Elena Dizon' },
-  }[role];
+  const { logout, user } = useAuth();
+  const displayName = user ? `${user.firstName} ${user.lastName}` : proposedRoleLabels[role];
+  const initials = user
+    ? `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase()
+    : proposedRoleLabels[role].slice(0, 2).toUpperCase();
 
   return (
     <aside
@@ -93,11 +88,11 @@ export function SidebarNav({
       <div className="border-t border-white/10 px-4 py-3">
         <div className={`flex min-h-12 items-center ${collapsed && !mobile ? 'justify-center' : 'gap-3'}`}>
           <span className="grid h-9 w-9 flex-none place-items-center rounded-full border border-blue-300/30 bg-blue-950 text-[11px] font-bold leading-none text-blue-100">
-            {persona.initials}
+            {initials}
           </span>
           {(!collapsed || mobile) && (
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold leading-5 text-white">{persona.name}</p>
+              <p className="truncate text-sm font-semibold leading-5 text-white">{displayName}</p>
               <p className="truncate text-xs leading-4 text-blue-200">{proposedRoleLabels[role]}</p>
             </div>
           )}
