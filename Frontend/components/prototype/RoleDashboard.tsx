@@ -11,6 +11,16 @@ import { ProposedUserRole, proposedRoleLabels } from '@/lib/roles/proposed-roles
 import { Plus } from 'lucide-react';
 import Link from 'next/link';
 
+const recentRequisitionsHref: Record<ProposedUserRole, string> = {
+  [ProposedUserRole.EMPLOYEE]: '/employee/requisitions',
+  [ProposedUserRole.APPROVING_OFFICER]: '/approving-officer/requisitions',
+  [ProposedUserRole.IT_ASSET_CUSTODIAN]: '/it-asset-custodian/fulfillment',
+  [ProposedUserRole.PROPERTY_CUSTODIAN]: '/property-custodian/fulfillment',
+  [ProposedUserRole.PROPERTY_OFFICER]: '/property-officer/reports',
+  [ProposedUserRole.MASTER_ADMIN]: '/master-admin/audit',
+  [ProposedUserRole.MANAGEMENT_AUDIT_VIEWER]: '/management-audit/requisition-reports',
+};
+
 function secondaryActivityTitle(isEmployee: boolean, isReadOnly: boolean) {
   if (isEmployee) return 'Upcoming Actions';
   if (isReadOnly) return 'Read-Only Audit Highlights';
@@ -59,7 +69,7 @@ export function RoleDashboard({ role }: Readonly<{ role: ProposedUserRole }>) {
       </ChartCard>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <ChartCard title="Recent Requisitions" action={<span className="text-xs font-bold text-blue-700">View All</span>}>
+        <ChartCard title="Recent Requisitions" action={<Link href={recentRequisitionsHref[role]} className="text-xs font-bold text-blue-700 hover:underline">View All</Link>}>
           <ActivityTable rows={data.recentRequisitions} />
         </ChartCard>
         <ChartCard title={secondaryActivityTitle(isEmployee, isReadOnly)}>

@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import type { RoleNavItem } from '@/lib/roles/role-navigation';
 import { proposedRoleLabels, ProposedUserRole } from '@/lib/roles/proposed-roles';
 import { appConfig } from '@/lib/config';
+import { useAuth } from '@/lib/auth/use-auth';
 
 export function SidebarNav({
   role,
@@ -23,6 +24,7 @@ export function SidebarNav({
   onClose?: () => void;
 }>) {
   const pathname = usePathname();
+  const { logout } = useAuth();
   const persona = {
     [ProposedUserRole.EMPLOYEE]: { initials: 'AR', name: 'Ana Reyes' },
     [ProposedUserRole.APPROVING_OFFICER]: { initials: 'MS', name: 'Mila Santos' },
@@ -99,7 +101,17 @@ export function SidebarNav({
               <p className="truncate text-xs leading-4 text-blue-200">{proposedRoleLabels[role]}</p>
             </div>
           )}
-          {(!collapsed || mobile) && <Link href="/login" className="grid h-8 w-8 flex-none place-items-center rounded-md text-blue-200 hover:bg-white/10 hover:text-white" aria-label="Sign out" title="Sign out"><LogOut className="h-4 w-4" /></Link>}
+          {(!collapsed || mobile) && (
+            <button
+              type="button"
+              onClick={() => logout()}
+              className="grid h-8 w-8 flex-none place-items-center rounded-md text-blue-200 hover:bg-white/10 hover:text-white"
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
     </aside>
