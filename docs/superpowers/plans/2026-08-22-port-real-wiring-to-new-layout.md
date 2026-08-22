@@ -749,13 +749,278 @@ git push
 
 ---
 
-### Tasks 6-8: Custody & Issuance, Maintenance & Repair, Disposal Recommendations
+### Task 6: Wire Custody & Issuance to real data
 
-Same technique as Task 5 (extend `isLiveFetchPage`/`detailActions`/add a `submitXDecision` function in `WorkflowPage.tsx`), scoped now, expanded to full bite-sized steps immediately before each starts — after Task 5 lands and its review confirms the pattern holds up in practice.
+Real equivalent: asset lifecycle transitions via `assetsApi.updateLifecycle`. Unlike Fulfillment (Task 5), this slug's rows are ASSETS, not requisitions — the mock prototype's `rowsFor()` never actually had correct row logic for `custody` either (it silently fell through to a requisition-shaped catch-all), so this task both fixes that and makes it real in the same change. Also unlike Task 5, two of the three actions need real input fields (Issue needs an employee ID, Transfer needs a destination), not just an optional remarks box — this task generalizes the existing `ConfirmDialog` usage to support action-specific conditional fields, the same technique `AssetDetailManager` (Task 4) already uses for its own lifecycle modal, applied here instead of building a second, separate modal component.
 
-- **Task 6 — Custody & Issuance** (`custody` slug): real equivalent is issuing an asset via `assetsApi.updateLifecycle(id, { status: 'issued', employeeId })` (same modal fields as `AssetDetailManager`'s lifecycle modal from Task 4 — reuse that interaction pattern, don't reinvent it) plus `'returned'`/`'transferred'` transitions. Files: `Frontend/components/prototype/WorkflowPage.tsx`.
-- **Task 7 — Maintenance & Repair** (`maintenance` slug): real equivalent is `assetsApi.updateLifecycle(id, { status: 'under_repair' })` / back to `'available'`. Files: `Frontend/components/prototype/WorkflowPage.tsx`.
-- **Task 8 — Disposal Recommendations** (`disposal` slug): real equivalent is `assetsApi.updateLifecycle(id, { status: 'flagged_for_disposal', notes })` (notes required — matches the 2026-08-21 fix's required-justification UI). Files: `Frontend/components/prototype/WorkflowPage.tsx`.
+**Files:**
+- Modify: `Frontend/components/prototype/WorkflowPage.tsx`
+
+**Interfaces:**
+- Consumes: `assetsApi.list(page, limit)` → `Asset[]`, `assetsApi.updateLifecycle(id, { status, employeeId?, toLocation? })` (existing, `Frontend/lib/api/assets.ts`).
+
+- [ ] **Step 1: Add the `assetsApi`/`Asset` import**
+
+Find the existing import block at the top of the file (near `import { auditApi, type AuditLog } from '@/lib/api/audit';` and `import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';`) and add, alphabetically ordered with the other `@/lib/api/*` imports:
+```tsx
+import { assetsApi, type Asset } from '@/lib/api/assets';
+```
+
+- [ ] **Step 2: Extend `isLiveFetchPage`, add the custody flag, add new form-field state**
+
+Find (this is Task 5's already-landed version):
+```tsx
+  const isLiveFetchPage =
+    (role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')) ||
+    (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') ||
+    (role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'fulfillment');
+```
+Replace with:
+```tsx
+  const isLiveFetchPage =
+    (role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')) ||
+    (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') ||
+    (role === ProposedUserRole.IT_ASSET_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody'));
+```
+
+Find `const isItAssetCustodianLiveFulfillment = ...` (added in Task 5) and add immediately after its statement:
+```tsx
+  const isItAssetCustodianLiveCustody =
+    isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'custody';
+```
+
+Find the block of `useState` declarations that includes `const [remarks, setRemarks] = useState('');` and add two new ones right after it:
+```tsx
+  const [issueEmployeeId, setIssueEmployeeId] = useState('');
+  const [transferToLocation, setTransferToLocation] = useState('');
+```
+
+- [ ] **Step 3: Add the asset row converter**
+
+Find `function requisitionApiToRow(request: Requisition): Row {` and its closing `}`. Add this new function immediately after it (before `function auditApiToRow`):
+```tsx
+function assetApiToRow(asset: Asset): Row {
+  return {
+    id: asset.id,
+    item: asset.itemDescription,
+    serialNumber: asset.serialNumber,
+    propertyNumber: asset.propertyNumber,
+    status: asset.status,
+    condition: asset.condition,
+    location: asset.officeOrSection,
+    custodianId: asset.custodianId ?? 'Unassigned',
+  };
+}
+```
+
+- [ ] **Step 4: Extend `fetchLiveRows` with a custody branch**
+
+Find (Task 5's already-landed version):
+```tsx
+  const fetchLiveRows = useCallback((): Promise<void> => {
+    if (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') {
+      return auditApi.list(1, LIVE_FETCH_LIMIT).then((res) => {
+        setRows(res.data.data.map(auditApiToRow));
+        setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
+      });
+    }
+    const fetcher = normalizedSlug === 'fulfillment'
+      ? requisitionsApi.list(1, LIVE_FETCH_LIMIT, 'pending_fulfillment')
+      : normalizedSlug === 'approvals'
+      ? requisitionsApi.list(1, LIVE_FETCH_LIMIT)
+      : requisitionsApi.mine(1, LIVE_FETCH_LIMIT);
+    return fetcher.then((res) => {
+      setRows(res.data.data.map(requisitionApiToRow));
+      setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
+    });
+  }, [normalizedSlug, role]);
+```
+Replace with:
+```tsx
+  const fetchLiveRows = useCallback((): Promise<void> => {
+    if (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') {
+      return auditApi.list(1, LIVE_FETCH_LIMIT).then((res) => {
+        setRows(res.data.data.map(auditApiToRow));
+        setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
+      });
+    }
+    if (role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'custody') {
+      return assetsApi.list(1, LIVE_FETCH_LIMIT).then((res) => {
+        setRows(res.data.data.map(assetApiToRow));
+        setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
+      });
+    }
+    const fetcher = normalizedSlug === 'fulfillment'
+      ? requisitionsApi.list(1, LIVE_FETCH_LIMIT, 'pending_fulfillment')
+      : normalizedSlug === 'approvals'
+      ? requisitionsApi.list(1, LIVE_FETCH_LIMIT)
+      : requisitionsApi.mine(1, LIVE_FETCH_LIMIT);
+    return fetcher.then((res) => {
+      setRows(res.data.data.map(requisitionApiToRow));
+      setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
+    });
+  }, [normalizedSlug, role]);
+```
+(This function's own `useCallback` dependency array — `[normalizedSlug, role]` — does not need to change; both new branches only read values already in that array.)
+
+- [ ] **Step 5: Add `submitCustodyDecision`**
+
+Find the end of `submitFulfillmentDecision` (added in Task 5 — ends with a closing `};` followed by a blank line, then `const validateForm = () => {`). Insert this new function between them:
+```tsx
+  // Real, persisted counterpart to runAction for IT Asset Custodian's live custody
+  // page — see isItAssetCustodianLiveCustody above. Calls the actual asset lifecycle
+  // API instead of mutating local mock state. Unlike Fulfillment, two of the three
+  // actions need a real input value, not just an optional remarks box.
+  const submitCustodyDecision = async (action: 'Issue' | 'Transfer' | 'Return') => {
+    if (!selected || actionSubmitting) return;
+    if (action === 'Issue' && !issueEmployeeId.trim()) {
+      setErrors({ employeeId: 'Employee ID is required to issue this asset.' });
+      return;
+    }
+    if (action === 'Transfer' && !transferToLocation.trim()) {
+      setErrors({ toLocation: 'Destination office or section is required.' });
+      return;
+    }
+    setActionSubmitting(true);
+    try {
+      const id = String(selected.id);
+      const statusForAction = { Issue: 'issued', Transfer: 'transferred', Return: 'returned' } as const;
+      await assetsApi.updateLifecycle(id, {
+        status: statusForAction[action],
+        employeeId: action === 'Issue' ? issueEmployeeId.trim() : undefined,
+        toLocation: action === 'Transfer' ? transferToLocation.trim() : undefined,
+      });
+      setConfirmAction(null);
+      setSelected(null);
+      setIssueEmployeeId('');
+      setTransferToLocation('');
+      setErrors({});
+      const notifyMessage = { Issue: 'Asset issued.', Transfer: 'Asset transferred.', Return: 'Asset returned.' } as const;
+      notify(notifyMessage[action]);
+      await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
+    } catch {
+      notify(`Failed to complete this action. Please try again.`);
+    } finally {
+      setActionSubmitting(false);
+    }
+  };
+```
+
+- [ ] **Step 6: Wire the ConfirmDialog — detail text, onConfirm, cancel reset, and the new conditional fields**
+
+Find (this is Task 5's already-landed version — the `detail`/`onConfirm`/`onCancel` props):
+```tsx
+        detail={
+          (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) ||
+          (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold'))
+            ? 'This calls the live requisitions API and updates the real record.'
+            : 'This updates frontend mock state only. Backend authorization and persistence will be implemented later.'
+        }
+        confirmLabel={actionSubmitting ? 'Processing…' : (confirmAction ?? 'Confirm')}
+        onConfirm={() => {
+          if (!confirmAction) return;
+          if (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) {
+            void submitApprovalDecision(confirmAction);
+            return;
+          }
+          if (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) {
+            void submitFulfillmentDecision(confirmAction);
+            return;
+          }
+          runAction(confirmAction);
+        }}
+        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); }}
+      >
+        {(['Reject', 'Return for Revision'].includes(confirmAction ?? '') ||
+          (isItAssetCustodianLiveFulfillment && confirmAction === 'On Hold')) && (
+          <label className="block text-sm font-semibold text-slate-700">
+            <span>Remarks</span>
+            <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            {errors.remarks && <span className="mt-1 block text-xs text-red-600">{errors.remarks}</span>}
+          </label>
+        )}
+      </ConfirmDialog>
+```
+Replace with:
+```tsx
+        detail={
+          (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) ||
+          (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) ||
+          (isItAssetCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return'))
+            ? 'This calls the live requisitions API and updates the real record.'
+            : 'This updates frontend mock state only. Backend authorization and persistence will be implemented later.'
+        }
+        confirmLabel={actionSubmitting ? 'Processing…' : (confirmAction ?? 'Confirm')}
+        onConfirm={() => {
+          if (!confirmAction) return;
+          if (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) {
+            void submitApprovalDecision(confirmAction);
+            return;
+          }
+          if (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) {
+            void submitFulfillmentDecision(confirmAction);
+            return;
+          }
+          if (isItAssetCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) {
+            void submitCustodyDecision(confirmAction);
+            return;
+          }
+          runAction(confirmAction);
+        }}
+        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setTransferToLocation(''); }}
+      >
+        {(['Reject', 'Return for Revision'].includes(confirmAction ?? '') ||
+          (isItAssetCustodianLiveFulfillment && confirmAction === 'On Hold')) && (
+          <label className="block text-sm font-semibold text-slate-700">
+            <span>Remarks</span>
+            <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            {errors.remarks && <span className="mt-1 block text-xs text-red-600">{errors.remarks}</span>}
+          </label>
+        )}
+        {isItAssetCustodianLiveCustody && confirmAction === 'Issue' && (
+          <label className="block text-sm font-semibold text-slate-700">
+            <span>Recipient Employee ID</span>
+            <input type="text" value={issueEmployeeId} onChange={(event) => setIssueEmployeeId(event.target.value)} placeholder="e.g. CICC-0042" className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            {errors.employeeId && <span className="mt-1 block text-xs text-red-600">{errors.employeeId}</span>}
+          </label>
+        )}
+        {isItAssetCustodianLiveCustody && confirmAction === 'Transfer' && (
+          <label className="block text-sm font-semibold text-slate-700">
+            <span>Receiving Office / Section</span>
+            <input type="text" value={transferToLocation} onChange={(event) => setTransferToLocation(event.target.value)} placeholder="e.g. Cybercrime Operations Division" className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            {errors.toLocation && <span className="mt-1 block text-xs text-red-600">{errors.toLocation}</span>}
+          </label>
+        )}
+      </ConfirmDialog>
+```
+
+- [ ] **Step 7: Verify**
+
+```bash
+cd Frontend && npx tsc --noEmit && npx eslint components/prototype/WorkflowPage.tsx --max-warnings 0 && npm run test && npm run build
+```
+Expected: all clean/pass.
+
+- [ ] **Step 8: Manual check** (human, browser)
+
+Log in as IT Personnel, go to `/it-asset-custodian/custody`. Should show real assets (not requisition-shaped mock rows). Open one that's `available`, choose "Issue", confirm the Employee ID field appears and is required (try submitting empty first, confirm the error shows), then issue it to a real employee ID (e.g. `CICC-0042` if that account exists, or any real employee's ID) — confirm success and that the asset's status updates after refresh. Try "Transfer" on another asset — confirm the destination field is required and works. Try "Return" on an issued asset — confirm it works with no extra field required.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add Frontend/components/prototype/WorkflowPage.tsx
+git commit -m "feat(it-asset-custodian): wire custody & issuance to real asset lifecycle API"
+git push
+```
+
+---
+
+### Tasks 7-8: Maintenance & Repair, Disposal Recommendations
+
+Same technique as Task 6 (both are asset-lifecycle-transition slugs, so both reuse `assetApiToRow`/the custody-branch shape in `fetchLiveRows`, extended further rather than duplicated). Scoped now, expanded to full bite-sized steps immediately before each starts.
+
+- **Task 7 — Maintenance & Repair** (`maintenance` slug): real equivalent is `assetsApi.updateLifecycle(id, { status: 'under_repair' })` (send to repair) and back to `'available'` (mark complete) — no extra required fields for either, closer to Fulfillment's shape than Custody's. Files: `Frontend/components/prototype/WorkflowPage.tsx`.
+- **Task 8 — Disposal Recommendations** (`disposal` slug): real equivalent is `assetsApi.updateLifecycle(id, { status: 'flagged_for_disposal', notes })` — notes required (matches the 2026-08-21 fix's required-justification UI on `AssetDetailManager`'s own disposal transition) — reuses the existing remarks-textarea infrastructure (extend its required-when condition), no new field types needed like Custody's. Files: `Frontend/components/prototype/WorkflowPage.tsx`.
 
 ---
 
