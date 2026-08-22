@@ -1015,12 +1015,197 @@ git push
 
 ---
 
-### Tasks 7-8: Maintenance & Repair, Disposal Recommendations
+### Task 7: Wire Maintenance & Repair to real data
 
-Same technique as Task 6 (both are asset-lifecycle-transition slugs, so both reuse `assetApiToRow`/the custody-branch shape in `fetchLiveRows`, extended further rather than duplicated). Scoped now, expanded to full bite-sized steps immediately before each starts.
+Real equivalent: this page shows assets ALREADY under repair (sending an asset TO repair already works today via `AssetDetailManager`'s own lifecycle modal from Task 4 — `available`/`issued` → `under_repair` is already a live transition there). This page's real job is the other half: resolve what's already under repair, either by marking it complete (`under_repair` → `available`) or recommending disposal instead (`under_repair` → `flagged_for_disposal`, notes required — CLAUDE.md's rule that any disposal flag needs documented justification applies regardless of which page triggers it). The mock `detailActions` for this slug (`['Mark Complete', 'Recommend Disposal']`) already matches this real shape exactly — no action-list change needed here, unlike Fulfillment's dropped `'Reserve'`.
 
-- **Task 7 — Maintenance & Repair** (`maintenance` slug): real equivalent is `assetsApi.updateLifecycle(id, { status: 'under_repair' })` (send to repair) and back to `'available'` (mark complete) — no extra required fields for either, closer to Fulfillment's shape than Custody's. Files: `Frontend/components/prototype/WorkflowPage.tsx`.
-- **Task 8 — Disposal Recommendations** (`disposal` slug): real equivalent is `assetsApi.updateLifecycle(id, { status: 'flagged_for_disposal', notes })` — notes required (matches the 2026-08-21 fix's required-justification UI on `AssetDetailManager`'s own disposal transition) — reuses the existing remarks-textarea infrastructure (extend its required-when condition), no new field types needed like Custody's. Files: `Frontend/components/prototype/WorkflowPage.tsx`.
+This task also fixes the cosmetic copy issue flagged in Task 6's review: the shared `ConfirmDialog` `detail` text says "live requisitions API" for every OR-branch including the two asset-lifecycle ones (custody, and now maintenance) — fix the wording while touching this line again rather than as a separate task.
+
+Reuses `assetApiToRow` (Task 6) unchanged — no new row converter needed.
+
+**Files:**
+- Modify: `Frontend/components/prototype/WorkflowPage.tsx`
+
+**Interfaces:**
+- Consumes: `assetsApi.list(page, limit, search?, status?)` with `status: 'under_repair'`, `assetsApi.updateLifecycle(id, { status, notes? })` (existing, `Frontend/lib/api/assets.ts`).
+
+- [ ] **Step 1: Extend `isLiveFetchPage`, add the maintenance flag**
+
+Find (Task 6's already-landed version):
+```tsx
+  const isLiveFetchPage =
+    (role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')) ||
+    (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') ||
+    (role === ProposedUserRole.IT_ASSET_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody'));
+```
+Replace with:
+```tsx
+  const isLiveFetchPage =
+    (role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')) ||
+    (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') ||
+    (role === ProposedUserRole.IT_ASSET_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody' || normalizedSlug === 'maintenance'));
+```
+
+Find `const isItAssetCustodianLiveCustody = ...` (added in Task 6) and add immediately after its statement:
+```tsx
+  const isItAssetCustodianLiveMaintenance =
+    isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'maintenance';
+```
+
+- [ ] **Step 2: Extend `fetchLiveRows` with a maintenance branch**
+
+Find the custody branch added in Task 6 (inside `fetchLiveRows`, right after the audit branch):
+```tsx
+    if (role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'custody') {
+      return assetsApi.list(1, LIVE_FETCH_LIMIT).then((res) => {
+        setRows(res.data.data.map(assetApiToRow));
+        setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
+      });
+    }
+```
+Add immediately after it (same shape, filtered to `under_repair`):
+```tsx
+    if (role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'maintenance') {
+      return assetsApi.list(1, LIVE_FETCH_LIMIT, undefined, 'under_repair').then((res) => {
+        setRows(res.data.data.map(assetApiToRow));
+        setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
+      });
+    }
+```
+
+- [ ] **Step 3: Add `submitMaintenanceDecision`**
+
+Find the end of `submitCustodyDecision` (added in Task 6 — ends with a closing `};` followed by a blank line, then `const validateForm = () => {`). Insert this new function between them:
+```tsx
+  // Real, persisted counterpart to runAction for IT Asset Custodian's live maintenance
+  // page — see isItAssetCustodianLiveMaintenance above. Reuses the existing remarks
+  // state/textarea (required only for the disposal path, matching CLAUDE.md's
+  // documented-justification rule for any disposal flag).
+  const submitMaintenanceDecision = async (action: 'Mark Complete' | 'Recommend Disposal') => {
+    if (!selected || actionSubmitting) return;
+    const trimmedRemarks = remarks.trim();
+    if (action === 'Recommend Disposal' && !trimmedRemarks) {
+      setErrors({ remarks: 'A justification is required to recommend disposal.' });
+      return;
+    }
+    setActionSubmitting(true);
+    try {
+      const id = String(selected.id);
+      if (action === 'Mark Complete') {
+        await assetsApi.updateLifecycle(id, { status: 'available' });
+      } else {
+        await assetsApi.updateLifecycle(id, { status: 'flagged_for_disposal', notes: trimmedRemarks });
+      }
+      setConfirmAction(null);
+      setSelected(null);
+      setRemarks('');
+      setErrors({});
+      notify(action === 'Mark Complete' ? 'Asset marked available.' : 'Disposal recommended.');
+      await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
+    } catch {
+      notify('Failed to complete this action. Please try again.');
+    } finally {
+      setActionSubmitting(false);
+    }
+  };
+```
+
+- [ ] **Step 4: Wire the ConfirmDialog — add the maintenance case, and fix the "requisitions API" copy while here**
+
+Find (Task 6's already-landed version):
+```tsx
+        detail={
+          (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) ||
+          (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) ||
+          (isItAssetCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return'))
+            ? 'This calls the live requisitions API and updates the real record.'
+            : 'This updates frontend mock state only. Backend authorization and persistence will be implemented later.'
+        }
+        confirmLabel={actionSubmitting ? 'Processing…' : (confirmAction ?? 'Confirm')}
+        onConfirm={() => {
+          if (!confirmAction) return;
+          if (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) {
+            void submitApprovalDecision(confirmAction);
+            return;
+          }
+          if (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) {
+            void submitFulfillmentDecision(confirmAction);
+            return;
+          }
+          if (isItAssetCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) {
+            void submitCustodyDecision(confirmAction);
+            return;
+          }
+          runAction(confirmAction);
+        }}
+        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setTransferToLocation(''); }}
+      >
+        {(['Reject', 'Return for Revision'].includes(confirmAction ?? '') ||
+          (isItAssetCustodianLiveFulfillment && confirmAction === 'On Hold')) && (
+```
+Replace with:
+```tsx
+        detail={
+          (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) ||
+          (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) ||
+          (isItAssetCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) ||
+          (isItAssetCustodianLiveMaintenance && (confirmAction === 'Mark Complete' || confirmAction === 'Recommend Disposal'))
+            ? 'This calls the live backend API and updates the real record.'
+            : 'This updates frontend mock state only. Backend authorization and persistence will be implemented later.'
+        }
+        confirmLabel={actionSubmitting ? 'Processing…' : (confirmAction ?? 'Confirm')}
+        onConfirm={() => {
+          if (!confirmAction) return;
+          if (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) {
+            void submitApprovalDecision(confirmAction);
+            return;
+          }
+          if (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) {
+            void submitFulfillmentDecision(confirmAction);
+            return;
+          }
+          if (isItAssetCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) {
+            void submitCustodyDecision(confirmAction);
+            return;
+          }
+          if (isItAssetCustodianLiveMaintenance && (confirmAction === 'Mark Complete' || confirmAction === 'Recommend Disposal')) {
+            void submitMaintenanceDecision(confirmAction);
+            return;
+          }
+          runAction(confirmAction);
+        }}
+        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setTransferToLocation(''); }}
+      >
+        {(['Reject', 'Return for Revision'].includes(confirmAction ?? '') ||
+          (isItAssetCustodianLiveFulfillment && confirmAction === 'On Hold') ||
+          (isItAssetCustodianLiveMaintenance && confirmAction === 'Recommend Disposal')) && (
+```
+(Note: the copy fix changes "live requisitions API" to "live backend API" — accurate for all four cases now, not just requisitions-backed ones. Everything after this point in the file — the closing of the remarks label, the two custody field blocks, `</ConfirmDialog>` — stays exactly as Task 6 left it, not shown again here.)
+
+- [ ] **Step 5: Verify**
+
+```bash
+cd Frontend && npx tsc --noEmit && npx eslint components/prototype/WorkflowPage.tsx --max-warnings 0 && npm run test && npm run build
+```
+Expected: all clean/pass.
+
+- [ ] **Step 6: Manual check** (human, browser)
+
+Log in as IT Personnel. First, on `/it-asset-custodian/assets/:id` (or the old `/it-personnel/assets/:id`), put a real asset under repair via its lifecycle modal (`available` → `under_repair`). Then go to `/it-asset-custodian/maintenance` — that asset should now appear in this list. Try "Mark Complete" — confirm it works and the asset disappears from this list (now `available`) after refresh. Put another asset under repair, then try "Recommend Disposal" on it from this page — confirm the justification field is required, and that after confirming, the asset now shows `flagged_for_disposal` status.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add Frontend/components/prototype/WorkflowPage.tsx
+git commit -m "feat(it-asset-custodian): wire maintenance & repair to real asset lifecycle API"
+git push
+```
+
+---
+
+### Task 8: Wire Disposal Recommendations to real data
+
+Real equivalent: `assetsApi.updateLifecycle(id, { status: 'flagged_for_disposal', notes })`, notes required — same transition `Recommend Disposal` already performs on the Maintenance page (Task 7), just reachable from a dedicated page showing assets NOT already under repair (i.e., any asset an IT Asset Custodian might want to flag directly, not only ones that went through the repair queue first). Given both pages trigger the exact same backend transition, this task is scoped now but will be re-examined once Task 7 is live and reviewed — it may turn out `disposal`'s row-fetch should simply be "all ICT assets" (reusing Task 6's custody fetch shape, unfiltered) rather than needing new API surface, and its action may be able to reuse `submitMaintenanceDecision`'s `'Recommend Disposal'` branch directly rather than a fourth near-duplicate function. Expand this to full bite-sized steps after Task 7's review lands, once it's clear whether reuse or a small parallel function is the better call — that's a real design decision, not a mechanical extension, and deserves the same scrutiny Task 6 got rather than being assumed.
 
 ---
 
