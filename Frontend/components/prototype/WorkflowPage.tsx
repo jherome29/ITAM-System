@@ -256,13 +256,16 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
   // synchronized edits.
   const isLiveFetchPage =
     (role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')) ||
-    (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit');
+    (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') ||
+    (role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'fulfillment');
   // The Approving Officer's own approvals queue is the one confirm-action flow in this
   // shared component that must persist for real — see submitApprovalDecision below.
   // Every other role/slug (including this same officer's 'requisitions' tab, which has
   // no real cancel/submit endpoint) keeps using the generic mock runAction path.
   const isApprovingOfficerLiveApprovals =
     isLiveFetchPage && role === ProposedUserRole.APPROVING_OFFICER && normalizedSlug === 'approvals';
+  const isItAssetCustodianLiveFulfillment =
+    isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'fulfillment';
   const [rows, setRows] = useState<Row[]>(() => (isLiveFetchPage ? [] : rowsFor(role, normalizedSlug)));
   const [loading, setLoading] = useState(isLiveFetchPage);
 
@@ -281,7 +284,9 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
         setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
       });
     }
-    const fetcher = normalizedSlug === 'approvals'
+    const fetcher = normalizedSlug === 'fulfillment'
+      ? requisitionsApi.list(1, LIVE_FETCH_LIMIT, 'pending_fulfillment')
+      : normalizedSlug === 'approvals'
       ? requisitionsApi.list(1, LIVE_FETCH_LIMIT)
       : requisitionsApi.mine(1, LIVE_FETCH_LIMIT);
     return fetcher.then((res) => {
@@ -407,6 +412,37 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
     } catch {
       notify(`Failed to ${action.toLowerCase()} the requisition. Please try again.`);
+    } finally {
+      setActionSubmitting(false);
+    }
+  };
+
+  // Real, persisted counterpart to runAction for IT Asset Custodian's live fulfillment
+  // queue — see isItAssetCustodianLiveFulfillment above. Calls the actual requisitions
+  // API instead of mutating local mock state.
+  const submitFulfillmentDecision = async (action: 'Fulfill' | 'On Hold') => {
+    if (!selected || actionSubmitting) return;
+    const trimmedRemarks = remarks.trim();
+    if (action === 'On Hold' && !trimmedRemarks) {
+      setErrors({ remarks: 'A reason is required to place a requisition on hold.' });
+      return;
+    }
+    setActionSubmitting(true);
+    try {
+      const id = String(selected.id);
+      if (action === 'Fulfill') {
+        await requisitionsApi.fulfill(id);
+      } else {
+        await requisitionsApi.hold(id, trimmedRemarks);
+      }
+      setConfirmAction(null);
+      setSelected(null);
+      setRemarks('');
+      setErrors({});
+      notify(action === 'Fulfill' ? 'Requisition fulfilled.' : 'Requisition placed on hold.');
+      await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
+    } catch {
+      notify(`Failed to ${action === 'Fulfill' ? 'fulfill' : 'place on hold'} the requisition. Please try again.`);
     } finally {
       setActionSubmitting(false);
     }
@@ -744,7 +780,7 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
             )}
             {!readOnly && !selectedIsSelfApproval && (
               <div className="flex flex-wrap gap-2">
-                {detailActions(normalizedSlug, role).map((action) => (
+                {detailActions(normalizedSlug, role, isItAssetCustodianLiveFulfillment).map((action) => (
                   <button key={action} type="button" onClick={() => setConfirmAction(action)} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-bold text-white hover:bg-blue-800">
                     {action}
                   </button>
@@ -759,7 +795,8 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
         open={Boolean(confirmAction)}
         title={`${confirmAction} record`}
         detail={
-          isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')
+          (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) ||
+          (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold'))
             ? 'This calls the live requisitions API and updates the real record.'
             : 'This updates frontend mock state only. Backend authorization and persistence will be implemented later.'
         }
@@ -770,11 +807,16 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
             void submitApprovalDecision(confirmAction);
             return;
           }
+          if (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) {
+            void submitFulfillmentDecision(confirmAction);
+            return;
+          }
           runAction(confirmAction);
         }}
         onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); }}
       >
-        {['Reject', 'Return for Revision'].includes(confirmAction ?? '') && (
+        {(['Reject', 'Return for Revision'].includes(confirmAction ?? '') ||
+          (isItAssetCustodianLiveFulfillment && confirmAction === 'On Hold')) && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Remarks</span>
             <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
@@ -846,11 +888,13 @@ function actionLabel(slug: string, role: ProposedUserRole) {
   return 'Open';
 }
 
-function detailActions(slug: string, role: ProposedUserRole) {
+function detailActions(slug: string, role: ProposedUserRole, isLive: boolean) {
   if (slug === 'approvals') return ['Approve', 'Reject', 'Return for Revision'];
   if (slug === 'requisitions') return ['Cancel', 'Submit'];
   if (slug === 'assigned-assets') return ['Acknowledge', 'Return', 'Report Damage', 'Request Repair'];
-  if (slug === 'fulfillment') return ['Reserve', 'Fulfill', 'On Hold'];
+  // Live fulfillment only supports the two real backend actions — 'Reserve' has no
+  // requisitionsApi equivalent, so it stays mock-only and is dropped once this is real.
+  if (slug === 'fulfillment') return isLive ? ['Fulfill', 'On Hold'] : ['Reserve', 'Fulfill', 'On Hold'];
   if (slug === 'custody') return ['Issue', 'Transfer', 'Return'];
   if (slug === 'maintenance') return ['Mark Complete', 'Recommend Disposal'];
   if (slug === 'physical-inventory') return ['Verify', 'Mark Reconciled'];
