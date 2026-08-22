@@ -10,6 +10,7 @@ import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
 import { InventoryLabelPrinter } from '@/components/inventory/InventoryLabelPrinter';
+import { assetsApi, type Asset } from '@/lib/api/assets';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';
 import { assetMockRows } from '@/lib/mock/assets.mock';
@@ -225,6 +226,19 @@ function requisitionApiToRow(request: Requisition): Row {
   };
 }
 
+function assetApiToRow(asset: Asset): Row {
+  return {
+    id: asset.id,
+    item: asset.itemDescription,
+    serialNumber: asset.serialNumber,
+    propertyNumber: asset.propertyNumber,
+    status: asset.status,
+    condition: asset.condition,
+    location: asset.officeOrSection,
+    custodianId: asset.custodianId ?? 'Unassigned',
+  };
+}
+
 function auditApiToRow(log: AuditLog): Row {
   return {
     id: log.id,
@@ -257,7 +271,7 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
   const isLiveFetchPage =
     (role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')) ||
     (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') ||
-    (role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'fulfillment');
+    (role === ProposedUserRole.IT_ASSET_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody'));
   // The Approving Officer's own approvals queue is the one confirm-action flow in this
   // shared component that must persist for real — see submitApprovalDecision below.
   // Every other role/slug (including this same officer's 'requisitions' tab, which has
@@ -266,6 +280,8 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
     isLiveFetchPage && role === ProposedUserRole.APPROVING_OFFICER && normalizedSlug === 'approvals';
   const isItAssetCustodianLiveFulfillment =
     isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'fulfillment';
+  const isItAssetCustodianLiveCustody =
+    isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'custody';
   const [rows, setRows] = useState<Row[]>(() => (isLiveFetchPage ? [] : rowsFor(role, normalizedSlug)));
   const [loading, setLoading] = useState(isLiveFetchPage);
 
@@ -281,6 +297,12 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
     if (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') {
       return auditApi.list(1, LIVE_FETCH_LIMIT).then((res) => {
         setRows(res.data.data.map(auditApiToRow));
+        setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
+      });
+    }
+    if (role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'custody') {
+      return assetsApi.list(1, LIVE_FETCH_LIMIT).then((res) => {
+        setRows(res.data.data.map(assetApiToRow));
         setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
       });
     }
@@ -314,6 +336,8 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
   const [formOpen, setFormOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [issueEmployeeId, setIssueEmployeeId] = useState('');
+  const [transferToLocation, setTransferToLocation] = useState('');
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [form, setForm] = useState({ item: '', quantity: '1', requiredDate: '', justification: '', reason: '', attachment: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -443,6 +467,44 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
     } catch {
       notify(`Failed to ${action === 'Fulfill' ? 'fulfill' : 'place on hold'} the requisition. Please try again.`);
+    } finally {
+      setActionSubmitting(false);
+    }
+  };
+
+  // Real, persisted counterpart to runAction for IT Asset Custodian's live custody
+  // page — see isItAssetCustodianLiveCustody above. Calls the actual asset lifecycle
+  // API instead of mutating local mock state. Unlike Fulfillment, two of the three
+  // actions need a real input value, not just an optional remarks box.
+  const submitCustodyDecision = async (action: 'Issue' | 'Transfer' | 'Return') => {
+    if (!selected || actionSubmitting) return;
+    if (action === 'Issue' && !issueEmployeeId.trim()) {
+      setErrors({ employeeId: 'Employee ID is required to issue this asset.' });
+      return;
+    }
+    if (action === 'Transfer' && !transferToLocation.trim()) {
+      setErrors({ toLocation: 'Destination office or section is required.' });
+      return;
+    }
+    setActionSubmitting(true);
+    try {
+      const id = String(selected.id);
+      const statusForAction = { Issue: 'issued', Transfer: 'transferred', Return: 'returned' } as const;
+      await assetsApi.updateLifecycle(id, {
+        status: statusForAction[action],
+        employeeId: action === 'Issue' ? issueEmployeeId.trim() : undefined,
+        toLocation: action === 'Transfer' ? transferToLocation.trim() : undefined,
+      });
+      setConfirmAction(null);
+      setSelected(null);
+      setIssueEmployeeId('');
+      setTransferToLocation('');
+      setErrors({});
+      const notifyMessage = { Issue: 'Asset issued.', Transfer: 'Asset transferred.', Return: 'Asset returned.' } as const;
+      notify(notifyMessage[action]);
+      await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
+    } catch {
+      notify(`Failed to complete this action. Please try again.`);
     } finally {
       setActionSubmitting(false);
     }
@@ -796,7 +858,8 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
         title={`${confirmAction} record`}
         detail={
           (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) ||
-          (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold'))
+          (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) ||
+          (isItAssetCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return'))
             ? 'This calls the live requisitions API and updates the real record.'
             : 'This updates frontend mock state only. Backend authorization and persistence will be implemented later.'
         }
@@ -811,9 +874,13 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
             void submitFulfillmentDecision(confirmAction);
             return;
           }
+          if (isItAssetCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) {
+            void submitCustodyDecision(confirmAction);
+            return;
+          }
           runAction(confirmAction);
         }}
-        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); }}
+        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setTransferToLocation(''); }}
       >
         {(['Reject', 'Return for Revision'].includes(confirmAction ?? '') ||
           (isItAssetCustodianLiveFulfillment && confirmAction === 'On Hold')) && (
@@ -821,6 +888,20 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
             <span>Remarks</span>
             <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
             {errors.remarks && <span className="mt-1 block text-xs text-red-600">{errors.remarks}</span>}
+          </label>
+        )}
+        {isItAssetCustodianLiveCustody && confirmAction === 'Issue' && (
+          <label className="block text-sm font-semibold text-slate-700">
+            <span>Recipient Employee ID</span>
+            <input type="text" value={issueEmployeeId} onChange={(event) => setIssueEmployeeId(event.target.value)} placeholder="e.g. CICC-0042" className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            {errors.employeeId && <span className="mt-1 block text-xs text-red-600">{errors.employeeId}</span>}
+          </label>
+        )}
+        {isItAssetCustodianLiveCustody && confirmAction === 'Transfer' && (
+          <label className="block text-sm font-semibold text-slate-700">
+            <span>Receiving Office / Section</span>
+            <input type="text" value={transferToLocation} onChange={(event) => setTransferToLocation(event.target.value)} placeholder="e.g. Cybercrime Operations Division" className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            {errors.toLocation && <span className="mt-1 block text-xs text-red-600">{errors.toLocation}</span>}
           </label>
         )}
       </ConfirmDialog>
