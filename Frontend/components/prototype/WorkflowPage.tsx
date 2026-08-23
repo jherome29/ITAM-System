@@ -11,6 +11,7 @@ import { Toast } from '@/components/ui/Toast';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
 import { InventoryLabelPrinter } from '@/components/inventory/InventoryLabelPrinter';
 import { assetsApi, type Asset } from '@/lib/api/assets';
+import { ASSET_LIFECYCLE_TRANSITIONS } from '@/lib/assets/lifecycle-transitions';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';
 import { assetMockRows } from '@/lib/mock/assets.mock';
@@ -519,8 +520,9 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
       const notifyMessage = { Issue: 'Asset issued.', Transfer: 'Asset transferred.', Return: 'Asset returned.' } as const;
       notify(notifyMessage[action]);
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
-    } catch {
-      notify(`Failed to complete this action. Please try again.`);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
+      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to complete this action. Please try again.'));
     } finally {
       setActionSubmitting(false);
     }
@@ -551,8 +553,9 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
       setErrors({});
       notify(action === 'Mark Complete' ? 'Asset marked available.' : 'Disposal recommended.');
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
-    } catch {
-      notify('Failed to complete this action. Please try again.');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
+      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to complete this action. Please try again.'));
     } finally {
       setActionSubmitting(false);
     }
@@ -595,7 +598,12 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
     notify(`${content.action ?? 'Action'} saved. Dashboard counts and notifications updated in mock state.`);
   };
 
-  const canPrimaryAct = !readOnly && content.action;
+  // Fulfillment/custody/maintenance/disposal have no real "create new" backend action —
+  // once live, the header button only ever opened the mock FormDialog and injected a
+  // synthetic row into real data. Hide it on these four pages; the other live pages
+  // (approvals, audit) never had a header action to begin with.
+  const canPrimaryAct = !readOnly && content.action &&
+    !(isItAssetCustodianLiveFulfillment || isItAssetCustodianLiveCustody || isItAssetCustodianLiveMaintenance || isItAssetCustodianLiveDisposal);
   const primaryPermission = actionPermissionFor(role);
   // Live-fetched rows carry a real requester UUID, not the mock 'EMP-003' id — compare
   // against the actual logged-in user's id on the live approvals page.
@@ -890,7 +898,7 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
             )}
             {!readOnly && !selectedIsSelfApproval && (
               <div className="flex flex-wrap gap-2">
-                {detailActions(normalizedSlug, role, isItAssetCustodianLiveFulfillment).map((action) => (
+                {detailActions(normalizedSlug, role, isLiveFetchPage, selected ? String(selected.status ?? '') : undefined).map((action) => (
                   <button key={action} type="button" onClick={() => setConfirmAction(action)} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-bold text-white hover:bg-blue-800">
                     {action}
                   </button>
@@ -1029,14 +1037,24 @@ function actionLabel(slug: string, role: ProposedUserRole) {
   return 'Open';
 }
 
-function detailActions(slug: string, role: ProposedUserRole, isLive: boolean) {
+function detailActions(slug: string, role: ProposedUserRole, isLive: boolean, selectedStatus?: string) {
   if (slug === 'approvals') return ['Approve', 'Reject', 'Return for Revision'];
   if (slug === 'requisitions') return ['Cancel', 'Submit'];
   if (slug === 'assigned-assets') return ['Acknowledge', 'Return', 'Report Damage', 'Request Repair'];
   // Live fulfillment only supports the two real backend actions — 'Reserve' has no
   // requisitionsApi equivalent, so it stays mock-only and is dropped once this is real.
   if (slug === 'fulfillment') return isLive ? ['Fulfill', 'On Hold'] : ['Reserve', 'Fulfill', 'On Hold'];
-  if (slug === 'custody') return ['Issue', 'Transfer', 'Return'];
+  if (slug === 'custody') {
+    // Live custody gates by the asset's actual status via the same transition map the
+    // asset detail page's lifecycle dropdown uses — offering 'Issue' on an already-issued
+    // asset used to succeed in the UI and fail with a 400 from the backend state machine.
+    if (isLive && selectedStatus) {
+      const custodyActionForNextStatus: Record<string, string> = { issued: 'Issue', transferred: 'Transfer', returned: 'Return' };
+      const allowed = ASSET_LIFECYCLE_TRANSITIONS[selectedStatus] ?? [];
+      return allowed.map((next) => custodyActionForNextStatus[next]).filter((action): action is string => Boolean(action));
+    }
+    return ['Issue', 'Transfer', 'Return'];
+  }
   if (slug === 'maintenance') return ['Mark Complete', 'Recommend Disposal'];
   if (slug === 'physical-inventory') return ['Verify', 'Mark Reconciled'];
   if (slug === 'disposal') return role === ProposedUserRole.PROPERTY_OFFICER ? ['Approve', 'Reject', 'Return for Revision'] : ['Recommend Disposal'];

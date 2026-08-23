@@ -7,19 +7,7 @@ import { assetsApi, type Asset, type UpdateAssetDto } from '@/lib/api/assets';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
-
-// Keys/values must match the real (lowercase) AssetStatus enum in packages/shared/src/enums —
-// the backend rejects any other casing via @IsEnum on UpdateLifecycleDto.
-const NEXT_TRANSITIONS: Record<string, string[]> = {
-  registered: ['available'],
-  available: ['issued', 'transferred', 'under_repair', 'flagged_for_disposal'],
-  issued: ['returned', 'under_repair', 'flagged_for_disposal'],
-  returned: ['available', 'under_repair'],
-  transferred: ['available'],
-  under_repair: ['available', 'flagged_for_disposal'],
-  flagged_for_disposal: ['disposed'],
-  disposed: [],
-};
+import { ASSET_LIFECYCLE_TRANSITIONS as NEXT_TRANSITIONS } from '@/lib/assets/lifecycle-transitions';
 
 function optionLabel(value: string): string {
   return value.split('_').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ');
