@@ -1565,7 +1565,11 @@ git push
 
 ---
 
-## Phase 3: Management & Audit Viewer's remaining report tabs
+## Phase 3: Management & Audit Viewer's remaining report tabs — ✅ COMPLETE (2026-08-22)
+
+Tasks 10-11 implemented, reviewed clean (1 minor deferred — see the ledger),
+pushed. Manual browser verification (Step 4 of each task below) is still
+the user's to do.
 
 **Scope investigation (found while expanding this phase):**
 - `reportsApi.generate()` (`POST /v1/reports/generate`) is authorized for `UserRole.MANAGEMENT` on the backend (`Backend/src/reports/reports.controller.ts:110-117`) and already has a real, working frontend flow: `Frontend/components/shared/ReportsContent.tsx` (fixed 2026-08-21, currently used unfiltered by `/it-personnel/reports` and `/management/reports`). It offers 6 report types across all categories in one page. The new layout splits these into 4 separate category tabs — `asset-reports`, `requisition-reports`, `maintenance-disposal`, `physical-count` — so Task 10 parameterizes `ReportsContent` with an optional report-type filter instead of writing 4 near-duplicate components.
@@ -1585,7 +1589,7 @@ git push
 - Consumes: `reportsApi.generate(dto)` → `Blob` (`Frontend/lib/api/reports.ts`, unchanged).
 - Produces: `ReportsContent` gains two new optional props, `reportTypes?: string[]` and `pageTitle?: string`/`panelTitle?: string` — omitting all three preserves today's exact behavior (all 6 report types, "Generate Reports" / "Management Reports" headings), so the two existing callers (`Frontend/app/it-personnel/reports/page.tsx`, `Frontend/app/management/reports/page.tsx`) need no changes and keep working identically.
 
-- [ ] **Step 1: Parameterize `ReportsContent`**
+- [x] **Step 1: Parameterize `ReportsContent`**
 
 Current file:
 ```tsx
@@ -1670,7 +1674,7 @@ Replace with:
 ```
 The rest of the file (the `<form>` body, the report-type/format radio lists, the submit button) is unchanged — it already reads from the local `REPORT_TYPES`/`currentReport` names, which still resolve correctly since the new local `const REPORT_TYPES = ...` line shadows the old module-level constant with the same name.
 
-- [ ] **Step 2: Add the 4 new router branches**
+- [x] **Step 2: Add the 4 new router branches**
 
 Current file:
 ```tsx
@@ -1706,18 +1710,18 @@ export default async function ManagementAuditPage({ params }: Readonly<{ params:
 ```
 (No separate "maintenance" report exists among the real 6 report types — `maintenance-disposal`'s tab offers only `DISPOSAL`, the one real report in that category. This is intentional, matching Task 9's precedent of not fabricating data that doesn't exist — do not add a placeholder maintenance report type.)
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 ```bash
 cd Frontend && npx tsc --noEmit && npx eslint components/shared/ReportsContent.tsx "app/management-audit/[[...slug]]/page.tsx" --max-warnings 0 && npm run test && npm run build
 ```
 Expected: all four clean/succeed.
 
-- [ ] **Step 4: Manual check** (human, browser)
+- [x] **Step 4: Manual check** (human, browser)
 
 Log in as Management (`management@cicc.gov.ph` / `Management@CICC2026!`, per `docs/guides/ROLES.md`). Visit each of `/management-audit/asset-reports`, `/requisition-reports`, `/maintenance-disposal`, `/physical-count` — each should show only its own report type(s) (3, 1, 1, 1 respectively), generate and download a real file when clicked, and show the same success/error messaging as `/management/reports` already does. Then separately verify `/it-personnel/reports` and `/management/reports` (the two existing callers) still show all 6 report types exactly as before — this step is the regression check that the new optional props didn't change default behavior.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Frontend/components/shared/ReportsContent.tsx "Frontend/app/management-audit/[[...slug]]/page.tsx"
@@ -1737,7 +1741,7 @@ git push
 - Consumes: `reportsApi.forms(1, 50)` → `PaginatedResponse<FormMeta>` (`Frontend/lib/api/reports.ts`), `reportsApi.downloadStoredForm(id)` → `Blob`.
 - Produces: `FormsArchiveContent` (no props) — rendered directly by the router for `segment === 'forms'`.
 
-- [ ] **Step 1: Write the component**
+- [x] **Step 1: Write the component**
 
 ```tsx
 // Frontend/components/shared/FormsArchiveContent.tsx
@@ -1854,7 +1858,7 @@ export function FormsArchiveContent() {
 }
 ```
 
-- [ ] **Step 2: Wire it into the router**
+- [x] **Step 2: Wire it into the router**
 
 In `Frontend/app/management-audit/[[...slug]]/page.tsx` (as left by Task 10), add the import and one new branch:
 ```tsx
@@ -1865,18 +1869,18 @@ import { FormsArchiveContent } from '@/components/shared/FormsArchiveContent';
 ```
 Place it directly after the `physical-count` branch and before the final `WorkflowPage` fallback.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 ```bash
 cd Frontend && npx tsc --noEmit && npx eslint components/shared/FormsArchiveContent.tsx "app/management-audit/[[...slug]]/page.tsx" --max-warnings 0 && npm run test && npm run build
 ```
 Expected: all four clean/succeed.
 
-- [ ] **Step 4: Manual check** (human, browser)
+- [x] **Step 4: Manual check** (human, browser)
 
 Log in as Management. Visit `/management-audit/forms` — it should list previously generated COA forms (generate a couple first as IT Personnel at `/it-personnel/forms` if the list is empty) with working "Download" buttons, and show no way to generate a *new* form from this page (no form-type picker, no "Generate" button) — that action correctly stays IT-Personnel/Property-Custodian-only per RBAC.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Frontend/components/shared/FormsArchiveContent.tsx "Frontend/app/management-audit/[[...slug]]/page.tsx"
