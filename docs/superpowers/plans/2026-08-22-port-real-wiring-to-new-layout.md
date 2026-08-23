@@ -2519,11 +2519,113 @@ git push
 
 ---
 
+### Task 15: Wire the Property Custodian QR Scanner and a detail-only asset route
+
+**Scope note:** the registry list stays split (`fixed-assets`/`supplies`), so
+there's no single `/property-custodian/assets` list page to reuse. But a
+QR-scanned asset (which could be either Fixed or Supplies — the scanner has
+no way to know in advance) still needs exactly one real detail page to land
+on. This task adds `/property-custodian/assets/:id` as a **detail-only**
+route — no matching list at `/property-custodian/assets` itself, and no
+`assets/new` route either (asset creation already has two real, unambiguous
+entry points from Task 13: `fixed-assets/new` and `supplies/new` — a third,
+type-ambiguous `assets/new` would be redundant and confusing, so it's
+deliberately not added). This route needs none of Task 12's `assetType`
+filter — `AssetDetailManager` fetches a single asset by ID, not a filtered
+list.
+
+**Files:**
+- Modify: `Frontend/app/property-custodian/[[...slug]]/page.tsx`
+
+**Interfaces:**
+- Consumes: `QrLookup` (`{ detailBasePath }`, from `Frontend/components/assets/QrLookup.tsx`, unmodified — Phase 1 Task 3), `AssetDetailManager` (`{ assetId, basePath, formsPath }`, unmodified — Phase 1 Task 4).
+- Produces: nothing new for other tasks to consume.
+
+- [ ] **Step 1: Add the two new router branches**
+
+Current file:
+```tsx
+import { AssetDetailManager } from '@/components/assets/AssetDetailManager';
+import { AssetRegistryList } from '@/components/assets/AssetRegistryList';
+import { RegisterAssetForm } from '@/components/assets/RegisterAssetForm';
+import { PropertyCustodianDashboard } from '@/components/property-custodian/PropertyCustodianDashboard';
+import { WorkflowPage } from '@/components/prototype/WorkflowPage';
+import { ProposedUserRole } from '@/lib/roles/proposed-roles';
+
+export default async function PropertyCustodianPage({ params }: Readonly<{ params: Promise<{ slug?: string[] }> }>) {
+  const { slug } = await params;
+  const segment = slug?.[0] ?? 'dashboard';
+  const child = slug?.[1];
+  if (segment === 'dashboard') return <PropertyCustodianDashboard />;
+  if (segment === 'fixed-assets' && child === 'new') return <RegisterAssetForm basePath="/property-custodian/fixed-assets" />;
+  if (segment === 'fixed-assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/fixed-assets" formsPath="/it-personnel/forms" />;
+  if (segment === 'fixed-assets') return <AssetRegistryList basePath="/property-custodian/fixed-assets" assetType="Fixed" title="Fixed Asset Registry" />;
+  if (segment === 'supplies' && child === 'new') return <RegisterAssetForm basePath="/property-custodian/supplies" />;
+  if (segment === 'supplies' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/supplies" formsPath="/it-personnel/forms" />;
+  if (segment === 'supplies') return <AssetRegistryList basePath="/property-custodian/supplies" assetType="Supplies" title="Supply Inventory" />;
+  return <WorkflowPage role={ProposedUserRole.PROPERTY_CUSTODIAN} slug={segment} />;
+}
+```
+
+Replace with:
+```tsx
+import { AssetDetailManager } from '@/components/assets/AssetDetailManager';
+import { AssetRegistryList } from '@/components/assets/AssetRegistryList';
+import { QrLookup } from '@/components/assets/QrLookup';
+import { RegisterAssetForm } from '@/components/assets/RegisterAssetForm';
+import { PropertyCustodianDashboard } from '@/components/property-custodian/PropertyCustodianDashboard';
+import { WorkflowPage } from '@/components/prototype/WorkflowPage';
+import { ProposedUserRole } from '@/lib/roles/proposed-roles';
+
+export default async function PropertyCustodianPage({ params }: Readonly<{ params: Promise<{ slug?: string[] }> }>) {
+  const { slug } = await params;
+  const segment = slug?.[0] ?? 'dashboard';
+  const child = slug?.[1];
+  if (segment === 'dashboard') return <PropertyCustodianDashboard />;
+  if (segment === 'fixed-assets' && child === 'new') return <RegisterAssetForm basePath="/property-custodian/fixed-assets" />;
+  if (segment === 'fixed-assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/fixed-assets" formsPath="/it-personnel/forms" />;
+  if (segment === 'fixed-assets') return <AssetRegistryList basePath="/property-custodian/fixed-assets" assetType="Fixed" title="Fixed Asset Registry" />;
+  if (segment === 'supplies' && child === 'new') return <RegisterAssetForm basePath="/property-custodian/supplies" />;
+  if (segment === 'supplies' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/supplies" formsPath="/it-personnel/forms" />;
+  if (segment === 'supplies') return <AssetRegistryList basePath="/property-custodian/supplies" assetType="Supplies" title="Supply Inventory" />;
+  if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/assets" formsPath="/it-personnel/forms" />;
+  if (segment === 'qr-scanner') return <QrLookup detailBasePath="/property-custodian/assets" />;
+  return <WorkflowPage role={ProposedUserRole.PROPERTY_CUSTODIAN} slug={segment} />;
+}
+```
+(`basePath` is currently unused inside `AssetDetailManager`'s own body —
+confirmed in Phase 1 Task 4's review — so passing a detail-only base path
+with no matching list page is safe; it drives no navigation today.)
+
+- [ ] **Step 2: Verify**
+
+```bash
+cd Frontend && npx tsc --noEmit && npx eslint "app/property-custodian/[[...slug]]/page.tsx" --max-warnings 0 && npm run test && npm run build
+```
+Expected: all four clean/succeed.
+
+- [ ] **Step 3: Manual check** (human, browser)
+
+Log in as Property Custodian. Visit `/property-custodian/qr-scanner`, search
+by an existing asset's property number or QR value (try one Fixed and one
+Supplies asset), and confirm "View Full Asset Details" navigates to
+`/property-custodian/assets/<id>` and shows the real, editable detail page
+for that specific asset regardless of which subtype it is.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add "Frontend/app/property-custodian/[[...slug]]/page.tsx"
+git commit -m "feat(property-custodian): wire QR/barcode lookup and a detail-only asset route to real data"
+git push
+```
+
+---
+
 ### Remaining Phase 4 tasks — scoped, not yet detailed
 
 Expand each to full steps immediately before starting it (rolling wave), following the precedents already established:
 
-- **Property Custodian QR Scanner** — reuse Task 3's `QrLookup` component. Needs one new router branch for a *detail-only* route, `/property-custodian/assets/:id` (not a list — the list stays split at `fixed-assets`/`supplies`), so a QR-scanned asset of either subtype has one real detail page to land on regardless of which tab it "belongs" to. Does not need Task 12's filter at all.
 - **Property Custodian Fulfillment** — same `isLiveFetchPage` extension as Phase 1 Task 5.
 - **Property Custodian Custody & Issuance** — same extension as Phase 1 Task 6, reusing `assetApiToRow`/the custody `ConfirmDialog` fields as-is.
 - **Property Custodian Disposal Recommendations** — same extension as Phase 1 Task 8: reuses `submitMaintenanceDecision('Recommend Disposal')` directly (this role has no "Maintenance & Repair" page at all, only disposal — there's nothing else to reuse from, but the function itself is role-agnostic, so it still applies unchanged), `fetchLiveRows` filtered to `status: 'available'`.
