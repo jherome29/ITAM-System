@@ -1892,7 +1892,488 @@ git push
 
 ## Phase 4: Property Custodian / Property Officer asset pages
 
-Scoped, not yet detailed. Same techniques as Phase 1 (Tasks 1-8), applied to `/property-custodian/*` and `/property-officer/*`'s asset/fulfillment/custody pages — backend already scopes these two roles to Fixed + Supplies asset types, confirmed working in the 2026-08-21 audit. Reconciliation/replacement-validation pages excluded per the spec's non-goals. Expand to full steps when Phase 3 is done.
+**Scope investigation (found while expanding this phase):** both roles share the
+same backend asset-type scope, `[Fixed, Supplies]`
+(`Backend/src/common/utils/asset-type-scope.util.ts:11-13`). Property
+*Officer*'s new-layout nav has one unified `/property-officer/assets` route —
+same shape as IT Asset Custodian's Phase 1 Task 4, directly reusable, no
+backend change needed. Property *Custodian*'s nav instead splits the registry
+into two separate pages, "Fixed Asset Registry" (`/property-custodian/fixed-assets`)
+and "Supply Inventory" (`/property-custodian/supplies`) — but `GET /v1/assets`
+has no per-request asset-type filter, only the role's full authorized set in
+one call, so there was no way to make those two tabs show genuinely different,
+correctly-paginated content without a backend change. **Presented to the user
+as a decision point; approved: add a small, defensive `assetType` filter to
+`GET /v1/assets`** (Task 12) that only *narrows* within a role's
+already-authorized scope — it can never widen it (a Property role requesting
+`ICT` is rejected, not silently ignored). Task 13 then wires both split tabs
+using it. QR Scanner and the disposal/fulfillment/custody pages don't need
+this filter at all (they already work on the full authorized set, same as
+Phase 1) — see the per-task notes below for why.
+
+Also found: `AssetType` enum values are **not** lowercase snake_case, unlike
+every other enum in this codebase — `packages/shared/src/enums/index.ts:19-23`
+defines `ICT = 'ICT'`, `FIXED = 'Fixed'`, `SUPPLIES = 'Supplies'`. Every task
+below that sends or filters by asset type uses these exact values verbatim.
+Do not "correct" them to lowercase — that would be the bug, not the fix, for
+this one enum specifically.
+
+Reconciliation, replacement-validation, and disposal-*review* pages (Property
+Officer's "Inventory Corrections"/"Reconciliation"/"Replacement Validation")
+are excluded per the spec's non-goals and stay mock. Property Officer's
+"Disposal Review" (Approve/Reject/Return-for-Revision on a flagged asset) and
+"Audit History" (a full log browse) are also excluded from this phase — no
+backend endpoint exists for either (disposal only has a one-way
+`flagged_for_disposal → disposed` transition, no approve/reject step; `GET
+/v1/audit`, the full log, authorizes only System Admin and Management, not
+Property Officer — confirmed in `Backend/src/audit/audit.controller.ts:29-30`).
+Both stay mock, same as today.
+
+### Task 12: Add a defensive `assetType` filter to `GET /v1/assets`
+
+**Files:**
+- Modify: `Backend/src/assets/assets.service.ts`
+- Modify: `Backend/src/assets/assets.controller.ts`
+- Modify: `Backend/src/assets/assets.service.spec.ts`
+
+**Interfaces:**
+- Consumes: nothing new.
+- Produces: `AssetsService.findAll()` gains a 6th optional parameter,
+  `requestedAssetType?: string` — narrows the existing `assetTypeScope` param
+  to a single type, but only if that type is already within the caller's
+  authorized scope (or the caller is unscoped, e.g. System Admin/Management).
+  `GET /v1/assets` gains an optional `assetType` query string with the same
+  narrowing behavior. Omitting it reproduces today's exact behavior — every
+  existing caller (all of Phase 1's `assetsApi.list()` call sites) is
+  unaffected.
+
+- [ ] **Step 1: Modify `AssetsService.findAll()`**
+
+Current method (`Backend/src/assets/assets.service.ts`, inside the class,
+right after the JSDoc-style section comments):
+```ts
+  async findAll(
+    page = 1,
+    limit = 20,
+    search?: string,
+    status?: string,
+    assetTypeScope?: AssetType[],
+  ) {
+    const qb = this.assetRepo
+      .createQueryBuilder('a')
+      .orderBy('a.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    if (assetTypeScope && assetTypeScope.length > 0) {
+      qb.andWhere('a.assetType IN (:...assetTypeScope)', { assetTypeScope });
+    }
+
+    if (status) {
+      qb.andWhere('a.status = :status', { status: status.toLowerCase() });
+    }
+
+    if (search) {
+      const q = `%${search}%`;
+      qb.andWhere(
+        '(LOWER(a.itemDescription) LIKE LOWER(:q) OR LOWER(a.propertyNumber) LIKE LOWER(:q) OR LOWER(a.serialNumber) LIKE LOWER(:q) OR LOWER(a.brand) LIKE LOWER(:q))',
+        { q },
+      );
+    }
+
+    const [data, total] = await qb.getManyAndCount();
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+```
+
+Replace with:
+```ts
+  async findAll(
+    page = 1,
+    limit = 20,
+    search?: string,
+    status?: string,
+    assetTypeScope?: AssetType[],
+    requestedAssetType?: string,
+  ) {
+    // Narrow within the caller's already-authorized scope only — never widen
+    // it. Property Custodian's UI splits Fixed and Supplies into separate
+    // list tabs; this lets either tab ask for just its own subtype. Reassigns
+    // the existing `assetTypeScope` param in place so the WHERE-clause
+    // construction below (and every test already covering it) needs zero
+    // changes.
+    if (requestedAssetType) {
+      if (!Object.values(AssetType).includes(requestedAssetType as AssetType)) {
+        throw new BadRequestException('Invalid assetType filter.');
+      }
+      if (
+        assetTypeScope &&
+        !assetTypeScope.includes(requestedAssetType as AssetType)
+      ) {
+        throw new ForbiddenException('Not authorized for this asset type.');
+      }
+      assetTypeScope = [requestedAssetType as AssetType];
+    }
+
+    const qb = this.assetRepo
+      .createQueryBuilder('a')
+      .orderBy('a.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    if (assetTypeScope && assetTypeScope.length > 0) {
+      qb.andWhere('a.assetType IN (:...assetTypeScope)', { assetTypeScope });
+    }
+
+    if (status) {
+      qb.andWhere('a.status = :status', { status: status.toLowerCase() });
+    }
+
+    if (search) {
+      const q = `%${search}%`;
+      qb.andWhere(
+        '(LOWER(a.itemDescription) LIKE LOWER(:q) OR LOWER(a.propertyNumber) LIKE LOWER(:q) OR LOWER(a.serialNumber) LIKE LOWER(:q) OR LOWER(a.brand) LIKE LOWER(:q))',
+        { q },
+      );
+    }
+
+    const [data, total] = await qb.getManyAndCount();
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+```
+(`BadRequestException`, `ForbiddenException`, and `AssetType` are already
+imported at the top of this file — no new imports needed.)
+
+- [ ] **Step 2: Modify the controller to accept and pass through the new query param**
+
+Current (`Backend/src/assets/assets.controller.ts`):
+```ts
+  async findAll(
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Req() req?: AuthenticatedRequest,
+  ) {
+    const assetTypeScope = req
+      ? resolveAssetTypeScope(req.user.role)
+      : undefined;
+    const result = await this.assetsService.findAll(
+      +page,
+      +limit,
+      search,
+      status,
+      assetTypeScope,
+    );
+    return { message: 'Assets retrieved successfully', data: result };
+  }
+```
+
+Replace with:
+```ts
+  async findAll(
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('assetType') assetType?: string,
+    @Req() req?: AuthenticatedRequest,
+  ) {
+    const assetTypeScope = req
+      ? resolveAssetTypeScope(req.user.role)
+      : undefined;
+    const result = await this.assetsService.findAll(
+      +page,
+      +limit,
+      search,
+      status,
+      assetTypeScope,
+      assetType,
+    );
+    return { message: 'Assets retrieved successfully', data: result };
+  }
+```
+
+- [ ] **Step 3: Add tests**
+
+In `Backend/src/assets/assets.service.spec.ts`, inside the existing
+`describe('findAll()', ...)` block (find the last test in that block —
+`'does not add an assetType filter when assetTypeScope is undefined'` — and
+insert these three new tests directly after it, before the block's closing
+`});`):
+```ts
+    it('narrows to the requested type when it is within the authorized scope', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(
+        1,
+        20,
+        undefined,
+        undefined,
+        [AssetType.FIXED, AssetType.SUPPLIES],
+        AssetType.FIXED,
+      );
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'a.assetType IN (:...assetTypeScope)',
+        { assetTypeScope: [AssetType.FIXED] },
+      );
+    });
+
+    it('rejects a requested type outside the authorized scope', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await expect(
+        service.findAll(
+          1,
+          20,
+          undefined,
+          undefined,
+          [AssetType.FIXED, AssetType.SUPPLIES],
+          AssetType.ICT,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects a requested type that is not a real AssetType value', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await expect(
+        service.findAll(1, 20, undefined, undefined, undefined, 'not-a-type'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('allows an unscoped role (e.g. System Admin) to request any single real type', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(
+        1,
+        20,
+        undefined,
+        undefined,
+        undefined,
+        AssetType.SUPPLIES,
+      );
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'a.assetType IN (:...assetTypeScope)',
+        { assetTypeScope: [AssetType.SUPPLIES] },
+      );
+    });
+```
+(`ForbiddenException`, `BadRequestException`, and `AssetType` are already
+imported at the top of this spec file, lines 3-20 — no new imports needed.)
+
+- [ ] **Step 4: Verify**
+
+```bash
+cd Backend && npx tsc --noEmit && npx eslint "{src,apps,libs,test}/**/*.ts" --max-warnings 0 && npm run build && npm run test
+```
+Expected: all four clean/succeed. Confirm the test summary shows 4 new
+passing tests (0 failed) in addition to every pre-existing `findAll()` test.
+
+- [ ] **Step 5: Manual check** (human, browser or API client)
+
+Not browser-visible on its own (no frontend consumes this yet — Task 13
+does). Optional: with a valid Property Custodian JWT, `GET
+/api/v1/assets?assetType=Fixed` should return only Fixed assets;
+`GET /api/v1/assets?assetType=ICT` should return `403 Forbidden`;
+`GET /api/v1/assets?assetType=bogus` should return `400 Bad Request`;
+`GET /api/v1/assets` (no param) should return the same combined
+Fixed+Supplies result as before this change.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add Backend/src/assets/assets.service.ts Backend/src/assets/assets.controller.ts Backend/src/assets/assets.service.spec.ts
+git commit -m "feat(assets): add a role-scoped assetType filter to GET /v1/assets"
+git push
+```
+
+---
+
+### Task 13: Wire Property Custodian's Fixed Asset Registry and Supply Inventory tabs
+
+**Files:**
+- Modify: `Frontend/lib/api/assets.ts`
+- Modify: `Frontend/components/assets/AssetRegistryList.tsx`
+- Modify: `Frontend/app/property-custodian/[[...slug]]/page.tsx`
+
+**Interfaces:**
+- Consumes: `assetsApi.list()` gains a 5th optional parameter, `assetType?: string` (Task 12's new query param) — omitting it preserves every existing call site's current behavior.
+- Produces: `AssetRegistryList` gains two new optional props, `assetType?: string` and `title?: string` (default `'Asset Inventory'`, matching today's hardcoded value) — the existing IT Asset Custodian call site (`<AssetRegistryList basePath="/it-asset-custodian/assets" />`) needs no changes.
+
+- [ ] **Step 1: Add the `assetType` param to the API client**
+
+In `Frontend/lib/api/assets.ts`, find:
+```ts
+  list: (page = 1, limit = 15, search?: string, status?: string) => {
+    const params: Record<string, string | number> = { page, limit };
+    if (search) params.search = search;
+    if (status) params.status = status;
+    return client.get<ApiResponse<PaginatedResponse<Asset>>>('/v1/assets', { params }).then((r) => r.data);
+  },
+```
+Replace with:
+```ts
+  list: (page = 1, limit = 15, search?: string, status?: string, assetType?: string) => {
+    const params: Record<string, string | number> = { page, limit };
+    if (search) params.search = search;
+    if (status) params.status = status;
+    if (assetType) params.assetType = assetType;
+    return client.get<ApiResponse<PaginatedResponse<Asset>>>('/v1/assets', { params }).then((r) => r.data);
+  },
+```
+
+- [ ] **Step 2: Parameterize `AssetRegistryList`**
+
+Find:
+```tsx
+export function AssetRegistryList({ basePath }: Readonly<{ basePath: string }>) {
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const limit = 15;
+
+  useEffect(() => {
+    assetsApi
+      .list(page, limit, search || undefined, filterStatus || undefined)
+      .then((res) => {
+        setAssets(res.data.data ?? []);
+        setTotalPages(res.data.totalPages ?? 1);
+      })
+      .catch(() => setAssets([]))
+      .finally(() => setLoading(false));
+  }, [page, search, filterStatus]);
+```
+Replace with:
+```tsx
+export function AssetRegistryList({
+  basePath,
+  assetType,
+  title = 'Asset Inventory',
+}: Readonly<{ basePath: string; assetType?: string; title?: string }>) {
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const limit = 15;
+
+  useEffect(() => {
+    assetsApi
+      .list(page, limit, search || undefined, filterStatus || undefined, assetType)
+      .then((res) => {
+        setAssets(res.data.data ?? []);
+        setTotalPages(res.data.totalPages ?? 1);
+      })
+      .catch(() => setAssets([]))
+      .finally(() => setLoading(false));
+  }, [page, search, filterStatus, assetType]);
+```
+
+Then find:
+```tsx
+      <PageHeader
+        title="Asset Inventory"
+```
+Replace with:
+```tsx
+      <PageHeader
+        title={title}
+```
+(Nothing else in the file changes — the table, pagination, and "Register New Asset" link all read `basePath`/`assets` exactly as before.)
+
+- [ ] **Step 3: Wire the router**
+
+Current file (`Frontend/app/property-custodian/[[...slug]]/page.tsx`):
+```tsx
+import { RoleDashboard } from '@/components/prototype/RoleDashboard';
+import { AssetInventoryGallery } from '@/components/inventory/AssetInventoryGallery';
+import { WorkflowPage } from '@/components/prototype/WorkflowPage';
+import { ProposedUserRole } from '@/lib/roles/proposed-roles';
+
+export default async function PropertyCustodianPage({ params }: Readonly<{ params: Promise<{ slug?: string[] }> }>) {
+  const { slug } = await params;
+  const segment = slug?.[0] ?? 'dashboard';
+  if (segment === 'dashboard') return <RoleDashboard role={ProposedUserRole.PROPERTY_CUSTODIAN} />;
+  if (segment === 'fixed-assets') return <AssetInventoryGallery kind="property" />;
+  if (segment === 'supplies') return <AssetInventoryGallery kind="supply" />;
+  return <WorkflowPage role={ProposedUserRole.PROPERTY_CUSTODIAN} slug={segment} />;
+}
+```
+
+Replace with:
+```tsx
+import { AssetDetailManager } from '@/components/assets/AssetDetailManager';
+import { AssetRegistryList } from '@/components/assets/AssetRegistryList';
+import { RegisterAssetForm } from '@/components/assets/RegisterAssetForm';
+import { RoleDashboard } from '@/components/prototype/RoleDashboard';
+import { WorkflowPage } from '@/components/prototype/WorkflowPage';
+import { ProposedUserRole } from '@/lib/roles/proposed-roles';
+
+export default async function PropertyCustodianPage({ params }: Readonly<{ params: Promise<{ slug?: string[] }> }>) {
+  const { slug } = await params;
+  const segment = slug?.[0] ?? 'dashboard';
+  const child = slug?.[1];
+  if (segment === 'dashboard') return <RoleDashboard role={ProposedUserRole.PROPERTY_CUSTODIAN} />;
+  if (segment === 'fixed-assets' && child === 'new') return <RegisterAssetForm basePath="/property-custodian/fixed-assets" />;
+  if (segment === 'fixed-assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/fixed-assets" formsPath="/it-personnel/forms" />;
+  if (segment === 'fixed-assets') return <AssetRegistryList basePath="/property-custodian/fixed-assets" assetType="Fixed" title="Fixed Asset Registry" />;
+  if (segment === 'supplies' && child === 'new') return <RegisterAssetForm basePath="/property-custodian/supplies" />;
+  if (segment === 'supplies' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/supplies" formsPath="/it-personnel/forms" />;
+  if (segment === 'supplies') return <AssetRegistryList basePath="/property-custodian/supplies" assetType="Supplies" title="Supply Inventory" />;
+  return <WorkflowPage role={ProposedUserRole.PROPERTY_CUSTODIAN} slug={segment} />;
+}
+```
+(`AssetInventoryGallery` import is removed — nothing else in this file uses
+it. `RegisterAssetForm` and `AssetDetailManager` are unmodified, reused
+exactly as Phase 1 Task 4 built them — `AssetType`'s exact value `'Fixed'`/
+`'Supplies'` is what's passed to the new `assetType` prop, matching the enum
+note at the top of this phase.)
+
+- [ ] **Step 4: Verify**
+
+```bash
+cd Frontend && npx tsc --noEmit && npx eslint lib/api/assets.ts components/assets/AssetRegistryList.tsx "app/property-custodian/[[...slug]]/page.tsx" --max-warnings 0 && npm run test && npm run build
+```
+Expected: all four clean/succeed.
+
+- [ ] **Step 5: Manual check** (human, browser)
+
+Log in as Property Custodian (check `docs/guides/ROLES.md` for credentials —
+add them there first if missing, per the note in `TEAM-HANDOFF.md`). Visit
+`/property-custodian/fixed-assets` and `/property-custodian/supplies` —
+each should show a genuinely different, correctly-paginated list (Fixed-only
+vs Supplies-only), "Register New Asset" should work on both, and clicking a
+row should open a real, editable detail page for that specific item.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add Frontend/lib/api/assets.ts Frontend/components/assets/AssetRegistryList.tsx "Frontend/app/property-custodian/[[...slug]]/page.tsx"
+git commit -m "feat(property-custodian): wire Fixed Asset Registry and Supply Inventory to real, type-filtered data"
+git push
+```
+
+---
+
+### Remaining Phase 4 tasks — scoped, not yet detailed
+
+Expand each to full steps immediately before starting it (rolling wave), following the precedents already established:
+
+- **Property Custodian Dashboard** — same technique as Task 2/Task 9: new `PropertyCustodianDashboard.tsx`, real `assetsApi.stats()` (combined Fixed+Supplies — a dashboard-level KPI honestly describing the role's whole scope, no split needed here) + `requisitionsApi.list(1, 15, 'pending_fulfillment')` + `notificationsApi.list()`.
+- **Property Custodian QR Scanner** — reuse Task 3's `QrLookup` component. Needs one new router branch for a *detail-only* route, `/property-custodian/assets/:id` (not a list — the list stays split at `fixed-assets`/`supplies`), so a QR-scanned asset of either subtype has one real detail page to land on regardless of which tab it "belongs" to. Does not need Task 12's filter at all.
+- **Property Custodian Fulfillment** — same `isLiveFetchPage` extension as Phase 1 Task 5.
+- **Property Custodian Custody & Issuance** — same extension as Phase 1 Task 6, reusing `assetApiToRow`/the custody `ConfirmDialog` fields as-is.
+- **Property Custodian Disposal Recommendations** — same extension as Phase 1 Task 8: reuses `submitMaintenanceDecision('Recommend Disposal')` directly (this role has no "Maintenance & Repair" page at all, only disposal — there's nothing else to reuse from, but the function itself is role-agnostic, so it still applies unchanged), `fetchLiveRows` filtered to `status: 'available'`.
+- **Property Officer Dashboard** — same technique, "Consolidated Dashboard."
+- **Property Officer Consolidated Asset Registry** (`/property-officer/assets`) — same technique as Phase 1 Task 4 exactly (single unified list, the role's full Fixed+Supplies scope, no split, no Task 12 filter needed).
+- **Property Officer Reports & Forms** (`/property-officer/reports`) — same technique as Task 11 (`FormsArchiveContent`, read-only browse + re-download): `PROPERTY_OFFICER` authorizes `GET /v1/reports/forms` and the download endpoint but not `POST /v1/reports/forms/generate` or `POST /v1/reports/generate` — read-only-only, same reasoning as Task 11.
+
+---
 
 ---
 
