@@ -273,7 +273,7 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
     (role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')) ||
     (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') ||
     (role === ProposedUserRole.IT_ASSET_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody' || normalizedSlug === 'maintenance' || normalizedSlug === 'disposal')) ||
-    (role === ProposedUserRole.PROPERTY_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody'));
+    (role === ProposedUserRole.PROPERTY_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody' || normalizedSlug === 'disposal'));
   // The Approving Officer's own approvals queue is the one confirm-action flow in this
   // shared component that must persist for real — see submitApprovalDecision below.
   // Every other role/slug (including this same officer's 'requisitions' tab, which has
@@ -292,6 +292,8 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
     isLiveFetchPage && role === ProposedUserRole.PROPERTY_CUSTODIAN && normalizedSlug === 'fulfillment';
   const isPropertyCustodianLiveCustody =
     isLiveFetchPage && role === ProposedUserRole.PROPERTY_CUSTODIAN && normalizedSlug === 'custody';
+  const isPropertyCustodianLiveDisposal =
+    isLiveFetchPage && role === ProposedUserRole.PROPERTY_CUSTODIAN && normalizedSlug === 'disposal';
   const [rows, setRows] = useState<Row[]>(() => (isLiveFetchPage ? [] : rowsFor(role, normalizedSlug)));
   const [loading, setLoading] = useState(isLiveFetchPage);
 
@@ -322,7 +324,7 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
         setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
       });
     }
-    if (role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'disposal') {
+    if ((role === ProposedUserRole.IT_ASSET_CUSTODIAN || role === ProposedUserRole.PROPERTY_CUSTODIAN) && normalizedSlug === 'disposal') {
       return assetsApi.list(1, LIVE_FETCH_LIMIT, undefined, 'available').then((res) => {
         setRows(res.data.data.map(assetApiToRow));
         setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
@@ -608,7 +610,7 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
   // synthetic row into real data. Hide it on these four pages; the other live pages
   // (approvals, audit) never had a header action to begin with.
   const canPrimaryAct = !readOnly && content.action &&
-    !(isItAssetCustodianLiveFulfillment || isItAssetCustodianLiveCustody || isItAssetCustodianLiveMaintenance || isItAssetCustodianLiveDisposal || isPropertyCustodianLiveFulfillment || isPropertyCustodianLiveCustody);
+    !(isItAssetCustodianLiveFulfillment || isItAssetCustodianLiveCustody || isItAssetCustodianLiveMaintenance || isItAssetCustodianLiveDisposal || isPropertyCustodianLiveFulfillment || isPropertyCustodianLiveCustody || isPropertyCustodianLiveDisposal);
   const primaryPermission = actionPermissionFor(role);
   // Live-fetched rows carry a real requester UUID, not the mock 'EMP-003' id — compare
   // against the actual logged-in user's id on the live approvals page.
@@ -924,7 +926,8 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
           (isItAssetCustodianLiveMaintenance && (confirmAction === 'Mark Complete' || confirmAction === 'Recommend Disposal')) ||
           (isItAssetCustodianLiveDisposal && confirmAction === 'Recommend Disposal') ||
           (isPropertyCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) ||
-          (isPropertyCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return'))
+          (isPropertyCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) ||
+          (isPropertyCustodianLiveDisposal && confirmAction === 'Recommend Disposal')
             ? 'This calls the live backend API and updates the real record.'
             : 'This updates frontend mock state only. Backend authorization and persistence will be implemented later.'
         }
@@ -959,6 +962,10 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
             void submitCustodyDecision(confirmAction);
             return;
           }
+          if (isPropertyCustodianLiveDisposal && confirmAction === 'Recommend Disposal') {
+            void submitMaintenanceDecision(confirmAction);
+            return;
+          }
           runAction(confirmAction);
         }}
         onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setTransferToLocation(''); }}
@@ -967,7 +974,8 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
           (isItAssetCustodianLiveFulfillment && confirmAction === 'On Hold') ||
           (isItAssetCustodianLiveMaintenance && confirmAction === 'Recommend Disposal') ||
           (isItAssetCustodianLiveDisposal && confirmAction === 'Recommend Disposal') ||
-          (isPropertyCustodianLiveFulfillment && confirmAction === 'On Hold')) && (
+          (isPropertyCustodianLiveFulfillment && confirmAction === 'On Hold') ||
+          (isPropertyCustodianLiveDisposal && confirmAction === 'Recommend Disposal')) && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Remarks</span>
             <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
