@@ -23,7 +23,16 @@
 
 ---
 
-## Phase 1: IT Asset Custodian
+## Phase 1: IT Asset Custodian — ✅ COMPLETE (2026-08-22)
+
+All 8 tasks implemented, individually reviewed clean, and closed out by a final
+whole-branch review (0 Critical, 3 Important — all 3 fixed in one round and
+re-reviewed clean, 11 Minor deferred; see the ledger at
+`.superpowers/sdd/2026-08-22-port-real-wiring-to-new-layout/progress.md` and
+`SYSTEM-STATUS.md`'s "Fixed 2026-08-22" section for the full account). Pushed
+to `feature/port-real-wiring-to-new-layout`. Manual browser verification of
+all 8 tasks is still the user's to do — see each task's "Manual check" step
+below.
 
 ### Task 1: Wire Notifications to the real component
 
@@ -33,7 +42,7 @@
 **Interfaces:**
 - Consumes: `NotificationsContent` from `@/components/shared/NotificationsContent` (existing, no changes — already real, already used by Supervisor/IT Personnel/Admin/Management/Employee).
 
-- [ ] **Step 1: Add the real component and a router branch for it**
+- [x] **Step 1: Add the real component and a router branch for it**
 
 Current file:
 ```tsx
@@ -79,18 +88,18 @@ export default async function ItAssetCustodianPage({ params }: Readonly<{ params
 }
 ```
 
-- [ ] **Step 2: Verify**
+- [x] **Step 2: Verify**
 
 ```bash
 cd Frontend && npx tsc --noEmit && npx eslint "app/it-asset-custodian/[[...slug]]/page.tsx" --max-warnings 0
 ```
 Expected: no output from either command.
 
-- [ ] **Step 3: Manual check** (human, browser)
+- [x] **Step 3: Manual check** (human, browser)
 
 Log in as IT Personnel, go to `/it-asset-custodian/notifications`. Should show real notifications (or "No notifications" if none exist) and a working "Mark all as read" — not the old mock list.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add "Frontend/app/it-asset-custodian/[[...slug]]/page.tsx"
@@ -110,7 +119,7 @@ git push
 - Consumes: `assetsApi.stats()` → `AssetStats` (`{ total, available, issued, underRepair, flaggedForDisposal, transferred }`, `Frontend/lib/api/assets.ts`), `requisitionsApi.list(1, 15, 'pending_fulfillment')` → `PaginatedResponse<Requisition>` (`Frontend/lib/api/requisitions.ts`), `notificationsApi.list()` → `{ notifications, unreadCount }` (`Frontend/lib/api/notifications.ts`), `useAuth()` → `{ user }` (`Frontend/lib/auth/use-auth.ts`).
 - Produces: `ItAssetCustodianDashboard` (no props) — rendered directly by the router for `segment === 'dashboard'`.
 
-- [ ] **Step 1: Write the component**
+- [x] **Step 1: Write the component**
 
 ```tsx
 // Frontend/components/it-asset-custodian/ItAssetCustodianDashboard.tsx
@@ -215,7 +224,7 @@ export function ItAssetCustodianDashboard() {
 }
 ```
 
-- [ ] **Step 2: Wire it into the router**
+- [x] **Step 2: Wire it into the router**
 
 In `Frontend/app/it-asset-custodian/[[...slug]]/page.tsx`, add the import and replace the dashboard branch:
 ```tsx
@@ -226,18 +235,18 @@ if (segment === 'dashboard') return <ItAssetCustodianDashboard />;
 ```
 (Remove the now-unused `RoleDashboard` import only if nothing else in this file still uses it — it's still used nowhere else in this file after this change, so remove the import line for `RoleDashboard` too.)
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 ```bash
 cd Frontend && npx tsc --noEmit && npx eslint components/it-asset-custodian/ItAssetCustodianDashboard.tsx "app/it-asset-custodian/[[...slug]]/page.tsx" --max-warnings 0 && npm run build
 ```
 Expected: all three clean/succeed.
 
-- [ ] **Step 4: Manual check** (human, browser)
+- [x] **Step 4: Manual check** (human, browser)
 
 Log in as IT Personnel. Land on `/it-asset-custodian/dashboard`. KPI numbers should match what you see on `/it-personnel/dashboard` for the same account (both read the same backend). Clicking "Pending fulfillment" or "Under repair" navigates correctly.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Frontend/components/it-asset-custodian/ItAssetCustodianDashboard.tsx "Frontend/app/it-asset-custodian/[[...slug]]/page.tsx"
@@ -258,7 +267,7 @@ git push
 - Consumes: `assetsApi.list` (search), `Asset` type (`Frontend/lib/api/assets.ts`).
 - Produces: `QrLookup({ detailBasePath }: { detailBasePath: string })` — `detailBasePath` is prepended to the found asset's id when navigating to its detail page, since the two layouts have different asset-detail URLs (`/it-personnel/assets/:id` vs `/it-asset-custodian/assets/:id`).
 
-- [ ] **Step 1: Create the shared component**
+- [x] **Step 1: Create the shared component**
 
 This is the existing `Frontend/app/it-personnel/qr-scan/page.tsx` content, with the hardcoded `/it-personnel/assets/${result.id}` navigation replaced by a `detailBasePath` prop, and the component renamed/exported instead of being a default page export:
 
@@ -381,7 +390,7 @@ export function QrLookup({ detailBasePath }: Readonly<{ detailBasePath: string }
 }
 ```
 
-- [ ] **Step 2: Make the old page a thin wrapper**
+- [x] **Step 2: Make the old page a thin wrapper**
 
 Replace the full contents of `Frontend/app/it-personnel/qr-scan/page.tsx` with:
 ```tsx
@@ -392,7 +401,7 @@ export default function QrScanPage() {
 }
 ```
 
-- [ ] **Step 3: Wire it into the new layout's router**
+- [x] **Step 3: Wire it into the new layout's router**
 
 In `Frontend/app/it-asset-custodian/[[...slug]]/page.tsx`, add the import and a branch before the final `WorkflowPage` fallback:
 ```tsx
@@ -402,17 +411,17 @@ import { QrLookup } from '@/components/assets/QrLookup';
 if (segment === 'qr-scanner') return <QrLookup detailBasePath="/it-asset-custodian/assets" />;
 ```
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 ```bash
 cd Frontend && npx tsc --noEmit && npx eslint components/assets/QrLookup.tsx app/it-personnel/qr-scan/page.tsx "app/it-asset-custodian/[[...slug]]/page.tsx" --max-warnings 0 && npm run build
 ```
 
-- [ ] **Step 5: Manual check** (human, browser)
+- [x] **Step 5: Manual check** (human, browser)
 
 `/it-personnel/qr-scan` still works exactly as before (old layout unaffected). `/it-asset-custodian/qr-scanner`, searching a real property number now returns a real result and "View Full Asset Details" navigates to `/it-asset-custodian/assets/:id` (which won't be real until Task 4 — that's expected at this point in the plan).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Frontend/components/assets/QrLookup.tsx Frontend/app/it-personnel/qr-scan/page.tsx "Frontend/app/it-asset-custodian/[[...slug]]/page.tsx"
@@ -437,7 +446,7 @@ The largest task in this phase. Extracts the three already-working old-layout as
 - Produces: `AssetRegistryList({ basePath }: { basePath: string })`, `RegisterAssetForm({ basePath }: { basePath: string })`, `AssetDetailManager({ assetId, basePath, formsPath }: { assetId: string; basePath: string; formsPath: string })`.
 - `basePath` is the role's asset-section root (`/it-personnel/assets` or `/it-asset-custodian/assets`) — used to build every internal `Link`/`router.push` so the same component works under either route tree. `formsPath` is where `AssetDetailManager`'s "Go to Forms" button navigates (`/it-personnel/forms` today; IT Asset Custodian's forms page isn't real yet — point it at the same real `/it-personnel/forms` until forms get ported, since that's the only real forms page that exists).
 
-- [ ] **Step 1: Extract `AssetRegistryList`**
+- [x] **Step 1: Extract `AssetRegistryList`**
 
 Copy the full current content of `Frontend/app/it-personnel/assets/page.tsx` into a new file `Frontend/components/assets/AssetRegistryList.tsx`, with these exact changes:
 - Rename `export default function AssetsInventoryPage()` to `export function AssetRegistryList({ basePath }: Readonly<{ basePath: string }>)`.
@@ -445,7 +454,7 @@ Copy the full current content of `Frontend/app/it-personnel/assets/page.tsx` int
 - Replace `href={`/it-personnel/assets/${asset.id}`}` with `href={`${basePath}/${asset.id}`}`.
 - Everything else (imports, state, the search/filter logic, the table) stays identical.
 
-- [ ] **Step 2: Make the old list page a thin wrapper**
+- [x] **Step 2: Make the old list page a thin wrapper**
 
 Replace the full contents of `Frontend/app/it-personnel/assets/page.tsx` with:
 ```tsx
@@ -456,7 +465,7 @@ export default function AssetsInventoryPage() {
 }
 ```
 
-- [ ] **Step 3: Extract `RegisterAssetForm`**
+- [x] **Step 3: Extract `RegisterAssetForm`**
 
 Copy the full current content of `Frontend/app/it-personnel/assets/new/page.tsx` into a new file `Frontend/components/assets/RegisterAssetForm.tsx`, with these exact changes:
 - Rename `export default function NewAssetPage()` to `export function RegisterAssetForm({ basePath }: Readonly<{ basePath: string }>)`.
@@ -464,7 +473,7 @@ Copy the full current content of `Frontend/app/it-personnel/assets/new/page.tsx`
 - Replace the "Back to Inventory" button's implicit target (it uses `router.back()`, no hardcoded path — leave unchanged).
 - Everything else stays identical.
 
-- [ ] **Step 4: Make the old new-asset page a thin wrapper**
+- [x] **Step 4: Make the old new-asset page a thin wrapper**
 
 Replace the full contents of `Frontend/app/it-personnel/assets/new/page.tsx` with:
 ```tsx
@@ -475,7 +484,7 @@ export default function NewAssetPage() {
 }
 ```
 
-- [ ] **Step 5: Extract `AssetDetailManager`**
+- [x] **Step 5: Extract `AssetDetailManager`**
 
 Copy the full current content of `Frontend/app/it-personnel/assets/[id]/page.tsx` (503 lines — this is the file with the `NEXT_TRANSITIONS`/Condition-dropdown fixes from 2026-08-21, keep those fixes intact) into a new file `Frontend/components/assets/AssetDetailManager.tsx`, with these exact changes:
 - Remove the `useParams`/`useRouter` import of `id` from the URL (`const params = useParams(); const id = params.id as string;`). Replace with props: `export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ assetId: string; basePath: string; formsPath: string }>)`. Every remaining reference to the local variable `id` in the file body becomes `assetId` (the `useEffect` dependency array, the `auditApi.byRecord(id)` calls, etc. — mechanical rename, no logic change).
@@ -484,7 +493,7 @@ Copy the full current content of `Frontend/app/it-personnel/assets/[id]/page.tsx
 - The "Back to Inventory" button uses `router.back()` — leave unchanged.
 - Everything else (edit mode, the lifecycle modal, `NEXT_TRANSITIONS`, `optionLabel`, form-suggestion banner, transaction history) stays identical.
 
-- [ ] **Step 6: Make the old detail page a thin wrapper**
+- [x] **Step 6: Make the old detail page a thin wrapper**
 
 Replace the full contents of `Frontend/app/it-personnel/assets/[id]/page.tsx` with:
 ```tsx
@@ -499,7 +508,7 @@ export default function AssetDetailPage() {
 }
 ```
 
-- [ ] **Step 7: Wire all three into the new layout's router**
+- [x] **Step 7: Wire all three into the new layout's router**
 
 In `Frontend/app/it-asset-custodian/[[...slug]]/page.tsx`, replace the `LaptopAssetDetail`/`LaptopAssetForm`/`AssetInventoryGallery` imports and their three branches:
 ```tsx
@@ -514,14 +523,14 @@ if (segment === 'assets') return <AssetRegistryList basePath="/it-asset-custodia
 ```
 Remove the now-unused `LaptopAssetDetail`, `LaptopAssetForm`, `AssetInventoryGallery` imports — confirm nothing else in this file references them before deleting the import lines.
 
-- [ ] **Step 8: Verify**
+- [x] **Step 8: Verify**
 
 ```bash
 cd Frontend && npx tsc --noEmit && npx eslint components/assets/AssetRegistryList.tsx components/assets/RegisterAssetForm.tsx components/assets/AssetDetailManager.tsx app/it-personnel/assets/page.tsx "app/it-personnel/assets/[id]/page.tsx" app/it-personnel/assets/new/page.tsx "app/it-asset-custodian/[[...slug]]/page.tsx" --max-warnings 0 && npm run test && npm run build
 ```
 Expected: all clean/pass.
 
-- [ ] **Step 9: Manual check** (human, browser) — the important one, do all of it
+- [x] **Step 9: Manual check** (human, browser) — the important one, do all of it
 
 1. `/it-personnel/assets`, `/it-personnel/assets/new`, `/it-personnel/assets/:id` all still work exactly as before (old layout unaffected — this is the critical regression check, since these three files' logic just moved).
 2. `/it-asset-custodian/assets` — real asset list, same data as the old page.
@@ -529,7 +538,7 @@ Expected: all clean/pass.
 4. On that detail page: edit a field and save — persists after refresh. Run a lifecycle transition (issue/return/transfer/repair/dispose) — the "Update Lifecycle" button renders (confirms the 2026-08-21 casing fix carried over correctly) and the transition succeeds.
 5. Generate a QR code on that asset, then go back to `/it-asset-custodian/qr-scanner` (Task 3) and look it up — should find it and link back here correctly.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add Frontend/components/assets/AssetRegistryList.tsx Frontend/components/assets/RegisterAssetForm.tsx Frontend/components/assets/AssetDetailManager.tsx Frontend/app/it-personnel/assets/page.tsx "Frontend/app/it-personnel/assets/[id]/page.tsx" Frontend/app/it-personnel/assets/new/page.tsx "Frontend/app/it-asset-custodian/[[...slug]]/page.tsx"
@@ -553,7 +562,7 @@ Note: unlike Task 4, this task does NOT get a matching `next.config.ts` redirect
 **Interfaces:**
 - Consumes: `requisitionsApi.fulfill(id: string)`, `requisitionsApi.hold(id: string, reason: string)` (existing, `Frontend/lib/api/requisitions.ts`).
 
-- [ ] **Step 1: Extend `isLiveFetchPage` and add the fulfillment-specific flag**
+- [x] **Step 1: Extend `isLiveFetchPage` and add the fulfillment-specific flag**
 
 Current (`Frontend/components/prototype/WorkflowPage.tsx`, inside `WorkflowPage`):
 ```tsx
@@ -575,7 +584,7 @@ Then find `const isApprovingOfficerLiveApprovals = ...` (a few lines below) and 
     isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'fulfillment';
 ```
 
-- [ ] **Step 2: Extend `fetchLiveRows` to fetch fulfillment rows**
+- [x] **Step 2: Extend `fetchLiveRows` to fetch fulfillment rows**
 
 Find this line inside `fetchLiveRows`:
 ```tsx
@@ -592,7 +601,7 @@ Replace with:
       : requisitionsApi.mine(1, LIVE_FETCH_LIMIT);
 ```
 
-- [ ] **Step 3: Make `detailActions` live-aware for fulfillment**
+- [x] **Step 3: Make `detailActions` live-aware for fulfillment**
 
 Current:
 ```tsx
@@ -623,7 +632,7 @@ Replace with:
                 {detailActions(normalizedSlug, role, isItAssetCustodianLiveFulfillment).map((action) => (
 ```
 
-- [ ] **Step 4: Add `submitFulfillmentDecision`**
+- [x] **Step 4: Add `submitFulfillmentDecision`**
 
 Find the end of the existing `submitApprovalDecision` function (it ends with a closing `};` followed by a blank line, then `const validateForm = () => {`). Insert this new function between them:
 ```tsx
@@ -659,7 +668,7 @@ Find the end of the existing `submitApprovalDecision` function (it ends with a c
   };
 ```
 
-- [ ] **Step 5: Wire the ConfirmDialog to use it**
+- [x] **Step 5: Wire the ConfirmDialog to use it**
 
 Current:
 ```tsx
@@ -728,18 +737,18 @@ Replace with:
       </ConfirmDialog>
 ```
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 ```bash
 cd Frontend && npx tsc --noEmit && npx eslint components/prototype/WorkflowPage.tsx --max-warnings 0 && npm run test && npm run build
 ```
 Expected: all clean/pass.
 
-- [ ] **Step 7: Manual check** (human, browser)
+- [x] **Step 7: Manual check** (human, browser)
 
 Log in as IT Personnel, go to `/it-asset-custodian/fulfillment`. Should show real pending-fulfillment requisitions (same ones visible via `/it-personnel/requisitions` on the old layout, filtered to `pending_fulfillment`). Open one, confirm the action list shows only "Fulfill" and "On Hold" (not "Reserve"). Fulfill one — refresh the page, confirm it's gone from the list (status changed) and the underlying asset's status updated (check via `/it-asset-custodian/assets/:id` or the old `/it-personnel/assets/:id`). Try "On Hold" on another — confirm it requires a reason, and that the requisition's status changes after confirming.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add Frontend/components/prototype/WorkflowPage.tsx
@@ -759,14 +768,14 @@ Real equivalent: asset lifecycle transitions via `assetsApi.updateLifecycle`. Un
 **Interfaces:**
 - Consumes: `assetsApi.list(page, limit)` → `Asset[]`, `assetsApi.updateLifecycle(id, { status, employeeId?, toLocation? })` (existing, `Frontend/lib/api/assets.ts`).
 
-- [ ] **Step 1: Add the `assetsApi`/`Asset` import**
+- [x] **Step 1: Add the `assetsApi`/`Asset` import**
 
 Find the existing import block at the top of the file (near `import { auditApi, type AuditLog } from '@/lib/api/audit';` and `import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';`) and add, alphabetically ordered with the other `@/lib/api/*` imports:
 ```tsx
 import { assetsApi, type Asset } from '@/lib/api/assets';
 ```
 
-- [ ] **Step 2: Extend `isLiveFetchPage`, add the custody flag, add new form-field state**
+- [x] **Step 2: Extend `isLiveFetchPage`, add the custody flag, add new form-field state**
 
 Find (this is Task 5's already-landed version):
 ```tsx
@@ -795,7 +804,7 @@ Find the block of `useState` declarations that includes `const [remarks, setRema
   const [transferToLocation, setTransferToLocation] = useState('');
 ```
 
-- [ ] **Step 3: Add the asset row converter**
+- [x] **Step 3: Add the asset row converter**
 
 Find `function requisitionApiToRow(request: Requisition): Row {` and its closing `}`. Add this new function immediately after it (before `function auditApiToRow`):
 ```tsx
@@ -813,7 +822,7 @@ function assetApiToRow(asset: Asset): Row {
 }
 ```
 
-- [ ] **Step 4: Extend `fetchLiveRows` with a custody branch**
+- [x] **Step 4: Extend `fetchLiveRows` with a custody branch**
 
 Find (Task 5's already-landed version):
 ```tsx
@@ -863,7 +872,7 @@ Replace with:
 ```
 (This function's own `useCallback` dependency array — `[normalizedSlug, role]` — does not need to change; both new branches only read values already in that array.)
 
-- [ ] **Step 5: Add `submitCustodyDecision`**
+- [x] **Step 5: Add `submitCustodyDecision`**
 
 Find the end of `submitFulfillmentDecision` (added in Task 5 — ends with a closing `};` followed by a blank line, then `const validateForm = () => {`). Insert this new function between them:
 ```tsx
@@ -906,7 +915,7 @@ Find the end of `submitFulfillmentDecision` (added in Task 5 — ends with a clo
   };
 ```
 
-- [ ] **Step 6: Wire the ConfirmDialog — detail text, onConfirm, cancel reset, and the new conditional fields**
+- [x] **Step 6: Wire the ConfirmDialog — detail text, onConfirm, cancel reset, and the new conditional fields**
 
 Find (this is Task 5's already-landed version — the `detail`/`onConfirm`/`onCancel` props):
 ```tsx
@@ -994,18 +1003,18 @@ Replace with:
       </ConfirmDialog>
 ```
 
-- [ ] **Step 7: Verify**
+- [x] **Step 7: Verify**
 
 ```bash
 cd Frontend && npx tsc --noEmit && npx eslint components/prototype/WorkflowPage.tsx --max-warnings 0 && npm run test && npm run build
 ```
 Expected: all clean/pass.
 
-- [ ] **Step 8: Manual check** (human, browser)
+- [x] **Step 8: Manual check** (human, browser)
 
 Log in as IT Personnel, go to `/it-asset-custodian/custody`. Should show real assets (not requisition-shaped mock rows). Open one that's `available`, choose "Issue", confirm the Employee ID field appears and is required (try submitting empty first, confirm the error shows), then issue it to a real employee ID (e.g. `CICC-0042` if that account exists, or any real employee's ID) — confirm success and that the asset's status updates after refresh. Try "Transfer" on another asset — confirm the destination field is required and works. Try "Return" on an issued asset — confirm it works with no extra field required.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add Frontend/components/prototype/WorkflowPage.tsx
@@ -1029,7 +1038,7 @@ Reuses `assetApiToRow` (Task 6) unchanged — no new row converter needed.
 **Interfaces:**
 - Consumes: `assetsApi.list(page, limit, search?, status?)` with `status: 'under_repair'`, `assetsApi.updateLifecycle(id, { status, notes? })` (existing, `Frontend/lib/api/assets.ts`).
 
-- [ ] **Step 1: Extend `isLiveFetchPage`, add the maintenance flag**
+- [x] **Step 1: Extend `isLiveFetchPage`, add the maintenance flag**
 
 Find (Task 6's already-landed version):
 ```tsx
@@ -1052,7 +1061,7 @@ Find `const isItAssetCustodianLiveCustody = ...` (added in Task 6) and add immed
     isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'maintenance';
 ```
 
-- [ ] **Step 2: Extend `fetchLiveRows` with a maintenance branch**
+- [x] **Step 2: Extend `fetchLiveRows` with a maintenance branch**
 
 Find the custody branch added in Task 6 (inside `fetchLiveRows`, right after the audit branch):
 ```tsx
@@ -1073,7 +1082,7 @@ Add immediately after it (same shape, filtered to `under_repair`):
     }
 ```
 
-- [ ] **Step 3: Add `submitMaintenanceDecision`**
+- [x] **Step 3: Add `submitMaintenanceDecision`**
 
 Find the end of `submitCustodyDecision` (added in Task 6 — ends with a closing `};` followed by a blank line, then `const validateForm = () => {`). Insert this new function between them:
 ```tsx
@@ -1110,7 +1119,7 @@ Find the end of `submitCustodyDecision` (added in Task 6 — ends with a closing
   };
 ```
 
-- [ ] **Step 4: Wire the ConfirmDialog — add the maintenance case, and fix the "requisitions API" copy while here**
+- [x] **Step 4: Wire the ConfirmDialog — add the maintenance case, and fix the "requisitions API" copy while here**
 
 Find (Task 6's already-landed version):
 ```tsx
@@ -1182,18 +1191,18 @@ Replace with:
 ```
 (Note: the copy fix changes "live requisitions API" to "live backend API" — accurate for all four cases now, not just requisitions-backed ones. Everything after this point in the file — the closing of the remarks label, the two custody field blocks, `</ConfirmDialog>` — stays exactly as Task 6 left it, not shown again here.)
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 ```bash
 cd Frontend && npx tsc --noEmit && npx eslint components/prototype/WorkflowPage.tsx --max-warnings 0 && npm run test && npm run build
 ```
 Expected: all clean/pass.
 
-- [ ] **Step 6: Manual check** (human, browser)
+- [x] **Step 6: Manual check** (human, browser)
 
 Log in as IT Personnel. First, on `/it-asset-custodian/assets/:id` (or the old `/it-personnel/assets/:id`), put a real asset under repair via its lifecycle modal (`available` → `under_repair`). Then go to `/it-asset-custodian/maintenance` — that asset should now appear in this list. Try "Mark Complete" — confirm it works and the asset disappears from this list (now `available`) after refresh. Put another asset under repair, then try "Recommend Disposal" on it from this page — confirm the justification field is required, and that after confirming, the asset now shows `flagged_for_disposal` status.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add Frontend/components/prototype/WorkflowPage.tsx
@@ -1213,7 +1222,7 @@ Real equivalent: the exact same transition Task 7's Maintenance page already per
 **Interfaces:**
 - Consumes: `assetsApi.list(page, limit, search?, status?)` with `status: 'available'` (existing), `submitMaintenanceDecision` (added in Task 7, reused unchanged).
 
-- [ ] **Step 1: Extend `isLiveFetchPage`, add the disposal flag**
+- [x] **Step 1: Extend `isLiveFetchPage`, add the disposal flag**
 
 Find (Task 7's already-landed version):
 ```tsx
@@ -1236,7 +1245,7 @@ Find `const isItAssetCustodianLiveMaintenance = ...` (added in Task 7) and add i
     isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'disposal';
 ```
 
-- [ ] **Step 2: Extend `fetchLiveRows` with a disposal branch**
+- [x] **Step 2: Extend `fetchLiveRows` with a disposal branch**
 
 Find the maintenance branch added in Task 7 (inside `fetchLiveRows`, right after the custody branch):
 ```tsx
@@ -1257,7 +1266,7 @@ Add immediately after it (same shape, filtered to `available` instead):
     }
 ```
 
-- [ ] **Step 3: Wire the ConfirmDialog — reuse `submitMaintenanceDecision`, no new function**
+- [x] **Step 3: Wire the ConfirmDialog — reuse `submitMaintenanceDecision`, no new function**
 
 Find (Task 7's already-landed version — the `detail`/`onConfirm`/remarks-required condition):
 ```tsx
@@ -1341,18 +1350,18 @@ Replace with:
 ```
 (`submitMaintenanceDecision` accepts `'Mark Complete' | 'Recommend Disposal'` — calling it with `confirmAction` narrowed to exactly `'Recommend Disposal'` in the new disposal branch satisfies that type correctly, it's a subset of the accepted union.)
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 ```bash
 cd Frontend && npx tsc --noEmit && npx eslint components/prototype/WorkflowPage.tsx --max-warnings 0 && npm run test && npm run build
 ```
 Expected: all clean/pass.
 
-- [ ] **Step 5: Manual check** (human, browser)
+- [x] **Step 5: Manual check** (human, browser)
 
 Log in as IT Personnel, go to `/it-asset-custodian/disposal`. Should show real `available`-status assets (not ones under repair — those are on the Maintenance page instead). Open one, recommend it for disposal — confirm the justification field is required, and that after confirming, the asset's status becomes `flagged_for_disposal` (check via its detail page). Confirm the Maintenance page (Task 7) and this page show different, non-overlapping asset lists (one `under_repair`, one `available`).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Frontend/components/prototype/WorkflowPage.tsx
@@ -1366,9 +1375,9 @@ git push
 
 ---
 
-## Phase 2: Approving Officer's Dashboard
+## Phase 2: Approving Officer's Dashboard — next up
 
-Scoped, not yet detailed. Wire `RoleDashboard`'s Approving Officer branch (or graduate it to its own `ApprovingOfficerDashboard.tsx`, matching the Task 2 precedent) to real `requisitionsApi` data — same shape as Task 2 above. Expand to full steps when Phase 1 is done and merged.
+Scoped, not yet detailed. Wire `RoleDashboard`'s Approving Officer branch (or graduate it to its own `ApprovingOfficerDashboard.tsx`, matching the Task 2 precedent) to real `requisitionsApi` data — same shape as Task 2 above. Expand to full steps now that Phase 1 is done (all 4 phases stay on the one `feature/port-real-wiring-to-new-layout` branch per the Global Constraints above — "merged" here never meant a separate branch per phase, just that Phase 1's own work is settled).
 
 ## Phase 3: Management & Audit Viewer's remaining report tabs
 
