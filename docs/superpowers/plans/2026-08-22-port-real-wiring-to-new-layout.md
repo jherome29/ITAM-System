@@ -2360,11 +2360,169 @@ git push
 
 ---
 
+### Task 14: Wire the Property Custodian Dashboard to real data
+
+**Scope note:** Property Custodian's dashboard differs from Task 2/Task 9's
+shape because the role's real destinations differ — there's no single
+"assets" page to link a combined total to (the registry is split into
+`fixed-assets`/`supplies`), and no "Maintenance & Repair" page exists for
+this role (only Disposal). So 2 of the 4 KPI cards are plain (non-clickable)
+stat displays instead of links, and the other 2 link to this role's actual
+real pages (`fulfillment`, `disposal`) — same honesty-over-imitation
+principle as Task 9's 2-card design, not a mistake to "fix" back to 4 links.
+
+**Files:**
+- Create: `Frontend/components/property-custodian/PropertyCustodianDashboard.tsx`
+- Modify: `Frontend/app/property-custodian/[[...slug]]/page.tsx`
+
+**Interfaces:**
+- Consumes: `assetsApi.stats()` → `AssetStats` (`{ total, available, issued, underRepair, flaggedForDisposal, transferred }`, combined Fixed+Supplies — this role's `assetTypeScope`, unaffected by Task 12's new filter since no `assetType` param is passed here), `requisitionsApi.list(1, 15, 'pending_fulfillment')` → `PaginatedResponse<Requisition>` (server-scoped to this role's Fixed+Supplies requisitions, confirmed in `Backend/src/requisitions/requisitions.service.ts`'s `PROPERTY_CUSTODIAN` branch), `notificationsApi.list()` → `{ notifications, unreadCount }`, `useAuth()` → `{ user }`.
+- Produces: `PropertyCustodianDashboard` (no props) — rendered directly by the router for `segment === 'dashboard'`.
+
+- [ ] **Step 1: Write the component**
+
+```tsx
+// Frontend/components/property-custodian/PropertyCustodianDashboard.tsx
+'use client';
+
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { Archive, Boxes, CheckCircle2, ClipboardList } from 'lucide-react';
+import { useAuth } from '@/lib/auth/use-auth';
+import { assetsApi, type AssetStats } from '@/lib/api/assets';
+import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';
+import { notificationsApi } from '@/lib/api/notifications';
+import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
+
+export function PropertyCustodianDashboard() {
+  const { user } = useAuth();
+  const [stats, setStats] = useState<AssetStats | null>(null);
+  const [pendingFulfillment, setPendingFulfillment] = useState<Requisition[]>([]);
+  const [pendingTotal, setPendingTotal] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      assetsApi.stats(),
+      requisitionsApi.list(1, 15, 'pending_fulfillment'),
+      notificationsApi.list(),
+    ])
+      .then(([statsRes, reqRes, notifRes]) => {
+        if (cancelled) return;
+        setStats(statsRes.data);
+        setPendingFulfillment(reqRes.data.data);
+        setPendingTotal(reqRes.data.total);
+        setUnreadCount(notifRes.data.unreadCount);
+        setError('');
+      })
+      .catch(() => {
+        if (!cancelled) setError('Failed to load dashboard data. Please refresh the page.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) {
+    return <LoadingSkeleton rows={8} />;
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-[1480px] space-y-5">
+      <header className="border-b border-slate-200 pb-5">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">Property Custodian</p>
+        <h1 className="mt-1 text-[28px] font-extrabold leading-tight text-slate-950">Good day, {user?.firstName ?? 'there'}</h1>
+      </header>
+
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
+          <span className="grid h-12 w-12 place-items-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700"><Boxes className="h-5 w-5" /></span>
+          <span><span className="block text-xs font-semibold text-slate-500">Total assets (Fixed + Supplies)</span><span className="text-2xl font-extrabold text-slate-950">{stats?.total ?? 0}</span></span>
+        </div>
+        <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
+          <span className="grid h-12 w-12 place-items-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700"><CheckCircle2 className="h-5 w-5" /></span>
+          <span><span className="block text-xs font-semibold text-slate-500">Available</span><span className="text-2xl font-extrabold text-slate-950">{stats?.available ?? 0}</span></span>
+        </div>
+        <Link href="/property-custodian/fulfillment" className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm transition hover:border-blue-300">
+          <span className="grid h-12 w-12 place-items-center rounded-lg border border-amber-200 bg-amber-50 text-amber-700"><ClipboardList className="h-5 w-5" /></span>
+          <span><span className="block text-xs font-semibold text-slate-500">Pending fulfillment</span><span className="text-2xl font-extrabold text-slate-950">{pendingTotal}</span></span>
+        </Link>
+        <Link href="/property-custodian/disposal" className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm transition hover:border-blue-300">
+          <span className="grid h-12 w-12 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-700"><Archive className="h-5 w-5" /></span>
+          <span><span className="block text-xs font-semibold text-slate-500">Flagged for disposal</span><span className="text-2xl font-extrabold text-slate-950">{stats?.flaggedForDisposal ?? 0}</span></span>
+        </Link>
+      </div>
+
+      <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-4">
+          <h2 className="text-[15px] font-extrabold text-slate-950">Awaiting Fulfillment</h2>
+        </div>
+        {pendingFulfillment.length === 0 ? (
+          <div className="p-8 text-center text-sm text-slate-500">Nothing awaiting fulfillment right now.</div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {pendingFulfillment.slice(0, 6).map((req) => (
+              <Link key={req.id} href="/property-custodian/fulfillment" className="flex items-center justify-between px-4 py-3.5 hover:bg-slate-50">
+                <span className="text-sm font-bold text-slate-950">{req.items[0]?.itemDescription ?? 'Requisition'}</span>
+                <span className="text-xs text-slate-500">{req.requestNumber}</span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <p className="text-xs text-slate-500">
+        Unread notifications: {unreadCount} — <Link href="/property-custodian/notifications" className="font-bold text-blue-700 hover:underline">view all</Link>
+      </p>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Wire it into the router**
+
+In `Frontend/app/property-custodian/[[...slug]]/page.tsx` (as left by Task 13), add the import and replace the dashboard branch:
+```tsx
+import { PropertyCustodianDashboard } from '@/components/property-custodian/PropertyCustodianDashboard';
+```
+```tsx
+  if (segment === 'dashboard') return <PropertyCustodianDashboard />;
+```
+(`RoleDashboard` is used nowhere else in this file — remove its import entirely, same as Task 2 and Task 9 did for their own routers.)
+
+- [ ] **Step 3: Verify**
+
+```bash
+cd Frontend && npx tsc --noEmit && npx eslint components/property-custodian/PropertyCustodianDashboard.tsx "app/property-custodian/[[...slug]]/page.tsx" --max-warnings 0 && npm run test && npm run build
+```
+Expected: all four clean/succeed.
+
+- [ ] **Step 4: Manual check** (human, browser)
+
+Log in as Property Custodian (`property.custodian@cicc.gov.ph` / `PropertyCustodian@2026!`, per `docs/guides/ROLES.md`). Land on `/property-custodian/dashboard`. "Total assets"/"Available" should match the sum of what you see across both `/property-custodian/fixed-assets` and `/property-custodian/supplies`. Clicking "Pending fulfillment" or "Flagged for disposal" navigates correctly; the other two cards are plain (non-clickable) by design.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Frontend/components/property-custodian/PropertyCustodianDashboard.tsx "Frontend/app/property-custodian/[[...slug]]/page.tsx"
+git commit -m "feat(property-custodian): wire dashboard to real asset/requisition/notification data"
+git push
+```
+
+---
+
 ### Remaining Phase 4 tasks — scoped, not yet detailed
 
 Expand each to full steps immediately before starting it (rolling wave), following the precedents already established:
 
-- **Property Custodian Dashboard** — same technique as Task 2/Task 9: new `PropertyCustodianDashboard.tsx`, real `assetsApi.stats()` (combined Fixed+Supplies — a dashboard-level KPI honestly describing the role's whole scope, no split needed here) + `requisitionsApi.list(1, 15, 'pending_fulfillment')` + `notificationsApi.list()`.
 - **Property Custodian QR Scanner** — reuse Task 3's `QrLookup` component. Needs one new router branch for a *detail-only* route, `/property-custodian/assets/:id` (not a list — the list stays split at `fixed-assets`/`supplies`), so a QR-scanned asset of either subtype has one real detail page to land on regardless of which tab it "belongs" to. Does not need Task 12's filter at all.
 - **Property Custodian Fulfillment** — same `isLiveFetchPage` extension as Phase 1 Task 5.
 - **Property Custodian Custody & Issuance** — same extension as Phase 1 Task 6, reusing `assetApiToRow`/the custody `ConfirmDialog` fields as-is.
