@@ -1567,7 +1567,324 @@ git push
 
 ## Phase 3: Management & Audit Viewer's remaining report tabs
 
-Scoped, not yet detailed. Per the spec, needs a pass confirming which of `asset-reports`/`requisition-reports`/`maintenance-disposal`/`physical-count`/`forms` map to existing `reportsApi`/`auditApi` calls before wiring — `physical-count` likely falls under the reconciliation non-goal and gets excluded once confirmed. Expand to full steps when Phase 2 is done.
+**Scope investigation (found while expanding this phase):**
+- `reportsApi.generate()` (`POST /v1/reports/generate`) is authorized for `UserRole.MANAGEMENT` on the backend (`Backend/src/reports/reports.controller.ts:110-117`) and already has a real, working frontend flow: `Frontend/components/shared/ReportsContent.tsx` (fixed 2026-08-21, currently used unfiltered by `/it-personnel/reports` and `/management/reports`). It offers 6 report types across all categories in one page. The new layout splits these into 4 separate category tabs — `asset-reports`, `requisition-reports`, `maintenance-disposal`, `physical-count` — so Task 10 parameterizes `ReportsContent` with an optional report-type filter instead of writing 4 near-duplicate components.
+- **`physical-count` is in scope, not excluded** — re-examined against the spec's actual non-goal wording. The non-goal excludes the *reconciliation workflow* (scan sessions, comparing counts, `Property Officer`'s `reconciliation`/`corrections` pages, `physical-inventory` pages) because no backend mechanism exists to record or compare a count. Generating the "Physical Count Summary" *report* is a different, already-real capability — `PHYSICAL_COUNT` is one of `ReportsContent`'s existing 6 report types, calling the same real `/v1/reports/generate` endpoint as the other 5. `SYSTEM-STATUS.md` separately documents that this report's *contents* are thin (a plain asset listing, no actual count/reconciliation logic) — that's a pre-existing business-logic gap in the report itself, not a reason to withhold the working generate-and-download action from this phase. Porting it is honest: it downloads a real PDF/Excel file with real data, the same as the other three tabs.
+- **`forms` (Forms Archive) is real, but read-only-only, matching this role's RBAC.** `GET /v1/reports/forms` (list) and `GET /v1/reports/forms/:id/download` both authorize `UserRole.MANAGEMENT` (`reports.controller.ts:81-92`, `:149-156`) — browsing and re-downloading previously generated COA forms is safe to port. `POST /v1/reports/forms/generate` (creating a *new* form) does **not** authorize `MANAGEMENT` (`reports.controller.ts:178-184`, only `IT_PERSONNEL`/`SYSTEM_ADMIN`/`PROPERTY_CUSTODIAN`) — matching CLAUDE.md's role matrix, where "Generate official forms" is not a Management permission. Task 11 therefore extracts only the read-only "previously generated forms" half of the old layout's `Frontend/app/it-personnel/forms/page.tsx` (its `history`/`fetchHistory`/`handleRedownload` logic) into a new component — the form-*generation* UI on that same old page is deliberately not ported to this role at all.
+- **`audit` is already live** (existing `isLiveFetchPage` code from before this session, untouched) — no task needed.
+- **`dashboard` stays out of scope for this phase** — not named in the spec's Phase 3 list, remains the shared mock `RoleDashboard` for now.
+- No backend changes in this phase — every endpoint used already authorizes `MANAGEMENT` today.
+
+### Task 10: Wire the 4 report-category tabs to the real report-generation API
+
+**Files:**
+- Modify: `Frontend/components/shared/ReportsContent.tsx`
+- Modify: `Frontend/app/management-audit/[[...slug]]/page.tsx`
+
+**Interfaces:**
+- Consumes: `reportsApi.generate(dto)` → `Blob` (`Frontend/lib/api/reports.ts`, unchanged).
+- Produces: `ReportsContent` gains two new optional props, `reportTypes?: string[]` and `pageTitle?: string`/`panelTitle?: string` — omitting all three preserves today's exact behavior (all 6 report types, "Generate Reports" / "Management Reports" headings), so the two existing callers (`Frontend/app/it-personnel/reports/page.tsx`, `Frontend/app/management/reports/page.tsx`) need no changes and keep working identically.
+
+- [ ] **Step 1: Parameterize `ReportsContent`**
+
+Current file:
+```tsx
+'use client';
+
+import { useState } from 'react';
+import { BarChart2, Download } from 'lucide-react';
+import { reportsApi } from '@/lib/api/reports';
+import { PageHeader } from '@/components/ui/PageHeader';
+
+const REPORT_TYPES = [
+  { value: 'ASSET_MASTER_LIST', label: 'Asset Master List', formats: ['pdf', 'excel'] as const },
+  { value: 'REQUISITION_HISTORY', label: 'Requisition History Log', formats: ['pdf', 'excel'] as const },
+  { value: 'ASSET_ISSUANCE', label: 'Asset Issuance Record', formats: ['pdf'] as const },
+  { value: 'ASSET_RETURN', label: 'Asset Return Record', formats: ['pdf'] as const },
+  { value: 'PHYSICAL_COUNT', label: 'Physical Count Summary', formats: ['pdf', 'excel'] as const },
+  { value: 'DISPOSAL', label: 'Disposal Documentation Report', formats: ['pdf'] as const },
+];
+
+export function ReportsContent() {
+  const [selectedReport, setSelectedReport] = useState('');
+  const [format, setFormat] = useState<'pdf' | 'excel'>('pdf');
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState('');
+  const [error, setError] = useState('');
+
+  const currentReport = REPORT_TYPES.find((r) => r.value === selectedReport);
+```
+
+Replace the top of the file (everything up to and including the `currentReport` line) with:
+```tsx
+'use client';
+
+import { useState } from 'react';
+import { BarChart2, Download } from 'lucide-react';
+import { reportsApi } from '@/lib/api/reports';
+import { PageHeader } from '@/components/ui/PageHeader';
+
+const ALL_REPORT_TYPES = [
+  { value: 'ASSET_MASTER_LIST', label: 'Asset Master List', formats: ['pdf', 'excel'] as const },
+  { value: 'REQUISITION_HISTORY', label: 'Requisition History Log', formats: ['pdf', 'excel'] as const },
+  { value: 'ASSET_ISSUANCE', label: 'Asset Issuance Record', formats: ['pdf'] as const },
+  { value: 'ASSET_RETURN', label: 'Asset Return Record', formats: ['pdf'] as const },
+  { value: 'PHYSICAL_COUNT', label: 'Physical Count Summary', formats: ['pdf', 'excel'] as const },
+  { value: 'DISPOSAL', label: 'Disposal Documentation Report', formats: ['pdf'] as const },
+];
+
+export function ReportsContent({
+  reportTypes,
+  pageTitle = 'Generate Reports',
+  panelTitle = 'Management Reports',
+}: Readonly<{ reportTypes?: string[]; pageTitle?: string; panelTitle?: string }>) {
+  const REPORT_TYPES = reportTypes ? ALL_REPORT_TYPES.filter((r) => reportTypes.includes(r.value)) : ALL_REPORT_TYPES;
+  const [selectedReport, setSelectedReport] = useState('');
+  const [format, setFormat] = useState<'pdf' | 'excel'>('pdf');
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState('');
+  const [error, setError] = useState('');
+
+  const currentReport = REPORT_TYPES.find((r) => r.value === selectedReport);
+```
+
+Leave `handleGenerate` exactly as it is (it already reads `selectedReport`/`format`/`currentReport`, all still in scope — no changes needed there).
+
+Then, further down in the same file, find:
+```tsx
+      <PageHeader title="Generate Reports" />
+      <div className="bg-white rounded-lg shadow-sm border border-blue-200">
+        <div className="p-5 border-b border-blue-200 bg-blue-50 flex items-center gap-2">
+          <BarChart2 className="w-5 h-5 text-[#1a4d7a]" />
+          <h2 className="text-base font-semibold text-[#1a4d7a]">Management Reports</h2>
+        </div>
+```
+Replace with:
+```tsx
+      <PageHeader title={pageTitle} />
+      <div className="bg-white rounded-lg shadow-sm border border-blue-200">
+        <div className="p-5 border-b border-blue-200 bg-blue-50 flex items-center gap-2">
+          <BarChart2 className="w-5 h-5 text-[#1a4d7a]" />
+          <h2 className="text-base font-semibold text-[#1a4d7a]">{panelTitle}</h2>
+        </div>
+```
+The rest of the file (the `<form>` body, the report-type/format radio lists, the submit button) is unchanged — it already reads from the local `REPORT_TYPES`/`currentReport` names, which still resolve correctly since the new local `const REPORT_TYPES = ...` line shadows the old module-level constant with the same name.
+
+- [ ] **Step 2: Add the 4 new router branches**
+
+Current file:
+```tsx
+import { RoleDashboard } from '@/components/prototype/RoleDashboard';
+import { WorkflowPage } from '@/components/prototype/WorkflowPage';
+import { ProposedUserRole } from '@/lib/roles/proposed-roles';
+
+export default async function ManagementAuditPage({ params }: Readonly<{ params: Promise<{ slug?: string[] }> }>) {
+  const { slug } = await params;
+  const segment = slug?.[0] ?? 'dashboard';
+  if (segment === 'dashboard') return <RoleDashboard role={ProposedUserRole.MANAGEMENT_AUDIT_VIEWER} />;
+  return <WorkflowPage role={ProposedUserRole.MANAGEMENT_AUDIT_VIEWER} slug={segment} />;
+}
+```
+
+Replace with:
+```tsx
+import { ReportsContent } from '@/components/shared/ReportsContent';
+import { RoleDashboard } from '@/components/prototype/RoleDashboard';
+import { WorkflowPage } from '@/components/prototype/WorkflowPage';
+import { ProposedUserRole } from '@/lib/roles/proposed-roles';
+
+export default async function ManagementAuditPage({ params }: Readonly<{ params: Promise<{ slug?: string[] }> }>) {
+  const { slug } = await params;
+  const segment = slug?.[0] ?? 'dashboard';
+  if (segment === 'dashboard') return <RoleDashboard role={ProposedUserRole.MANAGEMENT_AUDIT_VIEWER} />;
+  if (segment === 'asset-reports') return <ReportsContent reportTypes={['ASSET_MASTER_LIST', 'ASSET_ISSUANCE', 'ASSET_RETURN']} pageTitle="Asset Reports" panelTitle="Asset Reports" />;
+  if (segment === 'requisition-reports') return <ReportsContent reportTypes={['REQUISITION_HISTORY']} pageTitle="Requisition Reports" panelTitle="Requisition Reports" />;
+  if (segment === 'maintenance-disposal') return <ReportsContent reportTypes={['DISPOSAL']} pageTitle="Maintenance & Disposal Reports" panelTitle="Disposal Documentation" />;
+  if (segment === 'physical-count') return <ReportsContent reportTypes={['PHYSICAL_COUNT']} pageTitle="Physical Count Reports" panelTitle="Physical Count Summary" />;
+  return <WorkflowPage role={ProposedUserRole.MANAGEMENT_AUDIT_VIEWER} slug={segment} />;
+}
+```
+(No separate "maintenance" report exists among the real 6 report types — `maintenance-disposal`'s tab offers only `DISPOSAL`, the one real report in that category. This is intentional, matching Task 9's precedent of not fabricating data that doesn't exist — do not add a placeholder maintenance report type.)
+
+- [ ] **Step 3: Verify**
+
+```bash
+cd Frontend && npx tsc --noEmit && npx eslint components/shared/ReportsContent.tsx "app/management-audit/[[...slug]]/page.tsx" --max-warnings 0 && npm run test && npm run build
+```
+Expected: all four clean/succeed.
+
+- [ ] **Step 4: Manual check** (human, browser)
+
+Log in as Management (`management@cicc.gov.ph` / `Management@CICC2026!`, per `docs/guides/ROLES.md`). Visit each of `/management-audit/asset-reports`, `/requisition-reports`, `/maintenance-disposal`, `/physical-count` — each should show only its own report type(s) (3, 1, 1, 1 respectively), generate and download a real file when clicked, and show the same success/error messaging as `/management/reports` already does. Then separately verify `/it-personnel/reports` and `/management/reports` (the two existing callers) still show all 6 report types exactly as before — this step is the regression check that the new optional props didn't change default behavior.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Frontend/components/shared/ReportsContent.tsx "Frontend/app/management-audit/[[...slug]]/page.tsx"
+git commit -m "feat(management-audit): wire the 4 report-category tabs to the real report-generation API"
+git push
+```
+
+---
+
+### Task 11: Wire the Forms Archive tab to the real forms-history API
+
+**Files:**
+- Create: `Frontend/components/shared/FormsArchiveContent.tsx`
+- Modify: `Frontend/app/management-audit/[[...slug]]/page.tsx`
+
+**Interfaces:**
+- Consumes: `reportsApi.forms(1, 50)` → `PaginatedResponse<FormMeta>` (`Frontend/lib/api/reports.ts`), `reportsApi.downloadStoredForm(id)` → `Blob`.
+- Produces: `FormsArchiveContent` (no props) — rendered directly by the router for `segment === 'forms'`.
+
+- [ ] **Step 1: Write the component**
+
+```tsx
+// Frontend/components/shared/FormsArchiveContent.tsx
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { Archive, Clock, Download, RefreshCw } from 'lucide-react';
+import { reportsApi, type FormMeta } from '@/lib/api/reports';
+import { PageHeader } from '@/components/ui/PageHeader';
+
+export function FormsArchiveContent() {
+  const [history, setHistory] = useState<FormMeta[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+
+  const fetchHistory = useCallback(() => {
+    reportsApi
+      .forms(1, 50)
+      .then((r) => {
+        setHistory(r.data.data);
+        setError('');
+      })
+      .catch(() => setError('Failed to load the forms archive. Please refresh the page.'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
+
+  const handleRefresh = () => {
+    setLoading(true);
+    fetchHistory();
+  };
+
+  const handleDownload = async (form: FormMeta) => {
+    setDownloadingId(form.id);
+    try {
+      const blob = await reportsApi.downloadStoredForm(form.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${form.formType}-${form.generatedAt.slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // silently fail -- old records before this feature won't have a stored PDF
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <PageHeader title="Forms Archive" />
+
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">{error}</div>}
+
+      <div className="bg-white rounded-lg shadow-sm border border-blue-200">
+        <div className="p-5 border-b border-blue-200 bg-blue-50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Archive className="w-5 h-5 text-[#1a4d7a]" />
+            <h2 className="text-base font-semibold text-[#1a4d7a]">Generated COA / CICC Forms</h2>
+          </div>
+          <button type="button" onClick={handleRefresh} className="flex items-center gap-1.5 text-xs text-[#1a4d7a] hover:text-[#143d61] transition-colors">
+            <RefreshCw className="w-3.5 h-3.5" />
+            Refresh
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="p-6 text-center text-sm text-gray-400">Loading archive…</div>
+        ) : history.length === 0 ? (
+          <div className="p-6 text-center text-sm text-gray-400">No forms have been generated yet.</div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {history.map((form) => (
+              <div key={form.id} className="flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">{form.formType}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    <Clock className="inline w-3 h-3 mr-1 -mt-0.5" />
+                    {new Date(form.generatedAt).toLocaleString('en-PH', {
+                      year: 'numeric', month: 'short', day: 'numeric',
+                      hour: '2-digit', minute: '2-digit',
+                    })}
+                    {form.relatedAssetId && (
+                      <span className="ml-2 text-gray-300">· asset {form.relatedAssetId.slice(0, 8)}…</span>
+                    )}
+                    {form.relatedRequisitionId && (
+                      <span className="ml-2 text-gray-300">· req {form.relatedRequisitionId.slice(0, 8)}…</span>
+                    )}
+                  </p>
+                </div>
+                <button type="button"
+                  onClick={() => handleDownload(form)}
+                  disabled={downloadingId === form.id || form.filePath !== 'stored'}
+                  title={form.filePath !== 'stored' ? 'PDF not stored — regenerate from IT Personnel or Property Custodian' : 'Download stored PDF'}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[#1a4d7a] border border-[#1a4d7a]/30 rounded-md hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  {downloadingId === form.id ? 'Downloading…' : 'Download'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Wire it into the router**
+
+In `Frontend/app/management-audit/[[...slug]]/page.tsx` (as left by Task 10), add the import and one new branch:
+```tsx
+import { FormsArchiveContent } from '@/components/shared/FormsArchiveContent';
+```
+```tsx
+  if (segment === 'forms') return <FormsArchiveContent />;
+```
+Place it directly after the `physical-count` branch and before the final `WorkflowPage` fallback.
+
+- [ ] **Step 3: Verify**
+
+```bash
+cd Frontend && npx tsc --noEmit && npx eslint components/shared/FormsArchiveContent.tsx "app/management-audit/[[...slug]]/page.tsx" --max-warnings 0 && npm run test && npm run build
+```
+Expected: all four clean/succeed.
+
+- [ ] **Step 4: Manual check** (human, browser)
+
+Log in as Management. Visit `/management-audit/forms` — it should list previously generated COA forms (generate a couple first as IT Personnel at `/it-personnel/forms` if the list is empty) with working "Download" buttons, and show no way to generate a *new* form from this page (no form-type picker, no "Generate" button) — that action correctly stays IT-Personnel/Property-Custodian-only per RBAC.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Frontend/components/shared/FormsArchiveContent.tsx "Frontend/app/management-audit/[[...slug]]/page.tsx"
+git commit -m "feat(management-audit): wire the Forms Archive tab to the real forms-history API"
+git push
+```
+
+---
 
 ## Phase 4: Property Custodian / Property Officer asset pages
 
