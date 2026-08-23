@@ -13,7 +13,11 @@ const STATUS_OPTIONS = [
   'transferred', 'under_repair', 'flagged_for_disposal', 'disposed',
 ];
 
-export function AssetRegistryList({ basePath }: Readonly<{ basePath: string }>) {
+export function AssetRegistryList({
+  basePath,
+  assetType,
+  title = 'Asset Inventory',
+}: Readonly<{ basePath: string; assetType?: string; title?: string }>) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -24,14 +28,14 @@ export function AssetRegistryList({ basePath }: Readonly<{ basePath: string }>) 
 
   useEffect(() => {
     assetsApi
-      .list(page, limit, search || undefined, filterStatus || undefined)
+      .list(page, limit, search || undefined, filterStatus || undefined, assetType)
       .then((res) => {
         setAssets(res.data.data ?? []);
         setTotalPages(res.data.totalPages ?? 1);
       })
       .catch(() => setAssets([]))
       .finally(() => setLoading(false));
-  }, [page, search, filterStatus]);
+  }, [page, search, filterStatus, assetType]);
 
   const inputClass =
     'px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors bg-white';
@@ -39,7 +43,7 @@ export function AssetRegistryList({ basePath }: Readonly<{ basePath: string }>) 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Asset Inventory"
+        title={title}
         action={
           <Link
             href={`${basePath}/new`}
