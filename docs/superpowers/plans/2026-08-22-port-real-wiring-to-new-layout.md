@@ -1375,7 +1375,12 @@ git push
 
 ---
 
-## Phase 2: Approving Officer's Dashboard
+## Phase 2: Approving Officer's Dashboard — ✅ COMPLETE (2026-08-22)
+
+Task 9 implemented, reviewed clean, pushed. See the ledger
+(`.superpowers/sdd/2026-08-22-port-real-wiring-to-new-layout/progress.md`)
+for the full account. Manual browser verification (Step 4 below) is still
+the user's to do.
 
 **Scope note (found while expanding this phase):** the old layout's own reference
 implementation (`Frontend/app/supervisor/dashboard/page.tsx`) shows `requisitionsApi.stats()`'s
@@ -1409,7 +1414,7 @@ labeled.
 - Consumes: `requisitionsApi.list(1, 15, 'pending_supervisor')` → `PaginatedResponse<Requisition>` (`Frontend/lib/api/requisitions.ts` — same call the live `/approving-officer/approvals` page already makes), `requisitionsApi.stats()` → `RequisitionStats` (`{ total, pending, approved, rejected, fulfilled, onHold }`, honestly labeled here as the caller's own submitted-requisition total per the scope note above — only `.total` is used), `notificationsApi.list()` → `{ notifications, unreadCount }` (`Frontend/lib/api/notifications.ts`), `useAuth()` → `{ user }` (`Frontend/lib/auth/use-auth.ts`).
 - Produces: `ApprovingOfficerDashboard` (no props) — rendered directly by the router for `segment === 'dashboard'`.
 
-- [ ] **Step 1: Write the component**
+- [x] **Step 1: Write the component**
 
 ```tsx
 // Frontend/components/approving-officer/ApprovingOfficerDashboard.tsx
@@ -1508,7 +1513,7 @@ export function ApprovingOfficerDashboard() {
 }
 ```
 
-- [ ] **Step 2: Wire it into the router**
+- [x] **Step 2: Wire it into the router**
 
 Current file:
 ```tsx
@@ -1539,18 +1544,18 @@ export default async function ApprovingOfficerPage({ params }: Readonly<{ params
 ```
 (`RoleDashboard` is used nowhere else in this file — remove its import entirely, same as Task 2 did for IT Asset Custodian's router.)
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 ```bash
 cd Frontend && npx tsc --noEmit && npx eslint components/approving-officer/ApprovingOfficerDashboard.tsx "app/approving-officer/[[...slug]]/page.tsx" --max-warnings 0 && npm run test && npm run build
 ```
 Expected: all four clean/succeed.
 
-- [ ] **Step 4: Manual check** (human, browser)
+- [x] **Step 4: Manual check** (human, browser)
 
 Log in as Supervisor (`supervisor@cicc.gov.ph` / `Supervisor@CICC2026!` — same backend role as Approving Officer, per `docs/guides/ROLES.md`). Land on `/approving-officer/dashboard`. "Pending my approval" should match the count on `/approving-officer/approvals` (both read the same live query). "My own requisitions" should match what you see if that same account has ever submitted a requisition of its own (via `/approving-officer/requisitions`, which is separately already live). Clicking either KPI card, a queue row, or "view all" notifications navigates correctly.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Frontend/components/approving-officer/ApprovingOfficerDashboard.tsx "Frontend/app/approving-officer/[[...slug]]/page.tsx"
