@@ -1375,9 +1375,190 @@ git push
 
 ---
 
-## Phase 2: Approving Officer's Dashboard — next up
+## Phase 2: Approving Officer's Dashboard
 
-Scoped, not yet detailed. Wire `RoleDashboard`'s Approving Officer branch (or graduate it to its own `ApprovingOfficerDashboard.tsx`, matching the Task 2 precedent) to real `requisitionsApi` data — same shape as Task 2 above. Expand to full steps now that Phase 1 is done (all 4 phases stay on the one `feature/port-real-wiring-to-new-layout` branch per the Global Constraints above — "merged" here never meant a separate branch per phase, just that Phase 1's own work is settled).
+**Scope note (found while expanding this phase):** the old layout's own reference
+implementation (`Frontend/app/supervisor/dashboard/page.tsx`) shows `requisitionsApi.stats()`'s
+`approved`/`rejected`/`pending` fields under labels ("Pending Review", "Approved", "Rejected")
+that read as *approval-decision* counts. They aren't. `RequisitionsService.getStats()`
+(`Backend/src/requisitions/requisitions.service.ts:159-161`) scopes SUPERVISOR the same as
+EMPLOYEE — `WHERE requestedById = :userId` — so for this role every number in that response
+describes requisitions **the supervisor personally submitted** (Supervisors can submit their
+own requisitions too, per the role matrix), not requisitions routed to them for a decision.
+This is confirmed intentional, not a bug to fix: the service's own comment says "personal
+requisition status overview," and an existing test
+(`Backend/src/requisitions/requisitions.service.spec.ts:746`, `'scopes supervisor stats to
+their own requests'`) locks in exactly this scoping. Porting the old dashboard's labels
+verbatim would carry a real, pre-existing mislabeling into the new layout, so Task 9 below
+does not reuse those three fields under approval-flavored names. The one number this role
+*can* trust for its primary job is "how many requisitions are routed to me for a decision
+right now" — `RequisitionsService.findAll()`'s SUPERVISOR branch
+(`requisitions.service.ts:74-78`) hard-scopes that to `supervisorId = :id AND status =
+'pending_supervisor'`, which is exactly the same query the already-live `/approving-officer/approvals`
+page (`isApprovingOfficerLiveApprovals`, existing code, untouched by this task) already uses.
+No backend change needed — this task only changes what the frontend fetches and how it's
+labeled.
+
+### Task 9: Wire the Approving Officer Dashboard to real data
+
+**Files:**
+- Create: `Frontend/components/approving-officer/ApprovingOfficerDashboard.tsx`
+- Modify: `Frontend/app/approving-officer/[[...slug]]/page.tsx`
+
+**Interfaces:**
+- Consumes: `requisitionsApi.list(1, 15, 'pending_supervisor')` → `PaginatedResponse<Requisition>` (`Frontend/lib/api/requisitions.ts` — same call the live `/approving-officer/approvals` page already makes), `requisitionsApi.stats()` → `RequisitionStats` (`{ total, pending, approved, rejected, fulfilled, onHold }`, honestly labeled here as the caller's own submitted-requisition total per the scope note above — only `.total` is used), `notificationsApi.list()` → `{ notifications, unreadCount }` (`Frontend/lib/api/notifications.ts`), `useAuth()` → `{ user }` (`Frontend/lib/auth/use-auth.ts`).
+- Produces: `ApprovingOfficerDashboard` (no props) — rendered directly by the router for `segment === 'dashboard'`.
+
+- [ ] **Step 1: Write the component**
+
+```tsx
+// Frontend/components/approving-officer/ApprovingOfficerDashboard.tsx
+'use client';
+
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { ClipboardCheck, ClipboardList } from 'lucide-react';
+import { useAuth } from '@/lib/auth/use-auth';
+import { requisitionsApi, type Requisition, type RequisitionStats } from '@/lib/api/requisitions';
+import { notificationsApi } from '@/lib/api/notifications';
+import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
+
+export function ApprovingOfficerDashboard() {
+  const { user } = useAuth();
+  const [pendingApprovals, setPendingApprovals] = useState<Requisition[]>([]);
+  const [pendingTotal, setPendingTotal] = useState(0);
+  const [stats, setStats] = useState<RequisitionStats | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      requisitionsApi.list(1, 15, 'pending_supervisor'),
+      requisitionsApi.stats(),
+      notificationsApi.list(),
+    ])
+      .then(([pendingRes, statsRes, notifRes]) => {
+        if (cancelled) return;
+        setPendingApprovals(pendingRes.data.data);
+        setPendingTotal(pendingRes.data.total);
+        setStats(statsRes.data);
+        setUnreadCount(notifRes.data.unreadCount);
+        setError('');
+      })
+      .catch(() => {
+        if (!cancelled) setError('Failed to load dashboard data. Please refresh the page.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) {
+    return <LoadingSkeleton rows={8} />;
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-[1480px] space-y-5">
+      <header className="border-b border-slate-200 pb-5">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">Approving Officer</p>
+        <h1 className="mt-1 text-[28px] font-extrabold leading-tight text-slate-950">Good day, {user?.firstName ?? 'there'}</h1>
+      </header>
+
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Link href="/approving-officer/approvals" className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm transition hover:border-blue-300">
+          <span className="grid h-12 w-12 place-items-center rounded-lg border border-amber-200 bg-amber-50 text-amber-700"><ClipboardCheck className="h-5 w-5" /></span>
+          <span><span className="block text-xs font-semibold text-slate-500">Pending my approval</span><span className="text-2xl font-extrabold text-slate-950">{pendingTotal}</span></span>
+        </Link>
+        <Link href="/approving-officer/requisitions" className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm transition hover:border-blue-300">
+          <span className="grid h-12 w-12 place-items-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700"><ClipboardList className="h-5 w-5" /></span>
+          <span><span className="block text-xs font-semibold text-slate-500">My own requisitions</span><span className="text-2xl font-extrabold text-slate-950">{stats?.total ?? 0}</span></span>
+        </Link>
+      </div>
+
+      <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-4">
+          <h2 className="text-[15px] font-extrabold text-slate-950">Awaiting My Approval</h2>
+        </div>
+        {pendingApprovals.length === 0 ? (
+          <div className="p-8 text-center text-sm text-slate-500">Nothing awaiting your approval right now.</div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {pendingApprovals.slice(0, 6).map((req) => (
+              <Link key={req.id} href="/approving-officer/approvals" className="flex items-center justify-between px-4 py-3.5 hover:bg-slate-50">
+                <span className="text-sm font-bold text-slate-950">{req.items[0]?.itemDescription ?? 'Requisition'}</span>
+                <span className="text-xs text-slate-500">{req.requestNumber}</span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <p className="text-xs text-slate-500">
+        Unread notifications: {unreadCount} — <Link href="/approving-officer/notifications" className="font-bold text-blue-700 hover:underline">view all</Link>
+      </p>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Wire it into the router**
+
+Current file:
+```tsx
+import { RoleDashboard } from '@/components/prototype/RoleDashboard';
+import { WorkflowPage } from '@/components/prototype/WorkflowPage';
+import { ProposedUserRole } from '@/lib/roles/proposed-roles';
+
+export default async function ApprovingOfficerPage({ params }: Readonly<{ params: Promise<{ slug?: string[] }> }>) {
+  const { slug } = await params;
+  const segment = slug?.[0] ?? 'dashboard';
+  if (segment === 'dashboard') return <RoleDashboard role={ProposedUserRole.APPROVING_OFFICER} />;
+  return <WorkflowPage role={ProposedUserRole.APPROVING_OFFICER} slug={segment} />;
+}
+```
+
+Replace with:
+```tsx
+import { ApprovingOfficerDashboard } from '@/components/approving-officer/ApprovingOfficerDashboard';
+import { WorkflowPage } from '@/components/prototype/WorkflowPage';
+import { ProposedUserRole } from '@/lib/roles/proposed-roles';
+
+export default async function ApprovingOfficerPage({ params }: Readonly<{ params: Promise<{ slug?: string[] }> }>) {
+  const { slug } = await params;
+  const segment = slug?.[0] ?? 'dashboard';
+  if (segment === 'dashboard') return <ApprovingOfficerDashboard />;
+  return <WorkflowPage role={ProposedUserRole.APPROVING_OFFICER} slug={segment} />;
+}
+```
+(`RoleDashboard` is used nowhere else in this file — remove its import entirely, same as Task 2 did for IT Asset Custodian's router.)
+
+- [ ] **Step 3: Verify**
+
+```bash
+cd Frontend && npx tsc --noEmit && npx eslint components/approving-officer/ApprovingOfficerDashboard.tsx "app/approving-officer/[[...slug]]/page.tsx" --max-warnings 0 && npm run test && npm run build
+```
+Expected: all four clean/succeed.
+
+- [ ] **Step 4: Manual check** (human, browser)
+
+Log in as Supervisor (`supervisor@cicc.gov.ph` / `Supervisor@CICC2026!` — same backend role as Approving Officer, per `docs/guides/ROLES.md`). Land on `/approving-officer/dashboard`. "Pending my approval" should match the count on `/approving-officer/approvals` (both read the same live query). "My own requisitions" should match what you see if that same account has ever submitted a requisition of its own (via `/approving-officer/requisitions`, which is separately already live). Clicking either KPI card, a queue row, or "view all" notifications navigates correctly.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Frontend/components/approving-officer/ApprovingOfficerDashboard.tsx "Frontend/app/approving-officer/[[...slug]]/page.tsx"
+git commit -m "feat(approving-officer): wire dashboard to real requisition/notification data"
+git push
+```
+
+---
 
 ## Phase 3: Management & Audit Viewer's remaining report tabs
 
