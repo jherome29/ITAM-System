@@ -560,6 +560,63 @@ describe('AssetsService', () => {
         expect.anything(),
       );
     });
+
+    it('narrows to the requested type when it is within the authorized scope', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(
+        1,
+        20,
+        undefined,
+        undefined,
+        [AssetType.FIXED, AssetType.SUPPLIES],
+        AssetType.FIXED,
+      );
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'a.assetType IN (:...assetTypeScope)',
+        { assetTypeScope: [AssetType.FIXED] },
+      );
+    });
+
+    it('rejects a requested type outside the authorized scope', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await expect(
+        service.findAll(
+          1,
+          20,
+          undefined,
+          undefined,
+          [AssetType.FIXED, AssetType.SUPPLIES],
+          AssetType.ICT,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects a requested type that is not a real AssetType value', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await expect(
+        service.findAll(1, 20, undefined, undefined, undefined, 'not-a-type'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('allows an unscoped role (e.g. System Admin) to request any single real type', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(
+        1,
+        20,
+        undefined,
+        undefined,
+        undefined,
+        AssetType.SUPPLIES,
+      );
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'a.assetType IN (:...assetTypeScope)',
+        { assetTypeScope: [AssetType.SUPPLIES] },
+      );
+    });
   });
 
   // ── findCatalogue() — available-only list ─────────────────────────────────
