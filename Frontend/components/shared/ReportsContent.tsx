@@ -5,7 +5,7 @@ import { BarChart2, Download } from 'lucide-react';
 import { reportsApi } from '@/lib/api/reports';
 import { PageHeader } from '@/components/ui/PageHeader';
 
-const REPORT_TYPES = [
+const ALL_REPORT_TYPES = [
   { value: 'ASSET_MASTER_LIST', label: 'Asset Master List', formats: ['pdf', 'excel'] as const },
   { value: 'REQUISITION_HISTORY', label: 'Requisition History Log', formats: ['pdf', 'excel'] as const },
   { value: 'ASSET_ISSUANCE', label: 'Asset Issuance Record', formats: ['pdf'] as const },
@@ -14,7 +14,12 @@ const REPORT_TYPES = [
   { value: 'DISPOSAL', label: 'Disposal Documentation Report', formats: ['pdf'] as const },
 ];
 
-export function ReportsContent() {
+export function ReportsContent({
+  reportTypes,
+  pageTitle = 'Generate Reports',
+  panelTitle = 'Management Reports',
+}: Readonly<{ reportTypes?: string[]; pageTitle?: string; panelTitle?: string }>) {
+  const REPORT_TYPES = reportTypes ? ALL_REPORT_TYPES.filter((r) => reportTypes.includes(r.value)) : ALL_REPORT_TYPES;
   const [selectedReport, setSelectedReport] = useState('');
   const [format, setFormat] = useState<'pdf' | 'excel'>('pdf');
   const [loading, setLoading] = useState(false);
@@ -48,11 +53,11 @@ export function ReportsContent() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <PageHeader title="Generate Reports" />
+      <PageHeader title={pageTitle} />
       <div className="bg-white rounded-lg shadow-sm border border-blue-200">
         <div className="p-5 border-b border-blue-200 bg-blue-50 flex items-center gap-2">
           <BarChart2 className="w-5 h-5 text-[#1a4d7a]" />
-          <h2 className="text-base font-semibold text-[#1a4d7a]">Management Reports</h2>
+          <h2 className="text-base font-semibold text-[#1a4d7a]">{panelTitle}</h2>
         </div>
         <form onSubmit={handleGenerate} className="p-6 space-y-5">
           {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">{error}</div>}
