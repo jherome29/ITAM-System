@@ -1,4 +1,5 @@
 import { ReportsContent } from '@/components/shared/ReportsContent';
+import { FormsArchiveContent } from '@/components/shared/FormsArchiveContent';
 import { RoleDashboard } from '@/components/prototype/RoleDashboard';
 import { WorkflowPage } from '@/components/prototype/WorkflowPage';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
@@ -11,6 +12,7 @@ export default async function ManagementAuditPage({ params }: Readonly<{ params:
   if (segment === 'requisition-reports') return <ReportsContent reportTypes={['REQUISITION_HISTORY']} pageTitle="Requisition Reports" panelTitle="Requisition Reports" />;
   if (segment === 'maintenance-disposal') return <ReportsContent reportTypes={['DISPOSAL']} pageTitle="Maintenance & Disposal Reports" panelTitle="Disposal Documentation" />;
   if (segment === 'physical-count') return <ReportsContent reportTypes={['PHYSICAL_COUNT']} pageTitle="Physical Count Reports" panelTitle="Physical Count Summary" />;
+  if (segment === 'forms') return <FormsArchiveContent />;
   return <WorkflowPage role={ProposedUserRole.MANAGEMENT_AUDIT_VIEWER} slug={segment} />;
 }
 
