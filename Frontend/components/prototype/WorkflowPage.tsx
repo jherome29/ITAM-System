@@ -272,7 +272,8 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
   const isLiveFetchPage =
     (role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')) ||
     (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') ||
-    (role === ProposedUserRole.IT_ASSET_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody' || normalizedSlug === 'maintenance' || normalizedSlug === 'disposal'));
+    (role === ProposedUserRole.IT_ASSET_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody' || normalizedSlug === 'maintenance' || normalizedSlug === 'disposal')) ||
+    (role === ProposedUserRole.PROPERTY_CUSTODIAN && normalizedSlug === 'fulfillment');
   // The Approving Officer's own approvals queue is the one confirm-action flow in this
   // shared component that must persist for real — see submitApprovalDecision below.
   // Every other role/slug (including this same officer's 'requisitions' tab, which has
@@ -287,6 +288,8 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
     isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'maintenance';
   const isItAssetCustodianLiveDisposal =
     isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'disposal';
+  const isPropertyCustodianLiveFulfillment =
+    isLiveFetchPage && role === ProposedUserRole.PROPERTY_CUSTODIAN && normalizedSlug === 'fulfillment';
   const [rows, setRows] = useState<Row[]>(() => (isLiveFetchPage ? [] : rowsFor(role, normalizedSlug)));
   const [loading, setLoading] = useState(isLiveFetchPage);
 
@@ -917,7 +920,8 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
           (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) ||
           (isItAssetCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) ||
           (isItAssetCustodianLiveMaintenance && (confirmAction === 'Mark Complete' || confirmAction === 'Recommend Disposal')) ||
-          (isItAssetCustodianLiveDisposal && confirmAction === 'Recommend Disposal')
+          (isItAssetCustodianLiveDisposal && confirmAction === 'Recommend Disposal') ||
+          (isPropertyCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold'))
             ? 'This calls the live backend API and updates the real record.'
             : 'This updates frontend mock state only. Backend authorization and persistence will be implemented later.'
         }
@@ -944,6 +948,10 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
             void submitMaintenanceDecision(confirmAction);
             return;
           }
+          if (isPropertyCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) {
+            void submitFulfillmentDecision(confirmAction);
+            return;
+          }
           runAction(confirmAction);
         }}
         onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setTransferToLocation(''); }}
@@ -951,7 +959,8 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
         {(['Reject', 'Return for Revision'].includes(confirmAction ?? '') ||
           (isItAssetCustodianLiveFulfillment && confirmAction === 'On Hold') ||
           (isItAssetCustodianLiveMaintenance && confirmAction === 'Recommend Disposal') ||
-          (isItAssetCustodianLiveDisposal && confirmAction === 'Recommend Disposal')) && (
+          (isItAssetCustodianLiveDisposal && confirmAction === 'Recommend Disposal') ||
+          (isPropertyCustodianLiveFulfillment && confirmAction === 'On Hold')) && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Remarks</span>
             <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
