@@ -44,7 +44,11 @@ export function FormsArchiveContent() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      // silently fail -- old records before this feature won't have a stored PDF
+      // The disabled-button guard (filePath !== 'stored') already prevents the
+      // one truly expected failure case (pre-storage-feature records with no
+      // PDF) -- anything reaching this catch is a real failure (network,
+      // session expiry, backend error) and deserves visible feedback.
+      setError('Download failed. Please try again.');
     } finally {
       setDownloadingId(null);
     }
