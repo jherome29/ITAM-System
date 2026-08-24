@@ -5,7 +5,7 @@ import { Archive, Clock, Download, RefreshCw } from 'lucide-react';
 import { reportsApi, type FormMeta } from '@/lib/api/reports';
 import { PageHeader } from '@/components/ui/PageHeader';
 
-export function FormsArchiveContent() {
+export function FormsArchiveContent({ showHeader = true }: Readonly<{ showHeader?: boolean }> = {}) {
   const [history, setHistory] = useState<FormMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -56,7 +56,7 @@ export function FormsArchiveContent() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <PageHeader title="Forms Archive" />
+      {showHeader && <PageHeader title="Forms Archive" />}
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">{error}</div>}
 

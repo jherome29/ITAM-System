@@ -4,6 +4,7 @@ import { QrLookup } from '@/components/assets/QrLookup';
 import { RegisterAssetForm } from '@/components/assets/RegisterAssetForm';
 import { ItAssetCustodianDashboard } from '@/components/it-asset-custodian/ItAssetCustodianDashboard';
 import { WorkflowPage } from '@/components/prototype/WorkflowPage';
+import { FormsWorkspaceContent } from '@/components/shared/FormsWorkspaceContent';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
 
@@ -14,8 +15,9 @@ export default async function ItAssetCustodianPage({ params }: Readonly<{ params
   if (segment === 'dashboard') return <ItAssetCustodianDashboard />;
   if (segment === 'notifications') return <NotificationsContent />;
   if (segment === 'assets' && child === 'new') return <RegisterAssetForm basePath="/it-asset-custodian/assets" />;
-  if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/it-asset-custodian/assets" formsPath="/it-personnel/forms" />;
+  if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/it-asset-custodian/assets" formsPath="/it-asset-custodian/reports" />;
   if (segment === 'assets') return <AssetRegistryList basePath="/it-asset-custodian/assets" />;
   if (segment === 'qr-scanner') return <QrLookup detailBasePath="/it-asset-custodian/assets" />;
+  if (segment === 'reports') return <FormsWorkspaceContent />;
   return <WorkflowPage role={ProposedUserRole.IT_ASSET_CUSTODIAN} slug={segment} />;
 }
