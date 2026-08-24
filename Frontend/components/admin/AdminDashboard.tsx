@@ -48,7 +48,7 @@ export function AdminDashboard() {
       </section>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Active accounts" value={userCount === null ? '—' : String(userCount)} detail="Across all offices" tone="blue" icon={Users} />
+        <MetricCard label="Total accounts" value={userCount === null ? '—' : String(userCount)} detail="Across all offices" tone="blue" icon={Users} />
         <MetricCard label="MFA coverage" value="94%" detail="7 enrollments remaining — preview data" tone="green" icon={ShieldCheck} />
         <MetricCard label="Reviews due" value="2" detail="One currently at risk — preview data" tone="amber" icon={UserCheck} />
         <MetricCard label="Platform status" value="Degraded" detail="Database connection unavailable — preview data" tone="red" icon={Server} />
