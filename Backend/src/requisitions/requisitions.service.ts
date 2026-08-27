@@ -2,6 +2,7 @@ import {
   Injectable,
   Inject,
   forwardRef,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -43,6 +44,8 @@ import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 
 @Injectable()
 export class RequisitionsService {
+  private readonly logger = new Logger(RequisitionsService.name);
+
   constructor(
     @InjectRepository(RequisitionEntity)
     private readonly reqRepo: Repository<RequisitionEntity>,
@@ -50,8 +53,6 @@ export class RequisitionsService {
     private readonly itemRepo: Repository<RequisitionItemEntity>,
     @InjectRepository(RequisitionApprovalEntity)
     private readonly approvalRepo: Repository<RequisitionApprovalEntity>,
-    @InjectRepository(AssetEntity)
-    private readonly assetRepo: Repository<AssetEntity>,
     @Inject(forwardRef(() => AssetsService))
     private readonly assetsService: AssetsService,
     private readonly auditService: AuditService,
@@ -587,9 +588,16 @@ export class RequisitionsService {
             fulfilledAssetId: assetId,
           });
 
+          // Mutate the eager-loaded row too: RequisitionEntity.items is
+          // { cascade: true, eager: true }, so the em.save(req) below
+          // re-persists req.items — without this it would cascade the stale
+          // fulfilledAssetId: null straight back over the update() above,
+          // inside the same transaction.
+          const reqItem = req.items.find((i) => i.id === requisitionItemId);
+          if (reqItem) reqItem.fulfilledAssetId = assetId;
+
           // SVC: Deliver and Support — issuing a supply (IES) line draws down
           // its stock. PPE/SEP items are unit assets and are left untouched.
-          const reqItem = req.items.find((i) => i.id === requisitionItemId);
           if (reqItem?.assetClass === AssetClass.IES) {
             const supply = await assetRepo.findOne({ where: { id: assetId } });
             if (!supply) {
@@ -618,12 +626,20 @@ export class RequisitionsService {
     });
 
     // After the transaction commits: give each decremented supply an immediate
-    // low-stock check rather than waiting for the daily sweep. Safe outside the
-    // txn — notifyLowStockIfBelowThreshold is non-throwing for the
-    // not-found/not-IES/already-stamped cases and the daily checkLowStock cron
-    // is the backstop.
+    // low-stock check rather than waiting for the daily sweep. Runs outside the
+    // txn, so a failure here (e.g. notify infra down inside _sendLowStockAlert)
+    // must not reject fulfill() — the fulfillment is already committed and the
+    // requester notification + audit log still need to run. Log and move on;
+    // the daily checkLowStock cron is the backstop.
     for (const { assetId } of stockDecrements) {
-      await this.assetsService.notifyLowStockIfBelowThreshold(assetId);
+      try {
+        await this.assetsService.notifyLowStockIfBelowThreshold(assetId);
+      } catch (e) {
+        this.logger.error(
+          `post-fulfillment low-stock check failed for asset ${assetId}`,
+          e instanceof Error ? e.stack : String(e),
+        );
+      }
     }
 
     // Notify requester

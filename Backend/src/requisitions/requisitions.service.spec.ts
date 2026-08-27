@@ -155,10 +155,6 @@ describe('RequisitionsService', () => {
           provide: getRepositoryToken(RequisitionApprovalEntity),
           useValue: mockApprovalRepo,
         },
-        {
-          provide: getRepositoryToken(AssetEntity),
-          useValue: mockAssetRepo,
-        },
         { provide: AssetsService, useValue: mockAssetsService },
         { provide: AuditService, useValue: mockAuditService },
         { provide: NotificationsService, useValue: mockNotifService },
@@ -695,7 +691,7 @@ describe('RequisitionsService', () => {
     };
 
     it('decrements the linked IES supply by the line quantity and records stockDecrements in the audit metadata', async () => {
-      armFulfillable([mkItem({ quantity: 4 })]);
+      const req = armFulfillable([mkItem({ quantity: 4 })]);
       mockAssetRepo.findOne.mockResolvedValue({
         id: 'sup-1',
         assetClass: AssetClass.IES,
@@ -718,6 +714,9 @@ describe('RequisitionsService', () => {
       expect(mockAssetRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'sup-1', quantity: 6 }),
       );
+      // The eager-loaded row is mutated in memory so the cascade save persists
+      // the link rather than clobbering it back to null.
+      expect(req.items[0].fulfilledAssetId).toBe('sup-1');
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           action: AuditAction.REQUISITION_FULFILLED,
@@ -807,6 +806,32 @@ describe('RequisitionsService', () => {
       expect(
         mockAssetsService.notifyLowStockIfBelowThreshold,
       ).not.toHaveBeenCalled();
+    });
+
+    it('ignores a fulfilledItems entry that matches no requisition item — no decrement, still fulfils', async () => {
+      armFulfillable([mkItem()]);
+
+      const result = await service.fulfill(
+        'req-supply-1',
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        {
+          fulfilledItems: [
+            { requisitionItemId: 'not-on-this-req', assetId: 'sup-x' },
+          ],
+        },
+        '127.0.0.1',
+      );
+
+      expect(result.status).toBe(RequisitionStatus.FULFILLED);
+      expect(mockAssetRepo.findOne).not.toHaveBeenCalled();
+      expect(mockAssetRepo.save).not.toHaveBeenCalled();
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.REQUISITION_FULFILLED,
+          metadata: expect.objectContaining({ stockDecrements: [] }),
+        }),
+      );
     });
   });
 

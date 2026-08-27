@@ -1206,7 +1206,7 @@ describe('AssetsService', () => {
       );
     });
 
-    it('re-arms against the NEW reorderLevel on a combined quantity + reorderLevel PATCH', async () => {
+    it('judges a raised-both PATCH against the new threshold (stamp stays — quantity still below it)', async () => {
       // Stored threshold is 5; the PATCH raises it to 10 while setting
       // quantity 8. 8 clears the OLD threshold but not the NEW one, so the
       // dedup stamp must NOT be re-armed — the combined patch is judged
@@ -1234,6 +1234,39 @@ describe('AssetsService', () => {
       expect(mockAssetRepo.update).not.toHaveBeenCalledWith(
         's1',
         expect.objectContaining({ lowStockNotifiedAt: null }),
+      );
+    });
+
+    it('clears the stamp on a raised-both PATCH when quantity clears the NEW threshold', async () => {
+      // Stored threshold is 5; the PATCH raises it to 10 and sets quantity 15.
+      // 15 > the NEW threshold 10, so the stamp IS re-armed — proves the check
+      // uses patch.reorderLevel, not just existing.reorderLevel (existing.5
+      // alone would also clear it, so the discriminating value is that 15 also
+      // exceeds the raised 10).
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 's1',
+        assetClass: AssetClass.IES,
+        quantity: 15,
+        reorderLevel: 5,
+        lowStockNotifiedAt: new Date(),
+      } as AssetEntity);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.update(
+        's1',
+        { quantity: 15, reorderLevel: 10 },
+        'u1',
+        UserRole.PROPERTY_CUSTODIAN,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.update).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({
+          quantity: 15,
+          reorderLevel: 10,
+          lowStockNotifiedAt: null,
+        }),
       );
     });
 

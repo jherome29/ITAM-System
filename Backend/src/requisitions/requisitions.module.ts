@@ -5,7 +5,6 @@ import { RequisitionsService } from './requisitions.service';
 import { RequisitionEntity } from './entities/requisition.entity';
 import { RequisitionItemEntity } from './entities/requisition-item.entity';
 import { RequisitionApprovalEntity } from './entities/requisition-approval.entity';
-import { AssetEntity } from '../assets/entities/asset.entity';
 import { AuditModule } from '../audit/audit.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
@@ -19,15 +18,16 @@ import { AssetsModule } from '../assets/assets.module';
       RequisitionEntity,
       RequisitionItemEntity,
       RequisitionApprovalEntity,
-      AssetEntity, // fulfill() decrements IES supply stock directly
     ]),
     AuditModule,
     NotificationsModule,
     forwardRef(() => UsersModule), // forwardRef prevents circular dep with UsersModule
-    // AssetsModule → UsersModule → forwardRef(RequisitionsModule) already forms
-    // a resolvable cycle; adding RequisitionsModule → AssetsModule needs the
-    // matching forwardRef here (fulfill() calls AssetsService for the inline
-    // low-stock check).
+    // fulfill() calls AssetsService for the inline post-fulfillment low-stock
+    // check; the txn-scoped asset decrement uses em.getRepository(AssetEntity),
+    // which resolves from the global DataSource, so no forFeature([AssetEntity])
+    // is needed here. AssetsModule → UsersModule → forwardRef(RequisitionsModule)
+    // already forms a resolvable cycle, so RequisitionsModule → AssetsModule
+    // needs the matching forwardRef.
     forwardRef(() => AssetsModule),
   ],
   controllers: [RequisitionsController],
