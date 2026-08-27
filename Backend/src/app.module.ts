@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as Joi from 'joi';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
 import { AssetsModule } from './assets/assets.module';
 import { RequisitionsModule } from './requisitions/requisitions.module';
@@ -11,6 +12,7 @@ import { AuditModule } from './audit/audit.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
+import { SchedulerModule } from './scheduler/scheduler.module';
 import { SnakeNamingStrategy } from './common/snake-naming.strategy';
 
 @Module({
@@ -73,6 +75,9 @@ import { SnakeNamingStrategy } from './common/snake-naming.strategy';
       },
     ]),
 
+    // Cron engine for the automated notification watchers (SchedulerModule)
+    ScheduleModule.forRoot(),
+
     // Feature modules
     AuthModule,
     UsersModule,
@@ -81,6 +86,7 @@ import { SnakeNamingStrategy } from './common/snake-naming.strategy';
     AuditModule,
     NotificationsModule,
     ReportsModule,
+    SchedulerModule,
   ],
   providers: [
     // Rate limiting enforced globally on every route (SECURITY.md §3)

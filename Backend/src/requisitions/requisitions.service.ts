@@ -608,7 +608,7 @@ export class RequisitionsService {
 
   // ── SLA breach check — called by a scheduled job ──────────────────────────
   // Flags all pending_supervisor requisitions older than SLA_APPROVAL_HOURS
-  async checkSlaBreaches(): Promise<void> {
+  async checkSlaBreaches(): Promise<number> {
     const now = new Date();
     const breached = await this.reqRepo
       .createQueryBuilder('r')
@@ -642,5 +642,12 @@ export class RequisitionsService {
         );
       }),
     );
+
+    return 0;
+  }
+
+  // stub — Task 4 implements this
+  checkPendingApprovalNudges(): Promise<number> {
+    return Promise.resolve(0);
   }
 }

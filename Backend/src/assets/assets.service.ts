@@ -463,4 +463,14 @@ export class AssetsService {
 
     return { qrCode, barcodeValue, assetId: id };
   }
+
+  // stub — Task 5 implements this
+  checkOverdueReturns(): Promise<number> {
+    return Promise.resolve(0);
+  }
+
+  // stub — Task 6 implements this
+  checkLowStock(): Promise<number> {
+    return Promise.resolve(0);
+  }
 }
