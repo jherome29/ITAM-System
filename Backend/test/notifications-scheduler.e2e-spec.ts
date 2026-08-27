@@ -7,7 +7,13 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { UserEntity } from '../src/users/entities/user.entity';
-import { UserRole } from '../../packages/shared/src/enums';
+import { RequisitionEntity } from '../src/requisitions/entities/requisition.entity';
+import { NotificationEntity } from '../src/notifications/entities/notification.entity';
+import {
+  UserRole,
+  RequisitionStatus,
+  RequisitionType,
+} from '../../packages/shared/src/enums';
 
 // DB-backed setup (connection + fixture insert) can legitimately take longer
 // than Jest's 5s default, especially over TLS.
@@ -131,5 +137,117 @@ describe('Notifications scheduler (e2e)', () => {
       .get('/api/v1/notifications')
       .set('Authorization', `Bearer ${employeeToken}`)
       .expect(200);
+  });
+
+  /**
+   * Data-path proof for the SLA-breach chain (Task 10): a real overdue
+   * pending_supervisor requisition in Postgres -> POST run-checks -> a persisted
+   * sla_breach notification row addressed to that requisition's supervisor.
+   *
+   * Owns its own fixture and teardown; reuses the outer app / jwtService /
+   * signFor / adminToken (populated by the outer beforeAll before any test here
+   * runs) rather than standing up a second Nest application.
+   */
+  describe('SLA breach data path', () => {
+    let reqRepo: Repository<RequisitionEntity>;
+    let notifRepo: Repository<NotificationEntity>;
+
+    let slaSupervisorRowId: string;
+    let slaRequesterRowId: string;
+    let slaRequisitionId: string;
+    let slaSupervisorToken: string;
+
+    beforeAll(async () => {
+      reqRepo = app.get<Repository<RequisitionEntity>>(
+        getRepositoryToken(RequisitionEntity),
+      );
+      notifRepo = app.get<Repository<NotificationEntity>>(
+        getRepositoryToken(NotificationEntity),
+      );
+
+      const stamp = Date.now();
+
+      const supervisor = await userRepo.save(
+        userRepo.create({
+          employeeId: `E2E-SLA-SUP-${stamp}`,
+          firstName: 'E2E',
+          lastName: 'SlaSupervisor',
+          email: `e2e-sla-sup-${stamp}@example.invalid`,
+          passwordHash: '$2b$12$placeholder.hash.not.used.by.this.test.suite',
+          role: UserRole.SUPERVISOR,
+          division: 'Test',
+          officeOrSection: 'Test',
+        }),
+      );
+      slaSupervisorRowId = supervisor.id;
+      slaSupervisorToken = signFor(supervisor);
+
+      const requester = await userRepo.save(
+        userRepo.create({
+          employeeId: `E2E-SLA-EMP-${stamp}`,
+          firstName: 'E2E',
+          lastName: 'SlaRequester',
+          email: `e2e-sla-emp-${stamp}@example.invalid`,
+          passwordHash: '$2b$12$placeholder.hash.not.used.by.this.test.suite',
+          role: UserRole.EMPLOYEE,
+          division: 'Test',
+          officeOrSection: 'Test',
+        }),
+      );
+      slaRequesterRowId = requester.id;
+
+      const requisition = await reqRepo.save(
+        reqRepo.create({
+          requestNumber: `E2E-SLA-${stamp}`,
+          requisitionType: RequisitionType.NEW,
+          justification: 'e2e sla breach',
+          requiredDate: new Date(),
+          status: RequisitionStatus.PENDING_SUPERVISOR,
+          supervisorId: supervisor.id,
+          requestedById: requester.id,
+          submittedAt: new Date(Date.now() - 48 * 3600 * 1000),
+          slaDeadline: new Date(Date.now() - 24 * 3600 * 1000),
+          slaBreachNotifiedAt: null,
+          items: [],
+        }),
+      );
+      slaRequisitionId = requisition.id;
+    });
+
+    afterAll(async () => {
+      if (slaRequisitionId) {
+        await notifRepo.delete({ relatedRecordId: slaRequisitionId });
+        await reqRepo.delete(slaRequisitionId);
+      }
+      if (slaSupervisorRowId) await userRepo.delete(slaSupervisorRowId);
+      if (slaRequesterRowId) await userRepo.delete(slaRequesterRowId);
+    });
+
+    it('run-checks persists an sla_breach notification for the overdue requisition, addressed to its supervisor', async () => {
+      const runRes = await request(app.getHttpServer())
+        .post(RUN_CHECKS)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      expect(runRes.body.data.slaBreaches).toBeGreaterThanOrEqual(1);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/notifications')
+        .set('Authorization', `Bearer ${slaSupervisorToken}`)
+        .expect(200);
+
+      const notifications = res.body.data.notifications as Array<{
+        alertType: string;
+        relatedRecordId: string;
+      }>;
+
+      expect(
+        notifications.some(
+          (n) =>
+            n.alertType === 'sla_breach' &&
+            n.relatedRecordId === slaRequisitionId,
+        ),
+      ).toBe(true);
+    });
   });
 });
