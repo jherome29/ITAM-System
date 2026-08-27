@@ -905,7 +905,7 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
             )}
             {!readOnly && !selectedIsSelfApproval && (
               <div className="flex flex-wrap gap-2">
-                {detailActions(normalizedSlug, role, isLiveFetchPage, selected ? String(selected.status ?? '') : undefined).map((action) => (
+                {detailActions(normalizedSlug, role, isLiveFetchPage, String(selected.status ?? '')).map((action) => (
                   <button key={action} type="button" onClick={() => setConfirmAction(action)} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-bold text-white hover:bg-blue-800">
                     {action}
                   </button>
