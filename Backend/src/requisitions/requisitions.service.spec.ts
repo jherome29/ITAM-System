@@ -20,6 +20,7 @@ import {
   NotificationAlertType,
   AssetType,
 } from '../../../packages/shared/src/enums';
+import { SLA_APPROVAL_HOURS } from '../../../packages/shared/src/constants';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const makeReq = (
@@ -43,6 +44,7 @@ const makeReq = (
     submittedAt: new Date(),
     slaDeadline: new Date(Date.now() + 24 * 60 * 60 * 1_000),
     slaBreachNotifiedAt: null,
+    pendingNudgeNotifiedAt: null,
     items: [],
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -1037,6 +1039,117 @@ describe('RequisitionsService', () => {
       await expect(service.checkSlaBreaches()).resolves.toBe(0);
       expect(mockNotifService.notify).not.toHaveBeenCalled();
       expect(mockReqRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── checkPendingApprovalNudges() — half-SLA pending-approval nudge watcher ──
+  describe('checkPendingApprovalNudges()', () => {
+    const halfSlaMs = (SLA_APPROVAL_HOURS / 2) * 60 * 60 * 1_000;
+
+    // Inspectable QueryBuilder mock — chain calls are real jest.fn()s so a test
+    // can assert the dedup + window filter clauses were actually applied.
+    const makeNudgeQb = (rows: RequisitionEntity[]) => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(rows),
+    });
+
+    it('nudges the supervisor once for a requisition pending past half the SLA but not yet breached, then stamps it', async () => {
+      const req = makeReq({
+        id: 'r1',
+        requestNumber: 'REQ-1',
+        supervisorId: 'sup1',
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        submittedAt: new Date(Date.now() - halfSlaMs - 60_000),
+        slaDeadline: new Date(Date.now() + 60_000),
+        pendingNudgeNotifiedAt: null,
+      });
+      const qb = makeNudgeQb([req]);
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+      mockReqRepo.update.mockResolvedValue({ affected: 1 });
+
+      const count = await service.checkPendingApprovalNudges();
+
+      expect(count).toBe(1);
+
+      // Dedup query-filter must be present — without this clause the watcher
+      // would re-nudge an already-stamped requisition on every hourly sweep.
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('pendingNudgeNotifiedAt IS NULL'),
+      );
+
+      expect(mockNotifService.notify).toHaveBeenCalledTimes(1);
+      expect(mockNotifService.notify).toHaveBeenCalledWith(
+        'sup1',
+        NotificationAlertType.PENDING_APPROVAL,
+        expect.stringContaining('Approaching'),
+        expect.stringContaining('REQ-1'),
+        'r1',
+        'requisition',
+      );
+      expect(mockReqRepo.update).toHaveBeenCalledWith('r1', {
+        pendingNudgeNotifiedAt: expect.any(Date),
+      });
+    });
+
+    it('bounds the query to submissions older than half the SLA and deadlines not yet passed', async () => {
+      const qb = makeNudgeQb([]);
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const before = Date.now();
+      await service.checkPendingApprovalNudges();
+      const after = Date.now();
+
+      // Lower bound: only submissions older than SLA_APPROVAL_HOURS/2 — an
+      // 11h59m-pending requisition is still inside the window and must NOT be
+      // selected. Widening/removing this clause would fail here.
+      const thresholdCall = qb.andWhere.mock.calls.find(
+        (c) =>
+          typeof c[0] === 'string' &&
+          c[0].includes('submittedAt < :nudgeThreshold'),
+      );
+      expect(thresholdCall).toBeDefined();
+      const nudgeThreshold = (
+        thresholdCall![1] as { nudgeThreshold: Date }
+      ).nudgeThreshold.getTime();
+      expect(nudgeThreshold).toBeGreaterThanOrEqual(before - halfSlaMs - 50);
+      expect(nudgeThreshold).toBeLessThanOrEqual(after - halfSlaMs + 50);
+
+      // Upper bound: already-breached requisitions belong to checkSlaBreaches.
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('slaDeadline >= :now'),
+        expect.objectContaining({ now: expect.any(Date) }),
+      );
+    });
+
+    it('returns 0 and notifies nobody when the query yields nothing', async () => {
+      mockReqRepo.createQueryBuilder.mockReturnValue(makeNudgeQb([]));
+
+      await expect(service.checkPendingApprovalNudges()).resolves.toBe(0);
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+      expect(mockReqRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('stamps but does not notify when the pending requisition has no nominated supervisor', async () => {
+      const req = makeReq({
+        id: 'r3',
+        requestNumber: 'REQ-3',
+        supervisorId: null,
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        submittedAt: new Date(Date.now() - halfSlaMs - 60_000),
+        slaDeadline: new Date(Date.now() + 60_000),
+        pendingNudgeNotifiedAt: null,
+      });
+      mockReqRepo.createQueryBuilder.mockReturnValue(makeNudgeQb([req]));
+      mockReqRepo.update.mockResolvedValue({ affected: 1 });
+
+      const count = await service.checkPendingApprovalNudges();
+
+      expect(count).toBe(1);
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+      expect(mockReqRepo.update).toHaveBeenCalledWith('r3', {
+        pendingNudgeNotifiedAt: expect.any(Date),
+      });
     });
   });
 });

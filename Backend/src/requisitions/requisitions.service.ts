@@ -656,8 +656,48 @@ export class RequisitionsService {
     return breached.length;
   }
 
-  // stub — Task 4 implements this
-  checkPendingApprovalNudges(): Promise<number> {
-    return Promise.resolve(0);
+  // ── Pending-approval nudge — called by the same scheduled job ─────────────
+  // SVC: Engage — Module 5 alert: a requisition still sitting in
+  // pending_supervisor once it has burned through half the SLA_APPROVAL_HOURS
+  // approval window — but before the deadline itself, since breached ones are
+  // checkSlaBreaches' job — earns its nominated supervisor a single reminder.
+  // Deduped via pendingNudgeNotifiedAt so a supervisor is nudged at most once
+  // per requisition. Returns the count newly nudged (always non-negative —
+  // SchedulerService.runWatcher owns the -1 "errored" sentinel).
+  async checkPendingApprovalNudges(): Promise<number> {
+    const now = new Date();
+    const nudgeThreshold = new Date(
+      now.getTime() - (SLA_APPROVAL_HOURS / 2) * 60 * 60 * 1000,
+    );
+
+    const pending = await this.reqRepo
+      .createQueryBuilder('r')
+      .where('r.status = :status', {
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+      })
+      .andWhere('r.submittedAt < :nudgeThreshold', { nudgeThreshold })
+      .andWhere('r.slaDeadline >= :now', { now }) // breached ones: checkSlaBreaches
+      .andWhere('r.pendingNudgeNotifiedAt IS NULL')
+      .getMany();
+
+    await Promise.all(
+      pending.map(async (req) => {
+        if (req.supervisorId) {
+          await this.notificationsService.notify(
+            req.supervisorId,
+            NotificationAlertType.PENDING_APPROVAL,
+            'Requisition Approaching its Approval SLA',
+            `Requisition ${req.requestNumber} has been awaiting your approval for over ${SLA_APPROVAL_HOURS / 2} hours.`,
+            req.id,
+            'requisition',
+          );
+        }
+        await this.reqRepo.update(req.id, {
+          pendingNudgeNotifiedAt: new Date(),
+        });
+      }),
+    );
+
+    return pending.length;
   }
 }
