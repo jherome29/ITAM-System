@@ -1,8 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { Activity, AlertTriangle, CheckCircle2, Clock3, Server, ShieldCheck, UserCheck, Users } from 'lucide-react';
-import { adminActivityTrend, accessReviews, auditRecords, scheduledJobs, systemEvents } from '@/lib/mock/admin.mock';
+import { adminActivityTrend, accessReviews, scheduledJobs, systemEvents } from '@/lib/mock/admin.mock';
+import { usersApi } from '@/lib/api/users';
+import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { AdminPageHeader, MetricCard, Panel, StatusChip } from './AdminUi';
 
 function systemHealthTone(status: string) {
@@ -11,8 +14,26 @@ function systemHealthTone(status: string) {
   return 'text-amber-600';
 }
 
+function PreviewBadge() {
+  return <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">Preview data</span>;
+}
+
 export function AdminDashboard() {
   const maxActivity = Math.max(...adminActivityTrend.flatMap((item) => [item.accounts, item.roles, item.security]));
+  const [userCount, setUserCount] = useState<number | null>(null);
+  const [recentLogs, setRecentLogs] = useState<AuditLog[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([usersApi.list(1, 1), auditApi.list(1, 4)])
+      .then(([u, a]) => {
+        if (cancelled) return;
+        setUserCount(u.data.total);
+        setRecentLogs(a.data.data);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5">
@@ -27,14 +48,14 @@ export function AdminDashboard() {
       </section>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Active accounts" value="125" detail="Across 9 offices" tone="blue" icon={Users} />
-        <MetricCard label="MFA coverage" value="94%" detail="7 enrollments remaining" tone="green" icon={ShieldCheck} />
-        <MetricCard label="Reviews due" value="2" detail="One currently at risk" tone="amber" icon={UserCheck} />
-        <MetricCard label="Platform status" value="Degraded" detail="Database connection unavailable" tone="red" icon={Server} />
+        <MetricCard label="Total accounts" value={userCount === null ? '—' : String(userCount)} detail="Across all offices" tone="blue" icon={Users} />
+        <MetricCard label="MFA coverage" value="94%" detail="7 enrollments remaining — preview data" tone="green" icon={ShieldCheck} />
+        <MetricCard label="Reviews due" value="2" detail="One currently at risk — preview data" tone="amber" icon={UserCheck} />
+        <MetricCard label="Platform status" value="Degraded" detail="Database connection unavailable — preview data" tone="red" icon={Server} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
-        <Panel title="Administrative Activity" detail="Account, role, and security events over the last seven days">
+        <Panel title="Administrative Activity" detail="Account, role, and security events over the last seven days" action={<PreviewBadge />}>
           <div className="p-4">
             <div className="flex h-52 items-end gap-3 border-b border-l border-slate-200 px-3 pb-2">
               {adminActivityTrend.map((item) => (
@@ -51,7 +72,7 @@ export function AdminDashboard() {
             <div className="mt-3 flex flex-wrap justify-center gap-4 text-xs text-slate-600"><span><i className="mr-1.5 inline-block h-2 w-2 bg-blue-600" />Accounts</span><span><i className="mr-1.5 inline-block h-2 w-2 bg-amber-500" />Roles</span><span><i className="mr-1.5 inline-block h-2 w-2 bg-red-500" />Security</span></div>
           </div>
         </Panel>
-        <Panel title="Security Posture" detail="Administrative account safeguards">
+        <Panel title="Security Posture" detail="Administrative account safeguards" action={<PreviewBadge />}>
           <div className="divide-y divide-slate-100 px-4">
             {[['MFA on privileged accounts', '22 of 24', 'Review'], ['Dormant account control', '6 of 8 resolved', 'At risk'], ['Quarterly access certification', '71% complete', 'In progress'], ['Append-only audit capture', 'Operational', 'Healthy']].map(([label, value, status]) => (
               <div key={label} className="flex items-center justify-between gap-4 py-3"><div><p className="text-sm font-semibold text-slate-900">{label}</p><p className="mt-0.5 text-xs text-slate-500">{value}</p></div><StatusChip status={status} /></div>
@@ -61,20 +82,26 @@ export function AdminDashboard() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
-        <Panel title="Access Reviews" detail="Certification work requiring owner action" action={<Link href="/master-admin/access-reviews" className="text-xs font-bold text-blue-700">View all</Link>}>
+        <Panel title="Access Reviews" detail="Certification work requiring owner action" action={<PreviewBadge />}>
           <div className="divide-y divide-slate-100 px-4">{accessReviews.slice(0, 3).map((item) => <div key={item.id} className="py-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-slate-900">{item.name}</p><p className="mt-1 text-xs text-slate-500">{item.owner} - due {item.due}</p></div><StatusChip status={item.status} /></div><div className="mt-2 h-1.5 bg-slate-100"><div className="h-full bg-blue-600" style={{ width: `${item.progress}%` }} /></div></div>)}</div>
         </Panel>
-        <Panel title="System Health" detail="Current platform services" action={<Link href="/master-admin/technical-logs" className="text-xs font-bold text-blue-700">Diagnostics</Link>}>
+        <Panel title="System Health" detail="Current platform services" action={<PreviewBadge />}>
           <div className="divide-y divide-slate-100 px-4">
             {[['Frontend', 'Available', CheckCircle2], ['Backend API', 'Starting', Clock3], ['Database', 'Unavailable', AlertTriangle], ['Scheduled jobs', 'Running with warnings', Activity]].map(([name, status, Icon]) => { const ItemIcon = Icon as typeof Activity; return <div key={String(name)} className="flex items-center gap-3 py-3"><ItemIcon className={`h-4 w-4 ${systemHealthTone(status as string)}`} /><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-900">{name as string}</p><p className="text-xs text-slate-500">{status as string}</p></div></div>; })}
           </div>
         </Panel>
         <Panel title="Recent Audit Activity" detail="Latest immutable administrative evidence" action={<Link href="/master-admin/audit" className="text-xs font-bold text-blue-700">Open audit log</Link>}>
-          <div className="divide-y divide-slate-100 px-4">{auditRecords.slice(0, 4).map((item) => <div key={item.id} className="py-3"><div className="flex items-start justify-between gap-3"><p className="text-sm font-semibold text-slate-900">{item.action.replaceAll('_', ' ')}</p><StatusChip status={item.outcome} /></div><p className="mt-1 text-xs text-slate-500">{item.actor} - {item.record} - {item.timestamp}</p></div>)}</div>
+          <div className="divide-y divide-slate-100 px-4">
+            {recentLogs.length === 0 ? (
+              <p className="py-6 text-center text-xs text-slate-400">No recent audit activity.</p>
+            ) : (
+              recentLogs.map((log) => <div key={log.id} className="py-3"><div className="flex items-start justify-between gap-3"><p className="text-sm font-semibold text-slate-900">{log.action.replace(/_/g, ' ')}</p><StatusChip status={log.userRole} /></div><p className="mt-1 text-xs text-slate-500">{log.userId} · {new Date(log.timestamp).toLocaleString()}</p></div>)
+            )}
+          </div>
         </Panel>
       </div>
 
-      <Panel title="Scheduled Jobs" detail="Automation affecting SLA alerts, retention, and lifecycle notifications">
+      <Panel title="Scheduled Jobs" detail="Automation affecting SLA alerts, retention, and lifecycle notifications" action={<PreviewBadge />}>
         <div className="grid divide-y divide-slate-100 md:grid-cols-3 md:divide-x md:divide-y-0">{scheduledJobs.map((job) => <div key={job.id} className="p-4"><div className="flex items-start justify-between gap-3"><p className="text-sm font-bold text-slate-900">{job.name}</p><StatusChip status={job.result} /></div><dl className="mt-3 space-y-1 text-xs text-slate-500"><div className="flex justify-between gap-3"><dt>Last run</dt><dd>{job.lastRun}</dd></div><div className="flex justify-between gap-3"><dt>Next run</dt><dd>{job.nextRun}</dd></div><div className="flex justify-between gap-3"><dt>Duration</dt><dd>{job.duration}</dd></div></dl></div>)}</div>
       </Panel>
 

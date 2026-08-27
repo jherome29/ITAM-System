@@ -84,7 +84,27 @@ export class AssetsService {
     search?: string,
     status?: string,
     assetTypeScope?: AssetType[],
+    requestedAssetType?: string,
   ) {
+    // Narrow within the caller's already-authorized scope only — never widen
+    // it. Property Custodian's UI splits Fixed and Supplies into separate
+    // list tabs; this lets either tab ask for just its own subtype. Reassigns
+    // the existing `assetTypeScope` param in place so the WHERE-clause
+    // construction below (and every test already covering it) needs zero
+    // changes.
+    if (requestedAssetType) {
+      if (!Object.values(AssetType).includes(requestedAssetType as AssetType)) {
+        throw new BadRequestException('Invalid assetType filter.');
+      }
+      if (
+        assetTypeScope &&
+        !assetTypeScope.includes(requestedAssetType as AssetType)
+      ) {
+        throw new ForbiddenException('Not authorized for this asset type.');
+      }
+      assetTypeScope = [requestedAssetType as AssetType];
+    }
+
     const qb = this.assetRepo
       .createQueryBuilder('a')
       .orderBy('a.createdAt', 'DESC')

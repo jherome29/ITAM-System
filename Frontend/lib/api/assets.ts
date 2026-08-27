@@ -86,10 +86,11 @@ export interface UpdateAssetDto {
 }
 
 export const assetsApi = {
-  list: (page = 1, limit = 15, search?: string, status?: string) => {
+  list: (page = 1, limit = 15, search?: string, status?: string, assetType?: string) => {
     const params: Record<string, string | number> = { page, limit };
     if (search) params.search = search;
     if (status) params.status = status;
+    if (assetType) params.assetType = assetType;
     return client.get<ApiResponse<PaginatedResponse<Asset>>>('/v1/assets', { params }).then((r) => r.data);
   },
 
