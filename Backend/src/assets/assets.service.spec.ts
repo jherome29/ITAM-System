@@ -10,6 +10,7 @@ import { AssetEntity } from './entities/asset.entity';
 import { AssetTransactionEntity } from './entities/asset-transaction.entity';
 import { AuditService } from '../audit/audit.service';
 import { UsersService } from '../users/users.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   AssetStatus,
   AssetClass,
@@ -17,6 +18,7 @@ import {
   AssetCondition,
   UserRole,
   AuditAction,
+  NotificationAlertType,
 } from '../../../packages/shared/src/enums';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -61,6 +63,11 @@ describe('AssetsService', () => {
 
   const mockUsersService = {
     findByEmployeeId: jest.fn(),
+    findByRole: jest.fn(),
+  };
+
+  const mockNotifService = {
+    notify: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -74,6 +81,7 @@ describe('AssetsService', () => {
         },
         { provide: AuditService, useValue: mockAuditService },
         { provide: UsersService, useValue: mockUsersService },
+        { provide: NotificationsService, useValue: mockNotifService },
       ],
     }).compile();
 
@@ -226,6 +234,53 @@ describe('AssetsService', () => {
       expect(mockAssetRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ custodianId: 'user-uuid-123' }),
       );
+    });
+
+    it('records expectedReturnDate on the saved asset when ISSUED with a return date', async () => {
+      const asset = makeAsset({ status: AssetStatus.AVAILABLE });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+      mockTxRepo.create.mockReturnValue({});
+      mockTxRepo.save.mockResolvedValue({});
+
+      await service.updateLifecycle(
+        asset.id,
+        { status: AssetStatus.ISSUED, expectedReturnDate: '2026-12-31' },
+        'user-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expectedReturnDate: new Date('2026-12-31'),
+        }),
+      );
+    });
+
+    it('leaves expectedReturnDate null when ISSUED without a return date', async () => {
+      const asset = makeAsset({
+        status: AssetStatus.AVAILABLE,
+        expectedReturnDate: new Date('2020-01-01'),
+      });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+      mockTxRepo.create.mockReturnValue({});
+      mockTxRepo.save.mockResolvedValue({});
+
+      await service.updateLifecycle(
+        asset.id,
+        { status: AssetStatus.ISSUED },
+        'user-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+      expect(asset.expectedReturnDate).toBeNull();
     });
 
     it('throws BadRequestException when employeeId is not found', async () => {
@@ -694,6 +749,191 @@ describe('AssetsService', () => {
       expect(typeQb.andWhere).toHaveBeenCalledWith(...expectedCall);
       expect(result.total).toBe(3);
       expect(result.byType).toEqual({ Fixed: 3 });
+    });
+  });
+
+  // ── updateLifecycle() — RETURNED re-arms the overdue-return watcher ────────
+  describe('updateLifecycle() — RETURNED clears overdue tracking', () => {
+    it('clears expectedReturnDate and overdueNotifiedAt on return', async () => {
+      const asset = {
+        id: 'a1',
+        assetType: AssetType.ICT,
+        status: AssetStatus.ISSUED,
+        custodianId: 'h1',
+        expectedReturnDate: new Date('2020-01-01'),
+        overdueNotifiedAt: new Date(),
+      } as AssetEntity;
+      jest.spyOn(service, 'findOne').mockResolvedValue(asset);
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+      mockTxRepo.create.mockReturnValue({});
+      mockTxRepo.save.mockResolvedValue({});
+
+      await service.updateLifecycle(
+        'a1',
+        { status: AssetStatus.RETURNED },
+        'u1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+      expect(asset.expectedReturnDate).toBeNull();
+      expect(asset.overdueNotifiedAt).toBeNull();
+      expect(asset.custodianId).toBeNull();
+    });
+  });
+
+  // ── checkOverdueReturns() — overdue-return watcher ────────────────────────
+  describe('checkOverdueReturns()', () => {
+    // Inspectable QueryBuilder mock — chain calls are real jest.fn()s so a test
+    // can assert the dedup filter clause was actually applied. Relying only on
+    // getMany → [] would let a dropped `overdueNotifiedAt IS NULL` clause pass
+    // unnoticed (Task 3/4 query-filter-coverage lesson).
+    const makeOverdueQb = (rows: AssetEntity[]) => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(rows),
+    });
+
+    it('notifies the current holder + the owning custodian role, once each, then stamps', async () => {
+      const overdue = {
+        id: 'a1',
+        itemDescription: 'Projector',
+        propertyNumber: 'PROP-9',
+        assetType: AssetType.ICT,
+        status: AssetStatus.ISSUED,
+        custodianId: 'holder1',
+        expectedReturnDate: new Date('2020-01-01'),
+        overdueNotifiedAt: null,
+      } as AssetEntity;
+      const qb = makeOverdueQb([overdue]);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      mockUsersService.findByRole.mockResolvedValue([{ id: 'itp1' }]);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      const count = await service.checkOverdueReturns();
+
+      expect(count).toBe(1);
+
+      // ICT assets route to IT Personnel as the owning custodian role.
+      expect(mockUsersService.findByRole).toHaveBeenCalledWith(
+        UserRole.IT_PERSONNEL,
+      );
+
+      // Dedup query-filter must be present — without this clause the watcher
+      // would re-notify an already-stamped asset on every sweep.
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('overdueNotifiedAt IS NULL'),
+      );
+
+      const recipients = mockNotifService.notify.mock.calls
+        .map((c) => c[0] as string)
+        .sort();
+      expect(recipients).toEqual(['holder1', 'itp1']);
+      expect(mockNotifService.notify).toHaveBeenCalledWith(
+        expect.any(String),
+        NotificationAlertType.OVERDUE_RETURN,
+        expect.any(String),
+        expect.any(String),
+        'a1',
+        'asset',
+      );
+      expect(mockAssetRepo.update).toHaveBeenCalledWith('a1', {
+        overdueNotifiedAt: expect.any(Date),
+      });
+    });
+
+    it('routes Fixed/Supplies assets to property_custodian', async () => {
+      const overdue = {
+        id: 'a2',
+        itemDescription: 'Office Chair',
+        assetType: AssetType.FIXED,
+        status: AssetStatus.ISSUED,
+        custodianId: 'h2',
+        expectedReturnDate: new Date('2020-01-01'),
+        overdueNotifiedAt: null,
+      } as AssetEntity;
+      mockAssetRepo.createQueryBuilder.mockReturnValue(
+        makeOverdueQb([overdue]),
+      );
+      mockUsersService.findByRole.mockResolvedValue([{ id: 'pc1' }]);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.checkOverdueReturns();
+
+      expect(mockUsersService.findByRole).toHaveBeenCalledWith(
+        UserRole.PROPERTY_CUSTODIAN,
+      );
+      expect(mockUsersService.findByRole).not.toHaveBeenCalledWith(
+        UserRole.IT_PERSONNEL,
+      );
+      const recipients = mockNotifService.notify.mock.calls
+        .map((c) => c[0] as string)
+        .sort();
+      expect(recipients).toEqual(['h2', 'pc1']);
+    });
+
+    it('dedups a user who is both the holder and in the owning custodian role', async () => {
+      const overdue = {
+        id: 'a3',
+        itemDescription: 'Laptop',
+        assetType: AssetType.ICT,
+        status: AssetStatus.ISSUED,
+        custodianId: 'itp1',
+        expectedReturnDate: new Date('2020-01-01'),
+        overdueNotifiedAt: null,
+      } as AssetEntity;
+      mockAssetRepo.createQueryBuilder.mockReturnValue(
+        makeOverdueQb([overdue]),
+      );
+      mockUsersService.findByRole.mockResolvedValue([{ id: 'itp1' }]);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.checkOverdueReturns();
+
+      expect(mockNotifService.notify).toHaveBeenCalledTimes(1);
+      expect(mockNotifService.notify).toHaveBeenCalledWith(
+        'itp1',
+        NotificationAlertType.OVERDUE_RETURN,
+        expect.any(String),
+        expect.any(String),
+        'a3',
+        'asset',
+      );
+    });
+
+    it('null-guards a missing custodian — notifies only the custodian role', async () => {
+      const overdue = {
+        id: 'a4',
+        itemDescription: 'Monitor',
+        assetType: AssetType.ICT,
+        status: AssetStatus.ISSUED,
+        custodianId: null,
+        expectedReturnDate: new Date('2020-01-01'),
+        overdueNotifiedAt: null,
+      } as AssetEntity;
+      mockAssetRepo.createQueryBuilder.mockReturnValue(
+        makeOverdueQb([overdue]),
+      );
+      mockUsersService.findByRole.mockResolvedValue([{ id: 'itp1' }]);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      const count = await service.checkOverdueReturns();
+
+      expect(count).toBe(1);
+      const recipients = mockNotifService.notify.mock.calls.map(
+        (c) => c[0] as string,
+      );
+      expect(recipients).toEqual(['itp1']);
+    });
+
+    it('returns 0 and notifies nobody when nothing is overdue', async () => {
+      mockAssetRepo.createQueryBuilder.mockReturnValue(makeOverdueQb([]));
+
+      await expect(service.checkOverdueReturns()).resolves.toBe(0);
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+      expect(mockAssetRepo.update).not.toHaveBeenCalled();
     });
   });
 });
