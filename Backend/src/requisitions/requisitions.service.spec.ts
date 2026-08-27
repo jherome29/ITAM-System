@@ -940,6 +940,14 @@ describe('RequisitionsService', () => {
 
   // ── checkSlaBreaches() — SLA breach watcher (dedup stamp + oversight roles) ──
   describe('checkSlaBreaches()', () => {
+    // Inspectable QueryBuilder mock — chain calls are real jest.fn()s so a test
+    // can assert the dedup filter clause was actually applied to the query.
+    const makeBreachQb = (rows: RequisitionEntity[]) => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(rows),
+    });
+
     it('notifies supervisor, requester, every system_admin and every management user once, then stamps the requisition', async () => {
       const breached = makeReq({
         id: 'r1',
@@ -950,11 +958,8 @@ describe('RequisitionsService', () => {
         slaDeadline: new Date(Date.now() - 60_000),
         slaBreachNotifiedAt: null,
       });
-      mockReqRepo.createQueryBuilder.mockReturnValue({
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue([breached]),
-      });
+      const qb = makeBreachQb([breached]);
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
       const usersByRole: Partial<Record<UserRole, { id: string }[]>> = {
         [UserRole.SYSTEM_ADMIN]: [{ id: 'admin1' }],
         [UserRole.MANAGEMENT]: [{ id: 'mgmt1' }],
@@ -967,6 +972,14 @@ describe('RequisitionsService', () => {
       const count = await service.checkSlaBreaches();
 
       expect(count).toBe(1);
+
+      // Dedup query-filter must be present — without this clause the watcher
+      // would re-alert an already-stamped requisition on every sweep, which is
+      // the whole point of the task.
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('slaBreachNotifiedAt IS NULL'),
+      );
+
       const recipients = mockNotifService.notify.mock.calls.map((c) =>
         String(c[0]),
       );
@@ -982,6 +995,36 @@ describe('RequisitionsService', () => {
       expect(mockReqRepo.update).toHaveBeenCalledWith('r1', {
         slaBreachNotifiedAt: expect.any(Date),
       });
+    });
+
+    it('collapses a recipient who is both requester and system_admin into a single notify', async () => {
+      const breached = makeReq({
+        id: 'r2',
+        requestNumber: 'REQ-2',
+        supervisorId: 'sup2',
+        requestedById: 'dual-user',
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        slaDeadline: new Date(Date.now() - 60_000),
+        slaBreachNotifiedAt: null,
+      });
+      mockReqRepo.createQueryBuilder.mockReturnValue(makeBreachQb([breached]));
+      const usersByRole: Partial<Record<UserRole, { id: string }[]>> = {
+        [UserRole.SYSTEM_ADMIN]: [{ id: 'dual-user' }],
+        [UserRole.MANAGEMENT]: [],
+      };
+      mockUsersService.findByRole.mockImplementation((r: UserRole) =>
+        Promise.resolve(usersByRole[r] ?? []),
+      );
+      mockReqRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.checkSlaBreaches();
+
+      const dualUserCalls = mockNotifService.notify.mock.calls.filter(
+        (c) => String(c[0]) === 'dual-user',
+      );
+      expect(dualUserCalls).toHaveLength(1);
+      // Distinct recipients left: the supervisor + the merged requester/admin.
+      expect(mockNotifService.notify).toHaveBeenCalledTimes(2);
     });
 
     it('skips requisitions already stamped (query filters them out) and returns 0', async () => {
