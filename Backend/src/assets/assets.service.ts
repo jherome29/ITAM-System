@@ -15,12 +15,14 @@ import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import { UpdateLifecycleDto } from './dto/update-lifecycle.dto';
 import {
+  AssetClass,
   AssetStatus,
   AssetType,
   AuditAction,
   NotificationAlertType,
   UserRole,
 } from '../../../packages/shared/src/enums';
+import { DEFAULT_REORDER_LEVEL } from '../../../packages/shared/src/constants';
 
 // ─── State Machine ─────────────────────────────────────────────────────────
 // Valid asset lifecycle transitions per CLAUDE.md section 5.4:
@@ -324,8 +326,25 @@ export class AssetsService {
     ipAddress: string,
     assetTypeScope?: AssetType[],
   ): Promise<AssetEntity> {
-    await this.findOne(id, assetTypeScope); // throws Not Found / Forbidden
-    await this.assetRepo.update(id, dto);
+    const existing = await this.findOne(id, assetTypeScope); // throws Not Found / Forbidden
+
+    // Re-arm the low-stock dedup stamp: once a PATCH restocks an IES supply
+    // line back above its reorder level, clear lowStockNotifiedAt so
+    // checkLowStock() can alert again the next time it runs low. `quantity`
+    // rides UpdateAssetDto from Task 7's DTO change onward; the local type
+    // keeps the field visible (and this compiling) until then. Reuses the
+    // asset already loaded above rather than issuing a second findOne.
+    const patch: UpdateAssetDto & {
+      quantity?: number;
+      lowStockNotifiedAt?: Date | null;
+    } = { ...dto };
+    if (
+      patch.quantity !== undefined &&
+      patch.quantity > (existing.reorderLevel ?? DEFAULT_REORDER_LEVEL)
+    ) {
+      patch.lowStockNotifiedAt = null;
+    }
+    await this.assetRepo.update(id, patch);
 
     await this.auditService.log({
       userId: performedById,
@@ -543,8 +562,79 @@ export class AssetsService {
     return overdue.length;
   }
 
-  // stub — Task 6 implements this
-  checkLowStock(): Promise<number> {
-    return Promise.resolve(0);
+  // ── Low-stock threshold for one asset ────────────────────────────────────
+  // Per-item reorder_level wins; DEFAULT_REORDER_LEVEL is the system fallback
+  // for IES lines that never had one configured.
+  private lowStockThreshold(asset: AssetEntity): number {
+    return asset.reorderLevel ?? DEFAULT_REORDER_LEVEL;
+  }
+
+  // ── Shared per-asset low-stock alert ─────────────────────────────────────
+  // SVC: Deliver and Support — Module 5 "low stock" alert. Fans a single
+  // notification out to every Property Custodian + every System Admin
+  // (Set-deduped by user id), then stamps lowStockNotifiedAt so neither the
+  // bulk watcher nor the fulfillment hook re-fires for this asset until it is
+  // restocked. The caller is responsible for confirming the asset is IES,
+  // at/below threshold, and unstamped before invoking this.
+  private async _sendLowStockAlert(asset: AssetEntity): Promise<void> {
+    const [custodians, admins] = await Promise.all([
+      this.usersService.findByRole(UserRole.PROPERTY_CUSTODIAN),
+      this.usersService.findByRole(UserRole.SYSTEM_ADMIN),
+    ]);
+    const targets = new Set<string>(
+      [...custodians, ...admins].map((u) => u.id),
+    );
+    await Promise.all(
+      [...targets].map((uid) =>
+        this.notificationsService.notify(
+          uid,
+          NotificationAlertType.LOW_STOCK,
+          'Low Stock',
+          `"${asset.itemDescription}" is down to ${asset.quantity} unit(s) ` +
+            `(reorder level ${this.lowStockThreshold(asset)}).`,
+          asset.id,
+          'asset',
+        ),
+      ),
+    );
+    await this.assetRepo.update(asset.id, { lowStockNotifiedAt: new Date() });
+  }
+
+  // ── Low-stock watcher — called by SchedulerService ──────────────────────
+  // SVC: Deliver and Support — surface IES supply lines that have fallen to
+  // or below their reorder level (per-item reorderLevel, else
+  // DEFAULT_REORDER_LEVEL). Fires exactly once per asset (dedup via
+  // lowStockNotifiedAt) via the shared _sendLowStockAlert helper. Returns the
+  // count of assets newly notified — never negative; SchedulerService.runWatcher
+  // owns the -1 "errored" sentinel.
+  async checkLowStock(): Promise<number> {
+    const low = await this.assetRepo
+      .createQueryBuilder('a')
+      .where('a.assetClass = :cls', { cls: AssetClass.IES })
+      .andWhere('a.quantity <= COALESCE(a.reorderLevel, :fallback)', {
+        fallback: DEFAULT_REORDER_LEVEL,
+      })
+      .andWhere('a.lowStockNotifiedAt IS NULL')
+      .getMany();
+
+    for (const asset of low) {
+      await this._sendLowStockAlert(asset);
+    }
+
+    return low.length;
+  }
+
+  // ── Single-asset low-stock check — used by requisition fulfillment ──────
+  // SVC: Deliver and Support — after fulfill() decrements a supply line, this
+  // gives the just-touched asset an immediate low-stock check instead of
+  // waiting for the daily sweep. Returns true only when an alert was actually
+  // sent (asset exists, is IES, is unstamped, and is at/below threshold).
+  async notifyLowStockIfBelowThreshold(assetId: string): Promise<boolean> {
+    const asset = await this.assetRepo.findOne({ where: { id: assetId } });
+    if (!asset || asset.assetClass !== AssetClass.IES) return false;
+    if (asset.lowStockNotifiedAt) return false;
+    if (asset.quantity > this.lowStockThreshold(asset)) return false;
+    await this._sendLowStockAlert(asset);
+    return true;
   }
 }
