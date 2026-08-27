@@ -30,8 +30,8 @@ describe('Notifications scheduler (e2e)', () => {
   let jwtService: JwtService;
   let userRepo: Repository<UserEntity>;
 
-  let adminId: string;
-  let employeeId: string;
+  let adminRowId: string;
+  let employeeRowId: string;
   let adminToken: string;
   let employeeToken: string;
 
@@ -74,7 +74,7 @@ describe('Notifications scheduler (e2e)', () => {
         officeOrSection: 'Test',
       }),
     );
-    adminId = admin.id;
+    adminRowId = admin.id;
     adminToken = signFor(admin);
 
     const employee = await userRepo.save(
@@ -89,13 +89,13 @@ describe('Notifications scheduler (e2e)', () => {
         officeOrSection: 'Test',
       }),
     );
-    employeeId = employee.id;
+    employeeRowId = employee.id;
     employeeToken = signFor(employee);
   });
 
   afterAll(async () => {
-    if (adminId) await userRepo.delete(adminId);
-    if (employeeId) await userRepo.delete(employeeId);
+    if (adminRowId) await userRepo.delete(adminRowId);
+    if (employeeRowId) await userRepo.delete(employeeRowId);
     await app.close();
   });
 
