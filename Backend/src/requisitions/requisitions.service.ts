@@ -1,5 +1,7 @@
 import {
   Injectable,
+  Inject,
+  forwardRef,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -9,6 +11,8 @@ import { Repository } from 'typeorm';
 import { RequisitionEntity } from './entities/requisition.entity';
 import { RequisitionItemEntity } from './entities/requisition-item.entity';
 import { RequisitionApprovalEntity } from './entities/requisition-approval.entity';
+import { AssetEntity } from '../assets/entities/asset.entity';
+import { AssetsService } from '../assets/assets.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
@@ -24,6 +28,7 @@ import {
   UserRole,
   NotificationAlertType,
   AssetType,
+  AssetClass,
 } from '../../../packages/shared/src/enums';
 import { SLA_APPROVAL_HOURS } from '../../../packages/shared/src/constants';
 import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
@@ -45,6 +50,10 @@ export class RequisitionsService {
     private readonly itemRepo: Repository<RequisitionItemEntity>,
     @InjectRepository(RequisitionApprovalEntity)
     private readonly approvalRepo: Repository<RequisitionApprovalEntity>,
+    @InjectRepository(AssetEntity)
+    private readonly assetRepo: Repository<AssetEntity>,
+    @Inject(forwardRef(() => AssetsService))
+    private readonly assetsService: AssetsService,
     private readonly auditService: AuditService,
     private readonly notificationsService: NotificationsService,
     private readonly usersService: UsersService,
@@ -561,22 +570,61 @@ export class RequisitionsService {
       );
     }
 
-    // Link fulfilled asset IDs to items if provided
-    if (dto.fulfilledItems?.length) {
-      await Promise.all(
-        dto.fulfilledItems.map(({ requisitionItemId, assetId }) =>
-          this.itemRepo.update(requisitionItemId, {
-            fulfilledAssetId: assetId,
-          }),
-        ),
-      );
-    }
+    // Item-linking + supply decrement + status flip run in one transaction:
+    // an insufficient-stock throw on any IES line rolls the whole fulfillment
+    // back (no partial link, no status change). stockDecrements is declared
+    // outside the callback so the post-commit low-stock sweep and the audit
+    // metadata can both read what was actually decremented.
+    const stockDecrements: { assetId: string; from: number; to: number }[] = [];
 
-    req.itPersonnelId = itPersonnelId;
-    req.fulfilledAt = new Date();
-    req.fulfillmentNotes = dto.notes ?? '';
-    req.status = RequisitionStatus.FULFILLED;
-    const saved = await this.reqRepo.save(req);
+    const saved = await this.reqRepo.manager.transaction(async (em) => {
+      const itemRepo = em.getRepository(RequisitionItemEntity);
+      const assetRepo = em.getRepository(AssetEntity);
+
+      if (dto.fulfilledItems?.length) {
+        for (const { requisitionItemId, assetId } of dto.fulfilledItems) {
+          await itemRepo.update(requisitionItemId, {
+            fulfilledAssetId: assetId,
+          });
+
+          // SVC: Deliver and Support — issuing a supply (IES) line draws down
+          // its stock. PPE/SEP items are unit assets and are left untouched.
+          const reqItem = req.items.find((i) => i.id === requisitionItemId);
+          if (reqItem?.assetClass === AssetClass.IES) {
+            const supply = await assetRepo.findOne({ where: { id: assetId } });
+            if (!supply) {
+              throw new BadRequestException(
+                `Supply asset "${assetId}" not found.`,
+              );
+            }
+            if (reqItem.quantity > supply.quantity) {
+              throw new BadRequestException(
+                `Insufficient stock: requested ${reqItem.quantity}, available ${supply.quantity}`,
+              );
+            }
+            const from = supply.quantity;
+            supply.quantity = from - reqItem.quantity;
+            await assetRepo.save(supply);
+            stockDecrements.push({ assetId, from, to: supply.quantity });
+          }
+        }
+      }
+
+      req.itPersonnelId = itPersonnelId;
+      req.fulfilledAt = new Date();
+      req.fulfillmentNotes = dto.notes ?? '';
+      req.status = RequisitionStatus.FULFILLED;
+      return em.getRepository(RequisitionEntity).save(req);
+    });
+
+    // After the transaction commits: give each decremented supply an immediate
+    // low-stock check rather than waiting for the daily sweep. Safe outside the
+    // txn — notifyLowStockIfBelowThreshold is non-throwing for the
+    // not-found/not-IES/already-stamped cases and the daily checkLowStock cron
+    // is the backstop.
+    for (const { assetId } of stockDecrements) {
+      await this.assetsService.notifyLowStockIfBelowThreshold(assetId);
+    }
 
     // Notify requester
     await this.notificationsService.notify(
@@ -600,6 +648,7 @@ export class RequisitionsService {
         requestNumber: req.requestNumber,
         notes: dto.notes,
         fulfilledItems: dto.fulfilledItems,
+        stockDecrements,
       },
     });
 

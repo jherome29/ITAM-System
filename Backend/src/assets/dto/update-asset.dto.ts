@@ -2,6 +2,8 @@ import {
   IsString,
   IsOptional,
   IsNumber,
+  IsInt,
+  Min,
   IsEnum,
   IsDateString,
   IsPositive,
@@ -32,4 +34,17 @@ export class UpdateAssetDto {
   @IsOptional() @IsEnum(AssetCondition) condition?: AssetCondition;
   @IsOptional() @IsString() supplier?: string;
   @IsOptional() @IsDateString() dateOfDelivery?: string;
+
+  // ── Stock (IES supply lines only) ───────────────────────────────────────
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  quantity?: number; // units on hand — IES stock lines; PPE/SEP stay 1
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  reorderLevel?: number; // low-stock threshold for this item
 }

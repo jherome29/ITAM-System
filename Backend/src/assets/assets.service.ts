@@ -330,17 +330,18 @@ export class AssetsService {
 
     // Re-arm the low-stock dedup stamp: once a PATCH restocks an IES supply
     // line back above its reorder level, clear lowStockNotifiedAt so
-    // checkLowStock() can alert again the next time it runs low. `quantity`
-    // rides UpdateAssetDto from Task 7's DTO change onward; the local type
-    // keeps the field visible (and this compiling) until then. Reuses the
-    // asset already loaded above rather than issuing a second findOne.
+    // checkLowStock() can alert again the next time it runs low. A combined
+    // quantity + reorderLevel PATCH is judged against the NEW threshold
+    // (patch.reorderLevel wins), falling back to the stored level, then the
+    // system default. Reuses the asset already loaded above rather than
+    // issuing a second findOne.
     const patch: UpdateAssetDto & {
-      quantity?: number;
       lowStockNotifiedAt?: Date | null;
     } = { ...dto };
     if (
       patch.quantity !== undefined &&
-      patch.quantity > (existing.reorderLevel ?? DEFAULT_REORDER_LEVEL)
+      patch.quantity >
+        (patch.reorderLevel ?? existing.reorderLevel ?? DEFAULT_REORDER_LEVEL)
     ) {
       patch.lowStockNotifiedAt = null;
     }

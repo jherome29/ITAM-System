@@ -8,7 +8,6 @@ import {
 import { AssetsService } from './assets.service';
 import { AssetEntity } from './entities/asset.entity';
 import { AssetTransactionEntity } from './entities/asset-transaction.entity';
-import { UpdateAssetDto } from './dto/update-asset.dto';
 import { AuditService } from '../audit/audit.service';
 import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -1195,7 +1194,7 @@ describe('AssetsService', () => {
 
       await service.update(
         's1',
-        { quantity: 20 } as UpdateAssetDto,
+        { quantity: 20 },
         'u1',
         UserRole.PROPERTY_CUSTODIAN,
         '127.0.0.1',
@@ -1204,6 +1203,37 @@ describe('AssetsService', () => {
       expect(mockAssetRepo.update).toHaveBeenCalledWith(
         's1',
         expect.objectContaining({ quantity: 20, lowStockNotifiedAt: null }),
+      );
+    });
+
+    it('re-arms against the NEW reorderLevel on a combined quantity + reorderLevel PATCH', async () => {
+      // Stored threshold is 5; the PATCH raises it to 10 while setting
+      // quantity 8. 8 clears the OLD threshold but not the NEW one, so the
+      // dedup stamp must NOT be re-armed — the combined patch is judged
+      // against patch.reorderLevel, not existing.reorderLevel.
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 's1',
+        assetClass: AssetClass.IES,
+        quantity: 8,
+        reorderLevel: 5,
+      } as AssetEntity);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.update(
+        's1',
+        { quantity: 8, reorderLevel: 10 },
+        'u1',
+        UserRole.PROPERTY_CUSTODIAN,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.update).toHaveBeenCalledWith('s1', {
+        quantity: 8,
+        reorderLevel: 10,
+      });
+      expect(mockAssetRepo.update).not.toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ lowStockNotifiedAt: null }),
       );
     });
 
@@ -1218,7 +1248,7 @@ describe('AssetsService', () => {
 
       await service.update(
         's1',
-        { quantity: 5 } as UpdateAssetDto,
+        { quantity: 5 },
         'u1',
         UserRole.PROPERTY_CUSTODIAN,
         '127.0.0.1',

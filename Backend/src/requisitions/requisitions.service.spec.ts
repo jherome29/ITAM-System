@@ -9,6 +9,8 @@ import { RequisitionsService } from './requisitions.service';
 import { RequisitionEntity } from './entities/requisition.entity';
 import { RequisitionItemEntity } from './entities/requisition-item.entity';
 import { RequisitionApprovalEntity } from './entities/requisition-approval.entity';
+import { AssetEntity } from '../assets/entities/asset.entity';
+import { AssetsService } from '../assets/assets.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
@@ -19,6 +21,7 @@ import {
   AuditAction,
   NotificationAlertType,
   AssetType,
+  AssetClass,
 } from '../../../packages/shared/src/enums';
 import { SLA_APPROVAL_HOURS } from '../../../packages/shared/src/constants';
 
@@ -55,6 +58,21 @@ describe('RequisitionsService', () => {
   let service: RequisitionsService;
 
   // ── Mock repositories ─────────────────────────────────────────────────────
+  const mockItemRepo = {
+    create: jest.fn(),
+    save: jest.fn(),
+    update: jest.fn(),
+  };
+
+  const mockAssetRepo = {
+    findOne: jest.fn(),
+    save: jest.fn(),
+  };
+
+  const mockAssetsService = {
+    notifyLowStockIfBelowThreshold: jest.fn().mockResolvedValue(false),
+  };
+
   const mockReqRepo = {
     findAndCount: jest.fn(),
     findOne: jest.fn(),
@@ -63,6 +81,10 @@ describe('RequisitionsService', () => {
     save: jest.fn(),
     count: jest.fn(),
     update: jest.fn(),
+    // fulfill() wraps its item-linking + stock decrement + status flip in
+    // reqRepo.manager.transaction(); the runner is attached just below (an
+    // in-initializer self-reference would trip TS7022).
+    manager: { transaction: jest.fn() },
     createQueryBuilder: jest.fn().mockReturnValue({
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
@@ -80,11 +102,22 @@ describe('RequisitionsService', () => {
     }),
   };
 
-  const mockItemRepo = {
-    create: jest.fn(),
-    save: jest.fn(),
-    update: jest.fn(),
-  };
+  // Run the transaction callback inline against a real per-entity getRepository
+  // switch so decrement/link assertions land on the right repo (the AssetEntity
+  // repo must NOT be the same object as the RequisitionItemEntity repo).
+  mockReqRepo.manager.transaction.mockImplementation(
+    (cb: (em: { getRepository: (e: unknown) => unknown }) => unknown) =>
+      cb({
+        getRepository: (entity: unknown) => {
+          if (entity === AssetEntity) return mockAssetRepo;
+          if (entity === RequisitionItemEntity) return mockItemRepo;
+          if (entity === RequisitionEntity) return mockReqRepo;
+          throw new Error(
+            'transaction mock: unexpected getRepository() entity',
+          );
+        },
+      }),
+  );
 
   const mockApprovalRepo = {
     find: jest.fn().mockResolvedValue([]),
@@ -122,6 +155,11 @@ describe('RequisitionsService', () => {
           provide: getRepositoryToken(RequisitionApprovalEntity),
           useValue: mockApprovalRepo,
         },
+        {
+          provide: getRepositoryToken(AssetEntity),
+          useValue: mockAssetRepo,
+        },
+        { provide: AssetsService, useValue: mockAssetsService },
         { provide: AuditService, useValue: mockAuditService },
         { provide: NotificationsService, useValue: mockNotifService },
         { provide: UsersService, useValue: mockUsersService },
@@ -622,6 +660,153 @@ describe('RequisitionsService', () => {
           '127.0.0.1',
         ),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('fulfill() — supply stock decrement', () => {
+    // A line item that clears the IT_PERSONNEL asset-type scope guard
+    // (assetType ICT) so the test reaches the decrement path. assetClass
+    // decides whether the supply is decremented — IES yes, PPE/SEP no.
+    const mkItem = (
+      over: Partial<RequisitionItemEntity> = {},
+    ): RequisitionItemEntity =>
+      ({
+        id: 'ri-ies-1',
+        assetType: AssetType.ICT,
+        assetClass: AssetClass.IES,
+        quantity: 4,
+        itemDescription: 'USB drives (box)',
+        fulfilledAssetId: null,
+        ...over,
+      }) as unknown as RequisitionItemEntity;
+
+    const armFulfillable = (items: RequisitionItemEntity[]) => {
+      const req = makeReq({
+        id: 'req-supply-1',
+        status: RequisitionStatus.PENDING_FULFILLMENT,
+        items,
+      });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+      mockReqRepo.save.mockImplementation((r: RequisitionEntity) =>
+        Promise.resolve(r),
+      );
+      return req;
+    };
+
+    it('decrements the linked IES supply by the line quantity and records stockDecrements in the audit metadata', async () => {
+      armFulfillable([mkItem({ quantity: 4 })]);
+      mockAssetRepo.findOne.mockResolvedValue({
+        id: 'sup-1',
+        assetClass: AssetClass.IES,
+        quantity: 10,
+      });
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+
+      await service.fulfill(
+        'req-supply-1',
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        {
+          fulfilledItems: [{ requisitionItemId: 'ri-ies-1', assetId: 'sup-1' }],
+        },
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'sup-1', quantity: 6 }),
+      );
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.REQUISITION_FULFILLED,
+          metadata: expect.objectContaining({
+            stockDecrements: [{ assetId: 'sup-1', from: 10, to: 6 }],
+          }),
+        }),
+      );
+      expect(
+        mockAssetsService.notifyLowStockIfBelowThreshold,
+      ).toHaveBeenCalledWith('sup-1');
+    });
+
+    it('rolls back with a 400 and saves nothing when the line quantity exceeds available stock', async () => {
+      armFulfillable([mkItem({ quantity: 50 })]);
+      mockAssetRepo.findOne.mockResolvedValue({
+        id: 'sup-1',
+        assetClass: AssetClass.IES,
+        quantity: 10,
+      });
+
+      await expect(
+        service.fulfill(
+          'req-supply-1',
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          {
+            fulfilledItems: [
+              { requisitionItemId: 'ri-ies-1', assetId: 'sup-1' },
+            ],
+          },
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow('Insufficient stock: requested 50, available 10');
+
+      expect(mockAssetRepo.save).not.toHaveBeenCalled();
+      expect(mockReqRepo.save).not.toHaveBeenCalled();
+      expect(mockAuditService.log).not.toHaveBeenCalled();
+      expect(
+        mockAssetsService.notifyLowStockIfBelowThreshold,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('leaves a PPE line untouched — no supply lookup, no decrement, empty stockDecrements', async () => {
+      armFulfillable([
+        mkItem({
+          id: 'ri-ppe-1',
+          assetClass: AssetClass.PPE,
+          quantity: 1,
+          itemDescription: 'Laptop',
+        }),
+      ]);
+
+      await service.fulfill(
+        'req-supply-1',
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        {
+          fulfilledItems: [{ requisitionItemId: 'ri-ppe-1', assetId: 'ppe-1' }],
+        },
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.findOne).not.toHaveBeenCalled();
+      expect(mockAssetRepo.save).not.toHaveBeenCalled();
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.REQUISITION_FULFILLED,
+          metadata: expect.objectContaining({ stockDecrements: [] }),
+        }),
+      );
+    });
+
+    it('still fulfills via the legacy path when no fulfilledItems are supplied', async () => {
+      armFulfillable([mkItem()]);
+
+      const result = await service.fulfill(
+        'req-supply-1',
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        {},
+        '127.0.0.1',
+      );
+
+      expect(result.status).toBe(RequisitionStatus.FULFILLED);
+      expect(mockAssetRepo.findOne).not.toHaveBeenCalled();
+      expect(
+        mockAssetsService.notifyLowStockIfBelowThreshold,
+      ).not.toHaveBeenCalled();
     });
   });
 
