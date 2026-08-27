@@ -42,6 +42,7 @@ const makeReq = (
     fulfillmentNotes: '',
     submittedAt: new Date(),
     slaDeadline: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+    slaBreachNotifiedAt: null,
     items: [],
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -934,6 +935,65 @@ describe('RequisitionsService', () => {
       expect(result.page).toBe(1);
       expect(result.limit).toBe(20);
       expect(result.totalPages).toBe(1);
+    });
+  });
+
+  // ── checkSlaBreaches() — SLA breach watcher (dedup stamp + oversight roles) ──
+  describe('checkSlaBreaches()', () => {
+    it('notifies supervisor, requester, every system_admin and every management user once, then stamps the requisition', async () => {
+      const breached = makeReq({
+        id: 'r1',
+        requestNumber: 'REQ-1',
+        supervisorId: 'sup1',
+        requestedById: 'emp1',
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        slaDeadline: new Date(Date.now() - 60_000),
+        slaBreachNotifiedAt: null,
+      });
+      mockReqRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([breached]),
+      });
+      const usersByRole: Partial<Record<UserRole, { id: string }[]>> = {
+        [UserRole.SYSTEM_ADMIN]: [{ id: 'admin1' }],
+        [UserRole.MANAGEMENT]: [{ id: 'mgmt1' }],
+      };
+      mockUsersService.findByRole.mockImplementation((r: UserRole) =>
+        Promise.resolve(usersByRole[r] ?? []),
+      );
+      mockReqRepo.update.mockResolvedValue({ affected: 1 });
+
+      const count = await service.checkSlaBreaches();
+
+      expect(count).toBe(1);
+      const recipients = mockNotifService.notify.mock.calls.map((c) =>
+        String(c[0]),
+      );
+      expect(recipients.sort()).toEqual(['admin1', 'emp1', 'mgmt1', 'sup1']);
+      expect(mockNotifService.notify).toHaveBeenCalledWith(
+        expect.any(String),
+        NotificationAlertType.SLA_BREACH,
+        expect.any(String),
+        expect.any(String),
+        'r1',
+        'requisition',
+      );
+      expect(mockReqRepo.update).toHaveBeenCalledWith('r1', {
+        slaBreachNotifiedAt: expect.any(Date),
+      });
+    });
+
+    it('skips requisitions already stamped (query filters them out) and returns 0', async () => {
+      mockReqRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      });
+
+      await expect(service.checkSlaBreaches()).resolves.toBe(0);
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+      expect(mockReqRepo.update).not.toHaveBeenCalled();
     });
   });
 });

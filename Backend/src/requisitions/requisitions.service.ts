@@ -606,8 +606,14 @@ export class RequisitionsService {
     return saved;
   }
 
-  // ── SLA breach check — called by a scheduled job ──────────────────────────
-  // Flags all pending_supervisor requisitions older than SLA_APPROVAL_HOURS
+  // ── SLA breach check — called by a scheduled job (SchedulerService) ───────
+  // SVC: Improve — audit-readiness: surface pending_supervisor requisitions that
+  // have blown the SLA_APPROVAL_HOURS approval window. Fires exactly once per
+  // requisition (dedup via slaBreachNotifiedAt) and reaches the Module 5 alert
+  // recipient set: the nominated supervisor, the requester, and every
+  // System Administrator + Management user for oversight. Returns the count of
+  // requisitions newly notified (always non-negative — SchedulerService.runWatcher
+  // owns the -1 "errored" sentinel).
   async checkSlaBreaches(): Promise<number> {
     const now = new Date();
     const breached = await this.reqRepo
@@ -616,34 +622,38 @@ export class RequisitionsService {
         status: RequisitionStatus.PENDING_SUPERVISOR,
       })
       .andWhere('r.slaDeadline < :now', { now })
+      .andWhere('r.slaBreachNotifiedAt IS NULL')
       .getMany();
+
+    if (breached.length === 0) return 0;
+
+    const [admins, management] = await Promise.all([
+      this.usersService.findByRole(UserRole.SYSTEM_ADMIN),
+      this.usersService.findByRole(UserRole.MANAGEMENT),
+    ]);
+    const oversight = [...admins, ...management].map((u) => u.id);
 
     await Promise.all(
       breached.map(async (req) => {
-        // Notify supervisor
-        if (req.supervisorId) {
-          await this.notificationsService.notify(
-            req.supervisorId,
-            NotificationAlertType.SLA_BREACH,
-            'SLA Breach — Requisition Overdue',
-            `Requisition ${req.requestNumber} has exceeded the 24-hour approval SLA. Immediate action required.`,
-            req.id,
-            'requisition',
-          );
-        }
-        // Notify requester
-        await this.notificationsService.notify(
-          req.requestedById,
-          NotificationAlertType.SLA_BREACH,
-          'Your Requisition is Overdue',
-          `Requisition ${req.requestNumber} has been pending for more than 24 hours without a decision.`,
-          req.id,
-          'requisition',
+        const targets = new Set<string>([req.requestedById, ...oversight]);
+        if (req.supervisorId) targets.add(req.supervisorId);
+        await Promise.all(
+          [...targets].map((uid) =>
+            this.notificationsService.notify(
+              uid,
+              NotificationAlertType.SLA_BREACH,
+              'SLA Breach — Requisition Overdue',
+              `Requisition ${req.requestNumber} has exceeded the ${SLA_APPROVAL_HOURS}-hour approval SLA.`,
+              req.id,
+              'requisition',
+            ),
+          ),
         );
+        await this.reqRepo.update(req.id, { slaBreachNotifiedAt: new Date() });
       }),
     );
 
-    return 0;
+    return breached.length;
   }
 
   // stub — Task 4 implements this
