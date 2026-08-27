@@ -1,13 +1,25 @@
-import { RoleDashboard } from '@/components/prototype/RoleDashboard';
-import { AssetInventoryGallery } from '@/components/inventory/AssetInventoryGallery';
+import { AssetDetailManager } from '@/components/assets/AssetDetailManager';
+import { AssetRegistryList } from '@/components/assets/AssetRegistryList';
+import { QrLookup } from '@/components/assets/QrLookup';
+import { RegisterAssetForm } from '@/components/assets/RegisterAssetForm';
+import { PropertyCustodianDashboard } from '@/components/property-custodian/PropertyCustodianDashboard';
 import { WorkflowPage } from '@/components/prototype/WorkflowPage';
+import { FormsWorkspaceContent } from '@/components/shared/FormsWorkspaceContent';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
 
 export default async function PropertyCustodianPage({ params }: Readonly<{ params: Promise<{ slug?: string[] }> }>) {
   const { slug } = await params;
   const segment = slug?.[0] ?? 'dashboard';
-  if (segment === 'dashboard') return <RoleDashboard role={ProposedUserRole.PROPERTY_CUSTODIAN} />;
-  if (segment === 'fixed-assets') return <AssetInventoryGallery kind="property" />;
-  if (segment === 'supplies') return <AssetInventoryGallery kind="supply" />;
+  const child = slug?.[1];
+  if (segment === 'dashboard') return <PropertyCustodianDashboard />;
+  if (segment === 'fixed-assets' && child === 'new') return <RegisterAssetForm basePath="/property-custodian/fixed-assets" />;
+  if (segment === 'fixed-assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/fixed-assets" formsPath="/property-custodian/reports" />;
+  if (segment === 'fixed-assets') return <AssetRegistryList basePath="/property-custodian/fixed-assets" assetType="Fixed" title="Fixed Asset Registry" />;
+  if (segment === 'supplies' && child === 'new') return <RegisterAssetForm basePath="/property-custodian/supplies" />;
+  if (segment === 'supplies' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/supplies" formsPath="/property-custodian/reports" />;
+  if (segment === 'supplies') return <AssetRegistryList basePath="/property-custodian/supplies" assetType="Supplies" title="Supply Inventory" />;
+  if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/assets" formsPath="/property-custodian/reports" />;
+  if (segment === 'qr-scanner') return <QrLookup detailBasePath="/property-custodian/assets" />;
+  if (segment === 'reports') return <FormsWorkspaceContent />;
   return <WorkflowPage role={ProposedUserRole.PROPERTY_CUSTODIAN} slug={segment} />;
 }
