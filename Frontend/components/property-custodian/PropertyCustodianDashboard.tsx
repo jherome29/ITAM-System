@@ -1,102 +1,63 @@
 'use client';
 
-import Link from 'next/link';
-import { useEffect, useState } from 'react';
 import { Archive, Boxes, CheckCircle2, ClipboardList } from 'lucide-react';
-import { useAuth } from '@/lib/auth/use-auth';
-import { assetsApi, type AssetStats } from '@/lib/api/assets';
-import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';
+import { assetsApi } from '@/lib/api/assets';
+import { requisitionsApi } from '@/lib/api/requisitions';
 import { notificationsApi } from '@/lib/api/notifications';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
+import {
+  DashboardError,
+  KpiTile,
+  NotificationsFooter,
+  RequisitionListSection,
+  RoleDashboardHeader,
+  useRoleDashboardData,
+} from '@/components/dashboard/RoleDashboardShell';
 
 export function PropertyCustodianDashboard() {
-  const { user } = useAuth();
-  const [stats, setStats] = useState<AssetStats | null>(null);
-  const [pendingFulfillment, setPendingFulfillment] = useState<Requisition[]>([]);
-  const [pendingTotal, setPendingTotal] = useState(0);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
+  const { data, loading, error } = useRoleDashboardData(async () => {
+    const [statsRes, reqRes, notifRes] = await Promise.all([
       assetsApi.stats(),
       requisitionsApi.list(1, 15, 'pending_fulfillment'),
       notificationsApi.list(),
-    ])
-      .then(([statsRes, reqRes, notifRes]) => {
-        if (cancelled) return;
-        setStats(statsRes.data);
-        setPendingFulfillment(reqRes.data.data);
-        setPendingTotal(reqRes.data.total);
-        setUnreadCount(notifRes.data.unreadCount);
-        setError('');
-      })
-      .catch(() => {
-        if (!cancelled) setError('Failed to load dashboard data. Please refresh the page.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, []);
+    ]);
+    return {
+      stats: statsRes.data,
+      pendingFulfillment: reqRes.data.data,
+      pendingTotal: reqRes.data.total,
+      unreadCount: notifRes.data.unreadCount,
+    };
+  });
 
   if (loading) {
     return <LoadingSkeleton rows={8} />;
   }
 
+  const stats = data?.stats ?? null;
+  const pendingFulfillment = data?.pendingFulfillment ?? [];
+  const pendingTotal = data?.pendingTotal ?? 0;
+  const unreadCount = data?.unreadCount ?? 0;
+
   return (
     <div className="mx-auto w-full max-w-[1480px] space-y-5">
-      <header className="border-b border-slate-200 pb-5">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">Property Custodian</p>
-        <h1 className="mt-1 text-[28px] font-extrabold leading-tight text-slate-950">Good day, {user?.firstName ?? 'there'}</h1>
-      </header>
-
-      {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
+      <RoleDashboardHeader eyebrow="Property Custodian" />
+      <DashboardError message={error} />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
-          <span className="grid h-12 w-12 place-items-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700"><Boxes className="h-5 w-5" /></span>
-          <span><span className="block text-xs font-semibold text-slate-500">Total assets (Fixed + Supplies)</span><span className="text-2xl font-extrabold text-slate-950">{stats?.total ?? 0}</span></span>
-        </div>
-        <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
-          <span className="grid h-12 w-12 place-items-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700"><CheckCircle2 className="h-5 w-5" /></span>
-          <span><span className="block text-xs font-semibold text-slate-500">Available</span><span className="text-2xl font-extrabold text-slate-950">{stats?.available ?? 0}</span></span>
-        </div>
-        <Link href="/property-custodian/fulfillment" className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm transition hover:border-blue-300">
-          <span className="grid h-12 w-12 place-items-center rounded-lg border border-amber-200 bg-amber-50 text-amber-700"><ClipboardList className="h-5 w-5" /></span>
-          <span><span className="block text-xs font-semibold text-slate-500">Pending fulfillment</span><span className="text-2xl font-extrabold text-slate-950">{pendingTotal}</span></span>
-        </Link>
-        <Link href="/property-custodian/disposal" className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm transition hover:border-blue-300">
-          <span className="grid h-12 w-12 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-700"><Archive className="h-5 w-5" /></span>
-          <span><span className="block text-xs font-semibold text-slate-500">Flagged for disposal</span><span className="text-2xl font-extrabold text-slate-950">{stats?.flaggedForDisposal ?? 0}</span></span>
-        </Link>
+        <KpiTile icon={Boxes} tone="blue" label="Total assets (Fixed + Supplies)" value={stats?.total ?? 0} />
+        <KpiTile icon={CheckCircle2} tone="emerald" label="Available" value={stats?.available ?? 0} />
+        <KpiTile icon={ClipboardList} tone="amber" label="Pending fulfillment" value={pendingTotal} href="/property-custodian/fulfillment" />
+        <KpiTile icon={Archive} tone="red" label="Flagged for disposal" value={stats?.flaggedForDisposal ?? 0} href="/property-custodian/disposal" />
       </div>
 
-      <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-4">
-          <h2 className="text-[15px] font-extrabold text-slate-950">Awaiting Fulfillment</h2>
-        </div>
-        {pendingFulfillment.length === 0 ? (
-          <div className="p-8 text-center text-sm text-slate-500">Nothing awaiting fulfillment right now.</div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {pendingFulfillment.slice(0, 6).map((req) => (
-              <Link key={req.id} href="/property-custodian/fulfillment" className="flex items-center justify-between px-4 py-3.5 hover:bg-slate-50">
-                <span className="text-sm font-bold text-slate-950">{req.items[0]?.itemDescription ?? 'Requisition'}</span>
-                <span className="text-xs text-slate-500">{req.requestNumber}</span>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
+      <RequisitionListSection
+        title="Awaiting Fulfillment"
+        items={pendingFulfillment}
+        href="/property-custodian/fulfillment"
+        emptyText="Nothing awaiting fulfillment right now."
+      />
 
-      <p className="text-xs text-slate-500">
-        Unread notifications: {unreadCount} — <Link href="/property-custodian/notifications" className="font-bold text-blue-700 hover:underline">view all</Link>
-      </p>
+      <NotificationsFooter count={unreadCount} href="/property-custodian/notifications" />
     </div>
   );
 }

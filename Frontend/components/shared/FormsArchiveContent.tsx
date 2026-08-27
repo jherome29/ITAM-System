@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Archive, Clock, Download, RefreshCw } from 'lucide-react';
 import { reportsApi, type FormMeta } from '@/lib/api/reports';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { downloadBlob } from '@/lib/download';
 
 export function FormsArchiveContent({ showHeader = true }: Readonly<{ showHeader?: boolean }> = {}) {
   const [history, setHistory] = useState<FormMeta[]>([]);
@@ -35,14 +36,7 @@ export function FormsArchiveContent({ showHeader = true }: Readonly<{ showHeader
     setDownloadingId(form.id);
     try {
       const blob = await reportsApi.downloadStoredForm(form.id);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${form.formType}-${form.generatedAt.slice(0, 10)}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `${form.formType}-${form.generatedAt.slice(0, 10)}.pdf`);
     } catch {
       // The disabled-button guard (filePath !== 'stored') already prevents the
       // one truly expected failure case (pre-storage-feature records with no

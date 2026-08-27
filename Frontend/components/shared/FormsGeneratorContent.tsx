@@ -4,8 +4,44 @@ import { useState } from 'react';
 import { FileSpreadsheet, Download } from 'lucide-react';
 import { reportsApi, type GenerateFormDto } from '@/lib/api/reports';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { downloadBlob } from '@/lib/download';
 
 type InputGroup = 'asset' | 'requisition' | 'batch';
+
+const INPUT_CLASS =
+  'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors';
+
+/** One labelled free-text field — used for every string input in this form. */
+function TextField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  required,
+  hint,
+}: Readonly<{
+  label: React.ReactNode;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  required?: boolean;
+  hint?: string;
+}>) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={INPUT_CLASS}
+        required={required}
+      />
+      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
+    </div>
+  );
+}
 
 interface FormConfig {
   value: string;
@@ -83,15 +119,8 @@ export function FormsGeneratorContent({ onGenerated }: Readonly<{ onGenerated?: 
       if (config?.extras?.includes('returneeId') && returneeId.trim()) dto.returneeId = returneeId.trim();
 
       const blob = await reportsApi.generateFormBlob(dto);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
       // eslint-disable-next-line react-hooks/purity -- Date.now() is in an async event handler, not in render
-      a.download = `${selectedForm}-${Date.now()}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `${selectedForm}-${Date.now()}.pdf`);
       onGenerated?.();
     } catch {
       setError('Failed to generate form. Verify the ID exists and try again.');
@@ -99,8 +128,6 @@ export function FormsGeneratorContent({ onGenerated }: Readonly<{ onGenerated?: 
       setLoading(false);
     }
   };
-
-  const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors';
 
   const groups: InputGroup[] = ['asset', 'requisition', 'batch'];
 
@@ -156,60 +183,55 @@ export function FormsGeneratorContent({ onGenerated }: Readonly<{ onGenerated?: 
           {config && (
             <div className="space-y-3 pt-2 border-t border-gray-100">
               {config.group === 'asset' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Asset UUID</label>
-                  <input
-                    type="text"
-                    value={assetId}
-                    onChange={(e) => setAssetId(e.target.value)}
-                    placeholder="e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6"
-                    className={inputClass}
-                    required
-                  />
-                  <p className="text-xs text-gray-400 mt-1">Copy from the Asset Details page URL or table.</p>
-                </div>
+                <TextField
+                  label="Asset UUID"
+                  value={assetId}
+                  onChange={setAssetId}
+                  placeholder="e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                  required
+                  hint="Copy from the Asset Details page URL or table."
+                />
               )}
 
               {config.group === 'requisition' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Requisition UUID</label>
-                  <input
-                    type="text"
-                    value={requisitionId}
-                    onChange={(e) => setRequisitionId(e.target.value)}
-                    placeholder="e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6"
-                    className={inputClass}
-                    required
-                  />
-                  <p className="text-xs text-gray-400 mt-1">Copy from the Fulfillment Queue or requisition detail page.</p>
-                </div>
+                <TextField
+                  label="Requisition UUID"
+                  value={requisitionId}
+                  onChange={setRequisitionId}
+                  placeholder="e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6"
+                  required
+                  hint="Copy from the Fulfillment Queue or requisition detail page."
+                />
               )}
 
               {config.group === 'batch' && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Date From</label>
-                    <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={inputClass} />
+                    <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={INPUT_CLASS} />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Date To</label>
-                    <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={inputClass} />
+                    <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={INPUT_CLASS} />
                   </div>
                   <p className="col-span-2 text-xs text-gray-400">Leave blank to use the current calendar year to today.</p>
                 </div>
               )}
 
               {config.extras?.includes('targetOffice') && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Receiving Office / Section</label>
-                  <input type="text" value={targetOffice} onChange={(e) => setTargetOffice(e.target.value)} placeholder="e.g. Anti-Cybercrime Division — NCR" className={inputClass} required />
-                </div>
+                <TextField
+                  label="Receiving Office / Section"
+                  value={targetOffice}
+                  onChange={setTargetOffice}
+                  placeholder="e.g. Anti-Cybercrime Division — NCR"
+                  required
+                />
               )}
 
               {config.extras?.includes('lossType') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Type of Loss/Damage</label>
-                  <select value={lossType} onChange={(e) => setLossType(e.target.value)} className={inputClass}>
+                  <select value={lossType} onChange={(e) => setLossType(e.target.value)} className={INPUT_CLASS}>
                     {LOSS_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
@@ -218,29 +240,40 @@ export function FormsGeneratorContent({ onGenerated }: Readonly<{ onGenerated?: 
               {config.extras?.includes('circumstances') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Circumstances / Description</label>
-                  <textarea value={circumstances} onChange={(e) => setCircumstances(e.target.value)} placeholder="Describe the circumstances of the loss or damage..." rows={3} className={inputClass} />
+                  <textarea value={circumstances} onChange={(e) => setCircumstances(e.target.value)} placeholder="Describe the circumstances of the loss or damage..." rows={3} className={INPUT_CLASS} />
                 </div>
               )}
 
               {config.extras?.includes('requestingDivision') && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Requesting Division</label>
-                  <input type="text" value={requestingDivision} onChange={(e) => setRequestingDivision(e.target.value)} placeholder="e.g. Information Technology Division" className={inputClass} required />
-                </div>
+                <TextField
+                  label="Requesting Division"
+                  value={requestingDivision}
+                  onChange={setRequestingDivision}
+                  placeholder="e.g. Information Technology Division"
+                  required
+                />
               )}
 
               {config.extras?.includes('purpose') && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Purpose of Move-Out</label>
-                  <input type="text" value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="e.g. For repair / Training use / Return to supply" className={inputClass} />
-                </div>
+                <TextField
+                  label="Purpose of Move-Out"
+                  value={purpose}
+                  onChange={setPurpose}
+                  placeholder="e.g. For repair / Training use / Return to supply"
+                />
               )}
 
               {config.extras?.includes('returneeId') && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Returnee User UUID <span className="text-gray-400 font-normal">(optional — defaults to current custodian)</span></label>
-                  <input type="text" value={returneeId} onChange={(e) => setReturneeId(e.target.value)} placeholder="Leave blank to use asset's current custodian" className={inputClass} />
-                </div>
+                <TextField
+                  label={
+                    <>
+                      Returnee User UUID <span className="text-gray-400 font-normal">(optional — defaults to current custodian)</span>
+                    </>
+                  }
+                  value={returneeId}
+                  onChange={setReturneeId}
+                  placeholder="Leave blank to use asset's current custodian"
+                />
               )}
             </div>
           )}
