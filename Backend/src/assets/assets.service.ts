@@ -381,10 +381,15 @@ export class AssetsService {
     // Record the expected return date when a loaned asset is issued — this
     // arms the overdue-return watcher (checkOverdueReturns). Omitting the
     // date on an ISSUED transition explicitly clears any stale value.
+    // Always re-arm the overdue stamp too: an asset can reach ISSUED again
+    // via ISSUED → UNDER_REPAIR → AVAILABLE → ISSUED without ever passing
+    // through RETURNED, so a fresh issue must clear any prior notification
+    // mark or the asset would be excluded from the watcher forever.
     if (targetStatus === AssetStatus.ISSUED) {
       asset.expectedReturnDate = dto.expectedReturnDate
         ? new Date(dto.expectedReturnDate)
         : null;
+      asset.overdueNotifiedAt = null;
     }
 
     // Resolve employeeId → UUID if provided (IT Personnel don't know raw UUIDs)
@@ -495,7 +500,9 @@ export class AssetsService {
     const overdue = await this.assetRepo
       .createQueryBuilder('a')
       .where('a.status = :status', { status: AssetStatus.ISSUED })
-      .andWhere('a.expectedReturnDate < :today', { today: new Date() })
+      // `date` column vs. SQL CURRENT_DATE — an asset is overdue only once the
+      // due day has fully passed, not from 00:00 on the due date itself.
+      .andWhere('a.expectedReturnDate < CURRENT_DATE')
       .andWhere('a.overdueNotifiedAt IS NULL')
       .getMany();
 

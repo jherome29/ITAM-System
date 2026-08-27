@@ -283,6 +283,35 @@ describe('AssetsService', () => {
       expect(asset.expectedReturnDate).toBeNull();
     });
 
+    it('re-arms overdueNotifiedAt on every fresh ISSUED, not only after RETURNED', async () => {
+      // Path that never passes through RETURNED: an overdue asset (stamp set)
+      // goes ISSUED → UNDER_REPAIR → AVAILABLE, then is re-issued. Without the
+      // re-arm it would stay excluded from checkOverdueReturns() forever.
+      const asset = makeAsset({
+        status: AssetStatus.AVAILABLE,
+        overdueNotifiedAt: new Date('2020-06-01'),
+      });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+      mockTxRepo.create.mockReturnValue({});
+      mockTxRepo.save.mockResolvedValue({});
+
+      await service.updateLifecycle(
+        asset.id,
+        { status: AssetStatus.ISSUED, expectedReturnDate: '2026-12-31' },
+        'user-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ overdueNotifiedAt: null }),
+      );
+      expect(asset.overdueNotifiedAt).toBeNull();
+    });
+
     it('throws BadRequestException when employeeId is not found', async () => {
       const asset = {
         id: 'asset-1',
