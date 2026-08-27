@@ -13,6 +13,13 @@ const STATUS_OPTIONS = [
   'transferred', 'under_repair', 'flagged_for_disposal', 'disposed',
 ];
 
+// 10 mirrors DEFAULT_REORDER_LEVEL in packages/shared/src/constants
+const DEFAULT_REORDER_LEVEL = 10;
+
+export function isLowStock(asset: Pick<Asset, 'quantity' | 'reorderLevel'>): boolean {
+  return asset.quantity <= (asset.reorderLevel ?? DEFAULT_REORDER_LEVEL);
+}
+
 export function AssetRegistryList({
   basePath,
   assetType,
@@ -89,14 +96,14 @@ export function AssetRegistryList({
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Property #', 'Description', 'Brand', 'Class', 'Type', 'Condition', 'Location', 'Status', ''].map((h) => (
+                  {['Property #', 'Description', 'Brand', 'Class', 'Type', 'Condition', 'Location', 'Status', ...(assetType === 'Supplies' ? ['Qty'] : []), ''].map((h) => (
                     <th key={h} className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {assets.length === 0 ? (
-                  <tr><td colSpan={9} className="px-6 py-12 text-center text-sm text-gray-400">No assets found.</td></tr>
+                  <tr><td colSpan={assetType === 'Supplies' ? 10 : 9} className="px-6 py-12 text-center text-sm text-gray-400">No assets found.</td></tr>
                 ) : (
                   assets.map((asset) => (
                     <tr key={asset.id} className="hover:bg-blue-50 transition-colors duration-100">
@@ -110,6 +117,16 @@ export function AssetRegistryList({
                       <td className="px-5 py-3 text-sm text-gray-600 capitalize">{asset.condition?.replace(/_/g, ' ') ?? '—'}</td>
                       <td className="px-5 py-3 text-sm text-gray-600 whitespace-nowrap">{asset.officeOrSection ?? asset.officeLocation ?? '—'}</td>
                       <td className="px-5 py-3"><StatusBadge status={asset.status} /></td>
+                      {assetType === 'Supplies' && (
+                        <td className="px-5 py-3 text-sm text-gray-600 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5">
+                            {asset.quantity}
+                            {isLowStock(asset) && (
+                              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Low</span>
+                            )}
+                          </span>
+                        </td>
+                      )}
                       <td className="px-5 py-3">
                         <Link href={`${basePath}/${asset.id}`} className="text-[#1a4d7a] text-sm font-medium hover:underline">View</Link>
                       </td>

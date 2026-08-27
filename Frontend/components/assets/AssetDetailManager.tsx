@@ -93,6 +93,8 @@ function buildEditForm(a: Asset): UpdateAssetDto {
     condition: a.condition,
     supplier: a.supplier,
     dateOfDelivery: a.dateOfDelivery,
+    quantity: a.quantity,
+    reorderLevel: a.reorderLevel ?? undefined,
   };
 }
 
@@ -109,6 +111,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
   const [lifecycleError, setLifecycleError] = useState('');
   const [lifecycleEmployeeId, setLifecycleEmployeeId] = useState('');
   const [lifecycleToLocation, setLifecycleToLocation] = useState('');
+  const [lifecycleExpectedReturnDate, setLifecycleExpectedReturnDate] = useState('');
 
   const [edit, setEdit] = useState(false);
   const [editForm, setEditForm] = useState<UpdateAssetDto>({});
@@ -151,6 +154,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
         notes: lifecycleNotes || undefined,
         employeeId: lifecycleEmployeeId || undefined,
         toLocation: lifecycleToLocation || undefined,
+        expectedReturnDate: lifecycleExpectedReturnDate || undefined,
       });
       setAsset(res.data);
       setShowLifecycle(false);
@@ -158,6 +162,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
       setLifecycleNotes('');
       setLifecycleEmployeeId('');
       setLifecycleToLocation('');
+      setLifecycleExpectedReturnDate('');
       // Refresh audit history after lifecycle change
       auditApi.byRecord(assetId).then((r) => setTransactions(r.data?.data ?? [])).catch(() => {});
       // Suggest relevant COA form
@@ -322,6 +327,9 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
           <EditableDetail label="Location" field="officeLocation" value={asset.officeLocation} editValue={editForm.officeLocation} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
           <EditableDetail label="Condition" field="condition" value={asset.condition ? optionLabel(asset.condition) : asset.condition} editValue={editForm.condition} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} options={['serviceable', 'unserviceable', 'for_repair', 'for_disposal']} />
           <EditableDetail label="Components" field="components" value={asset.components} editValue={editForm.components} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
+          {asset.status === 'issued' && asset.expectedReturnDate && (
+            <Detail label="Expected Return" value={new Date(asset.expectedReturnDate).toLocaleDateString()} />
+          )}
         </DetailSection>
 
         <DetailSection title="Acquisition">
@@ -329,6 +337,12 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
           <EditableDetail label="Acquisition Date" field="acquisitionDate" value={asset.acquisitionDate ? new Date(asset.acquisitionDate).toLocaleDateString() : null} editValue={editForm.acquisitionDate?.slice(0, 10)} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} type="date" />
           <EditableDetail label="Supplier" field="supplier" value={asset.supplier} editValue={editForm.supplier} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
           <EditableDetail label="Date of Delivery" field="dateOfDelivery" value={asset.dateOfDelivery ? new Date(asset.dateOfDelivery).toLocaleDateString() : null} editValue={editForm.dateOfDelivery?.slice(0, 10)} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} type="date" />
+          {asset.assetClass === 'IES' && (
+            <>
+              <EditableDetail label="Quantity on Hand" field="quantity" value={asset.quantity} editValue={editForm.quantity} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v === '' ? undefined : Number(v) }))} type="number" />
+              <EditableDetail label="Reorder Level" field="reorderLevel" value={asset.reorderLevel} editValue={editForm.reorderLevel} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v === '' ? undefined : Number(v) }))} type="number" />
+            </>
+          )}
         </DetailSection>
 
         <DetailSection title="System">
@@ -398,7 +412,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                 </label>
                 <select
                   value={targetStatus}
-                  onChange={(e) => { setTargetStatus(e.target.value); setLifecycleError(''); setLifecycleEmployeeId(''); setLifecycleToLocation(''); }}
+                  onChange={(e) => { setTargetStatus(e.target.value); setLifecycleError(''); setLifecycleEmployeeId(''); setLifecycleToLocation(''); setLifecycleExpectedReturnDate(''); }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]"
                 >
                   <option value="">— select status —</option>
@@ -422,6 +436,21 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]"
                   />
                   <p className="text-xs text-gray-400 mt-1">Enter the recipient&apos;s CICC employee ID. The system will resolve it to the correct user account.</p>
+                </div>
+              )}
+
+              {/* ISSUED: optional expected return date — arms the overdue-return watcher */}
+              {targetStatus === 'issued' && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                    Expected return date (optional)
+                  </label>
+                  <input
+                    type="date"
+                    value={lifecycleExpectedReturnDate}
+                    onChange={(e) => setLifecycleExpectedReturnDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]"
+                  />
                 </div>
               )}
 
@@ -481,7 +510,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                 {updating ? 'Updating...' : 'Confirm'}
               </button>
               <button type="button"
-                onClick={() => { setShowLifecycle(false); setLifecycleError(''); setTargetStatus(''); setLifecycleNotes(''); setLifecycleEmployeeId(''); setLifecycleToLocation(''); }}
+                onClick={() => { setShowLifecycle(false); setLifecycleError(''); setTargetStatus(''); setLifecycleNotes(''); setLifecycleEmployeeId(''); setLifecycleToLocation(''); setLifecycleExpectedReturnDate(''); }}
                 className="flex-1 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
               >
                 Cancel

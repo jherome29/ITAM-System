@@ -24,6 +24,9 @@ export interface Asset {
   barcodeValue: string;
   status: string;
   custodianId: string | null;
+  quantity: number;
+  reorderLevel: number | null;
+  expectedReturnDate: string | null;
   createdAt: string;
   updatedAt: string;
 }
