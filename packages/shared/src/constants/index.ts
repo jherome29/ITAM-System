@@ -12,9 +12,6 @@ export const SLA_APPROVAL_HOURS = 24;
 /** Fallback low-stock threshold when an IES asset has no per-item reorder_level. */
 export const DEFAULT_REORDER_LEVEL = 10;
 
-/** Alert threshold: pending approval triggers Supervisor notification after 12 hours */
-export const SLA_PENDING_ALERT_HOURS = 12;
-
 /** Inventory accuracy target: 98% */
 export const INVENTORY_ACCURACY_TARGET = 0.98;
 

@@ -711,6 +711,14 @@ describe('RequisitionsService', () => {
         '127.0.0.1',
       );
 
+      // The in-txn supply row is read SELECT … FOR UPDATE so concurrent
+      // fulfillments can't both slip past the insufficient-stock guard.
+      expect(mockAssetRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sup-1' },
+          lock: { mode: 'pessimistic_write' },
+        }),
+      );
       expect(mockAssetRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'sup-1', quantity: 6 }),
       );
@@ -808,30 +816,29 @@ describe('RequisitionsService', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('ignores a fulfilledItems entry that matches no requisition item — no decrement, still fulfils', async () => {
+    it('rejects a fulfilledItems entry that matches no requisition item — rolls back, writes nothing', async () => {
       armFulfillable([mkItem()]);
 
-      const result = await service.fulfill(
-        'req-supply-1',
-        'it-1',
-        UserRole.IT_PERSONNEL,
-        {
-          fulfilledItems: [
-            { requisitionItemId: 'not-on-this-req', assetId: 'sup-x' },
-          ],
-        },
-        '127.0.0.1',
-      );
+      await expect(
+        service.fulfill(
+          'req-supply-1',
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          {
+            fulfilledItems: [
+              { requisitionItemId: 'not-on-this-req', assetId: 'sup-x' },
+            ],
+          },
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(/does not belong to this requisition/);
 
-      expect(result.status).toBe(RequisitionStatus.FULFILLED);
+      // Guard fires before any write inside the transaction — nothing persists.
+      expect(mockItemRepo.update).not.toHaveBeenCalled();
       expect(mockAssetRepo.findOne).not.toHaveBeenCalled();
       expect(mockAssetRepo.save).not.toHaveBeenCalled();
-      expect(mockAuditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: AuditAction.REQUISITION_FULFILLED,
-          metadata: expect.objectContaining({ stockDecrements: [] }),
-        }),
-      );
+      expect(mockReqRepo.save).not.toHaveBeenCalled();
+      expect(mockAuditService.log).not.toHaveBeenCalled();
     });
   });
 

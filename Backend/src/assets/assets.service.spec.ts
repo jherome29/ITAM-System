@@ -1206,6 +1206,63 @@ describe('AssetsService', () => {
       );
     });
 
+    it('clears lowStockNotifiedAt on a reorderLevel-only PATCH that drops the threshold below the current quantity', async () => {
+      // qty 5 / reorder 10 → currently low and stamped. Lowering reorder to 3
+      // (no quantity in the PATCH) makes 5 > 3 → the line is no longer low, so
+      // the stamp MUST be re-armed. The old `patch.quantity !== undefined`
+      // gate skipped this path and left the row stuck out of checkLowStock().
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 's1',
+        assetClass: AssetClass.IES,
+        quantity: 5,
+        reorderLevel: 10,
+        lowStockNotifiedAt: new Date(),
+      } as AssetEntity);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.update(
+        's1',
+        { reorderLevel: 3 },
+        'u1',
+        UserRole.PROPERTY_CUSTODIAN,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.update).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ reorderLevel: 3, lowStockNotifiedAt: null }),
+      );
+    });
+
+    it('does NOT re-arm on a reorderLevel-only PATCH that stays at/above the current quantity', async () => {
+      // qty 5 / reorder 10 → still low after raising reorder to 12 (5 <= 12),
+      // so the stamp stays put.
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 's1',
+        assetClass: AssetClass.IES,
+        quantity: 5,
+        reorderLevel: 10,
+        lowStockNotifiedAt: new Date(),
+      } as AssetEntity);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.update(
+        's1',
+        { reorderLevel: 12 },
+        'u1',
+        UserRole.PROPERTY_CUSTODIAN,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.update).toHaveBeenCalledWith('s1', {
+        reorderLevel: 12,
+      });
+      expect(mockAssetRepo.update).not.toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ lowStockNotifiedAt: null }),
+      );
+    });
+
     it('judges a raised-both PATCH against the new threshold (stamp stays — quantity still below it)', async () => {
       // Stored threshold is 5; the PATCH raises it to 10 while setting
       // quantity 8. 8 clears the OLD threshold but not the NEW one, so the

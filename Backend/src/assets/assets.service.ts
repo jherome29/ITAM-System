@@ -328,22 +328,23 @@ export class AssetsService {
   ): Promise<AssetEntity> {
     const existing = await this.findOne(id, assetTypeScope); // throws Not Found / Forbidden
 
-    // Re-arm the low-stock dedup stamp: once a PATCH restocks an IES supply
-    // line back above its reorder level, clear lowStockNotifiedAt so
-    // checkLowStock() can alert again the next time it runs low. A combined
-    // quantity + reorderLevel PATCH is judged against the NEW threshold
-    // (patch.reorderLevel wins), falling back to the stored level, then the
-    // system default. Reuses the asset already loaded above rather than
-    // issuing a second findOne.
+    // Re-arm the low-stock dedup stamp: whenever a PATCH moves an IES supply
+    // line back above its reorder level — by raising quantity, by LOWERING
+    // reorderLevel, or both — clear lowStockNotifiedAt so checkLowStock() can
+    // alert again the next time it runs low. Evaluated against the effective
+    // post-patch state (patch value wins, else the stored value, else the
+    // system default), so a reorderLevel-only PATCH that lifts a line out of
+    // "low" still re-arms it instead of leaving the stamp stuck forever.
+    // Reuses the asset already loaded above rather than issuing a second
+    // findOne.
     const patch: UpdateAssetDto & {
       lowStockNotifiedAt?: Date | null;
     } = { ...dto };
-    if (
-      patch.quantity !== undefined &&
-      patch.quantity >
-        (patch.reorderLevel ?? existing.reorderLevel ?? DEFAULT_REORDER_LEVEL)
-    ) {
-      patch.lowStockNotifiedAt = null;
+    if (patch.quantity !== undefined || patch.reorderLevel !== undefined) {
+      const effectiveQty = patch.quantity ?? existing.quantity;
+      const effectiveThreshold =
+        patch.reorderLevel ?? existing.reorderLevel ?? DEFAULT_REORDER_LEVEL;
+      if (effectiveQty > effectiveThreshold) patch.lowStockNotifiedAt = null;
     }
     await this.assetRepo.update(id, patch);
 

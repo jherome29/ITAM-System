@@ -584,6 +584,18 @@ export class RequisitionsService {
 
       if (dto.fulfilledItems?.length) {
         for (const { requisitionItemId, assetId } of dto.fulfilledItems) {
+          // Reject a fulfilledItems entry naming an id that is not on THIS
+          // requisition before any write — otherwise the itemRepo.update below
+          // would overwrite the fulfilledAssetId link on another requisition's
+          // item. Thrown inside the transaction, so it rolls the whole
+          // fulfillment back (consistent with the insufficient-stock 400).
+          const reqItem = req.items.find((i) => i.id === requisitionItemId);
+          if (!reqItem) {
+            throw new BadRequestException(
+              `Requisition item "${requisitionItemId}" does not belong to this requisition.`,
+            );
+          }
+
           await itemRepo.update(requisitionItemId, {
             fulfilledAssetId: assetId,
           });
@@ -593,13 +605,20 @@ export class RequisitionsService {
           // re-persists req.items — without this it would cascade the stale
           // fulfilledAssetId: null straight back over the update() above,
           // inside the same transaction.
-          const reqItem = req.items.find((i) => i.id === requisitionItemId);
-          if (reqItem) reqItem.fulfilledAssetId = assetId;
+          reqItem.fulfilledAssetId = assetId;
 
           // SVC: Deliver and Support — issuing a supply (IES) line draws down
           // its stock. PPE/SEP items are unit assets and are left untouched.
-          if (reqItem?.assetClass === AssetClass.IES) {
-            const supply = await assetRepo.findOne({ where: { id: assetId } });
+          if (reqItem.assetClass === AssetClass.IES) {
+            // Pessimistic write lock (SELECT … FOR UPDATE): serialises
+            // concurrent fulfillments drawing from the same supply row so the
+            // insufficient-stock guard below cannot be bypassed by a
+            // read-then-write race (two txns both reading the pre-decrement
+            // quantity, both subtracting, last write wins).
+            const supply = await assetRepo.findOne({
+              where: { id: assetId },
+              lock: { mode: 'pessimistic_write' },
+            });
             if (!supply) {
               throw new BadRequestException(
                 `Supply asset "${assetId}" not found.`,
