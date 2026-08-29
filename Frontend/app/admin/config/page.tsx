@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Settings } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
@@ -47,13 +47,27 @@ export default function SystemConfigPage() {
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     systemConfigApi
       .get()
-      .then((r) => setForm(toForm(r.data)))
+      .then((r) => {
+        setForm(toForm(r.data));
+        setError('');
+      })
       .catch(() => setError('Failed to load configuration. Please try again.'))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const retry = () => {
+    // Keep the error branch mounted (don't clear `error`) so the button can show
+    // its "Retrying…" state; `load()` clears the error itself on success.
+    setLoading(true);
+    load();
+  };
 
   const set = (k: keyof SystemConfigFormValues) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => (f ? { ...f, [k]: e.target.value } : f));
@@ -79,53 +93,68 @@ export default function SystemConfigPage() {
   return (
     <div className="max-w-2xl space-y-6">
       <PageHeader title="System Configuration" />
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">{error}</div>
-      )}
-      {saved && (
-        <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-md px-4 py-3">
-          Configuration saved.
-        </div>
-      )}
 
-      {loading || !form ? (
+      {!form && error ? (
+        <div className="space-y-3">
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">{error}</div>
+          <button
+            type="button"
+            onClick={retry}
+            disabled={loading}
+            className="bg-[#1a4d7a] text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-[#143d61] disabled:opacity-60 transition-colors"
+          >
+            {loading ? 'Retrying…' : 'Retry'}
+          </button>
+        </div>
+      ) : !form ? (
         <LoadingSkeleton rows={6} />
       ) : (
-        <form onSubmit={handleSave} className="space-y-6">
-          <Section title="Requisition SLA">
-            <Field label="Requisition Approval SLA (hours)" note="Breach alert fires past this; the pending-approval nudge fires at half of it.">
-              <input type="number" min={1} value={form.slaApprovalHours} onChange={set('slaApprovalHours')} className={inputClass} required />
-            </Field>
-          </Section>
+        <>
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">{error}</div>
+          )}
+          {saved && (
+            <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-md px-4 py-3">
+              Configuration saved.
+            </div>
+          )}
 
-          <Section title="Inventory Alerts">
-            <Field label="Default Low-Stock Reorder Level (units)" note="Fallback threshold for IES supply items that have no per-item reorder level set.">
-              <input type="number" min={0} value={form.defaultReorderLevel} onChange={set('defaultReorderLevel')} className={inputClass} required />
-            </Field>
-          </Section>
+          <form onSubmit={handleSave} className="space-y-6">
+            <Section title="Requisition SLA">
+              <Field label="Requisition Approval SLA (hours)" note="Breach alert fires past this; the pending-approval nudge fires at half of it.">
+                <input type="number" min={1} max={168} value={form.slaApprovalHours} onChange={set('slaApprovalHours')} className={inputClass} required />
+              </Field>
+            </Section>
 
-          <Section title="Replacement — Useful-Life Threshold (years)">
-            <Field label="PPE" note="A serviceable asset older than this may be replaced.">
-              <input type="number" min={1} value={form.usefulLifePPE} onChange={set('usefulLifePPE')} className={inputClass} required />
-            </Field>
-            <Field label="SEP">
-              <input type="number" min={1} value={form.usefulLifeSEP} onChange={set('usefulLifeSEP')} className={inputClass} required />
-            </Field>
-            <Field label="IES">
-              <input type="number" min={1} value={form.usefulLifeIES} onChange={set('usefulLifeIES')} className={inputClass} required />
-            </Field>
-          </Section>
+            <Section title="Inventory Alerts">
+              <Field label="Default Low-Stock Reorder Level (units)" note="Fallback threshold for IES supply items that have no per-item reorder level set.">
+                <input type="number" min={0} max={100000} value={form.defaultReorderLevel} onChange={set('defaultReorderLevel')} className={inputClass} required />
+              </Field>
+            </Section>
 
-          <Section title="Security">
-            <Field label="Max Failed Login Attempts" note="Account locks after this many consecutive failures.">
-              <input type="number" min={1} value={form.maxLoginAttempts} onChange={set('maxLoginAttempts')} className={inputClass} required />
-            </Field>
-          </Section>
+            <Section title="Replacement — Useful-Life Threshold (years)">
+              <Field label="PPE" note="A serviceable asset older than this may be replaced.">
+                <input type="number" min={1} max={100} value={form.usefulLifePPE} onChange={set('usefulLifePPE')} className={inputClass} required />
+              </Field>
+              <Field label="SEP">
+                <input type="number" min={1} max={100} value={form.usefulLifeSEP} onChange={set('usefulLifeSEP')} className={inputClass} required />
+              </Field>
+              <Field label="IES">
+                <input type="number" min={1} max={100} value={form.usefulLifeIES} onChange={set('usefulLifeIES')} className={inputClass} required />
+              </Field>
+            </Section>
 
-          <button type="submit" disabled={saving} className="flex items-center gap-2 bg-[#1a4d7a] text-white px-6 py-2 rounded-md text-sm font-medium hover:bg-[#143d61] disabled:opacity-60 transition-colors">
-            <Settings className="w-4 h-4" /> {saving ? 'Saving…' : 'Save Configuration'}
-          </button>
-        </form>
+            <Section title="Security">
+              <Field label="Max Failed Login Attempts" note="Account locks after this many consecutive failures.">
+                <input type="number" min={1} max={50} value={form.maxLoginAttempts} onChange={set('maxLoginAttempts')} className={inputClass} required />
+              </Field>
+            </Section>
+
+            <button type="submit" disabled={saving} className="flex items-center gap-2 bg-[#1a4d7a] text-white px-6 py-2 rounded-md text-sm font-medium hover:bg-[#143d61] disabled:opacity-60 transition-colors">
+              <Settings className="w-4 h-4" /> {saving ? 'Saving…' : 'Save Configuration'}
+            </button>
+          </form>
+        </>
       )}
     </div>
   );
