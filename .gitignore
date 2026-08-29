@@ -62,3 +62,6 @@ Backend/server-error.log
 
 # ─── Local git worktrees ──────────────────────────────────────
 .worktrees/
+
+# Superpowers SDD scratch (ledger, briefs, review packages)
+.superpowers/
