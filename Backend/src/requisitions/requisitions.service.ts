@@ -838,7 +838,7 @@ export class RequisitionsService {
             req.supervisorId,
             NotificationAlertType.PENDING_APPROVAL,
             'Requisition Approaching its Approval SLA',
-            `Requisition ${req.requestNumber} has been awaiting your approval for over ${slaHours / 2} hours.`,
+            `Requisition ${req.requestNumber} has been awaiting your approval for over ${Math.round(slaHours / 2)} hours.`,
             req.id,
             'requisition',
           );

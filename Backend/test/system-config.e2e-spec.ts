@@ -71,9 +71,15 @@ describe('SystemConfig (e2e)', () => {
   });
 
   afterAll(async () => {
-    await userRepo.delete({ email: adminEmail });
-    await userRepo.delete({ email: userEmail });
-    await app.close();
+    // Guard cleanup so a beforeAll bootstrap failure isn't masked by a
+    // second error thrown here (userRepo / app would be undefined).
+    if (userRepo) {
+      await userRepo.delete({ email: adminEmail });
+      await userRepo.delete({ email: userEmail });
+    }
+    if (app) {
+      await app.close();
+    }
   });
 
   const loginAs = async (emailOrEmployeeId: string): Promise<string> => {
@@ -105,26 +111,35 @@ describe('SystemConfig (e2e)', () => {
     );
   });
 
-  it('PATCH persists a change, GET reflects it, then restores the seed value', async () => {
+  it('PATCH persists a change, GET reflects it, then restores the prior value', async () => {
     const token = await loginAs(adminEmail);
+
+    // Capture whatever the value currently is — a real admin may have set it on
+    // a shared DB; hardcoding the restore to 24 would silently overwrite that.
+    const before = await request(app.getHttpServer())
+      .get('/api/v1/system-config')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const priorSla = before.body.data.slaApprovalHours as number;
+    const probe = priorSla === 30 ? 31 : 30;
 
     await request(app.getHttpServer())
       .patch('/api/v1/system-config')
       .set('Authorization', `Bearer ${token}`)
-      .send({ slaApprovalHours: 30 })
+      .send({ slaApprovalHours: probe })
       .expect(200);
 
     const res = await request(app.getHttpServer())
       .get('/api/v1/system-config')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    expect(res.body.data.slaApprovalHours).toBe(30);
+    expect(res.body.data.slaApprovalHours).toBe(probe);
 
-    // restore the seed value so the shared dev DB is left untouched
+    // restore the value we found so the shared dev DB is left untouched
     await request(app.getHttpServer())
       .patch('/api/v1/system-config')
       .set('Authorization', `Bearer ${token}`)
-      .send({ slaApprovalHours: 24 })
+      .send({ slaApprovalHours: priorSla })
       .expect(200);
   });
 

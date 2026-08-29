@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { SystemConfigService } from './system-config.service';
@@ -76,6 +76,46 @@ describe('SystemConfigService — getters + fallback', () => {
     service = await build();
     expect(service.getUsefulLifeYears()[AssetClass.PPE]).toBe(7);
     expect(service.getUsefulLifeYears()[AssetClass.IES]).toBe(2);
+  });
+});
+
+describe('SystemConfigService — reload() failure is non-fatal', () => {
+  const mockRepo = {
+    find: jest.fn(() =>
+      Promise.reject(new Error('relation "system_config" does not exist')),
+    ),
+    save: jest.fn(),
+  };
+
+  const build = async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        SystemConfigService,
+        { provide: getRepositoryToken(SystemConfigEntity), useValue: mockRepo },
+      ],
+    }).compile();
+    return module.get(SystemConfigService);
+  };
+
+  beforeEach(() => {
+    // Silence the expected "config unreadable" error log for this path.
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('onModuleInit() resolves (does not throw) when repo.find() rejects', async () => {
+    const s = await build();
+    await expect(s.onModuleInit()).resolves.toBeUndefined();
+  });
+
+  it('getters return the shared constants when the cache never loaded', async () => {
+    const s = await build();
+    await s.onModuleInit();
+    expect(s.getSlaApprovalHours()).toBe(SLA_APPROVAL_HOURS);
+    expect(s.getDefaultReorderLevel()).toBe(DEFAULT_REORDER_LEVEL);
+    expect(s.getMaxLoginAttempts()).toBe(MAX_LOGIN_ATTEMPTS);
+    expect(s.getUsefulLifeYears()).toEqual(USEFUL_LIFE_YEARS);
   });
 });
 

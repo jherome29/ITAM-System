@@ -17,6 +17,7 @@ import {
 } from '../../../packages/shared/src/constants';
 
 // SVC: Plan — runtime-tunable configuration. Cached on init, refreshed on write.
+// TODO(scale-out): single-instance cache — a TTL on reload() is the cheapest multi-instance upgrade
 @Injectable()
 export class SystemConfigService implements OnModuleInit {
   private readonly logger = new Logger(SystemConfigService.name);
@@ -32,8 +33,15 @@ export class SystemConfigService implements OnModuleInit {
   }
 
   private async reload(): Promise<void> {
-    const rows = await this.repo.find();
-    this.cache = new Map(rows.map((r) => [r.key, r.value]));
+    try {
+      const rows = await this.repo.find();
+      this.cache = new Map(rows.map((r) => [r.key, r.value]));
+    } catch (err) {
+      this.logger.error(
+        'system_config unreadable; serving compiled-in defaults',
+        err as Error,
+      );
+    }
   }
 
   private readInt(key: string, min: number, fallback: number): number {
@@ -83,7 +91,7 @@ export class SystemConfigService implements OnModuleInit {
         `config "${CONFIG_KEYS.USEFUL_LIFE_YEARS}" is invalid; using defaults`,
       );
     }
-    return USEFUL_LIFE_YEARS;
+    return { ...USEFUL_LIFE_YEARS };
   }
 
   private assertInt(v: unknown, min: number): void {
