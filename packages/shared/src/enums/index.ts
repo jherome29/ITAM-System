@@ -99,6 +99,8 @@ export enum AuditAction {
   // Report actions
   REPORT_GENERATED = 'report_generated',
   FORM_GENERATED   = 'form_generated',
+
+  SYSTEM_CONFIG_UPDATED = 'system_config_updated',
 }
 
 export enum OfficialFormType {

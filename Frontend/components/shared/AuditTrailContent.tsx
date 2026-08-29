@@ -10,6 +10,7 @@ import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 // the backend does an exact, case-sensitive match against a native Postgres enum column.
 const ACTION_OPTIONS = [
   'user_login', 'user_logout', 'user_created', 'role_assigned', 'user_deactivated',
+  'system_config_updated',
   'asset_created', 'asset_updated', 'asset_issued', 'asset_returned', 'asset_transferred',
   'asset_flagged_repair', 'asset_flagged_disposal',
   'requisition_submitted', 'requisition_approved', 'requisition_rejected', 'requisition_fulfilled',

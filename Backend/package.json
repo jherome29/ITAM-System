@@ -97,7 +97,8 @@
       "notifications/notifications.service.ts",
       "audit/audit.service.ts",
       "users/users.service.ts",
-      "reports/reports.service.ts"
+      "reports/reports.service.ts",
+      "system-config/system-config.service.ts"
     ],
     "coverageThreshold": {
       "global": {

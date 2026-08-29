@@ -11,6 +11,7 @@ import { AssetTransactionEntity } from './entities/asset-transaction.entity';
 import { AuditService } from '../audit/audit.service';
 import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SystemConfigService } from '../system-config/system-config.service';
 import {
   AssetStatus,
   AssetClass,
@@ -70,6 +71,12 @@ describe('AssetsService', () => {
     notify: jest.fn(),
   };
 
+  // Default to the shared-constant fallback (10) so every existing test is
+  // unchanged; one test overrides it to prove the value is read from config.
+  const mockSystemConfig = {
+    getDefaultReorderLevel: jest.fn(() => 10),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -82,11 +89,16 @@ describe('AssetsService', () => {
         { provide: AuditService, useValue: mockAuditService },
         { provide: UsersService, useValue: mockUsersService },
         { provide: NotificationsService, useValue: mockNotifService },
+        { provide: SystemConfigService, useValue: mockSystemConfig },
       ],
     }).compile();
 
     service = module.get<AssetsService>(AssetsService);
     jest.clearAllMocks();
+
+    // clearAllMocks() clears call history but not implementations; re-assert
+    // the default so a per-test mockReturnValue override never leaks.
+    mockSystemConfig.getDefaultReorderLevel.mockReturnValue(10);
   });
 
   // ── Section 12.1 — Asset registration ────────────────────────────────────
@@ -1119,6 +1131,31 @@ describe('AssetsService', () => {
         false,
       );
       expect(mockNotifService.notify).not.toHaveBeenCalled();
+    });
+
+    it('takes the no-per-item-reorder-level fallback from SystemConfig, not the hardcoded constant', async () => {
+      // reorderLevel is null, so the threshold is the system default. Config
+      // now says 3; quantity 5 > 3 → NOT low. If the service still read the
+      // hardcoded DEFAULT_REORDER_LEVEL (10), 5 <= 10 → it would alert.
+      mockSystemConfig.getDefaultReorderLevel.mockReturnValue(3);
+      mockAssetRepo.findOne.mockResolvedValue({
+        id: 's7',
+        assetClass: AssetClass.IES,
+        quantity: 5,
+        reorderLevel: null,
+        lowStockNotifiedAt: null,
+      });
+      // Stub the alert fan-out so a wrong "still low" verdict yields a clean
+      // `true` (alert sent) instead of an incidental crash.
+      mockUsersService.findByRole.mockResolvedValue([{ id: 'pc1' }]);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await expect(service.notifyLowStockIfBelowThreshold('s7')).resolves.toBe(
+        false,
+      );
+      expect(mockSystemConfig.getDefaultReorderLevel).toHaveBeenCalled();
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+      expect(mockAssetRepo.update).not.toHaveBeenCalled();
     });
 
     it('returns true, fans the alert out to custodians + admins, and stamps when below threshold', async () => {

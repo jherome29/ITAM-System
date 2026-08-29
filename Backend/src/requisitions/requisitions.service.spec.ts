@@ -25,6 +25,7 @@ import {
   AssetCondition,
 } from '../../../packages/shared/src/enums';
 import { SLA_APPROVAL_HOURS } from '../../../packages/shared/src/constants';
+import { SystemConfigService } from '../system-config/system-config.service';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const makeReq = (
@@ -152,6 +153,14 @@ describe('RequisitionsService', () => {
     findSupervisorForSection: jest.fn(),
   };
 
+  // SystemConfig getters — default to the shared-constant values so every
+  // existing test behaves exactly as before; individual tests override a
+  // return value to prove the service now READS from config.
+  const mockSystemConfig = {
+    getSlaApprovalHours: jest.fn(() => 24),
+    getUsefulLifeYears: jest.fn(() => ({ PPE: 5, SEP: 3, IES: 1 })),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -172,11 +181,21 @@ describe('RequisitionsService', () => {
         { provide: AuditService, useValue: mockAuditService },
         { provide: NotificationsService, useValue: mockNotifService },
         { provide: UsersService, useValue: mockUsersService },
+        { provide: SystemConfigService, useValue: mockSystemConfig },
       ],
     }).compile();
 
     service = module.get<RequisitionsService>(RequisitionsService);
     jest.clearAllMocks();
+
+    // clearAllMocks() wipes call history but not implementations; re-assert the
+    // config defaults so a per-test mockReturnValue override never leaks.
+    mockSystemConfig.getSlaApprovalHours.mockReturnValue(24);
+    mockSystemConfig.getUsefulLifeYears.mockReturnValue({
+      PPE: 5,
+      SEP: 3,
+      IES: 1,
+    });
 
     // Reset the chainable QB mock for each test
     mockReqRepo.createQueryBuilder.mockReturnValue({
@@ -441,19 +460,29 @@ describe('RequisitionsService', () => {
       );
     });
 
-    it('allows the replacement when a serviceable asset is past its useful-life age, recording basis "useful_life"', async () => {
-      const eightYearsAgo = new Date();
-      eightYearsAgo.setFullYear(eightYearsAgo.getFullYear() - 8); // PPE threshold is 5y
+    it('allows the replacement when a serviceable asset is past its useful-life age, reading the threshold from SystemConfig', async () => {
+      // Config-sourced proof: the asset is only 3 years old — well within the
+      // shared-constant PPE threshold of 5y — but the config now says 2y, so
+      // the replacement must be allowed on basis "useful_life". If the service
+      // still read the hardcoded USEFUL_LIFE_YEARS this would throw instead.
+      mockSystemConfig.getUsefulLifeYears.mockReturnValue({
+        PPE: 2,
+        SEP: 2,
+        IES: 2,
+      });
+      const threeYearsAgo = new Date();
+      threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
       mockAssetsService.findOne.mockResolvedValue(
         makeAsset({
           condition: AssetCondition.SERVICEABLE,
-          acquisitionDate: eightYearsAgo,
+          acquisitionDate: threeYearsAgo,
           assetClass: AssetClass.PPE,
         }),
       );
 
       await submit(replacementDto());
 
+      expect(mockSystemConfig.getUsefulLifeYears).toHaveBeenCalled();
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           metadata: expect.objectContaining({
