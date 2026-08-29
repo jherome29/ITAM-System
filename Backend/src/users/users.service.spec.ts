@@ -19,6 +19,8 @@ const makeUser = (overrides: Partial<UserEntity> = {}): UserEntity =>
     isActive: true,
     failedLoginAttempts: 0,
     lockedUntil: null,
+    unavailable: false,
+    unavailableUntil: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -480,6 +482,31 @@ describe('UsersService', () => {
           ipAddress,
         }),
       );
+    });
+  });
+
+  describe('isUnavailable()', () => {
+    it('is false when the flag is off, regardless of the date', () => {
+      expect(service.isUnavailable(makeUser({ unavailable: false, unavailableUntil: null }))).toBe(false);
+      expect(
+        service.isUnavailable(makeUser({ unavailable: false, unavailableUntil: new Date(Date.now() + 3.6e6) })),
+      ).toBe(false);
+    });
+
+    it('is true when the flag is on with no end date', () => {
+      expect(service.isUnavailable(makeUser({ unavailable: true, unavailableUntil: null }))).toBe(true);
+    });
+
+    it('is true when the flag is on and the end date is in the future', () => {
+      expect(
+        service.isUnavailable(makeUser({ unavailable: true, unavailableUntil: new Date(Date.now() + 3.6e6) })),
+      ).toBe(true);
+    });
+
+    it('is false when the flag is on but the end date has passed', () => {
+      expect(
+        service.isUnavailable(makeUser({ unavailable: true, unavailableUntil: new Date(Date.now() - 3.6e6) })),
+      ).toBe(false);
     });
   });
 });

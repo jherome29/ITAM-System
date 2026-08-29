@@ -61,6 +61,17 @@ export class UsersService {
   }
 
   /**
+   * "Currently unavailable" — the flag is on AND (there is no end date, or the
+   * end date is still in the future). Read-time computation: nothing clears the
+   * flag automatically. Used by requisition routing (create + SLA watcher).
+   */
+  isUnavailable(user: UserEntity): boolean {
+    if (!user.unavailable) return false;
+    if (user.unavailableUntil === null || user.unavailableUntil === undefined) return true;
+    return user.unavailableUntil.getTime() > Date.now();
+  }
+
+  /**
    * Resolve the Supervisor accountable for a requester's section, per
    * CLAUDE.md §6 ("Supervisor — reviews and approves/rejects requests from
    * their section"). Requesters never nominate their own approver — the org
