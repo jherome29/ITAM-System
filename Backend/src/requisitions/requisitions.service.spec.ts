@@ -151,6 +151,10 @@ describe('RequisitionsService', () => {
     findByRole: jest.fn().mockResolvedValue([]),
     findOne: jest.fn(),
     findSupervisorForSection: jest.fn(),
+    // Real method on UsersService (Task 2). create() now calls it on every
+    // submit — keep it defined through jest.clearAllMocks() so the pre-existing
+    // create() tests don't hit "isUnavailable is not a function".
+    isUnavailable: jest.fn().mockReturnValue(false),
   };
 
   // SystemConfig getters — default to the shared-constant values so every
@@ -196,6 +200,11 @@ describe('RequisitionsService', () => {
       SEP: 3,
       IES: 1,
     });
+
+    // Primary approver is available by default — the alternate-routing describe
+    // overrides this per-test; re-assert here so that override never leaks into
+    // the next test's create() call.
+    mockUsersService.isUnavailable.mockReturnValue(false);
 
     // Reset the chainable QB mock for each test
     mockReqRepo.createQueryBuilder.mockReturnValue({
@@ -495,6 +504,219 @@ describe('RequisitionsService', () => {
     it('does not run replacement validation for a NEW requisition carrying a stray replacedAssetId', async () => {
       await submit(replacementDto({ requisitionType: RequisitionType.NEW }));
       expect(mockAssetsService.findOne).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('create() — alternate approver routing', () => {
+    const requester = {
+      id: 'emp-uuid-1',
+      officeOrSection: 'IT',
+      division: 'CISD',
+      role: UserRole.EMPLOYEE,
+    };
+    const primary = {
+      id: 'sup-uuid-1',
+      role: UserRole.SUPERVISOR,
+      isActive: true,
+      firstName: 'Pat',
+      lastName: 'Cruz',
+      alternateApproverId: 'sup-uuid-2',
+      unavailable: true,
+      unavailableUntil: null,
+    };
+    const alternate = {
+      id: 'sup-uuid-2',
+      role: UserRole.SUPERVISOR,
+      isActive: true,
+      firstName: 'Alex',
+      lastName: 'Reyes',
+      alternateApproverId: null,
+      unavailable: false,
+      unavailableUntil: null,
+    };
+    const baseDto = {
+      requisitionType: RequisitionType.NEW,
+      justification: 'Need a laptop',
+      requiredDate: '2026-09-01',
+      items: [
+        {
+          assetType: AssetType.ICT,
+          assetClass: AssetClass.SEP,
+          itemDescription: 'Keyboard',
+          quantity: 1,
+        },
+      ],
+    };
+
+    beforeEach(() => {
+      mockUsersService.findSupervisorForSection.mockResolvedValue(primary);
+      mockItemRepo.create.mockImplementation((x: unknown) => x);
+      mockItemRepo.save.mockImplementation((x: unknown) => Promise.resolve(x));
+      mockReqRepo.create.mockImplementation((x: unknown) => x);
+      mockReqRepo.save.mockImplementation((x: Record<string, unknown>) =>
+        Promise.resolve({
+          ...x,
+          id: 'req-new-1',
+          requestNumber: 'REQ-2026-0009',
+        }),
+      );
+      mockReqRepo.count.mockResolvedValue(8);
+      // isUnavailable is a real method on the mocked UsersService — stub it:
+      mockUsersService.isUnavailable = jest.fn((u: { id: string }) =>
+        u.id === 'sup-uuid-1' ? true : false,
+      );
+    });
+
+    it('routes to the alternate and stamps alternateRoutedAt when the primary is unavailable', async () => {
+      mockUsersService.findOne.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'emp-uuid-1'
+            ? requester
+            : id === 'sup-uuid-2'
+              ? alternate
+              : primary,
+        ),
+      );
+
+      await service.create(
+        baseDto,
+        'emp-uuid-1',
+        UserRole.EMPLOYEE,
+        '127.0.0.1',
+      );
+
+      const saved = mockReqRepo.create.mock.calls[0][0] as Record<
+        string,
+        unknown
+      >;
+      expect(saved.supervisorId).toBe('sup-uuid-2');
+      expect(saved.alternateRoutedAt).toBeInstanceOf(Date);
+    });
+
+    it('notifies the alternate with ALTERNATE_APPROVER, not PENDING_APPROVAL', async () => {
+      mockUsersService.findOne.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'emp-uuid-1'
+            ? requester
+            : id === 'sup-uuid-2'
+              ? alternate
+              : primary,
+        ),
+      );
+
+      await service.create(
+        baseDto,
+        'emp-uuid-1',
+        UserRole.EMPLOYEE,
+        '127.0.0.1',
+      );
+
+      const alertTypes = mockNotifService.notify.mock.calls.map(
+        (c) => c[1] as NotificationAlertType,
+      );
+      expect(alertTypes).toContain(NotificationAlertType.ALTERNATE_APPROVER);
+      expect(mockNotifService.notify).toHaveBeenCalledWith(
+        'sup-uuid-2',
+        NotificationAlertType.ALTERNATE_APPROVER,
+        expect.any(String),
+        expect.stringContaining('Pat Cruz is unavailable'),
+        'req-new-1',
+        'requisition',
+      );
+      // the alternate did NOT also get the ordinary pending-approval notice
+      const pendingToAlt = mockNotifService.notify.mock.calls.filter(
+        (c) =>
+          c[0] === 'sup-uuid-2' &&
+          c[1] === NotificationAlertType.PENDING_APPROVAL,
+      );
+      expect(pendingToAlt).toHaveLength(0);
+    });
+
+    it('writes a REQUISITION_REASSIGNED audit entry with reason primary_unavailable', async () => {
+      mockUsersService.findOne.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'emp-uuid-1'
+            ? requester
+            : id === 'sup-uuid-2'
+              ? alternate
+              : primary,
+        ),
+      );
+
+      await service.create(
+        baseDto,
+        'emp-uuid-1',
+        UserRole.EMPLOYEE,
+        '127.0.0.1',
+      );
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.REQUISITION_REASSIGNED,
+          affectedRecordId: 'req-new-1',
+          metadata: expect.objectContaining({
+            reason: 'primary_unavailable',
+            primaryApproverId: 'sup-uuid-1',
+            alternateApproverId: 'sup-uuid-2',
+          }),
+        }),
+      );
+    });
+
+    it('keeps the primary when the alternate is not usable (inactive)', async () => {
+      mockUsersService.findOne.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'emp-uuid-1'
+            ? requester
+            : id === 'sup-uuid-2'
+              ? { ...alternate, isActive: false }
+              : primary,
+        ),
+      );
+
+      await service.create(
+        baseDto,
+        'emp-uuid-1',
+        UserRole.EMPLOYEE,
+        '127.0.0.1',
+      );
+
+      const saved = mockReqRepo.create.mock.calls[0][0] as Record<
+        string,
+        unknown
+      >;
+      expect(saved.supervisorId).toBe('sup-uuid-1');
+      expect(saved.alternateRoutedAt).toBeUndefined();
+      expect(mockAuditService.log).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: AuditAction.REQUISITION_REASSIGNED }),
+      );
+    });
+
+    it('keeps the primary when the primary has no alternate designated', async () => {
+      mockUsersService.findSupervisorForSection.mockResolvedValue({
+        ...primary,
+        alternateApproverId: null,
+      });
+      mockUsersService.findOne.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'emp-uuid-1'
+            ? requester
+            : { ...primary, alternateApproverId: null },
+        ),
+      );
+
+      await service.create(
+        baseDto,
+        'emp-uuid-1',
+        UserRole.EMPLOYEE,
+        '127.0.0.1',
+      );
+
+      const saved = mockReqRepo.create.mock.calls[0][0] as Record<
+        string,
+        unknown
+      >;
+      expect(saved.supervisorId).toBe('sup-uuid-1');
     });
   });
 

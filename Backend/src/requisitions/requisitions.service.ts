@@ -313,6 +313,30 @@ export class RequisitionsService {
       );
     }
 
+    // Alternate Approver (CLAUDE.md §5, §17) — if the resolved primary is
+    // currently unavailable and has a usable designated backup, route to them.
+    // One hop only: an unusable alternate falls back to the primary (the SLA
+    // watcher is the backstop). "Usable" = active SUPERVISOR, not itself away.
+    let approverId = supervisor.id;
+    let routedToAlternate = false;
+    if (
+      this.usersService.isUnavailable(supervisor) &&
+      supervisor.alternateApproverId
+    ) {
+      const alt = await this.usersService
+        .findOne(supervisor.alternateApproverId)
+        .catch(() => null);
+      if (
+        alt &&
+        alt.isActive &&
+        alt.role === UserRole.SUPERVISOR &&
+        !this.usersService.isUnavailable(alt)
+      ) {
+        approverId = alt.id;
+        routedToAlternate = true;
+      }
+    }
+
     // Generate request number: REQ-YYYY-NNNN
     const count = await this.reqRepo.count();
     const requestNumber = `REQ-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
@@ -332,7 +356,8 @@ export class RequisitionsService {
         dto.requisitionType === RequisitionType.REPLACEMENT
           ? (dto.replacedAssetId ?? null)
           : null,
-      supervisorId: supervisor.id,
+      supervisorId: approverId,
+      ...(routedToAlternate ? { alternateRoutedAt: new Date() } : {}),
       status: RequisitionStatus.PENDING_SUPERVISOR,
       submittedAt,
       slaDeadline,
@@ -347,15 +372,27 @@ export class RequisitionsService {
     // Return shape must match findOne/findMine (both hydrate `items`) — callers
     // that render the freshly-created requisition rely on the relation being present.
 
-    // Notify the resolved supervisor
-    await this.notificationsService.notify(
-      supervisor.id,
-      NotificationAlertType.PENDING_APPROVAL,
-      'New Requisition Awaiting Approval',
-      `Requisition ${requestNumber} requires your approval. Required by: ${dto.requiredDate}.`,
-      saved.id,
-      'requisition',
-    );
+    // Notify the approver. When routed to an alternate, ALTERNATE_APPROVER
+    // replaces the ordinary pending-approval notice and explains the why.
+    if (routedToAlternate) {
+      await this.notificationsService.notify(
+        approverId,
+        NotificationAlertType.ALTERNATE_APPROVER,
+        'Requisition Routed to You (Alternate Approver)',
+        `Requisition ${requestNumber} has been routed to you because ${supervisor.firstName} ${supervisor.lastName} is unavailable. Please review it.`,
+        saved.id,
+        'requisition',
+      );
+    } else {
+      await this.notificationsService.notify(
+        approverId,
+        NotificationAlertType.PENDING_APPROVAL,
+        'New Requisition Awaiting Approval',
+        `Requisition ${requestNumber} requires your approval. Required by: ${dto.requiredDate}.`,
+        saved.id,
+        'requisition',
+      );
+    }
 
     // Audit log
     await this.auditService.log({
@@ -374,6 +411,22 @@ export class RequisitionsService {
           : {}),
       },
     });
+
+    if (routedToAlternate) {
+      await this.auditService.log({
+        userId: requestedById,
+        userRole,
+        action: AuditAction.REQUISITION_REASSIGNED,
+        affectedRecordId: saved.id,
+        affectedRecordType: 'requisition',
+        ipAddress,
+        metadata: {
+          reason: 'primary_unavailable',
+          primaryApproverId: supervisor.id,
+          alternateApproverId: approverId,
+        },
+      });
+    }
 
     return saved;
   }
