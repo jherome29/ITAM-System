@@ -90,6 +90,12 @@ export class RequisitionEntity {
   @Column({ nullable: true, type: 'timestamp with time zone' })
   pendingNudgeNotifiedAt!: Date | null;
 
+  // Stamped the moment a requisition is handed to an alternate approver, by
+  // either routing path (RequisitionsService.create() or checkSlaBreaches()).
+  // NULL = never routed. Doubles as the "hand off at most once" guard.
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  alternateRoutedAt!: Date | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 

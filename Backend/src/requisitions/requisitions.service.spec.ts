@@ -1543,4 +1543,11 @@ describe('RequisitionsService', () => {
       });
     });
   });
+
+  describe('Alternate approver — enum + type foundation', () => {
+    it('defines a REQUISITION_REASSIGNED audit action', () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      expect(AuditAction.REQUISITION_REASSIGNED).toBe('requisition_reassigned');
+    });
+  });
 });
