@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UserEntity } from './entities/user.entity';
 import { AuditService } from '../audit/audit.service';
@@ -326,6 +326,82 @@ describe('UsersService', () => {
           metadata: { updatedFields: ['firstName'] },
         }),
       );
+    });
+  });
+
+  describe('update() — alternate approver & availability validation', () => {
+    it('rejects alternate/availability fields on a non-supervisor row', async () => {
+      mockRepo.findOne.mockResolvedValueOnce(makeUser({ id: 'u-1', role: UserRole.EMPLOYEE }));
+      await expect(
+        service.update('u-1', { unavailable: true } as never, actorId, actorRole, ipAddress),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a supervisor naming themselves as alternate', async () => {
+      mockRepo.findOne.mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }));
+      await expect(
+        service.update('sup-1', { alternateApproverId: 'sup-1' } as never, actorId, actorRole, ipAddress),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects an alternate that is inactive or not a supervisor', async () => {
+      mockRepo.findOne
+        .mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }))       // the row being edited
+        .mockResolvedValueOnce(makeUser({ id: 'x', role: UserRole.EMPLOYEE }));            // the proposed alternate
+      await expect(
+        service.update('sup-1', { alternateApproverId: 'x' } as never, actorId, actorRole, ipAddress),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('accepts a valid alternate designation and writes it', async () => {
+      mockRepo.findOne
+        .mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }))
+        .mockResolvedValueOnce(makeUser({ id: 'sup-2', role: UserRole.SUPERVISOR, isActive: true }))
+        .mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR, alternateApproverId: 'sup-2' })); // refetch
+      mockRepo.update.mockResolvedValue({ affected: 1 });
+      const result = await service.update('sup-1', { alternateApproverId: 'sup-2' } as never, actorId, actorRole, ipAddress);
+      expect(mockRepo.update).toHaveBeenCalledWith('sup-1', { alternateApproverId: 'sup-2' });
+      expect(result.alternateApproverId).toBe('sup-2');
+    });
+  });
+
+  describe('setOwnAvailability()', () => {
+    it('writes only the availability fields on the caller row and audits with self=true', async () => {
+      mockRepo.findOne
+        .mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }))                       // existence check
+        .mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR, unavailable: true }));   // refetch
+      mockRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.setOwnAvailability(
+        'sup-1',
+        { unavailable: true, unavailableUntil: '2026-09-15T00:00:00.000Z' },
+        UserRole.SUPERVISOR,
+        ipAddress,
+      );
+
+      expect(mockRepo.update).toHaveBeenCalledWith('sup-1', {
+        unavailable: true,
+        unavailableUntil: new Date('2026-09-15T00:00:00.000Z'),
+      });
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.USER_UPDATED,
+          affectedRecordId: 'sup-1',
+          metadata: expect.objectContaining({ self: true, unavailable: true }),
+        }),
+      );
+    });
+
+    it('clears the end date when unavailableUntil is null', async () => {
+      mockRepo.findOne
+        .mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }))
+        .mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }));
+      mockRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.setOwnAvailability('sup-1', { unavailable: false, unavailableUntil: null }, UserRole.SUPERVISOR, ipAddress);
+
+      expect(mockRepo.update).toHaveBeenCalledWith('sup-1', { unavailable: false, unavailableUntil: null });
     });
   });
 

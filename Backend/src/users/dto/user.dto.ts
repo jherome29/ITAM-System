@@ -4,6 +4,9 @@ import {
   IsEmail,
   IsEnum,
   IsOptional,
+  IsBoolean,
+  IsUUID,
+  IsDateString,
   MinLength,
   MaxLength,
   Matches,
@@ -53,6 +56,12 @@ export class UpdateUserDto {
   @IsOptional() @IsEmail() email?: string;
   @IsOptional() @IsString() division?: string;
   @IsOptional() @IsString() officeOrSection?: string;
+
+  // Alternate Approver (CLAUDE.md §5, §17) — accepted only on SUPERVISOR rows.
+  // A uuid designates the backup; null clears it.
+  @IsOptional() @IsUUID('4') alternateApproverId?: string | null;
+  @IsOptional() @IsBoolean() unavailable?: boolean;
+  @IsOptional() @IsDateString() unavailableUntil?: string | null;
 }
 
 export class ResetPasswordDto {
@@ -71,4 +80,10 @@ export class AssignRoleDto {
     message: `role must be one of: ${Object.values(UserRole).join(', ')}`,
   })
   role!: UserRole;
+}
+
+/** Body for PATCH /api/v1/users/me/availability — supervisor self-service. */
+export class AvailabilityDto {
+  @IsBoolean() unavailable!: boolean;
+  @IsOptional() @IsDateString() unavailableUntil?: string | null;
 }

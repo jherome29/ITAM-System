@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -8,6 +12,7 @@ import {
   UpdateUserDto,
   AssignRoleDto,
   ResetPasswordDto,
+  AvailabilityDto,
 } from './dto/user.dto';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
@@ -143,8 +148,34 @@ export class UsersService {
     performedByRole: UserRole,
     ipAddress: string,
   ): Promise<UserEntity> {
-    await this.findOne(id);
-    await this.userRepo.update(id, dto);
+    const target = await this.findOne(id);
+
+    const touchesApproval =
+      dto.alternateApproverId !== undefined ||
+      dto.unavailable !== undefined ||
+      dto.unavailableUntil !== undefined;
+
+    if (touchesApproval && target.role !== UserRole.SUPERVISOR) {
+      throw new BadRequestException(
+        'Alternate approver and availability apply only to supervisors.',
+      );
+    }
+
+    if (dto.alternateApproverId != null) {
+      if (dto.alternateApproverId === id) {
+        throw new BadRequestException('A supervisor cannot be their own alternate.');
+      }
+      const alt = await this.userRepo.findOne({ where: { id: dto.alternateApproverId } });
+      if (!alt || !alt.isActive || alt.role !== UserRole.SUPERVISOR) {
+        throw new BadRequestException('Alternate approver must be an active supervisor.');
+      }
+    }
+
+    const patch: Record<string, unknown> = { ...dto };
+    if (dto.unavailableUntil !== undefined) {
+      patch.unavailableUntil = dto.unavailableUntil === null ? null : new Date(dto.unavailableUntil);
+    }
+    await this.userRepo.update(id, patch);
 
     await this.auditService.log({
       userId: performedById,
@@ -157,6 +188,42 @@ export class UsersService {
     });
 
     return this.findOne(id);
+  }
+
+  /**
+   * Supervisor self-service availability toggle. Writes ONLY the availability
+   * fields, ONLY on the caller's own row — it cannot reach alternateApproverId
+   * or any other user. Audited as USER_UPDATED with a self marker.
+   */
+  async setOwnAvailability(
+    userId: string,
+    dto: AvailabilityDto,
+    userRole: UserRole,
+    ipAddress: string,
+  ): Promise<UserEntity> {
+    await this.findOne(userId);
+
+    await this.userRepo.update(userId, {
+      unavailable: dto.unavailable,
+      unavailableUntil:
+        dto.unavailableUntil == null ? null : new Date(dto.unavailableUntil),
+    });
+
+    await this.auditService.log({
+      userId,
+      userRole,
+      action: AuditAction.USER_UPDATED,
+      affectedRecordId: userId,
+      affectedRecordType: 'user',
+      ipAddress,
+      metadata: {
+        self: true,
+        unavailable: dto.unavailable,
+        unavailableUntil: dto.unavailableUntil ?? null,
+      },
+    });
+
+    return this.findOne(userId);
   }
 
   async assignRole(
