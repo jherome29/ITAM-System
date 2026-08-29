@@ -5,9 +5,10 @@ connect to (frontend client → backend endpoint → DB), and what is just dead 
 delete. Hand a role section to a teammate; hand this whole file back to an LLM to
 resume the migration.
 
-**Snapshot:** 2026-08-29 · working tree of branch `feature/notifications-auto-fire-sla-cron`.
-The porting work below is already on `origin/main` (see callout); this branch adds the
-notifications/SLA commits on top and is not upstream yet.
+**Snapshot:** 2026-08-29 · `origin/develop`. The redesigned-layout port is on `origin/main`
+(see callout). Since then: notifications/SLA (**PR #84**) and replacement validation
+(**PR #86**) are merged to `develop`; System Config is built and manually verified but its
+PR to `develop` is **still open** (branch `feature/system-config`).
 
 > **2026-08-29:** notifications are now real for **every** role. The new-layout
 > `[[...slug]]` routers for Approving Officer, Property Custodian, Property Officer,
@@ -163,7 +164,7 @@ Dashboard KPIs (`reportsApi.kpi()`), all 4 report tabs (`ReportsContent`), `form
 2. ~~**System Config module.**~~ **Core done — `feature/system-config`, PR pending.** Key-value `system_config` table + `GET`/`PATCH /api/v1/system-config` (admin-only, audited); SLA hours / default reorder level / useful-life years / max login attempts, read live by `requisitions.service`, the low-stock watcher, and `auth.service`. UI = **Master Admin → System Settings** (`SystemSettingsPage`); old `/admin/config` deleted. Still open: `SystemSettingsPage`'s other tabs + `reference-data` on this module; approval routes + session policy deferred.
 3. **Returns / Incidents module.** Entity + endpoints for return request, repair request, damage/loss/theft report + audit logging. Consumed by Employee "Returns & Incidents".
 4. **Physical count / reconciliation.** Consumed by `physical-inventory` slugs (IT Asset Custodian, Property Custodian) and Property Officer `reconciliation`; also fixes the known RPCI / RPCPPE / Physical Count Summary report gap.
-5. **Replacement-validation rules.** Consumed by Property Officer `replacements` — useful-life / condition / loss-damage checks before a replacement requisition (CLAUDE.md §17).
+5. ~~**Replacement-validation rules.**~~ **Backend done — merged to `develop` via PR #86.** `validateReplacement()` runs inside `requisitions.service.create()` (useful-life / condition checks, requester-must-be-custodian; useful-life read live from System Config). The Property Officer `replacements` screen is still `WorkflowPage` mock — wiring it to a standalone view of this is the remaining FE task.
 6. **Master-Admin governance domains** (all 100 % mock in `admin.mock.ts`): access-review workflow, org-unit registry, approval-route config, custodian-coverage report, reference/master-data CRUD, system-events feed, scheduled-jobs status (may expose from `scheduler`).
 7. **Trends / utilization reporting** endpoint — for the "Preview data" chart panels on the Management and Management&Audit dashboards.
 
