@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildUpdateSystemConfigPayload,
   type SystemConfigFormValues,
-} from '@/app/admin/config/page';
+} from '@/lib/api/systemConfig';
 
 const base: SystemConfigFormValues = {
   slaApprovalHours: '24',
