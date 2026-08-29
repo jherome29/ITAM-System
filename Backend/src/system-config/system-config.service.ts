@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SystemConfigEntity } from './entities/system-config.entity';
@@ -33,7 +38,8 @@ export class SystemConfigService implements OnModuleInit {
 
   private readInt(key: string, min: number, fallback: number): number {
     const raw = this.cache.get(key);
-    if (typeof raw === 'number' && Number.isInteger(raw) && raw >= min) return raw;
+    if (typeof raw === 'number' && Number.isInteger(raw) && raw >= min)
+      return raw;
     if (raw !== undefined) {
       this.logger.warn(
         `config "${key}" = ${JSON.stringify(raw)} is invalid; using default ${fallback}`,
@@ -47,7 +53,11 @@ export class SystemConfigService implements OnModuleInit {
   }
 
   getDefaultReorderLevel(): number {
-    return this.readInt(CONFIG_KEYS.DEFAULT_REORDER_LEVEL, 0, DEFAULT_REORDER_LEVEL);
+    return this.readInt(
+      CONFIG_KEYS.DEFAULT_REORDER_LEVEL,
+      0,
+      DEFAULT_REORDER_LEVEL,
+    );
   }
 
   getMaxLoginAttempts(): number {
@@ -60,10 +70,7 @@ export class SystemConfigService implements OnModuleInit {
     if (raw && typeof raw === 'object') {
       const r = raw as Record<string, unknown>;
       const ok = classes.every(
-        (c) =>
-          typeof r[c] === 'number' &&
-          Number.isInteger(r[c]) &&
-          (r[c] as number) >= 1,
+        (c) => typeof r[c] === 'number' && Number.isInteger(r[c]) && r[c] >= 1,
       );
       if (ok) {
         return {
@@ -91,8 +98,10 @@ export class SystemConfigService implements OnModuleInit {
     }
     const r = v as Record<string, unknown>;
     for (const c of [AssetClass.PPE, AssetClass.SEP, AssetClass.IES] as const) {
-      if (typeof r[c] !== 'number' || !Number.isInteger(r[c]) || (r[c] as number) < 1) {
-        throw new BadRequestException(`usefulLifeYears.${c} must be an integer >= 1`);
+      if (typeof r[c] !== 'number' || !Number.isInteger(r[c]) || r[c] < 1) {
+        throw new BadRequestException(
+          `usefulLifeYears.${c} must be an integer >= 1`,
+        );
       }
     }
   }

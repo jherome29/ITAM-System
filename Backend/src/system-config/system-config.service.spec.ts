@@ -15,7 +15,10 @@ import { AssetClass } from '../../../packages/shared/src/enums';
 describe('SystemConfigService — getters + fallback', () => {
   let service: SystemConfigService;
   const rows: { key: string; value: unknown }[] = [];
-  const mockRepo = { find: jest.fn(async () => rows), save: jest.fn() };
+  const mockRepo = {
+    find: jest.fn(() => Promise.resolve(rows)),
+    save: jest.fn(),
+  };
 
   const build = async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -57,7 +60,10 @@ describe('SystemConfigService — getters + fallback', () => {
   });
 
   it('falls back to the default useful-life map when a class is missing or non-positive', async () => {
-    rows.push({ key: CONFIG_KEYS.USEFUL_LIFE_YEARS, value: { PPE: 7, SEP: 0 } });
+    rows.push({
+      key: CONFIG_KEYS.USEFUL_LIFE_YEARS,
+      value: { PPE: 7, SEP: 0 },
+    });
     service = await build();
     expect(service.getUsefulLifeYears()).toEqual(USEFUL_LIFE_YEARS);
   });
@@ -77,8 +83,8 @@ describe('SystemConfigService — update() + getAll()', () => {
   let service: SystemConfigService;
   const rows: { key: string; value: unknown }[] = [];
   const mockRepo = {
-    find: jest.fn(async () => rows),
-    save: jest.fn(async (row) => row),
+    find: jest.fn(() => Promise.resolve(rows)),
+    save: jest.fn((row: unknown) => Promise.resolve(row)),
   };
 
   const build = async () => {
@@ -116,7 +122,11 @@ describe('SystemConfigService — update() + getAll()', () => {
   it('rejects a useful-life map missing a class', async () => {
     service = await build();
     await expect(
-      service.update(CONFIG_KEYS.USEFUL_LIFE_YEARS, { PPE: 5, SEP: 3 }, 'admin-1'),
+      service.update(
+        CONFIG_KEYS.USEFUL_LIFE_YEARS,
+        { PPE: 5, SEP: 3 },
+        'admin-1',
+      ),
     ).rejects.toThrow(BadRequestException);
   });
 
