@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ClipboardCheck, ClipboardList } from 'lucide-react';
 import { requisitionsApi } from '@/lib/api/requisitions';
 import { notificationsApi } from '@/lib/api/notifications';
@@ -26,6 +26,18 @@ function MyAvailabilityCard() {
   const [until, setUntil] = useState<string>(user?.unavailableUntil ? String(user.unavailableUntil).slice(0, 10) : '');
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+
+  // On a hard reload / direct nav this card can mount before useAuth() has the
+  // profile (its loading is independent of the dashboard's). The useState
+  // initializers above would then latch stale defaults (available / no date),
+  // and a Save would PATCH the officer back to available. Re-seed once the
+  // profile resolves. Depend on the primitive fields so context re-renders that
+  // don't change them don't clobber in-progress edits.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deriving local form state from the auth profile once it loads; deps are the primitive fields being synced
+    setUnavailable(Boolean(user?.unavailable));
+    setUntil(user?.unavailableUntil ? String(user.unavailableUntil).slice(0, 10) : '');
+  }, [user?.unavailable, user?.unavailableUntil]);
 
   async function save() {
     setSaving(true); setNote(null);
