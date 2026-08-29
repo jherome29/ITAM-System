@@ -5,6 +5,7 @@ import { UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { AuditService } from '../audit/audit.service';
+import { SystemConfigService } from '../system-config/system-config.service';
 import { UserEntity } from '../users/entities/user.entity';
 import * as bcrypt from 'bcrypt';
 import { UserRole } from '../../../packages/shared/src/enums';
@@ -60,6 +61,12 @@ describe('AuthService', () => {
     log: jest.fn().mockResolvedValue({}),
   };
 
+  // Defaults to the shared-constant value (5) so every existing test is
+  // unchanged; one test overrides it to prove the value is read from config.
+  const mockSystemConfig = {
+    getMaxLoginAttempts: jest.fn(() => 5),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -67,12 +74,16 @@ describe('AuthService', () => {
         { provide: getRepositoryToken(UserEntity), useValue: mockUserRepo },
         { provide: JwtService, useValue: mockJwtService },
         { provide: AuditService, useValue: mockAuditService },
+        { provide: SystemConfigService, useValue: mockSystemConfig },
       ],
     }).compile();
 
     service = module.get<AuthService>(AuthService);
     jest.clearAllMocks();
     mockUserRepo.update.mockResolvedValue(undefined);
+    // clearAllMocks() keeps implementations but a per-test mockReturnValue
+    // override would leak; re-assert the default each time.
+    mockSystemConfig.getMaxLoginAttempts.mockReturnValue(5);
   });
 
   // ── Successful login ───────────────────────────────────────────────────────
@@ -159,6 +170,30 @@ describe('AuthService', () => {
       user.id,
       expect.objectContaining({
         failedLoginAttempts: 5,
+        lockedUntil: expect.any(Date),
+      }),
+    );
+  });
+
+  // ── Lockout threshold is read from SystemConfig, not the constant ────────
+  it('locks after the Nth failed attempt where N comes from SystemConfig', async () => {
+    // Config says 3. With the hardcoded MAX_LOGIN_ATTEMPTS (5) still in force,
+    // a 3rd failed attempt would be a plain UnauthorizedException with
+    // lockedUntil left null — not a lockout.
+    mockSystemConfig.getMaxLoginAttempts.mockReturnValue(3);
+    const hash = await bcrypt.hash('CorrectPass!', 12);
+    const user = makeUser({ passwordHash: hash, failedLoginAttempts: 2 });
+    mockUserRepo.createQueryBuilder.mockReturnValue(makeQb(user));
+
+    await expect(
+      service.login('juan@cicc.gov.ph', 'WrongPass!', '127.0.0.1', mockRes),
+    ).rejects.toThrow(ForbiddenException);
+
+    expect(mockSystemConfig.getMaxLoginAttempts).toHaveBeenCalled();
+    expect(mockUserRepo.update).toHaveBeenCalledWith(
+      user.id,
+      expect.objectContaining({
+        failedLoginAttempts: 3,
         lockedUntil: expect.any(Date),
       }),
     );

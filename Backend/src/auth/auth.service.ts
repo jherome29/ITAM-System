@@ -10,11 +10,9 @@ import { Response } from 'express';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import { UserEntity } from '../users/entities/user.entity';
-import {
-  MAX_LOGIN_ATTEMPTS,
-  BCRYPT_ROUNDS,
-} from '../../../packages/shared/src/constants';
+import { BCRYPT_ROUNDS } from '../../../packages/shared/src/constants';
 import { AuditService } from '../audit/audit.service';
+import { SystemConfigService } from '../system-config/system-config.service';
 import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
 import { JwtPayload } from './guards/jwt.strategy';
 
@@ -33,6 +31,7 @@ export class AuthService {
     private readonly userRepo: Repository<UserEntity>,
     private readonly jwtService: JwtService,
     private readonly auditService: AuditService,
+    private readonly systemConfig: SystemConfigService,
   ) {}
 
   /**
@@ -41,7 +40,7 @@ export class AuthService {
    * Security controls (SECURITY.md §4):
    *   - Timing-safe rejection (dummy bcrypt when user not found)
    *   - bcrypt comparison (min 12 rounds via BCRYPT_ROUNDS)
-   *   - Account lockout after MAX_LOGIN_ATTEMPTS (5) failed attempts
+   *   - Account lockout after the SystemConfig max-login-attempts threshold
    *   - Vague error messages — no enumeration, no remaining-count, no exact lock time
    *   - All auth events written to audit log
    */
@@ -88,7 +87,7 @@ export class AuthService {
 
     if (!passwordValid) {
       const attempts = user.failedLoginAttempts + 1;
-      const isNowLocked = attempts >= MAX_LOGIN_ATTEMPTS;
+      const isNowLocked = attempts >= this.systemConfig.getMaxLoginAttempts();
       const lockedUntil = isNowLocked
         ? new Date(Date.now() + 30 * 60 * 1000)
         : null;
