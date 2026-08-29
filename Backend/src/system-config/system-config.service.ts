@@ -1,8 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SystemConfigEntity } from './entities/system-config.entity';
-import { CONFIG_KEYS } from './system-config.keys';
+import { CONFIG_KEYS, SystemConfigSnapshot } from './system-config.keys';
 import { AssetClass } from '../../../packages/shared/src/enums';
 import {
   SLA_APPROVAL_HOURS,
@@ -77,5 +77,49 @@ export class SystemConfigService implements OnModuleInit {
       );
     }
     return USEFUL_LIFE_YEARS;
+  }
+
+  private assertInt(v: unknown, min: number): void {
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < min) {
+      throw new BadRequestException(`value must be an integer >= ${min}`);
+    }
+  }
+
+  private assertUsefulLife(v: unknown): void {
+    if (!v || typeof v !== 'object') {
+      throw new BadRequestException('usefulLifeYears must be an object');
+    }
+    const r = v as Record<string, unknown>;
+    for (const c of [AssetClass.PPE, AssetClass.SEP, AssetClass.IES] as const) {
+      if (typeof r[c] !== 'number' || !Number.isInteger(r[c]) || (r[c] as number) < 1) {
+        throw new BadRequestException(`usefulLifeYears.${c} must be an integer >= 1`);
+      }
+    }
+  }
+
+  private readonly validators: Record<string, (v: unknown) => void> = {
+    [CONFIG_KEYS.SLA_APPROVAL_HOURS]: (v) => this.assertInt(v, 1),
+    [CONFIG_KEYS.DEFAULT_REORDER_LEVEL]: (v) => this.assertInt(v, 0),
+    [CONFIG_KEYS.MAX_LOGIN_ATTEMPTS]: (v) => this.assertInt(v, 1),
+    [CONFIG_KEYS.USEFUL_LIFE_YEARS]: (v) => this.assertUsefulLife(v),
+  };
+
+  async update(key: string, value: unknown, updatedBy: string): Promise<void> {
+    const validate = this.validators[key];
+    if (!validate) {
+      throw new BadRequestException(`Unknown config key "${key}"`);
+    }
+    validate(value);
+    await this.repo.save({ key, value, updatedBy, updatedAt: new Date() });
+    this.cache.set(key, value);
+  }
+
+  getAll(): SystemConfigSnapshot {
+    return {
+      slaApprovalHours: this.getSlaApprovalHours(),
+      defaultReorderLevel: this.getDefaultReorderLevel(),
+      usefulLifeYears: this.getUsefulLifeYears(),
+      maxLoginAttempts: this.getMaxLoginAttempts(),
+    };
   }
 }
