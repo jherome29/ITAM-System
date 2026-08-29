@@ -89,6 +89,21 @@ export class AssetEntity {
   @Column({ nullable: true, type: 'uuid' })
   custodianId!: string | null;
 
+  @Column({ type: 'int', default: 1 })
+  quantity!: number;
+
+  @Column({ nullable: true, type: 'int' })
+  reorderLevel!: number | null;
+
+  @Column({ nullable: true, type: 'date' })
+  expectedReturnDate!: Date | null;
+
+  @Column({ nullable: true, type: 'timestamp with time zone' })
+  lowStockNotifiedAt!: Date | null;
+
+  @Column({ nullable: true, type: 'timestamp with time zone' })
+  overdueNotifiedAt!: Date | null;
+
   @OneToMany(() => AssetTransactionEntity, (tx) => tx.asset, { eager: false })
   locationHistory!: AssetTransactionEntity[];
 

@@ -1,5 +1,8 @@
 import {
   Injectable,
+  Inject,
+  forwardRef,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -9,6 +12,8 @@ import { Repository } from 'typeorm';
 import { RequisitionEntity } from './entities/requisition.entity';
 import { RequisitionItemEntity } from './entities/requisition-item.entity';
 import { RequisitionApprovalEntity } from './entities/requisition-approval.entity';
+import { AssetEntity } from '../assets/entities/asset.entity';
+import { AssetsService } from '../assets/assets.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
@@ -24,6 +29,7 @@ import {
   UserRole,
   NotificationAlertType,
   AssetType,
+  AssetClass,
 } from '../../../packages/shared/src/enums';
 import { SLA_APPROVAL_HOURS } from '../../../packages/shared/src/constants';
 import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
@@ -38,6 +44,8 @@ import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 
 @Injectable()
 export class RequisitionsService {
+  private readonly logger = new Logger(RequisitionsService.name);
+
   constructor(
     @InjectRepository(RequisitionEntity)
     private readonly reqRepo: Repository<RequisitionEntity>,
@@ -45,6 +53,8 @@ export class RequisitionsService {
     private readonly itemRepo: Repository<RequisitionItemEntity>,
     @InjectRepository(RequisitionApprovalEntity)
     private readonly approvalRepo: Repository<RequisitionApprovalEntity>,
+    @Inject(forwardRef(() => AssetsService))
+    private readonly assetsService: AssetsService,
     private readonly auditService: AuditService,
     private readonly notificationsService: NotificationsService,
     private readonly usersService: UsersService,
@@ -273,7 +283,9 @@ export class RequisitionsService {
     const items = dto.items.map((item) =>
       this.itemRepo.create({ ...item, requisitionId: saved.id }),
     );
-    await this.itemRepo.save(items);
+    saved.items = await this.itemRepo.save(items);
+    // Return shape must match findOne/findMine (both hydrate `items`) — callers
+    // that render the freshly-created requisition rely on the relation being present.
 
     // Notify the resolved supervisor
     await this.notificationsService.notify(
@@ -561,22 +573,95 @@ export class RequisitionsService {
       );
     }
 
-    // Link fulfilled asset IDs to items if provided
-    if (dto.fulfilledItems?.length) {
-      await Promise.all(
-        dto.fulfilledItems.map(({ requisitionItemId, assetId }) =>
-          this.itemRepo.update(requisitionItemId, {
-            fulfilledAssetId: assetId,
-          }),
-        ),
-      );
-    }
+    // Item-linking + supply decrement + status flip run in one transaction:
+    // an insufficient-stock throw on any IES line rolls the whole fulfillment
+    // back (no partial link, no status change). stockDecrements is declared
+    // outside the callback so the post-commit low-stock sweep and the audit
+    // metadata can both read what was actually decremented.
+    const stockDecrements: { assetId: string; from: number; to: number }[] = [];
 
-    req.itPersonnelId = itPersonnelId;
-    req.fulfilledAt = new Date();
-    req.fulfillmentNotes = dto.notes ?? '';
-    req.status = RequisitionStatus.FULFILLED;
-    const saved = await this.reqRepo.save(req);
+    const saved = await this.reqRepo.manager.transaction(async (em) => {
+      const itemRepo = em.getRepository(RequisitionItemEntity);
+      const assetRepo = em.getRepository(AssetEntity);
+
+      if (dto.fulfilledItems?.length) {
+        for (const { requisitionItemId, assetId } of dto.fulfilledItems) {
+          // Reject a fulfilledItems entry naming an id that is not on THIS
+          // requisition before any write — otherwise the itemRepo.update below
+          // would overwrite the fulfilledAssetId link on another requisition's
+          // item. Thrown inside the transaction, so it rolls the whole
+          // fulfillment back (consistent with the insufficient-stock 400).
+          const reqItem = req.items.find((i) => i.id === requisitionItemId);
+          if (!reqItem) {
+            throw new BadRequestException(
+              `Requisition item "${requisitionItemId}" does not belong to this requisition.`,
+            );
+          }
+
+          await itemRepo.update(requisitionItemId, {
+            fulfilledAssetId: assetId,
+          });
+
+          // Mutate the eager-loaded row too: RequisitionEntity.items is
+          // { cascade: true, eager: true }, so the em.save(req) below
+          // re-persists req.items — without this it would cascade the stale
+          // fulfilledAssetId: null straight back over the update() above,
+          // inside the same transaction.
+          reqItem.fulfilledAssetId = assetId;
+
+          // SVC: Deliver and Support — issuing a supply (IES) line draws down
+          // its stock. PPE/SEP items are unit assets and are left untouched.
+          if (reqItem.assetClass === AssetClass.IES) {
+            // Pessimistic write lock (SELECT … FOR UPDATE): serialises
+            // concurrent fulfillments drawing from the same supply row so the
+            // insufficient-stock guard below cannot be bypassed by a
+            // read-then-write race (two txns both reading the pre-decrement
+            // quantity, both subtracting, last write wins).
+            const supply = await assetRepo.findOne({
+              where: { id: assetId },
+              lock: { mode: 'pessimistic_write' },
+            });
+            if (!supply) {
+              throw new BadRequestException(
+                `Supply asset "${assetId}" not found.`,
+              );
+            }
+            if (reqItem.quantity > supply.quantity) {
+              throw new BadRequestException(
+                `Insufficient stock: requested ${reqItem.quantity}, available ${supply.quantity}`,
+              );
+            }
+            const from = supply.quantity;
+            supply.quantity = from - reqItem.quantity;
+            await assetRepo.save(supply);
+            stockDecrements.push({ assetId, from, to: supply.quantity });
+          }
+        }
+      }
+
+      req.itPersonnelId = itPersonnelId;
+      req.fulfilledAt = new Date();
+      req.fulfillmentNotes = dto.notes ?? '';
+      req.status = RequisitionStatus.FULFILLED;
+      return em.getRepository(RequisitionEntity).save(req);
+    });
+
+    // After the transaction commits: give each decremented supply an immediate
+    // low-stock check rather than waiting for the daily sweep. Runs outside the
+    // txn, so a failure here (e.g. notify infra down inside _sendLowStockAlert)
+    // must not reject fulfill() — the fulfillment is already committed and the
+    // requester notification + audit log still need to run. Log and move on;
+    // the daily checkLowStock cron is the backstop.
+    for (const { assetId } of stockDecrements) {
+      try {
+        await this.assetsService.notifyLowStockIfBelowThreshold(assetId);
+      } catch (e) {
+        this.logger.error(
+          `post-fulfillment low-stock check failed for asset ${assetId}`,
+          e instanceof Error ? e.stack : String(e),
+        );
+      }
+    }
 
     // Notify requester
     await this.notificationsService.notify(
@@ -600,15 +685,22 @@ export class RequisitionsService {
         requestNumber: req.requestNumber,
         notes: dto.notes,
         fulfilledItems: dto.fulfilledItems,
+        stockDecrements,
       },
     });
 
     return saved;
   }
 
-  // ── SLA breach check — called by a scheduled job ──────────────────────────
-  // Flags all pending_supervisor requisitions older than SLA_APPROVAL_HOURS
-  async checkSlaBreaches(): Promise<void> {
+  // ── SLA breach check — called by a scheduled job (SchedulerService) ───────
+  // SVC: Improve — audit-readiness: surface pending_supervisor requisitions that
+  // have blown the SLA_APPROVAL_HOURS approval window. Fires exactly once per
+  // requisition (dedup via slaBreachNotifiedAt) and reaches the Module 5 alert
+  // recipient set: the nominated supervisor, the requester, and every
+  // System Administrator + Management user for oversight. Returns the count of
+  // requisitions newly notified (always non-negative — SchedulerService.runWatcher
+  // owns the -1 "errored" sentinel).
+  async checkSlaBreaches(): Promise<number> {
     const now = new Date();
     const breached = await this.reqRepo
       .createQueryBuilder('r')
@@ -616,31 +708,82 @@ export class RequisitionsService {
         status: RequisitionStatus.PENDING_SUPERVISOR,
       })
       .andWhere('r.slaDeadline < :now', { now })
+      .andWhere('r.slaBreachNotifiedAt IS NULL')
       .getMany();
+
+    if (breached.length === 0) return 0;
+
+    const [admins, management] = await Promise.all([
+      this.usersService.findByRole(UserRole.SYSTEM_ADMIN),
+      this.usersService.findByRole(UserRole.MANAGEMENT),
+    ]);
+    const oversight = [...admins, ...management].map((u) => u.id);
 
     await Promise.all(
       breached.map(async (req) => {
-        // Notify supervisor
+        const targets = new Set<string>([req.requestedById, ...oversight]);
+        if (req.supervisorId) targets.add(req.supervisorId);
+        await Promise.all(
+          [...targets].map((uid) =>
+            this.notificationsService.notify(
+              uid,
+              NotificationAlertType.SLA_BREACH,
+              'SLA Breach — Requisition Overdue',
+              `Requisition ${req.requestNumber} has exceeded the ${SLA_APPROVAL_HOURS}-hour approval SLA.`,
+              req.id,
+              'requisition',
+            ),
+          ),
+        );
+        await this.reqRepo.update(req.id, { slaBreachNotifiedAt: new Date() });
+      }),
+    );
+
+    return breached.length;
+  }
+
+  // ── Pending-approval nudge — called by the same scheduled job ─────────────
+  // SVC: Engage — Module 5 alert: a requisition still sitting in
+  // pending_supervisor once it has burned through half the SLA_APPROVAL_HOURS
+  // approval window — but before the deadline itself, since breached ones are
+  // checkSlaBreaches' job — earns its nominated supervisor a single reminder.
+  // Deduped via pendingNudgeNotifiedAt so a supervisor is nudged at most once
+  // per requisition. Returns the count newly nudged (always non-negative —
+  // SchedulerService.runWatcher owns the -1 "errored" sentinel).
+  async checkPendingApprovalNudges(): Promise<number> {
+    const now = new Date();
+    const nudgeThreshold = new Date(
+      now.getTime() - (SLA_APPROVAL_HOURS / 2) * 60 * 60 * 1000,
+    );
+
+    const pending = await this.reqRepo
+      .createQueryBuilder('r')
+      .where('r.status = :status', {
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+      })
+      .andWhere('r.submittedAt < :nudgeThreshold', { nudgeThreshold })
+      .andWhere('r.slaDeadline >= :now', { now }) // breached ones: checkSlaBreaches
+      .andWhere('r.pendingNudgeNotifiedAt IS NULL')
+      .getMany();
+
+    await Promise.all(
+      pending.map(async (req) => {
         if (req.supervisorId) {
           await this.notificationsService.notify(
             req.supervisorId,
-            NotificationAlertType.SLA_BREACH,
-            'SLA Breach — Requisition Overdue',
-            `Requisition ${req.requestNumber} has exceeded the 24-hour approval SLA. Immediate action required.`,
+            NotificationAlertType.PENDING_APPROVAL,
+            'Requisition Approaching its Approval SLA',
+            `Requisition ${req.requestNumber} has been awaiting your approval for over ${SLA_APPROVAL_HOURS / 2} hours.`,
             req.id,
             'requisition',
           );
         }
-        // Notify requester
-        await this.notificationsService.notify(
-          req.requestedById,
-          NotificationAlertType.SLA_BREACH,
-          'Your Requisition is Overdue',
-          `Requisition ${req.requestNumber} has been pending for more than 24 hours without a decision.`,
-          req.id,
-          'requisition',
-        );
+        await this.reqRepo.update(req.id, {
+          pendingNudgeNotifiedAt: new Date(),
+        });
       }),
     );
+
+    return pending.length;
   }
 }

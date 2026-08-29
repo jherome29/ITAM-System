@@ -9,6 +9,8 @@ import { RequisitionsService } from './requisitions.service';
 import { RequisitionEntity } from './entities/requisition.entity';
 import { RequisitionItemEntity } from './entities/requisition-item.entity';
 import { RequisitionApprovalEntity } from './entities/requisition-approval.entity';
+import { AssetEntity } from '../assets/entities/asset.entity';
+import { AssetsService } from '../assets/assets.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
@@ -19,7 +21,9 @@ import {
   AuditAction,
   NotificationAlertType,
   AssetType,
+  AssetClass,
 } from '../../../packages/shared/src/enums';
+import { SLA_APPROVAL_HOURS } from '../../../packages/shared/src/constants';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const makeReq = (
@@ -42,6 +46,8 @@ const makeReq = (
     fulfillmentNotes: '',
     submittedAt: new Date(),
     slaDeadline: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+    slaBreachNotifiedAt: null,
+    pendingNudgeNotifiedAt: null,
     items: [],
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -52,6 +58,21 @@ describe('RequisitionsService', () => {
   let service: RequisitionsService;
 
   // ── Mock repositories ─────────────────────────────────────────────────────
+  const mockItemRepo = {
+    create: jest.fn(),
+    save: jest.fn(),
+    update: jest.fn(),
+  };
+
+  const mockAssetRepo = {
+    findOne: jest.fn(),
+    save: jest.fn(),
+  };
+
+  const mockAssetsService = {
+    notifyLowStockIfBelowThreshold: jest.fn().mockResolvedValue(false),
+  };
+
   const mockReqRepo = {
     findAndCount: jest.fn(),
     findOne: jest.fn(),
@@ -60,6 +81,10 @@ describe('RequisitionsService', () => {
     save: jest.fn(),
     count: jest.fn(),
     update: jest.fn(),
+    // fulfill() wraps its item-linking + stock decrement + status flip in
+    // reqRepo.manager.transaction(); the runner is attached just below (an
+    // in-initializer self-reference would trip TS7022).
+    manager: { transaction: jest.fn() },
     createQueryBuilder: jest.fn().mockReturnValue({
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
@@ -77,11 +102,22 @@ describe('RequisitionsService', () => {
     }),
   };
 
-  const mockItemRepo = {
-    create: jest.fn(),
-    save: jest.fn(),
-    update: jest.fn(),
-  };
+  // Run the transaction callback inline against a real per-entity getRepository
+  // switch so decrement/link assertions land on the right repo (the AssetEntity
+  // repo must NOT be the same object as the RequisitionItemEntity repo).
+  mockReqRepo.manager.transaction.mockImplementation(
+    (cb: (em: { getRepository: (e: unknown) => unknown }) => unknown) =>
+      cb({
+        getRepository: (entity: unknown) => {
+          if (entity === AssetEntity) return mockAssetRepo;
+          if (entity === RequisitionItemEntity) return mockItemRepo;
+          if (entity === RequisitionEntity) return mockReqRepo;
+          throw new Error(
+            'transaction mock: unexpected getRepository() entity',
+          );
+        },
+      }),
+  );
 
   const mockApprovalRepo = {
     find: jest.fn().mockResolvedValue([]),
@@ -119,6 +155,7 @@ describe('RequisitionsService', () => {
           provide: getRepositoryToken(RequisitionApprovalEntity),
           useValue: mockApprovalRepo,
         },
+        { provide: AssetsService, useValue: mockAssetsService },
         { provide: AuditService, useValue: mockAuditService },
         { provide: NotificationsService, useValue: mockNotifService },
         { provide: UsersService, useValue: mockUsersService },
@@ -622,6 +659,189 @@ describe('RequisitionsService', () => {
     });
   });
 
+  describe('fulfill() — supply stock decrement', () => {
+    // A line item that clears the IT_PERSONNEL asset-type scope guard
+    // (assetType ICT) so the test reaches the decrement path. assetClass
+    // decides whether the supply is decremented — IES yes, PPE/SEP no.
+    const mkItem = (
+      over: Partial<RequisitionItemEntity> = {},
+    ): RequisitionItemEntity =>
+      ({
+        id: 'ri-ies-1',
+        assetType: AssetType.ICT,
+        assetClass: AssetClass.IES,
+        quantity: 4,
+        itemDescription: 'USB drives (box)',
+        fulfilledAssetId: null,
+        ...over,
+      }) as unknown as RequisitionItemEntity;
+
+    const armFulfillable = (items: RequisitionItemEntity[]) => {
+      const req = makeReq({
+        id: 'req-supply-1',
+        status: RequisitionStatus.PENDING_FULFILLMENT,
+        items,
+      });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+      mockReqRepo.save.mockImplementation((r: RequisitionEntity) =>
+        Promise.resolve(r),
+      );
+      return req;
+    };
+
+    it('decrements the linked IES supply by the line quantity and records stockDecrements in the audit metadata', async () => {
+      const req = armFulfillable([mkItem({ quantity: 4 })]);
+      mockAssetRepo.findOne.mockResolvedValue({
+        id: 'sup-1',
+        assetClass: AssetClass.IES,
+        quantity: 10,
+      });
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+
+      await service.fulfill(
+        'req-supply-1',
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        {
+          fulfilledItems: [{ requisitionItemId: 'ri-ies-1', assetId: 'sup-1' }],
+        },
+        '127.0.0.1',
+      );
+
+      // The in-txn supply row is read SELECT … FOR UPDATE so concurrent
+      // fulfillments can't both slip past the insufficient-stock guard.
+      expect(mockAssetRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sup-1' },
+          lock: { mode: 'pessimistic_write' },
+        }),
+      );
+      expect(mockAssetRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'sup-1', quantity: 6 }),
+      );
+      // The eager-loaded row is mutated in memory so the cascade save persists
+      // the link rather than clobbering it back to null.
+      expect(req.items[0].fulfilledAssetId).toBe('sup-1');
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.REQUISITION_FULFILLED,
+          metadata: expect.objectContaining({
+            stockDecrements: [{ assetId: 'sup-1', from: 10, to: 6 }],
+          }),
+        }),
+      );
+      expect(
+        mockAssetsService.notifyLowStockIfBelowThreshold,
+      ).toHaveBeenCalledWith('sup-1');
+    });
+
+    it('rolls back with a 400 and saves nothing when the line quantity exceeds available stock', async () => {
+      armFulfillable([mkItem({ quantity: 50 })]);
+      mockAssetRepo.findOne.mockResolvedValue({
+        id: 'sup-1',
+        assetClass: AssetClass.IES,
+        quantity: 10,
+      });
+
+      await expect(
+        service.fulfill(
+          'req-supply-1',
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          {
+            fulfilledItems: [
+              { requisitionItemId: 'ri-ies-1', assetId: 'sup-1' },
+            ],
+          },
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow('Insufficient stock: requested 50, available 10');
+
+      expect(mockAssetRepo.save).not.toHaveBeenCalled();
+      expect(mockReqRepo.save).not.toHaveBeenCalled();
+      expect(mockAuditService.log).not.toHaveBeenCalled();
+      expect(
+        mockAssetsService.notifyLowStockIfBelowThreshold,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('leaves a PPE line untouched — no supply lookup, no decrement, empty stockDecrements', async () => {
+      armFulfillable([
+        mkItem({
+          id: 'ri-ppe-1',
+          assetClass: AssetClass.PPE,
+          quantity: 1,
+          itemDescription: 'Laptop',
+        }),
+      ]);
+
+      await service.fulfill(
+        'req-supply-1',
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        {
+          fulfilledItems: [{ requisitionItemId: 'ri-ppe-1', assetId: 'ppe-1' }],
+        },
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.findOne).not.toHaveBeenCalled();
+      expect(mockAssetRepo.save).not.toHaveBeenCalled();
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.REQUISITION_FULFILLED,
+          metadata: expect.objectContaining({ stockDecrements: [] }),
+        }),
+      );
+    });
+
+    it('still fulfills via the legacy path when no fulfilledItems are supplied', async () => {
+      armFulfillable([mkItem()]);
+
+      const result = await service.fulfill(
+        'req-supply-1',
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        {},
+        '127.0.0.1',
+      );
+
+      expect(result.status).toBe(RequisitionStatus.FULFILLED);
+      expect(mockAssetRepo.findOne).not.toHaveBeenCalled();
+      expect(
+        mockAssetsService.notifyLowStockIfBelowThreshold,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('rejects a fulfilledItems entry that matches no requisition item — rolls back, writes nothing', async () => {
+      armFulfillable([mkItem()]);
+
+      await expect(
+        service.fulfill(
+          'req-supply-1',
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          {
+            fulfilledItems: [
+              { requisitionItemId: 'not-on-this-req', assetId: 'sup-x' },
+            ],
+          },
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(/does not belong to this requisition/);
+
+      // Guard fires before any write inside the transaction — nothing persists.
+      expect(mockItemRepo.update).not.toHaveBeenCalled();
+      expect(mockAssetRepo.findOne).not.toHaveBeenCalled();
+      expect(mockAssetRepo.save).not.toHaveBeenCalled();
+      expect(mockReqRepo.save).not.toHaveBeenCalled();
+      expect(mockAuditService.log).not.toHaveBeenCalled();
+    });
+  });
+
   describe('putOnHold() — IT Personnel / Property Custodian hold flow', () => {
     it('transitions PENDING_FULFILLMENT → ON_HOLD when all items are in scope', async () => {
       const req = makeReq({
@@ -934,6 +1154,219 @@ describe('RequisitionsService', () => {
       expect(result.page).toBe(1);
       expect(result.limit).toBe(20);
       expect(result.totalPages).toBe(1);
+    });
+  });
+
+  // ── checkSlaBreaches() — SLA breach watcher (dedup stamp + oversight roles) ──
+  describe('checkSlaBreaches()', () => {
+    // Inspectable QueryBuilder mock — chain calls are real jest.fn()s so a test
+    // can assert the dedup filter clause was actually applied to the query.
+    const makeBreachQb = (rows: RequisitionEntity[]) => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(rows),
+    });
+
+    it('notifies supervisor, requester, every system_admin and every management user once, then stamps the requisition', async () => {
+      const breached = makeReq({
+        id: 'r1',
+        requestNumber: 'REQ-1',
+        supervisorId: 'sup1',
+        requestedById: 'emp1',
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        slaDeadline: new Date(Date.now() - 60_000),
+        slaBreachNotifiedAt: null,
+      });
+      const qb = makeBreachQb([breached]);
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+      const usersByRole: Partial<Record<UserRole, { id: string }[]>> = {
+        [UserRole.SYSTEM_ADMIN]: [{ id: 'admin1' }],
+        [UserRole.MANAGEMENT]: [{ id: 'mgmt1' }],
+      };
+      mockUsersService.findByRole.mockImplementation((r: UserRole) =>
+        Promise.resolve(usersByRole[r] ?? []),
+      );
+      mockReqRepo.update.mockResolvedValue({ affected: 1 });
+
+      const count = await service.checkSlaBreaches();
+
+      expect(count).toBe(1);
+
+      // Dedup query-filter must be present — without this clause the watcher
+      // would re-alert an already-stamped requisition on every sweep, which is
+      // the whole point of the task.
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('slaBreachNotifiedAt IS NULL'),
+      );
+
+      const recipients = mockNotifService.notify.mock.calls.map((c) =>
+        String(c[0]),
+      );
+      expect(recipients.sort()).toEqual(['admin1', 'emp1', 'mgmt1', 'sup1']);
+      expect(mockNotifService.notify).toHaveBeenCalledWith(
+        expect.any(String),
+        NotificationAlertType.SLA_BREACH,
+        expect.any(String),
+        expect.any(String),
+        'r1',
+        'requisition',
+      );
+      expect(mockReqRepo.update).toHaveBeenCalledWith('r1', {
+        slaBreachNotifiedAt: expect.any(Date),
+      });
+    });
+
+    it('collapses a recipient who is both requester and system_admin into a single notify', async () => {
+      const breached = makeReq({
+        id: 'r2',
+        requestNumber: 'REQ-2',
+        supervisorId: 'sup2',
+        requestedById: 'dual-user',
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        slaDeadline: new Date(Date.now() - 60_000),
+        slaBreachNotifiedAt: null,
+      });
+      mockReqRepo.createQueryBuilder.mockReturnValue(makeBreachQb([breached]));
+      const usersByRole: Partial<Record<UserRole, { id: string }[]>> = {
+        [UserRole.SYSTEM_ADMIN]: [{ id: 'dual-user' }],
+        [UserRole.MANAGEMENT]: [],
+      };
+      mockUsersService.findByRole.mockImplementation((r: UserRole) =>
+        Promise.resolve(usersByRole[r] ?? []),
+      );
+      mockReqRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.checkSlaBreaches();
+
+      const dualUserCalls = mockNotifService.notify.mock.calls.filter(
+        (c) => String(c[0]) === 'dual-user',
+      );
+      expect(dualUserCalls).toHaveLength(1);
+      // Distinct recipients left: the supervisor + the merged requester/admin.
+      expect(mockNotifService.notify).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips requisitions already stamped (query filters them out) and returns 0', async () => {
+      mockReqRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      });
+
+      await expect(service.checkSlaBreaches()).resolves.toBe(0);
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+      expect(mockReqRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── checkPendingApprovalNudges() — half-SLA pending-approval nudge watcher ──
+  describe('checkPendingApprovalNudges()', () => {
+    const halfSlaMs = (SLA_APPROVAL_HOURS / 2) * 60 * 60 * 1_000;
+
+    // Inspectable QueryBuilder mock — chain calls are real jest.fn()s so a test
+    // can assert the dedup + window filter clauses were actually applied.
+    const makeNudgeQb = (rows: RequisitionEntity[]) => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(rows),
+    });
+
+    it('nudges the supervisor once for a requisition pending past half the SLA but not yet breached, then stamps it', async () => {
+      const req = makeReq({
+        id: 'r1',
+        requestNumber: 'REQ-1',
+        supervisorId: 'sup1',
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        submittedAt: new Date(Date.now() - halfSlaMs - 60_000),
+        slaDeadline: new Date(Date.now() + 60_000),
+        pendingNudgeNotifiedAt: null,
+      });
+      const qb = makeNudgeQb([req]);
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+      mockReqRepo.update.mockResolvedValue({ affected: 1 });
+
+      const count = await service.checkPendingApprovalNudges();
+
+      expect(count).toBe(1);
+
+      // Dedup query-filter must be present — without this clause the watcher
+      // would re-nudge an already-stamped requisition on every hourly sweep.
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('pendingNudgeNotifiedAt IS NULL'),
+      );
+
+      expect(mockNotifService.notify).toHaveBeenCalledTimes(1);
+      expect(mockNotifService.notify).toHaveBeenCalledWith(
+        'sup1',
+        NotificationAlertType.PENDING_APPROVAL,
+        expect.stringContaining('Approaching'),
+        expect.stringContaining('REQ-1'),
+        'r1',
+        'requisition',
+      );
+      expect(mockReqRepo.update).toHaveBeenCalledWith('r1', {
+        pendingNudgeNotifiedAt: expect.any(Date),
+      });
+    });
+
+    it('bounds the query to submissions older than half the SLA and deadlines not yet passed', async () => {
+      const qb = makeNudgeQb([]);
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const before = Date.now();
+      await service.checkPendingApprovalNudges();
+      const after = Date.now();
+
+      // Lower bound: only submissions older than SLA_APPROVAL_HOURS/2 — an
+      // 11h59m-pending requisition is still inside the window and must NOT be
+      // selected. Widening/removing this clause would fail here.
+      const thresholdCall = qb.andWhere.mock.calls.find(
+        (c) =>
+          typeof c[0] === 'string' &&
+          c[0].includes('submittedAt < :nudgeThreshold'),
+      );
+      expect(thresholdCall).toBeDefined();
+      const nudgeThreshold = (
+        thresholdCall![1] as { nudgeThreshold: Date }
+      ).nudgeThreshold.getTime();
+      expect(nudgeThreshold).toBeGreaterThanOrEqual(before - halfSlaMs - 50);
+      expect(nudgeThreshold).toBeLessThanOrEqual(after - halfSlaMs + 50);
+
+      // Upper bound: already-breached requisitions belong to checkSlaBreaches.
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('slaDeadline >= :now'),
+        expect.objectContaining({ now: expect.any(Date) }),
+      );
+    });
+
+    it('returns 0 and notifies nobody when the query yields nothing', async () => {
+      mockReqRepo.createQueryBuilder.mockReturnValue(makeNudgeQb([]));
+
+      await expect(service.checkPendingApprovalNudges()).resolves.toBe(0);
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+      expect(mockReqRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('stamps but does not notify when the pending requisition has no nominated supervisor', async () => {
+      const req = makeReq({
+        id: 'r3',
+        requestNumber: 'REQ-3',
+        supervisorId: null,
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        submittedAt: new Date(Date.now() - halfSlaMs - 60_000),
+        slaDeadline: new Date(Date.now() + 60_000),
+        pendingNudgeNotifiedAt: null,
+      });
+      mockReqRepo.createQueryBuilder.mockReturnValue(makeNudgeQb([req]));
+      mockReqRepo.update.mockResolvedValue({ affected: 1 });
+
+      const count = await service.checkPendingApprovalNudges();
+
+      expect(count).toBe(1);
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+      expect(mockReqRepo.update).toHaveBeenCalledWith('r3', {
+        pendingNudgeNotifiedAt: expect.any(Date),
+      });
     });
   });
 });

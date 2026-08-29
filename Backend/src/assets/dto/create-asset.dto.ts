@@ -3,6 +3,8 @@ import {
   IsNotEmpty,
   IsOptional,
   IsNumber,
+  IsInt,
+  Min,
   IsEnum,
   IsDateString,
   IsPositive,
@@ -95,4 +97,17 @@ export class CreateAssetDto {
 
   @IsEnum(AssetType, { message: 'assetType must be ICT, Fixed, or Supplies' })
   assetType!: AssetType;
+
+  // ── Stock (IES supply lines only — PPE/SEP stay at the default 1) ─────────
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  quantity?: number; // units on hand — IES stock lines; PPE/SEP stay 1
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  reorderLevel?: number; // low-stock threshold for this item
 }

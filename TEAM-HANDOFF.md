@@ -2,7 +2,7 @@
 
 > **For:** Nelson James Casambros · Andrei Fredrick Montaniel · Jairus Nathan Valenton
 > **Target Completion:** October 2026
-> **Last updated:** August 19, 2026
+> **Last updated:** August 28, 2026
 
 Read this file first, then **CLAUDE.md** (the single source of truth for the whole project). Everything else is linked from one of these two.
 
@@ -20,9 +20,13 @@ git checkout develop
 
 If you have an old local clone with a branch called `FE-Updated-not-finished`: that branch is superseded. Everything it had — the 7-role frontend redesign — plus the backend wiring for it, the 2 new roles (Property Custodian, Property Officer), real login for all 7 roles, and a security fix-wave are all merged into `main` and `develop` now. There's no reason to build from that branch anymore; delete your local copy of it if you have one.
 
-**Open branch awaiting merge, 2026-08-21:** `fix/dead-ui-controls-and-logout-crash` (2 commits on top of `develop`) — found via a systematic re-audit (parallel agent sweep across every role's frontend + all 8 backend controllers) for the same class of bug as the branch name's first fix: real, wired features that are silently broken, either by dead UI controls or by uppercase-vs-real-lowercase-enum mismatches. Fixes: the logout button/endpoint (dead link + a `req.user.sub`-vs-`.id` backend crash), a notifications IDOR (any user could mark any other user's notification read), and ~10 more correctness bugs across report generation, asset lifecycle updates, user creation/role assignment, audit-trail filtering, notification icons, status badges, the Employee dashboard/notifications (were still mock, now real), and Master Admin's unbuilt pages (now honestly disclosed as mock instead of implying they saved). Full list and rationale in the two commit messages. Pull this in before doing further work in any of those areas.
+**Now on `main` (since 2026-08-21):** `fix/dead-ui-controls-and-logout-crash` — a systematic re-audit that fixed the logout button/endpoint crash, a notifications IDOR, and ~10 correctness bugs from uppercase-vs-lowercase-enum mismatches across reports, lifecycle updates, user/role management, and audit filtering.
 
-For a fast, plain-language read of what's actually wired to the backend vs. still fake, see **`SYSTEM-STATUS.md`** at the repo root.
+**Now on `main` (2026-08-27, PR #82 → #83):** the full redesigned-layout backend wiring — all 5 porting phases. IT Asset Custodian, Approving Officer, Property Custodian, Property Officer, Management & Audit, and Master Admin's Users/Roles/Audit now call the real backend. What's still mock is greenfield backend work only — see `MOCK-DATA-WIRING.md`.
+
+**Open branch awaiting merge:** `feature/notifications-auto-fire-sla-cron` — automated notification watchers (SLA breach, 12 h pending-approval nudge, overdue return, low stock) via a new `scheduler` module + `@nestjs/schedule`, plus the supply-stock model (quantity/reorder level, transactional decrement on fulfill). Went through a final-review round; manual test steps in `MANUAL-TEST-CHECKLIST.md`.
+
+For a fast, plain-language read of what's actually wired to the backend vs. still fake, see **`SYSTEM-STATUS.md`**; for a screen-by-screen mock inventory with the backend each needs, see **`MOCK-DATA-WIRING.md`** — both at the repo root.
 
 ---
 
@@ -109,15 +113,16 @@ Full role details and page routes: **`docs/guides/ROLES.md`**
 - Notifications module: in-system alerts, mark read, mark all read (nothing auto-creates them yet — see gap list)
 - Users module: CRUD, role assignment, deactivate, reset password, unlock, search
 - Reports module: real PDF (pdfkit) + Excel (exceljs), all 18 COA forms (generation mechanism is solid; several forms' *layout* diverges from the official template — see `docs/guides/COA-FORMS-AUDIT.md`)
-- Employee's redesigned pages (dashboard included, as of 2026-08-21 — was the last mock-only Employee page), the Approving Officer's queue (including real actions now), and parts of Master Admin (Users/Roles/Audit) wired to real APIs instead of mock data
+- **The whole redesigned layout is wired now (2026-08-27, on `main`).** All 5 porting phases: IT Asset Custodian (every screen), Approving Officer (dashboard + queues + real actions), Property Custodian & Property Officer (dashboards, asset registries, QR, fulfillment/custody/disposal), Management & Audit Viewer (dashboard KPIs, all report tabs, forms archive, audit), Master Admin (Users/Roles/Audit + 2 of 6 dashboard panels), and a shared COA-forms generator. Screen-by-screen mock inventory: `MOCK-DATA-WIRING.md`.
 - Asset registration: a real, reachable, working page now exists in navigation for IT Asset Custodian and Property Custodian
-- As of 2026-08-21: report generation, IT Personnel's asset lifecycle update button, user creation, and role assignment were all found *wired to the real API but silently broken* by uppercase-vs-real-lowercase-enum mismatches (`packages/shared/src/enums` is all lowercase) — every one of these previously failed or 400'd despite looking functional. Fixed; see `fix/dead-ui-controls-and-logout-crash`.
+- Report generation, asset lifecycle updates, user creation, and role assignment — all previously *wired but silently broken* by uppercase-vs-lowercase-enum mismatches — fixed on `main`.
 
-### Known-fake despite looking real (see `SYSTEM-STATUS.md` for the full list)
-- `/admin/config` ("System Configuration") is a complete facade — no API call at all, false-success message, no backend endpoint exists yet to wire it to
-- The Management dashboard mixes real KPIs with two hardcoded, unlabeled mock chart panels
-- Master Admin's governance/platform pages (approval workflows, custodian assignments, master data, system health, org units, access reviews) have no backend to wire to at all — as of 2026-08-21 they honestly disclose "...in frontend mock state" instead of implying the action persisted (previously they didn't disclose this)
-- IT Asset Custodian's and the two Property roles' own registry/dashboard screens — still mostly mock, tracked separately
+### Known-fake despite looking real — no backend exists yet (see `SYSTEM-STATUS.md` / `MOCK-DATA-WIRING.md` for the full list)
+- `/admin/config` + Master Admin `configuration` / `reference-data` — no system-config endpoint of any kind
+- Master Admin governance pages (approval workflows, custodian coverage, master data, system health, org units, access reviews) — no backend at all; they honestly disclose "...in frontend mock state"
+- `physical-inventory` slugs, Property Officer corrections / reconciliation / replacements — no physical-count or replacement-validation backend
+- Employee "returns & incidents" and "assigned assets" — no returns/incidents module; assigned-assets needs a custodian filter on `GET /v1/assets`
+- Two "Preview data"-labeled chart panels on the Management / Management&Audit dashboards
 
 ---
 
@@ -127,13 +132,15 @@ Don't duplicate the gap list here — **`SYSTEM-STATUS.md`** at the repo root is
 
 | Priority | Item |
 |---|---|
-| 0 | Fix `/admin/config`'s false-success message — needs a new backend config endpoint, not just wiring |
-| 1 | Notifications + SLA cron job — nothing watches for alert conditions yet |
-| 2 | Replacement requisition validation (useful-life / condition / loss-damage) |
-| 3 | Disposal workflow (currently just a status flag, no required fields) |
-| 4 | Alternate approver designation |
-| 5 | Wire the rest of the redesigned pages to real APIs |
-| 6 | Physical count/reconciliation workflow + 2 missing management reports |
+| ~~1~~ | ~~Notifications + SLA cron job~~ — **built** on `feature/notifications-auto-fire-sla-cron`; merge the PR |
+| 2 | System-config backend + wire `/admin/config` (also unblocks Master Admin `configuration` / `reference-data`) |
+| 3 | Replacement requisition validation (useful-life / condition / loss-damage) |
+| 4 | Disposal workflow (currently just a status flag, no required fields) |
+| 5 | Fix the 18 COA form templates against their references (`docs/guides/COA-FORMS-AUDIT.md`) |
+| 6 | Alternate approver designation |
+| 7 | Master Admin governance backend (access reviews, org units, approval config, custodian coverage, master data, system events) |
+| 8 | Physical count / reconciliation workflow + 2 missing management reports |
+| 9 | Small wiring leftovers (`MOCK-DATA-WIRING.md` Parts B–C) — mostly one-liners once the backends above exist |
 
 Also still open regardless of branch: JMeter load test, OWASP ZAP scan, UAT with CICC — see `docs/phases/PHASE-5-TESTING.md`. Tooling not yet added (Husky pre-commit hooks, MFA/TOTP, idle session timeout, Playwright e2e) is tracked in `docs/guides/FUTURE-TOOLING.md` with trigger points for when to add each.
 

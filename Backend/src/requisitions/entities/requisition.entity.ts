@@ -79,6 +79,12 @@ export class RequisitionEntity {
   @Column({ nullable: true, type: 'timestamp with time zone' })
   slaDeadline!: Date;
 
+  @Column({ nullable: true, type: 'timestamp with time zone' })
+  slaBreachNotifiedAt!: Date | null;
+
+  @Column({ nullable: true, type: 'timestamp with time zone' })
+  pendingNudgeNotifiedAt!: Date | null;
+
   @CreateDateColumn()
   createdAt!: Date;
 

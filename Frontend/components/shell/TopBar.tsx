@@ -3,17 +3,34 @@
 import { Bell, Building2, CalendarDays, Menu, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Breadcrumbs } from './Breadcrumbs';
-import { RoleSwitcher } from './RoleSwitcher';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
 import { roleNavigation } from '@/lib/roles/role-navigation';
-import { notificationMockRows } from '@/lib/mock/notifications.mock';
+import { notificationsApi, type Notification } from '@/lib/api/notifications';
+
+// Turns a backend notification into the "ASSETS - TODAY" caption the dropdown shows.
+// Prefer the related record type; fall back to the alert type (e.g. "LOW STOCK").
+function captionFor(n: Notification): string {
+  const label = (n.relatedRecordType ?? n.alertType).replace(/_/g, ' ').toUpperCase();
+  const created = new Date(n.createdAt);
+  const now = new Date();
+  const sameDay =
+    created.getFullYear() === now.getFullYear() &&
+    created.getMonth() === now.getMonth() &&
+    created.getDate() === now.getDate();
+  const when = sameDay
+    ? 'TODAY'
+    : created.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+  return `${label} - ${when}`;
+}
 
 export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole; onMenuClick: () => void }>) {
   const router = useRouter();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const date = new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
@@ -23,11 +40,27 @@ export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole;
     roleNavigation[role].find((item) => item.label === 'Notifications')?.href ??
     roleNavigation[role].find((item) => item.label.includes('Audit'))?.href ??
     roleNavigation[role][0].href;
-  const importantNotifications =
-    role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER
-      ? []
-      : notificationMockRows.filter((item) => item.unread).slice(0, 3);
-  const unreadCount = importantNotifications.length;
+
+  // Live unread feed for the header bell. Silent on failure — this is a peek,
+  // the full page (notificationHref) owns loading/error states.
+  const loadNotifications = useCallback(() => {
+    notificationsApi
+      .list()
+      .then((r) => {
+        setNotifications(r.data.notifications);
+        setUnreadCount(r.data.unreadCount);
+      })
+      .catch(() => {
+        setNotifications([]);
+        setUnreadCount(0);
+      });
+  }, []);
+
+  useEffect(() => {
+    loadNotifications();
+  }, [loadNotifications]);
+
+  const importantNotifications = notifications.filter((item) => !item.isRead).slice(0, 3);
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200/80 bg-white/95 px-4 backdrop-blur md:px-7">
@@ -45,7 +78,6 @@ export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole;
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <RoleSwitcher currentRole={role} />
         <span className="hidden h-9 items-center gap-1.5 rounded-md border border-blue-100 bg-blue-50 px-2.5 text-sm font-bold text-blue-700 sm:flex">
           <Building2 className="h-4 w-4" />
           CICC
@@ -57,7 +89,13 @@ export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole;
         <div className="relative">
           <button
             type="button"
-            onClick={() => setNotificationsOpen((value) => !value)}
+            onClick={() => {
+              setNotificationsOpen((value) => {
+                const next = !value;
+                if (next) loadNotifications();
+                return next;
+              });
+            }}
             className="relative grid h-9 w-9 place-items-center rounded-md text-slate-500 hover:bg-slate-100"
             aria-label="Open important notifications"
             aria-expanded={notificationsOpen}
@@ -94,7 +132,7 @@ export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole;
                         <div className="min-w-0">
                           <p className="truncate text-sm font-bold text-slate-900">{item.title}</p>
                           <p className="mt-1 line-clamp-2 text-xs text-slate-600">{item.message}</p>
-                          <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-blue-700">{item.category} - {item.date}</p>
+                          <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-blue-700">{captionFor(item)}</p>
                         </div>
                       </div>
                     </Link>

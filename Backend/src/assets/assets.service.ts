@@ -10,15 +10,19 @@ import { AssetEntity } from './entities/asset.entity';
 import { AssetTransactionEntity } from './entities/asset-transaction.entity';
 import { AuditService } from '../audit/audit.service';
 import { UsersService } from '../users/users.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import { UpdateLifecycleDto } from './dto/update-lifecycle.dto';
 import {
+  AssetClass,
   AssetStatus,
   AssetType,
   AuditAction,
+  NotificationAlertType,
   UserRole,
 } from '../../../packages/shared/src/enums';
+import { DEFAULT_REORDER_LEVEL } from '../../../packages/shared/src/constants';
 
 // ─── State Machine ─────────────────────────────────────────────────────────
 // Valid asset lifecycle transitions per CLAUDE.md section 5.4:
@@ -75,6 +79,7 @@ export class AssetsService {
     private readonly txRepo: Repository<AssetTransactionEntity>,
     private readonly auditService: AuditService,
     private readonly usersService: UsersService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // ── List all assets (paginated, optional search + status filter) ──────────
@@ -321,8 +326,27 @@ export class AssetsService {
     ipAddress: string,
     assetTypeScope?: AssetType[],
   ): Promise<AssetEntity> {
-    await this.findOne(id, assetTypeScope); // throws Not Found / Forbidden
-    await this.assetRepo.update(id, dto);
+    const existing = await this.findOne(id, assetTypeScope); // throws Not Found / Forbidden
+
+    // Re-arm the low-stock dedup stamp: whenever a PATCH moves an IES supply
+    // line back above its reorder level — by raising quantity, by LOWERING
+    // reorderLevel, or both — clear lowStockNotifiedAt so checkLowStock() can
+    // alert again the next time it runs low. Evaluated against the effective
+    // post-patch state (patch value wins, else the stored value, else the
+    // system default), so a reorderLevel-only PATCH that lifts a line out of
+    // "low" still re-arms it instead of leaving the stamp stuck forever.
+    // Reuses the asset already loaded above rather than issuing a second
+    // findOne.
+    const patch: UpdateAssetDto & {
+      lowStockNotifiedAt?: Date | null;
+    } = { ...dto };
+    if (patch.quantity !== undefined || patch.reorderLevel !== undefined) {
+      const effectiveQty = patch.quantity ?? existing.quantity;
+      const effectiveThreshold =
+        patch.reorderLevel ?? existing.reorderLevel ?? DEFAULT_REORDER_LEVEL;
+      if (effectiveQty > effectiveThreshold) patch.lowStockNotifiedAt = null;
+    }
+    await this.assetRepo.update(id, patch);
 
     await this.auditService.log({
       userId: performedById,
@@ -375,6 +399,20 @@ export class AssetsService {
     const previousStatus = asset.status;
     asset.status = targetStatus;
 
+    // Record the expected return date when a loaned asset is issued — this
+    // arms the overdue-return watcher (checkOverdueReturns). Omitting the
+    // date on an ISSUED transition explicitly clears any stale value.
+    // Always re-arm the overdue stamp too: an asset can reach ISSUED again
+    // via ISSUED → UNDER_REPAIR → AVAILABLE → ISSUED without ever passing
+    // through RETURNED, so a fresh issue must clear any prior notification
+    // mark or the asset would be excluded from the watcher forever.
+    if (targetStatus === AssetStatus.ISSUED) {
+      asset.expectedReturnDate = dto.expectedReturnDate
+        ? new Date(dto.expectedReturnDate)
+        : null;
+      asset.overdueNotifiedAt = null;
+    }
+
     // Resolve employeeId → UUID if provided (IT Personnel don't know raw UUIDs)
     if (dto.employeeId && dto.status === AssetStatus.ISSUED) {
       const recipient = await this.usersService.findByEmployeeId(
@@ -396,6 +434,13 @@ export class AssetsService {
       targetStatus === AssetStatus.DISPOSED
     ) {
       asset.custodianId = null;
+      // On return, re-arm the overdue-return watcher: drop the due date and
+      // the "already notified" stamp so the next loan of this asset starts
+      // from a clean slate.
+      if (targetStatus === AssetStatus.RETURNED) {
+        asset.expectedReturnDate = null;
+        asset.overdueNotifiedAt = null;
+      }
     }
 
     const saved = await this.assetRepo.save(asset);
@@ -462,5 +507,136 @@ export class AssetsService {
     });
 
     return { qrCode, barcodeValue, assetId: id };
+  }
+
+  // ── Overdue-return watcher — called by SchedulerService ──────────────────
+  // SVC: Deliver and Support — surface loaned assets that are past their
+  // recorded expectedReturnDate. Fires exactly once per asset (dedup via
+  // overdueNotifiedAt) and reaches the Module 5 recipient set: the current
+  // holder plus every active user in the owning custodian role (IT Personnel
+  // for ICT, Property Custodian for Fixed/Supplies). Returns the count of
+  // assets newly notified — never negative; SchedulerService.runWatcher owns
+  // the -1 "errored" sentinel.
+  async checkOverdueReturns(): Promise<number> {
+    const overdue = await this.assetRepo
+      .createQueryBuilder('a')
+      .where('a.status = :status', { status: AssetStatus.ISSUED })
+      // `date` column vs. SQL CURRENT_DATE — an asset is overdue only once the
+      // due day has fully passed, not from 00:00 on the due date itself.
+      .andWhere('a.expectedReturnDate < CURRENT_DATE')
+      .andWhere('a.overdueNotifiedAt IS NULL')
+      .getMany();
+
+    await Promise.all(
+      overdue.map(async (asset) => {
+        const ownerRole =
+          asset.assetType === AssetType.ICT
+            ? UserRole.IT_PERSONNEL
+            : UserRole.PROPERTY_CUSTODIAN;
+        const custodians = await this.usersService.findByRole(ownerRole);
+
+        // Dedup: a user who both holds the asset and sits in the owning
+        // custodian role gets a single notification.
+        const targets = new Set<string>(custodians.map((u) => u.id));
+        if (asset.custodianId) targets.add(asset.custodianId);
+
+        const dueDate = new Date(asset.expectedReturnDate as Date)
+          .toISOString()
+          .slice(0, 10);
+        await Promise.all(
+          [...targets].map((uid) =>
+            this.notificationsService.notify(
+              uid,
+              NotificationAlertType.OVERDUE_RETURN,
+              'Asset Return Overdue',
+              `Asset "${asset.itemDescription}" (${asset.propertyNumber ?? asset.id}) was due back on ${dueDate}.`,
+              asset.id,
+              'asset',
+            ),
+          ),
+        );
+        await this.assetRepo.update(asset.id, {
+          overdueNotifiedAt: new Date(),
+        });
+      }),
+    );
+
+    return overdue.length;
+  }
+
+  // ── Low-stock threshold for one asset ────────────────────────────────────
+  // Per-item reorder_level wins; DEFAULT_REORDER_LEVEL is the system fallback
+  // for IES lines that never had one configured.
+  private lowStockThreshold(asset: AssetEntity): number {
+    return asset.reorderLevel ?? DEFAULT_REORDER_LEVEL;
+  }
+
+  // ── Shared per-asset low-stock alert ─────────────────────────────────────
+  // SVC: Deliver and Support — Module 5 "low stock" alert. Fans a single
+  // notification out to every Property Custodian + every System Admin
+  // (Set-deduped by user id), then stamps lowStockNotifiedAt so neither the
+  // bulk watcher nor the fulfillment hook re-fires for this asset until it is
+  // restocked. The caller is responsible for confirming the asset is IES,
+  // at/below threshold, and unstamped before invoking this.
+  private async _sendLowStockAlert(asset: AssetEntity): Promise<void> {
+    const [custodians, admins] = await Promise.all([
+      this.usersService.findByRole(UserRole.PROPERTY_CUSTODIAN),
+      this.usersService.findByRole(UserRole.SYSTEM_ADMIN),
+    ]);
+    const targets = new Set<string>(
+      [...custodians, ...admins].map((u) => u.id),
+    );
+    await Promise.all(
+      [...targets].map((uid) =>
+        this.notificationsService.notify(
+          uid,
+          NotificationAlertType.LOW_STOCK,
+          'Low Stock',
+          `"${asset.itemDescription}" is down to ${asset.quantity} unit(s) ` +
+            `(reorder level ${this.lowStockThreshold(asset)}).`,
+          asset.id,
+          'asset',
+        ),
+      ),
+    );
+    await this.assetRepo.update(asset.id, { lowStockNotifiedAt: new Date() });
+  }
+
+  // ── Low-stock watcher — called by SchedulerService ──────────────────────
+  // SVC: Deliver and Support — surface IES supply lines that have fallen to
+  // or below their reorder level (per-item reorderLevel, else
+  // DEFAULT_REORDER_LEVEL). Fires exactly once per asset (dedup via
+  // lowStockNotifiedAt) via the shared _sendLowStockAlert helper. Returns the
+  // count of assets newly notified — never negative; SchedulerService.runWatcher
+  // owns the -1 "errored" sentinel.
+  async checkLowStock(): Promise<number> {
+    const low = await this.assetRepo
+      .createQueryBuilder('a')
+      .where('a.assetClass = :cls', { cls: AssetClass.IES })
+      .andWhere('a.quantity <= COALESCE(a.reorderLevel, :fallback)', {
+        fallback: DEFAULT_REORDER_LEVEL,
+      })
+      .andWhere('a.lowStockNotifiedAt IS NULL')
+      .getMany();
+
+    for (const asset of low) {
+      await this._sendLowStockAlert(asset);
+    }
+
+    return low.length;
+  }
+
+  // ── Single-asset low-stock check — used by requisition fulfillment ──────
+  // SVC: Deliver and Support — after fulfill() decrements a supply line, this
+  // gives the just-touched asset an immediate low-stock check instead of
+  // waiting for the daily sweep. Returns true only when an alert was actually
+  // sent (asset exists, is IES, is unstamped, and is at/below threshold).
+  async notifyLowStockIfBelowThreshold(assetId: string): Promise<boolean> {
+    const asset = await this.assetRepo.findOne({ where: { id: assetId } });
+    if (!asset || asset.assetClass !== AssetClass.IES) return false;
+    if (asset.lowStockNotifiedAt) return false;
+    if (asset.quantity > this.lowStockThreshold(asset)) return false;
+    await this._sendLowStockAlert(asset);
+    return true;
   }
 }

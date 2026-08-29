@@ -10,6 +10,7 @@ import { AssetEntity } from './entities/asset.entity';
 import { AssetTransactionEntity } from './entities/asset-transaction.entity';
 import { AuditService } from '../audit/audit.service';
 import { UsersService } from '../users/users.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   AssetStatus,
   AssetClass,
@@ -17,6 +18,7 @@ import {
   AssetCondition,
   UserRole,
   AuditAction,
+  NotificationAlertType,
 } from '../../../packages/shared/src/enums';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -61,6 +63,11 @@ describe('AssetsService', () => {
 
   const mockUsersService = {
     findByEmployeeId: jest.fn(),
+    findByRole: jest.fn(),
+  };
+
+  const mockNotifService = {
+    notify: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -74,6 +81,7 @@ describe('AssetsService', () => {
         },
         { provide: AuditService, useValue: mockAuditService },
         { provide: UsersService, useValue: mockUsersService },
+        { provide: NotificationsService, useValue: mockNotifService },
       ],
     }).compile();
 
@@ -226,6 +234,82 @@ describe('AssetsService', () => {
       expect(mockAssetRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ custodianId: 'user-uuid-123' }),
       );
+    });
+
+    it('records expectedReturnDate on the saved asset when ISSUED with a return date', async () => {
+      const asset = makeAsset({ status: AssetStatus.AVAILABLE });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+      mockTxRepo.create.mockReturnValue({});
+      mockTxRepo.save.mockResolvedValue({});
+
+      await service.updateLifecycle(
+        asset.id,
+        { status: AssetStatus.ISSUED, expectedReturnDate: '2026-12-31' },
+        'user-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expectedReturnDate: new Date('2026-12-31'),
+        }),
+      );
+    });
+
+    it('leaves expectedReturnDate null when ISSUED without a return date', async () => {
+      const asset = makeAsset({
+        status: AssetStatus.AVAILABLE,
+        expectedReturnDate: new Date('2020-01-01'),
+      });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+      mockTxRepo.create.mockReturnValue({});
+      mockTxRepo.save.mockResolvedValue({});
+
+      await service.updateLifecycle(
+        asset.id,
+        { status: AssetStatus.ISSUED },
+        'user-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+      expect(asset.expectedReturnDate).toBeNull();
+    });
+
+    it('re-arms overdueNotifiedAt on every fresh ISSUED, not only after RETURNED', async () => {
+      // Path that never passes through RETURNED: an overdue asset (stamp set)
+      // goes ISSUED → UNDER_REPAIR → AVAILABLE, then is re-issued. Without the
+      // re-arm it would stay excluded from checkOverdueReturns() forever.
+      const asset = makeAsset({
+        status: AssetStatus.AVAILABLE,
+        overdueNotifiedAt: new Date('2020-06-01'),
+      });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+      mockTxRepo.create.mockReturnValue({});
+      mockTxRepo.save.mockResolvedValue({});
+
+      await service.updateLifecycle(
+        asset.id,
+        { status: AssetStatus.ISSUED, expectedReturnDate: '2026-12-31' },
+        'user-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ overdueNotifiedAt: null }),
+      );
+      expect(asset.overdueNotifiedAt).toBeNull();
     });
 
     it('throws BadRequestException when employeeId is not found', async () => {
@@ -694,6 +778,599 @@ describe('AssetsService', () => {
       expect(typeQb.andWhere).toHaveBeenCalledWith(...expectedCall);
       expect(result.total).toBe(3);
       expect(result.byType).toEqual({ Fixed: 3 });
+    });
+  });
+
+  // ── updateLifecycle() — RETURNED re-arms the overdue-return watcher ────────
+  describe('updateLifecycle() — RETURNED clears overdue tracking', () => {
+    it('clears expectedReturnDate and overdueNotifiedAt on return', async () => {
+      const asset = {
+        id: 'a1',
+        assetType: AssetType.ICT,
+        status: AssetStatus.ISSUED,
+        custodianId: 'h1',
+        expectedReturnDate: new Date('2020-01-01'),
+        overdueNotifiedAt: new Date(),
+      } as AssetEntity;
+      jest.spyOn(service, 'findOne').mockResolvedValue(asset);
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+      mockTxRepo.create.mockReturnValue({});
+      mockTxRepo.save.mockResolvedValue({});
+
+      await service.updateLifecycle(
+        'a1',
+        { status: AssetStatus.RETURNED },
+        'u1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+      expect(asset.expectedReturnDate).toBeNull();
+      expect(asset.overdueNotifiedAt).toBeNull();
+      expect(asset.custodianId).toBeNull();
+    });
+  });
+
+  // ── checkOverdueReturns() — overdue-return watcher ────────────────────────
+  describe('checkOverdueReturns()', () => {
+    // Inspectable QueryBuilder mock — chain calls are real jest.fn()s so a test
+    // can assert the dedup filter clause was actually applied. Relying only on
+    // getMany → [] would let a dropped `overdueNotifiedAt IS NULL` clause pass
+    // unnoticed (Task 3/4 query-filter-coverage lesson).
+    const makeOverdueQb = (rows: AssetEntity[]) => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(rows),
+    });
+
+    it('notifies the current holder + the owning custodian role, once each, then stamps', async () => {
+      const overdue = {
+        id: 'a1',
+        itemDescription: 'Projector',
+        propertyNumber: 'PROP-9',
+        assetType: AssetType.ICT,
+        status: AssetStatus.ISSUED,
+        custodianId: 'holder1',
+        expectedReturnDate: new Date('2020-01-01'),
+        overdueNotifiedAt: null,
+      } as AssetEntity;
+      const qb = makeOverdueQb([overdue]);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      mockUsersService.findByRole.mockResolvedValue([{ id: 'itp1' }]);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      const count = await service.checkOverdueReturns();
+
+      expect(count).toBe(1);
+
+      // ICT assets route to IT Personnel as the owning custodian role.
+      expect(mockUsersService.findByRole).toHaveBeenCalledWith(
+        UserRole.IT_PERSONNEL,
+      );
+
+      // Dedup query-filter must be present — without this clause the watcher
+      // would re-notify an already-stamped asset on every sweep.
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('overdueNotifiedAt IS NULL'),
+      );
+
+      const recipients = mockNotifService.notify.mock.calls
+        .map((c) => c[0] as string)
+        .sort();
+      expect(recipients).toEqual(['holder1', 'itp1']);
+      expect(mockNotifService.notify).toHaveBeenCalledWith(
+        expect.any(String),
+        NotificationAlertType.OVERDUE_RETURN,
+        expect.any(String),
+        expect.any(String),
+        'a1',
+        'asset',
+      );
+      expect(mockAssetRepo.update).toHaveBeenCalledWith('a1', {
+        overdueNotifiedAt: expect.any(Date),
+      });
+    });
+
+    it('routes Fixed/Supplies assets to property_custodian', async () => {
+      const overdue = {
+        id: 'a2',
+        itemDescription: 'Office Chair',
+        assetType: AssetType.FIXED,
+        status: AssetStatus.ISSUED,
+        custodianId: 'h2',
+        expectedReturnDate: new Date('2020-01-01'),
+        overdueNotifiedAt: null,
+      } as AssetEntity;
+      mockAssetRepo.createQueryBuilder.mockReturnValue(
+        makeOverdueQb([overdue]),
+      );
+      mockUsersService.findByRole.mockResolvedValue([{ id: 'pc1' }]);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.checkOverdueReturns();
+
+      expect(mockUsersService.findByRole).toHaveBeenCalledWith(
+        UserRole.PROPERTY_CUSTODIAN,
+      );
+      expect(mockUsersService.findByRole).not.toHaveBeenCalledWith(
+        UserRole.IT_PERSONNEL,
+      );
+      const recipients = mockNotifService.notify.mock.calls
+        .map((c) => c[0] as string)
+        .sort();
+      expect(recipients).toEqual(['h2', 'pc1']);
+    });
+
+    it('dedups a user who is both the holder and in the owning custodian role', async () => {
+      const overdue = {
+        id: 'a3',
+        itemDescription: 'Laptop',
+        assetType: AssetType.ICT,
+        status: AssetStatus.ISSUED,
+        custodianId: 'itp1',
+        expectedReturnDate: new Date('2020-01-01'),
+        overdueNotifiedAt: null,
+      } as AssetEntity;
+      mockAssetRepo.createQueryBuilder.mockReturnValue(
+        makeOverdueQb([overdue]),
+      );
+      mockUsersService.findByRole.mockResolvedValue([{ id: 'itp1' }]);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.checkOverdueReturns();
+
+      expect(mockNotifService.notify).toHaveBeenCalledTimes(1);
+      expect(mockNotifService.notify).toHaveBeenCalledWith(
+        'itp1',
+        NotificationAlertType.OVERDUE_RETURN,
+        expect.any(String),
+        expect.any(String),
+        'a3',
+        'asset',
+      );
+    });
+
+    it('null-guards a missing custodian — notifies only the custodian role', async () => {
+      const overdue = {
+        id: 'a4',
+        itemDescription: 'Monitor',
+        assetType: AssetType.ICT,
+        status: AssetStatus.ISSUED,
+        custodianId: null,
+        expectedReturnDate: new Date('2020-01-01'),
+        overdueNotifiedAt: null,
+      } as AssetEntity;
+      mockAssetRepo.createQueryBuilder.mockReturnValue(
+        makeOverdueQb([overdue]),
+      );
+      mockUsersService.findByRole.mockResolvedValue([{ id: 'itp1' }]);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      const count = await service.checkOverdueReturns();
+
+      expect(count).toBe(1);
+      const recipients = mockNotifService.notify.mock.calls.map(
+        (c) => c[0] as string,
+      );
+      expect(recipients).toEqual(['itp1']);
+    });
+
+    it('returns 0 and notifies nobody when nothing is overdue', async () => {
+      mockAssetRepo.createQueryBuilder.mockReturnValue(makeOverdueQb([]));
+
+      await expect(service.checkOverdueReturns()).resolves.toBe(0);
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+      expect(mockAssetRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── checkLowStock() — low-stock watcher + shared alert helper ─────────────
+  describe('checkLowStock()', () => {
+    // Inspectable QueryBuilder — same pattern as makeOverdueQb above. A test
+    // that only stubs getMany → [] would let a dropped
+    // `lowStockNotifiedAt IS NULL` clause pass unnoticed, so the row-returned
+    // path asserts the dedup predicate was actually applied.
+    const makeLowStockQb = (rows: AssetEntity[]) => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(rows),
+    });
+
+    it('notifies property_custodian + system_admin once for an IES asset at/below its reorder level, then stamps', async () => {
+      const low = {
+        id: 's1',
+        itemDescription: 'Toner',
+        assetClass: AssetClass.IES,
+        quantity: 3,
+        reorderLevel: 5,
+        lowStockNotifiedAt: null,
+      } as AssetEntity;
+      const qb = makeLowStockQb([low]);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      mockUsersService.findByRole.mockImplementation((r: UserRole) =>
+        Promise.resolve(
+          r === UserRole.PROPERTY_CUSTODIAN
+            ? [{ id: 'pc1' }]
+            : r === UserRole.SYSTEM_ADMIN
+              ? [{ id: 'ad1' }]
+              : [],
+        ),
+      );
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      const count = await service.checkLowStock();
+
+      expect(count).toBe(1);
+
+      // Dedup query-filter must be present — mutation check: deleting the
+      // `.andWhere('a.lowStockNotifiedAt IS NULL')` clause fails here.
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('lowStockNotifiedAt IS NULL'),
+      );
+
+      const recipients = mockNotifService.notify.mock.calls
+        .map((c) => c[0] as string)
+        .sort();
+      expect(recipients).toEqual(['ad1', 'pc1']);
+      expect(mockNotifService.notify).toHaveBeenCalledWith(
+        expect.any(String),
+        NotificationAlertType.LOW_STOCK,
+        'Low Stock',
+        expect.stringContaining('Toner'),
+        's1',
+        'asset',
+      );
+      expect(mockAssetRepo.update).toHaveBeenCalledWith('s1', {
+        lowStockNotifiedAt: expect.any(Date),
+      });
+    });
+
+    it('falls back to DEFAULT_REORDER_LEVEL in the message and dedups a dual-role recipient', async () => {
+      const low = {
+        id: 's5',
+        itemDescription: 'A4 Paper',
+        assetClass: AssetClass.IES,
+        quantity: 1,
+        reorderLevel: null,
+        lowStockNotifiedAt: null,
+      } as AssetEntity;
+      mockAssetRepo.createQueryBuilder.mockReturnValue(makeLowStockQb([low]));
+      // Same user id returned for both roles → Set-dedup to a single notify.
+      mockUsersService.findByRole.mockResolvedValue([{ id: 'dual1' }]);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      const count = await service.checkLowStock();
+
+      expect(count).toBe(1);
+      expect(mockNotifService.notify).toHaveBeenCalledTimes(1);
+      expect(mockNotifService.notify).toHaveBeenCalledWith(
+        'dual1',
+        NotificationAlertType.LOW_STOCK,
+        'Low Stock',
+        expect.stringContaining('reorder level 10'),
+        's5',
+        'asset',
+      );
+    });
+
+    it('returns 0 and notifies nobody when the query yields no rows (already-stamped assets are filtered out)', async () => {
+      mockAssetRepo.createQueryBuilder.mockReturnValue(makeLowStockQb([]));
+
+      await expect(service.checkLowStock()).resolves.toBe(0);
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+      expect(mockAssetRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── notifyLowStockIfBelowThreshold() — single-asset entry point ──────────
+  describe('notifyLowStockIfBelowThreshold()', () => {
+    it('returns false and alerts nobody when the asset is not found', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.notifyLowStockIfBelowThreshold('missing'),
+      ).resolves.toBe(false);
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+    });
+
+    it('returns false for a non-IES asset even when its quantity is low', async () => {
+      mockAssetRepo.findOne.mockResolvedValue({
+        id: 'p1',
+        assetClass: AssetClass.PPE,
+        quantity: 0,
+        reorderLevel: 5,
+        lowStockNotifiedAt: null,
+      });
+
+      await expect(service.notifyLowStockIfBelowThreshold('p1')).resolves.toBe(
+        false,
+      );
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+    });
+
+    it('returns false when the asset was already stamped', async () => {
+      mockAssetRepo.findOne.mockResolvedValue({
+        id: 's2',
+        assetClass: AssetClass.IES,
+        quantity: 1,
+        reorderLevel: 5,
+        lowStockNotifiedAt: new Date('2026-01-01'),
+      });
+
+      await expect(service.notifyLowStockIfBelowThreshold('s2')).resolves.toBe(
+        false,
+      );
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+      expect(mockAssetRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('returns false when quantity is still above the threshold', async () => {
+      mockAssetRepo.findOne.mockResolvedValue({
+        id: 's3',
+        assetClass: AssetClass.IES,
+        quantity: 50,
+        reorderLevel: 5,
+        lowStockNotifiedAt: null,
+      });
+
+      await expect(service.notifyLowStockIfBelowThreshold('s3')).resolves.toBe(
+        false,
+      );
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+    });
+
+    it('returns true, fans the alert out to custodians + admins, and stamps when below threshold', async () => {
+      mockAssetRepo.findOne.mockResolvedValue({
+        id: 's4',
+        itemDescription: 'Ballpen',
+        assetClass: AssetClass.IES,
+        quantity: 2,
+        reorderLevel: 5,
+        lowStockNotifiedAt: null,
+      });
+      mockUsersService.findByRole.mockImplementation((r: UserRole) =>
+        Promise.resolve(
+          r === UserRole.PROPERTY_CUSTODIAN
+            ? [{ id: 'pc1' }]
+            : r === UserRole.SYSTEM_ADMIN
+              ? [{ id: 'ad1' }]
+              : [],
+        ),
+      );
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await expect(service.notifyLowStockIfBelowThreshold('s4')).resolves.toBe(
+        true,
+      );
+
+      const recipients = mockNotifService.notify.mock.calls
+        .map((c) => c[0] as string)
+        .sort();
+      expect(recipients).toEqual(['ad1', 'pc1']);
+      expect(mockNotifService.notify).toHaveBeenCalledWith(
+        expect.any(String),
+        NotificationAlertType.LOW_STOCK,
+        'Low Stock',
+        expect.stringContaining('Ballpen'),
+        's4',
+        'asset',
+      );
+      expect(mockAssetRepo.update).toHaveBeenCalledWith('s4', {
+        lowStockNotifiedAt: expect.any(Date),
+      });
+    });
+
+    it('fires at exactly the threshold (quantity === reorderLevel)', async () => {
+      mockAssetRepo.findOne.mockResolvedValue({
+        id: 's6',
+        itemDescription: 'Folder',
+        assetClass: AssetClass.IES,
+        quantity: 5,
+        reorderLevel: 5,
+        lowStockNotifiedAt: null,
+      });
+      mockUsersService.findByRole.mockResolvedValue([{ id: 'pc1' }]);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await expect(service.notifyLowStockIfBelowThreshold('s6')).resolves.toBe(
+        true,
+      );
+      expect(mockNotifService.notify).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── update() — low-stock dedup-stamp re-arm on PATCH restock ─────────────
+  describe('update() — low-stock re-arm', () => {
+    it('clears lowStockNotifiedAt when a PATCH raises quantity above the reorder level', async () => {
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 's1',
+        assetClass: AssetClass.IES,
+        quantity: 20,
+        reorderLevel: 5,
+      } as AssetEntity);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.update(
+        's1',
+        { quantity: 20 },
+        'u1',
+        UserRole.PROPERTY_CUSTODIAN,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.update).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ quantity: 20, lowStockNotifiedAt: null }),
+      );
+    });
+
+    it('clears lowStockNotifiedAt on a reorderLevel-only PATCH that drops the threshold below the current quantity', async () => {
+      // qty 5 / reorder 10 → currently low and stamped. Lowering reorder to 3
+      // (no quantity in the PATCH) makes 5 > 3 → the line is no longer low, so
+      // the stamp MUST be re-armed. The old `patch.quantity !== undefined`
+      // gate skipped this path and left the row stuck out of checkLowStock().
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 's1',
+        assetClass: AssetClass.IES,
+        quantity: 5,
+        reorderLevel: 10,
+        lowStockNotifiedAt: new Date(),
+      } as AssetEntity);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.update(
+        's1',
+        { reorderLevel: 3 },
+        'u1',
+        UserRole.PROPERTY_CUSTODIAN,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.update).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ reorderLevel: 3, lowStockNotifiedAt: null }),
+      );
+    });
+
+    it('does NOT re-arm on a reorderLevel-only PATCH that stays at/above the current quantity', async () => {
+      // qty 5 / reorder 10 → still low after raising reorder to 12 (5 <= 12),
+      // so the stamp stays put.
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 's1',
+        assetClass: AssetClass.IES,
+        quantity: 5,
+        reorderLevel: 10,
+        lowStockNotifiedAt: new Date(),
+      } as AssetEntity);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.update(
+        's1',
+        { reorderLevel: 12 },
+        'u1',
+        UserRole.PROPERTY_CUSTODIAN,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.update).toHaveBeenCalledWith('s1', {
+        reorderLevel: 12,
+      });
+      expect(mockAssetRepo.update).not.toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ lowStockNotifiedAt: null }),
+      );
+    });
+
+    it('judges a raised-both PATCH against the new threshold (stamp stays — quantity still below it)', async () => {
+      // Stored threshold is 5; the PATCH raises it to 10 while setting
+      // quantity 8. 8 clears the OLD threshold but not the NEW one, so the
+      // dedup stamp must NOT be re-armed — the combined patch is judged
+      // against patch.reorderLevel, not existing.reorderLevel.
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 's1',
+        assetClass: AssetClass.IES,
+        quantity: 8,
+        reorderLevel: 5,
+      } as AssetEntity);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.update(
+        's1',
+        { quantity: 8, reorderLevel: 10 },
+        'u1',
+        UserRole.PROPERTY_CUSTODIAN,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.update).toHaveBeenCalledWith('s1', {
+        quantity: 8,
+        reorderLevel: 10,
+      });
+      expect(mockAssetRepo.update).not.toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ lowStockNotifiedAt: null }),
+      );
+    });
+
+    it('clears the stamp on a raised-both PATCH when quantity clears the NEW threshold', async () => {
+      // Stored threshold is 5; the PATCH raises it to 10 and sets quantity 15.
+      // 15 > the NEW threshold 10, so the stamp IS re-armed — proves the check
+      // uses patch.reorderLevel, not just existing.reorderLevel (existing.5
+      // alone would also clear it, so the discriminating value is that 15 also
+      // exceeds the raised 10).
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 's1',
+        assetClass: AssetClass.IES,
+        quantity: 15,
+        reorderLevel: 5,
+        lowStockNotifiedAt: new Date(),
+      } as AssetEntity);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.update(
+        's1',
+        { quantity: 15, reorderLevel: 10 },
+        'u1',
+        UserRole.PROPERTY_CUSTODIAN,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.update).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({
+          quantity: 15,
+          reorderLevel: 10,
+          lowStockNotifiedAt: null,
+        }),
+      );
+    });
+
+    it('does NOT clear lowStockNotifiedAt when quantity stays at/below the reorder level', async () => {
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 's1',
+        assetClass: AssetClass.IES,
+        quantity: 5,
+        reorderLevel: 5,
+      } as AssetEntity);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.update(
+        's1',
+        { quantity: 5 },
+        'u1',
+        UserRole.PROPERTY_CUSTODIAN,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.update).toHaveBeenCalledWith('s1', { quantity: 5 });
+      expect(mockAssetRepo.update).not.toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({ lowStockNotifiedAt: null }),
+      );
+    });
+
+    it('leaves the persisted patch equal to the DTO when the PATCH does not touch quantity', async () => {
+      jest.spyOn(service, 'findOne').mockResolvedValue({
+        id: 's1',
+        assetClass: AssetClass.IES,
+        quantity: 2,
+        reorderLevel: 5,
+      } as AssetEntity);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.update(
+        's1',
+        { brand: 'Acme' },
+        'u1',
+        UserRole.PROPERTY_CUSTODIAN,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetRepo.update).toHaveBeenCalledWith('s1', {
+        brand: 'Acme',
+      });
     });
   });
 });

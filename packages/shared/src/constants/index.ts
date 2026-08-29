@@ -9,8 +9,8 @@ export const JWT_EXPIRES_IN = '8h';
 /** SLA target: requisition approval must complete within 24 hours */
 export const SLA_APPROVAL_HOURS = 24;
 
-/** Alert threshold: pending approval triggers Supervisor notification after 12 hours */
-export const SLA_PENDING_ALERT_HOURS = 12;
+/** Fallback low-stock threshold when an IES asset has no per-item reorder_level. */
+export const DEFAULT_REORDER_LEVEL = 10;
 
 /** Inventory accuracy target: 98% */
 export const INVENTORY_ACCURACY_TARGET = 0.98;
