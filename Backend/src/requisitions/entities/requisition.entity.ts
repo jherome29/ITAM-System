@@ -52,6 +52,11 @@ export class RequisitionEntity {
   @Column({ type: 'date' })
   requiredDate!: Date;
 
+  // Set only on REPLACEMENT requisitions — the asset this request replaces.
+  // Populated + validated in RequisitionsService.create() (CLAUDE.md §17).
+  @Column({ nullable: true, type: 'uuid' })
+  replacedAssetId!: string | null;
+
   @Column({ nullable: true, type: 'uuid' })
   supervisorId!: string | null;
 
@@ -78,6 +83,12 @@ export class RequisitionEntity {
 
   @Column({ nullable: true, type: 'timestamp with time zone' })
   slaDeadline!: Date;
+
+  @Column({ nullable: true, type: 'timestamp with time zone' })
+  slaBreachNotifiedAt!: Date | null;
+
+  @Column({ nullable: true, type: 'timestamp with time zone' })
+  pendingNudgeNotifiedAt!: Date | null;
 
   @CreateDateColumn()
   createdAt!: Date;

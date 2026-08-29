@@ -96,6 +96,7 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { label: 'Disposal Review', href: '/property-officer/disposal', icon: Archive },
     { label: 'Reports & Forms', href: '/property-officer/reports', icon: FileText },
     { label: 'Audit History', href: '/property-officer/audit', icon: FileClock },
+    { label: 'Notifications', href: '/property-officer/notifications', icon: Bell },
   ],
   [ProposedUserRole.MASTER_ADMIN]: [
     { section: 'Overview', label: 'Admin Dashboard', href: '/master-admin/dashboard', icon: LayoutDashboard },
@@ -110,6 +111,7 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { label: 'System Health & Jobs', href: '/master-admin/technical-logs', icon: RefreshCcw },
     { section: 'Security & Audit', label: 'Security Policies', href: '/master-admin/security', icon: ShieldCheck },
     { label: 'Audit Log', href: '/master-admin/audit', icon: FileClock, readOnly: true },
+    { section: 'Updates', label: 'Notifications', href: '/master-admin/notifications', icon: Bell },
   ],
   [ProposedUserRole.MANAGEMENT_AUDIT_VIEWER]: [
     { section: 'Read Only', label: 'Executive Dashboard', href: '/management-audit/dashboard', icon: Gauge, readOnly: true },
@@ -119,5 +121,6 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { label: 'Physical Count Reports', href: '/management-audit/physical-count', icon: ScanLine, readOnly: true },
     { label: 'Audit Log', href: '/management-audit/audit', icon: FileClock, readOnly: true },
     { label: 'Forms Archive', href: '/management-audit/forms', icon: Archive, readOnly: true },
+    { section: 'Updates', label: 'Notifications', href: '/management-audit/notifications', icon: Bell, readOnly: true },
   ],
 };

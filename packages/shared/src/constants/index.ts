@@ -1,5 +1,19 @@
 // SVC: Plan — system-wide constants. No magic numbers anywhere else.
 
+import { AssetClass } from '../enums';
+
+/**
+ * Replacement validation — an asset older than this (years since acquisition)
+ * has met its useful-life threshold and may be replaced even while still
+ * serviceable (CLAUDE.md §17). Placeholder defaults per asset class; intended
+ * to move into the System Config store once that module exists.
+ */
+export const USEFUL_LIFE_YEARS: Record<AssetClass, number> = {
+  [AssetClass.PPE]: 5,
+  [AssetClass.SEP]: 3,
+  [AssetClass.IES]: 1,
+};
+
 /** Maximum failed login attempts before account lockout (Security by Design) */
 export const MAX_LOGIN_ATTEMPTS = 5;
 
@@ -9,8 +23,8 @@ export const JWT_EXPIRES_IN = '8h';
 /** SLA target: requisition approval must complete within 24 hours */
 export const SLA_APPROVAL_HOURS = 24;
 
-/** Alert threshold: pending approval triggers Supervisor notification after 12 hours */
-export const SLA_PENDING_ALERT_HOURS = 12;
+/** Fallback low-stock threshold when an IES asset has no per-item reorder_level. */
+export const DEFAULT_REORDER_LEVEL = 10;
 
 /** Inventory accuracy target: 98% */
 export const INVENTORY_ACCURACY_TARGET = 0.98;

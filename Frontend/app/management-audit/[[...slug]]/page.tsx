@@ -1,5 +1,6 @@
 import { ReportsContent } from '@/components/shared/ReportsContent';
 import { FormsArchiveContent } from '@/components/shared/FormsArchiveContent';
+import { NotificationsContent } from '@/components/shared/NotificationsContent';
 import { ManagementAuditDashboard } from '@/components/management-audit/ManagementAuditDashboard';
 import { WorkflowPage } from '@/components/prototype/WorkflowPage';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
@@ -8,6 +9,7 @@ export default async function ManagementAuditPage({ params }: Readonly<{ params:
   const { slug } = await params;
   const segment = slug?.[0] ?? 'dashboard';
   if (segment === 'dashboard') return <ManagementAuditDashboard />;
+  if (segment === 'notifications') return <NotificationsContent />;
   if (segment === 'asset-reports') return <ReportsContent reportTypes={['ASSET_MASTER_LIST', 'ASSET_ISSUANCE', 'ASSET_RETURN']} pageTitle="Asset Reports" panelTitle="Asset Reports" />;
   if (segment === 'requisition-reports') return <ReportsContent reportTypes={['REQUISITION_HISTORY']} pageTitle="Requisition Reports" panelTitle="Requisition Reports" />;
   if (segment === 'maintenance-disposal') return <ReportsContent reportTypes={['DISPOSAL']} pageTitle="Maintenance & Disposal Reports" panelTitle="Disposal Documentation" />;

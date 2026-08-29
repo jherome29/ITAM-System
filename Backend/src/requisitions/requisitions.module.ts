@@ -8,6 +8,7 @@ import { RequisitionApprovalEntity } from './entities/requisition-approval.entit
 import { AuditModule } from '../audit/audit.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
+import { AssetsModule } from '../assets/assets.module';
 
 // SVC: Engage & Design and Transition — multi-level approval workflow
 
@@ -21,6 +22,13 @@ import { UsersModule } from '../users/users.module';
     AuditModule,
     NotificationsModule,
     forwardRef(() => UsersModule), // forwardRef prevents circular dep with UsersModule
+    // fulfill() calls AssetsService for the inline post-fulfillment low-stock
+    // check; the txn-scoped asset decrement uses em.getRepository(AssetEntity),
+    // which resolves from the global DataSource, so no forFeature([AssetEntity])
+    // is needed here. AssetsModule → UsersModule → forwardRef(RequisitionsModule)
+    // already forms a resolvable cycle, so RequisitionsModule → AssetsModule
+    // needs the matching forwardRef.
+    forwardRef(() => AssetsModule),
   ],
   controllers: [RequisitionsController],
   providers: [RequisitionsService],

@@ -11,6 +11,8 @@ const ROLE_REDIRECTS: Record<string, string> = {
   it_personnel: '/it-asset-custodian/dashboard',
   system_admin: '/master-admin/dashboard',
   management: '/management-audit/dashboard',
+  property_custodian: '/property-custodian/dashboard',
+  property_officer: '/property-officer/dashboard',
 };
 
 export default function LoginPage() {

@@ -361,6 +361,7 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
   const [toast, setToast] = useState('');
   const [remarks, setRemarks] = useState('');
   const [issueEmployeeId, setIssueEmployeeId] = useState('');
+  const [issueExpectedReturnDate, setIssueExpectedReturnDate] = useState('');
   const [transferToLocation, setTransferToLocation] = useState('');
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [form, setForm] = useState({ item: '', quantity: '1', requiredDate: '', justification: '', reason: '', attachment: '' });
@@ -518,10 +519,12 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
         status: statusForAction[action],
         employeeId: action === 'Issue' ? issueEmployeeId.trim() : undefined,
         toLocation: action === 'Transfer' ? transferToLocation.trim() : undefined,
+        expectedReturnDate: action === 'Issue' ? (issueExpectedReturnDate || undefined) : undefined,
       });
       setConfirmAction(null);
       setSelected(null);
       setIssueEmployeeId('');
+      setIssueExpectedReturnDate('');
       setTransferToLocation('');
       setErrors({});
       const notifyMessage = { Issue: 'Asset issued.', Transfer: 'Asset transferred.', Return: 'Asset returned.' } as const;
@@ -968,7 +971,7 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
           }
           runAction(confirmAction);
         }}
-        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setTransferToLocation(''); }}
+        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setIssueExpectedReturnDate(''); setTransferToLocation(''); }}
       >
         {(['Reject', 'Return for Revision'].includes(confirmAction ?? '') ||
           (isItAssetCustodianLiveFulfillment && confirmAction === 'On Hold') ||
@@ -987,6 +990,12 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
             <span>Recipient Employee ID</span>
             <input type="text" value={issueEmployeeId} onChange={(event) => setIssueEmployeeId(event.target.value)} placeholder="e.g. CICC-0042" className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
             {errors.employeeId && <span className="mt-1 block text-xs text-red-600">{errors.employeeId}</span>}
+          </label>
+        )}
+        {(isItAssetCustodianLiveCustody || isPropertyCustodianLiveCustody) && confirmAction === 'Issue' && (
+          <label className="block text-sm font-semibold text-slate-700">
+            <span>Expected return date (optional)</span>
+            <input type="date" value={issueExpectedReturnDate} onChange={(event) => setIssueExpectedReturnDate(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
           </label>
         )}
         {(isItAssetCustodianLiveCustody || isPropertyCustodianLiveCustody) && confirmAction === 'Transfer' && (

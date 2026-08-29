@@ -78,7 +78,7 @@ function EmployeeRequisitions({ initialCreateOpen = false }: Readonly<{ initialC
 
   const rows = requests.filter((request) => {
     const matchesFilter = filter === 'All' || request.status === filter || request.requisitionType === filter;
-    const haystack = [request.requestNumber, request.status, request.requisitionType, request.justification, ...request.items.map((item) => item.itemDescription)].join(' ').toLowerCase();
+    const haystack = [request.requestNumber, request.status, request.requisitionType, request.justification, ...(request.items ?? []).map((item) => item.itemDescription)].join(' ').toLowerCase();
     return matchesFilter && haystack.includes(search.toLowerCase());
   });
 
@@ -87,7 +87,7 @@ function EmployeeRequisitions({ initialCreateOpen = false }: Readonly<{ initialC
   return <div className="space-y-4"><EmployeeHeader title="My Requisitions" detail="Create requests and track approval, fulfillment, remarks, and lifecycle progress." action={<PrimaryButton icon={Plus} onClick={() => setCreating(true)}>New requisition</PrimaryButton>} />
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Total requests" value={String(requests.length)} detail="Your records only" tone="blue" icon={ClipboardList} /><MetricCard label="Pending approval" value={String(requests.filter((item) => item.status === 'pending_supervisor').length)} detail="Awaiting supervisor decision" tone="amber" icon={CalendarClock} /><MetricCard label="On hold" value={String(requests.filter((item) => item.status === 'on_hold').length)} detail="Asset unavailable — IT Personnel notified" tone="red" icon={FileWarning} /><MetricCard label="Fulfilled" value={String(requests.filter((item) => item.status === 'fulfilled').length)} detail="Issued or completed" tone="green" icon={CheckCircle2} /></div>
     <SearchToolbar value={search} onChange={setSearch} filterLabel="All requisitions" filterValue={filter} filterOptions={['All', 'pending_supervisor', 'pending_fulfillment', 'on_hold', 'fulfilled', 'rejected', 'cancelled', 'new', 'replacement', 'repair', 'supply']} onFilterChange={setFilter} />
-    {loading ? <Panel title="Requisition History" detail="Loading your requisitions..."><div className="p-4"><LoadingSkeleton rows={6} /></div></Panel> : rows.length === 0 ? <Panel title="Requisition History" detail="0 requests match your filters"><div className="p-8 text-center text-sm text-slate-500">You have not submitted any requisitions yet.</div></Panel> : <Panel title="Requisition History" detail={`${rows.length} requests shown`}><TableWrap><table className="min-w-[1000px] w-full"><thead><tr><th className={thClass}>Request</th><th className={thClass}>Type</th><th className={thClass}>Quantity</th><th className={thClass}>Required date</th><th className={thClass}>Approving officer</th><th className={thClass}>Last update</th><th className={thClass}>Status</th></tr></thead><tbody>{rows.map((request) => { const primaryItem = request.items[0]?.itemDescription ?? 'Requisition'; const extraItems = request.items.length > 1 ? ` +${request.items.length - 1} more` : ''; const totalQuantity = request.items.reduce((sum, item) => sum + item.quantity, 0); return <tr key={request.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelected(request)} className="text-left"><span className="block font-bold text-slate-950">{primaryItem}{extraItems}</span><span className="text-xs text-slate-500">{request.requestNumber}</span></button></td><td className={tdClass}>{request.requisitionType.replace(/_/g, ' ')}</td><td className={tdClass}>{totalQuantity}</td><td className={tdClass}>{String(request.requiredDate).slice(0, 10)}</td><td className={tdClass}>{request.supervisorId ?? 'Not yet assigned'}</td><td className={tdClass}>{new Date(request.updatedAt).toLocaleString()}</td><td className={tdClass}><StatusChip status={request.status.replace(/_/g, ' ')} /></td></tr>; })}</tbody></table></TableWrap></Panel>}
+    {loading ? <Panel title="Requisition History" detail="Loading your requisitions..."><div className="p-4"><LoadingSkeleton rows={6} /></div></Panel> : rows.length === 0 ? <Panel title="Requisition History" detail="0 requests match your filters"><div className="p-8 text-center text-sm text-slate-500">You have not submitted any requisitions yet.</div></Panel> : <Panel title="Requisition History" detail={`${rows.length} requests shown`}><TableWrap><table className="min-w-[1000px] w-full"><thead><tr><th className={thClass}>Request</th><th className={thClass}>Type</th><th className={thClass}>Quantity</th><th className={thClass}>Required date</th><th className={thClass}>Approving officer</th><th className={thClass}>Last update</th><th className={thClass}>Status</th></tr></thead><tbody>{rows.map((request) => { const items = request.items ?? []; const primaryItem = items[0]?.itemDescription ?? 'Requisition'; const extraItems = items.length > 1 ? ` +${items.length - 1} more` : ''; const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0); return <tr key={request.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelected(request)} className="text-left"><span className="block font-bold text-slate-950">{primaryItem}{extraItems}</span><span className="text-xs text-slate-500">{request.requestNumber}</span></button></td><td className={tdClass}>{request.requisitionType.replace(/_/g, ' ')}</td><td className={tdClass}>{totalQuantity}</td><td className={tdClass}>{String(request.requiredDate).slice(0, 10)}</td><td className={tdClass}>{request.supervisorId ?? 'Not yet assigned'}</td><td className={tdClass}>{new Date(request.updatedAt).toLocaleString()}</td><td className={tdClass}><StatusChip status={request.status.replace(/_/g, ' ')} /></td></tr>; })}</tbody></table></TableWrap></Panel>}
     <CenteredModal open={creating} title="New requisition" description="Provide the request details and justification for approval." onClose={() => setCreating(false)}><RequisitionForm onSubmit={handleCreate} /></CenteredModal>
     <DetailDrawer open={Boolean(selected)} title={selected?.requestNumber ?? 'Requisition details'} onClose={() => setSelected(null)}>{selected && <RequisitionDetailView request={selected} />}</DetailDrawer><Toast message={toast} /></div>;
 }
@@ -98,26 +98,59 @@ function EmployeeRequisitions({ initialCreateOpen = false }: Readonly<{ initialC
 // component's "New requisition" flow and EmployeeCatalogue's catalogue-driven request modal,
 // which still passes real Asset.assetType/assetClass values straight through) get a real,
 // persisted Requisition back via onSubmit instead of a client-fabricated one.
+export interface RequisitionFormValues {
+  requisitionType: string;
+  justification: string;
+  requiredDate: string;
+  itemDescription: string;
+  quantity: string;
+  assetType: string;
+  assetClass: string;
+  replacedAssetId: string;
+}
+
+// Raw form values → API payload. `replacedAssetId` rides along only for a
+// replacement request with a non-blank value; the backend rejects a
+// replacement without it (CLAUDE.md §17).
+export function buildCreateRequisitionDto(v: RequisitionFormValues): CreateRequisitionDto {
+  const dto: CreateRequisitionDto = {
+    requisitionType: v.requisitionType,
+    justification: v.justification,
+    requiredDate: v.requiredDate,
+    items: [{
+      itemDescription: v.itemDescription,
+      quantity: Number(v.quantity),
+      assetType: v.assetType,
+      assetClass: v.assetClass,
+      justification: v.justification,
+    }],
+  };
+  const replacedAssetId = v.replacedAssetId.trim();
+  if (v.requisitionType === 'replacement' && replacedAssetId) {
+    dto.replacedAssetId = replacedAssetId;
+  }
+  return dto;
+}
+
 function RequisitionForm({ defaultItemDescription = '', defaultAssetType = 'ICT', defaultAssetClass = 'SEP', onSubmit }: Readonly<{ defaultItemDescription?: string; defaultAssetType?: string; defaultAssetClass?: string; onSubmit: (created: Requisition) => void }>) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [requisitionType, setRequisitionType] = useState('new');
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
     const data = new FormData(event.currentTarget);
-    const dto: CreateRequisitionDto = {
+    const dto = buildCreateRequisitionDto({
       requisitionType: String(data.get('requisitionType')),
       justification: String(data.get('justification')),
       requiredDate: String(data.get('requiredDate')),
-      items: [{
-        itemDescription: String(data.get('itemDescription')),
-        quantity: Number(data.get('quantity')),
-        assetType: String(data.get('assetType')),
-        assetClass: String(data.get('assetClass')),
-        justification: String(data.get('justification')),
-      }],
-    };
+      itemDescription: String(data.get('itemDescription')),
+      quantity: String(data.get('quantity')),
+      assetType: String(data.get('assetType')),
+      assetClass: String(data.get('assetClass')),
+      replacedAssetId: String(data.get('replacedAssetId') ?? ''),
+    });
     setSubmitting(true);
     try {
       const res = await requisitionsApi.create(dto);
@@ -134,7 +167,10 @@ function RequisitionForm({ defaultItemDescription = '', defaultAssetType = 'ICT'
     {error && <div className="border border-red-200 bg-red-50 p-3 text-xs text-red-700">{error}</div>}
     <Field label="Item or requirement"><input name="itemDescription" required defaultValue={defaultItemDescription} className={inputClass} /></Field>
     <div className="grid gap-4 sm:grid-cols-2"><Field label="Asset type"><select name="assetType" defaultValue={defaultAssetType} className={inputClass}><option value="ICT">ICT</option><option value="Fixed">Fixed</option><option value="Supplies">Supplies</option></select></Field><Field label="Asset class"><select name="assetClass" defaultValue={defaultAssetClass} className={inputClass}><option value="PPE">PPE</option><option value="SEP">SEP</option><option value="IES">IES</option></select></Field></div>
-    <Field label="Request type"><select name="requisitionType" className={inputClass}><option value="new">New</option><option value="replacement">Replacement</option><option value="repair">Repair</option><option value="supply">Supply</option></select></Field>
+    <Field label="Request type"><select name="requisitionType" value={requisitionType} onChange={(e) => setRequisitionType(e.target.value)} className={inputClass}><option value="new">New</option><option value="replacement">Replacement</option><option value="repair">Repair</option><option value="supply">Supply</option></select></Field>
+    {requisitionType === 'replacement' && (
+      <Field label="Asset ID of the item being replaced"><input name="replacedAssetId" required className={inputClass} placeholder="Copy the Asset ID from that asset's detail page" /></Field>
+    )}
     <div className="grid gap-4 sm:grid-cols-2"><Field label="Quantity"><input name="quantity" type="number" min="1" max="99" defaultValue="1" className={inputClass} /></Field><Field label="Required date"><input name="requiredDate" required type="date" className={inputClass} /></Field></div>
     <Field label="Business justification"><textarea name="justification" required minLength={20} className={`${inputClass} h-28 py-2`} placeholder="Explain the operational need and intended use." /></Field>
     <div className="border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">Submission routes to your assigned Approving Officer. Availability and issuance are confirmed by the responsible custodian after approval.</div>

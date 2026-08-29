@@ -24,6 +24,9 @@ export interface Asset {
   barcodeValue: string;
   status: string;
   custodianId: string | null;
+  quantity: number;
+  reorderLevel: number | null;
+  expectedReturnDate: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -56,14 +59,17 @@ export interface CreateAssetDto {
   officeOrSection?: string;
   officeLocation?: string;
   condition?: string;
+  quantity?: number;       // IES only — supply stock on hand
+  reorderLevel?: number;   // IES only — low-stock alert threshold
 }
 
 export interface UpdateLifecycleDto {
   status: string;
   notes?: string;
-  employeeId?: string;    // For ISSUED — backend resolves to custodian UUID
-  toLocation?: string;    // For TRANSFERRED — receiving office/section
+  employeeId?: string;          // For ISSUED — backend resolves to custodian UUID
+  toLocation?: string;          // For TRANSFERRED — receiving office/section
   fromLocation?: string;
+  expectedReturnDate?: string;  // For ISSUED — arms the overdue-return watcher
 }
 
 export interface UpdateAssetDto {
@@ -83,6 +89,8 @@ export interface UpdateAssetDto {
   condition?: string;
   supplier?: string;
   dateOfDelivery?: string;
+  quantity?: number;       // IES only — supply stock on hand
+  reorderLevel?: number;   // IES only — low-stock alert threshold
 }
 
 export const assetsApi = {

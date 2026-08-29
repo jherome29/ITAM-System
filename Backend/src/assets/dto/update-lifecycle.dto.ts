@@ -1,4 +1,5 @@
 import {
+  IsDateString,
   IsEnum,
   IsNotEmpty,
   IsOptional,
@@ -43,4 +44,8 @@ export class UpdateLifecycleDto {
   @IsOptional()
   @IsString()
   notes?: string; // Justification (required for disposal flag)
+
+  @IsOptional()
+  @IsDateString()
+  expectedReturnDate?: string; // set on ISSUED for loaned assets; drives OVERDUE_RETURN
 }

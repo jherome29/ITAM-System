@@ -5,6 +5,7 @@ import { RegisterAssetForm } from '@/components/assets/RegisterAssetForm';
 import { PropertyCustodianDashboard } from '@/components/property-custodian/PropertyCustodianDashboard';
 import { WorkflowPage } from '@/components/prototype/WorkflowPage';
 import { FormsWorkspaceContent } from '@/components/shared/FormsWorkspaceContent';
+import { NotificationsContent } from '@/components/shared/NotificationsContent';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
 
 export default async function PropertyCustodianPage({ params }: Readonly<{ params: Promise<{ slug?: string[] }> }>) {
@@ -12,6 +13,7 @@ export default async function PropertyCustodianPage({ params }: Readonly<{ param
   const segment = slug?.[0] ?? 'dashboard';
   const child = slug?.[1];
   if (segment === 'dashboard') return <PropertyCustodianDashboard />;
+  if (segment === 'notifications') return <NotificationsContent />;
   if (segment === 'fixed-assets' && child === 'new') return <RegisterAssetForm basePath="/property-custodian/fixed-assets" />;
   if (segment === 'fixed-assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/fixed-assets" formsPath="/property-custodian/reports" />;
   if (segment === 'fixed-assets') return <AssetRegistryList basePath="/property-custodian/fixed-assets" assetType="Fixed" title="Fixed Asset Registry" />;

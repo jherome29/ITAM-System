@@ -3,7 +3,48 @@
 import { useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
-import { assetsApi } from '@/lib/api/assets';
+import { assetsApi, type CreateAssetDto } from '@/lib/api/assets';
+
+export interface RegisterAssetFormState {
+  sapClassification: string;
+  itemCode: string;
+  itemDescription: string;
+  brand: string;
+  serialNumber: string;
+  propertyNumber: string;
+  components: string;
+  acquisitionCost: string;
+  acquisitionDate: string;
+  accountableOfficer: string;
+  division: string;
+  officeOrSection: string;
+  officeLocation: string;
+  condition: string;
+  supplier: string;
+  dateOfDelivery: string;
+  assetClass: string;
+  assetType: string;
+  quantity: string;
+  reorderLevel: string;
+}
+
+// Pure, DOM-free so it is unit-testable without a render environment. Supply-stock
+// fields only exist for IES assets — for PPE/SEP they must be stripped entirely, or
+// the `...form` spread would send them as strings and 400 the backend @IsInt guard.
+export function buildCreateAssetPayload(form: RegisterAssetFormState): CreateAssetDto {
+  const { quantity, reorderLevel, ...base } = form;
+  const payload: CreateAssetDto = {
+    ...base,
+    acquisitionCost: form.acquisitionCost ? parseFloat(form.acquisitionCost) : undefined,
+    acquisitionDate: form.acquisitionDate || undefined,
+    dateOfDelivery: form.dateOfDelivery || undefined,
+  };
+  if (form.assetClass === 'IES') {
+    payload.quantity = quantity ? parseInt(quantity, 10) : 1;
+    payload.reorderLevel = reorderLevel ? parseInt(reorderLevel, 10) : undefined;
+  }
+  return payload;
+}
 
 const ASSET_CLASSES = ['PPE', 'SEP', 'IES'] as const;
 // Must match packages/shared/src/enums AssetType exactly — CreateAssetDto validates
@@ -41,13 +82,14 @@ export function RegisterAssetForm({ basePath }: Readonly<{ basePath: string }>) 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<RegisterAssetFormState>({
     sapClassification: '', itemCode: '', itemDescription: '',
     brand: '', serialNumber: '', propertyNumber: '', components: '',
     acquisitionCost: '', acquisitionDate: '',
     accountableOfficer: '', division: '', officeOrSection: '', officeLocation: '',
-    condition: 'serviceable' as string, supplier: '', dateOfDelivery: '',
-    assetClass: '' as string, assetType: '' as string,
+    condition: 'serviceable', supplier: '', dateOfDelivery: '',
+    assetClass: '', assetType: '',
+    quantity: '1', reorderLevel: '',
   });
 
   const set = (field: string, val: string) => setForm((prev) => ({ ...prev, [field]: val }));
@@ -60,13 +102,7 @@ export function RegisterAssetForm({ basePath }: Readonly<{ basePath: string }>) 
     if (!form.assetType) { setError('Asset type is required.'); return; }
     setSaving(true);
     try {
-      const payload = {
-        ...form,
-        acquisitionCost: form.acquisitionCost ? parseFloat(form.acquisitionCost) : undefined,
-        acquisitionDate: form.acquisitionDate || undefined,
-        dateOfDelivery: form.dateOfDelivery || undefined,
-      };
-      const res = await assetsApi.create(payload);
+      const res = await assetsApi.create(buildCreateAssetPayload(form));
       router.push(`${basePath}/${res.data.id}`);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
@@ -158,6 +194,17 @@ export function RegisterAssetForm({ basePath }: Readonly<{ basePath: string }>) 
             <input className={inputClass} value={form.officeLocation} onChange={(e) => set('officeLocation', e.target.value)} placeholder="e.g. Room 302, 3F CICC Bldg" />
           </Field>
         </Section>
+
+        {form.assetClass === 'IES' && (
+          <Section title="Supply Stock">
+            <Field label="Quantity on Hand">
+              <input className={inputClass} type="number" min="0" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} placeholder="1" />
+            </Field>
+            <Field label="Reorder Level">
+              <input className={inputClass} type="number" min="0" value={form.reorderLevel} onChange={(e) => set('reorderLevel', e.target.value)} placeholder="Optional — low-stock alert threshold" />
+            </Field>
+          </Section>
+        )}
 
         <Section title="Physical Condition">
           <Field label="Condition" required>
