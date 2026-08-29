@@ -30,7 +30,7 @@ const makeUser = (overrides: Partial<UserEntity> = {}): UserEntity => ({
   createdAt: new Date(),
   updatedAt: new Date(),
   ...overrides,
-});
+}) as UserEntity;
 
 // ── Build the QB chain mock that AuthService uses ────────────────────────────
 const makeQb = (resolvedUser: UserEntity | null) => ({
