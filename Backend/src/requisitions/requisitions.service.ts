@@ -853,6 +853,55 @@ export class RequisitionsService {
           ),
         );
         await this.reqRepo.update(req.id, { slaBreachNotifiedAt: new Date() });
+
+        // Alternate Approver (CLAUDE.md §5, §17) — the breach notices above have
+        // already reached the primary; now hand the requisition to their
+        // alternate if there is a usable one and it has not been routed before.
+        if (req.alternateRoutedAt == null && req.supervisorId) {
+          const current = await this.usersService
+            .findOne(req.supervisorId)
+            .catch(() => null);
+          const altId = current?.alternateApproverId ?? null;
+          if (altId) {
+            const alt = await this.usersService.findOne(altId).catch(() => null);
+            if (
+              alt &&
+              alt.isActive &&
+              alt.role === UserRole.SUPERVISOR &&
+              !this.usersService.isUnavailable(alt)
+            ) {
+              await this.reqRepo.update(req.id, {
+                supervisorId: alt.id,
+                alternateRoutedAt: new Date(),
+              });
+              await this.notificationsService.notify(
+                alt.id,
+                NotificationAlertType.ALTERNATE_APPROVER,
+                'Requisition Reassigned to You (Alternate Approver)',
+                `Requisition ${req.requestNumber} was reassigned to you after its approval SLA passed with no decision from ${current!.firstName} ${current!.lastName}.`,
+                req.id,
+                'requisition',
+              );
+              const requester = await this.usersService
+                .findOne(req.requestedById)
+                .catch(() => null);
+              await this.auditService.log({
+                userId: req.requestedById,
+                userRole: requester?.role ?? UserRole.EMPLOYEE,
+                action: AuditAction.REQUISITION_REASSIGNED,
+                affectedRecordId: req.id,
+                affectedRecordType: 'requisition',
+                ipAddress: '',
+                metadata: {
+                  reason: 'sla_breach',
+                  primaryApproverId: current!.id,
+                  alternateApproverId: alt.id,
+                  systemInitiated: true,
+                },
+              });
+            }
+          }
+        }
       }),
     );
 

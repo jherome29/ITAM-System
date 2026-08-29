@@ -1653,6 +1653,95 @@ describe('RequisitionsService', () => {
       expect(mockNotifService.notify).not.toHaveBeenCalled();
       expect(mockReqRepo.update).not.toHaveBeenCalled();
     });
+
+    it('reassigns a breached requisition to the current supervisor\'s alternate and notifies + audits once', async () => {
+      const breached = makeReq({
+        id: 'r9', requestNumber: 'REQ-9', supervisorId: 'sup-a', requestedById: 'emp-9',
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        slaDeadline: new Date(Date.now() - 60_000),
+        slaBreachNotifiedAt: null, alternateRoutedAt: null,
+      });
+      mockReqRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([breached]),
+      });
+      mockUsersService.findByRole.mockResolvedValue([]);
+      mockUsersService.isUnavailable = jest.fn().mockReturnValue(false);
+      mockUsersService.findOne.mockImplementation((id: string) => {
+        if (id === 'sup-a') return Promise.resolve({ id: 'sup-a', firstName: 'Sam', lastName: 'Ang', alternateApproverId: 'sup-b' });
+        if (id === 'sup-b') return Promise.resolve({ id: 'sup-b', role: UserRole.SUPERVISOR, isActive: true, alternateApproverId: null });
+        if (id === 'emp-9') return Promise.resolve({ id: 'emp-9', role: UserRole.EMPLOYEE });
+        return Promise.resolve(null);
+      });
+      mockReqRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.checkSlaBreaches();
+
+      expect(mockReqRepo.update).toHaveBeenCalledWith('r9', {
+        supervisorId: 'sup-b',
+        alternateRoutedAt: expect.any(Date),
+      });
+      expect(mockNotifService.notify).toHaveBeenCalledWith(
+        'sup-b', NotificationAlertType.ALTERNATE_APPROVER,
+        expect.any(String), expect.any(String), 'r9', 'requisition',
+      );
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.REQUISITION_REASSIGNED,
+          affectedRecordId: 'r9',
+          metadata: expect.objectContaining({ reason: 'sla_breach', systemInitiated: true, alternateApproverId: 'sup-b' }),
+        }),
+      );
+    });
+
+    it('does not reassign a requisition already routed to an alternate', async () => {
+      const breached = makeReq({
+        id: 'r10', requestNumber: 'REQ-10', supervisorId: 'sup-b', requestedById: 'emp-10',
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        slaDeadline: new Date(Date.now() - 60_000),
+        slaBreachNotifiedAt: null, alternateRoutedAt: new Date(Date.now() - 30_000),
+      });
+      mockReqRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([breached]),
+      });
+      mockUsersService.findByRole.mockResolvedValue([]);
+      mockReqRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.checkSlaBreaches();
+
+      // only the slaBreachNotifiedAt stamp update — no supervisor reassignment
+      expect(mockReqRepo.update).toHaveBeenCalledWith('r10', { slaBreachNotifiedAt: expect.any(Date) });
+      expect(mockReqRepo.update).not.toHaveBeenCalledWith('r10', expect.objectContaining({ supervisorId: expect.anything() }));
+      expect(mockAuditService.log).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: AuditAction.REQUISITION_REASSIGNED }),
+      );
+    });
+
+    it('sends the breach notice but does not reassign when there is no usable alternate', async () => {
+      const breached = makeReq({
+        id: 'r11', requestNumber: 'REQ-11', supervisorId: 'sup-a', requestedById: 'emp-11',
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        slaDeadline: new Date(Date.now() - 60_000),
+        slaBreachNotifiedAt: null, alternateRoutedAt: null,
+      });
+      mockReqRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([breached]),
+      });
+      mockUsersService.findByRole.mockResolvedValue([]);
+      mockUsersService.findOne.mockResolvedValue({ id: 'sup-a', alternateApproverId: null });
+      mockReqRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.checkSlaBreaches();
+
+      const breachNotify = mockNotifService.notify.mock.calls.filter((c) => c[1] === NotificationAlertType.SLA_BREACH);
+      expect(breachNotify.length).toBeGreaterThan(0);
+      expect(mockReqRepo.update).not.toHaveBeenCalledWith('r11', expect.objectContaining({ supervisorId: expect.anything() }));
+    });
   });
 
   // ── checkPendingApprovalNudges() — half-SLA pending-approval nudge watcher ──
