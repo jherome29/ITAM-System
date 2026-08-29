@@ -1,12 +1,17 @@
 'use client';
 
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState, type ChangeEvent } from 'react';
 import { Activity, Archive, CheckCircle2, Clock3, Database, Download, FileClock, KeyRound, LockKeyhole, Plus, RefreshCw, Save, Server, ShieldCheck } from 'lucide-react';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
+import {
+  systemConfigApi,
+  buildUpdateSystemConfigPayload,
+  systemConfigToForm,
+  type SystemConfigFormValues,
+} from '@/lib/api/systemConfig';
 import { masterDataGroups, scheduledJobs, systemEvents } from '@/lib/mock/admin.mock';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
 
@@ -49,17 +54,200 @@ function MasterDataPage() {
     <DetailDrawer open={creating} title="Add reference set" onClose={() => setCreating(false)}><form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const group = { id: `REF-${String(groups.length + 1).padStart(3, '0')}`, name: String(data.get('name')), records: 0, usedBy: String(data.get('usedBy')), lastChanged: 'Today', owner: String(data.get('owner')), status: 'Healthy' }; setGroups((current) => [...current, group]); setCreating(false); setToast(`${group.name} reference set was created in frontend mock state.`); }}><Field label="Reference set name"><input name="name" required className={inputClass} /></Field><Field label="Used by"><input name="usedBy" required className={inputClass} placeholder="Modules or workflows that consume this data" /></Field><Field label="Data owner"><input name="owner" required className={inputClass} /></Field><PrimaryButton type="submit">Create reference set</PrimaryButton></form></DetailDrawer><Toast message={toast} /></div>;
 }
 
-const settingsTabs = ['General', 'Numbering', 'Notifications', 'Forms & Print', 'Data Retention', 'Localization'] as const;
-
 function SystemSettingsPage() {
-  const [tab, setTab] = useState<(typeof settingsTabs)[number]>('General');
-  const [toast, setToast] = useState('');
-  const [dirty, setDirty] = useState(false);
-  const [resetOpen, setResetOpen] = useState(false);
-  return <div className="space-y-4"><AdminPageHeader title="System Settings" detail="Configure non-secret AIMRS behavior, numbering, notifications, forms, retention, and localization." action={<PrimaryButton icon={Save} onClick={() => { setDirty(false); setToast('Settings saved to frontend mock state.'); }}>Save changes</PrimaryButton>} />
-    {dirty && <div className="flex items-center justify-between border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span>You have unsaved configuration changes.</span><button type="button" onClick={() => setDirty(false)} className="font-bold">Discard</button></div>}
-    <div className="grid min-w-0 gap-4 xl:grid-cols-[240px_minmax(0,1fr)]"><Panel title="Settings Sections" detail="Environment-safe configuration"><nav className="p-2" aria-label="System setting sections">{settingsTabs.map((item) => <button key={item} type="button" onClick={() => setTab(item)} className={`block w-full rounded-md px-3 py-2.5 text-left text-sm ${tab === item ? 'bg-blue-50 font-bold text-blue-800' : 'text-slate-700 hover:bg-slate-50'}`}>{item}</button>)}</nav></Panel><Panel title={tab} detail="Changes are audited when production persistence is connected"><form className="space-y-5 p-5" onChange={() => setDirty(true)} onSubmit={(event) => event.preventDefault()}>{tab === 'General' && <><div className="grid gap-4 md:grid-cols-2"><Field label="Application name"><input defaultValue="AIMRS" className={inputClass} /></Field><Field label="Organization name"><input defaultValue="Cybercrime Investigation and Coordinating Center" className={inputClass} /></Field></div><div className="grid gap-4 md:grid-cols-2"><Field label="Default approval SLA"><select defaultValue="24" className={inputClass}><option value="8">8 hours</option><option value="24">24 hours</option><option value="48">48 hours</option></select></Field><Field label="Inventory accuracy target"><input type="number" defaultValue="98" min="1" max="100" className={inputClass} /></Field></div></>}{tab === 'Numbering' && <><div className="grid gap-4 md:grid-cols-2"><Field label="Asset ID format"><input defaultValue="{CLASS}-{YEAR}-{SEQUENCE}" className={inputClass} /></Field><Field label="Requisition format"><input defaultValue="REQ-{YEAR}-{SEQUENCE}" className={inputClass} /></Field></div><div className="border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">Preview: PPE-2026-00146 and REQ-2026-00020. Existing identifiers are never renumbered.</div></>}{tab === 'Notifications' && <div className="space-y-3">{['Approval approaching SLA', 'Approval SLA breached', 'Asset return due', 'Useful life exceeded', 'Account locked'].map((label) => <label key={label} className="flex items-center justify-between border-b border-slate-100 pb-3 text-sm"><span>{label}</span><input type="checkbox" defaultChecked className="h-4 w-4 accent-blue-700" /></label>)}</div>}{tab === 'Forms & Print' && <><Field label="Default paper size"><select className={inputClass}><option>A4</option><option>Letter</option></select></Field><Field label="Asset label format"><select className={inputClass}><option>QR code</option><option>Barcode</option><option>QR code and barcode</option></select></Field><label className="flex items-center gap-2 text-sm"><input type="checkbox" defaultChecked className="h-4 w-4 accent-blue-700" />Retain generated COA form copies for audit reference</label></>}{tab === 'Data Retention' && <><Field label="Technical event retention"><select className={inputClass}><option>90 days</option><option>180 days</option><option>365 days</option></select></Field><div className="border border-red-200 bg-red-50 p-3 text-sm text-red-900"><strong>Audit logs are excluded.</strong> They are append-only and cannot be modified or deleted through this interface.</div></>}{tab === 'Localization' && <div className="grid gap-4 md:grid-cols-2"><Field label="Time zone"><select className={inputClass}><option>Asia/Manila (UTC+08:00)</option></select></Field><Field label="Date format"><select className={inputClass}><option>MMM d, yyyy</option><option>MM/dd/yyyy</option></select></Field><Field label="Currency display"><select className={inputClass}><option>PHP - Philippine peso</option></select></Field><Field label="Language"><select className={inputClass}><option>English</option></select></Field></div>}</form></Panel></div>
-    <Panel title="Danger Area" detail="Development-only data controls"><div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-bold text-slate-900">Reset frontend demo state</p><p className="mt-1 text-xs text-slate-500">Clears only local mock changes. It does not alter PostgreSQL or backend records.</p></div><button type="button" onClick={() => setResetOpen(true)} className="h-9 rounded-md border border-red-200 px-3 text-sm font-bold text-red-700 hover:bg-red-50">Reset demo state</button></div></Panel><ConfirmDialog open={resetOpen} title="Reset frontend demo state?" detail="This clears local prototype changes in this browser. Backend and PostgreSQL records are not affected." confirmLabel="Reset demo state" onCancel={() => setResetOpen(false)} onConfirm={() => { localStorage.removeItem('aimrs-laptop-assets'); setDirty(false); setResetOpen(false); setToast('Frontend demo state was reset.'); }} /><Toast message={toast} /></div>;
+  const [form, setForm] = useState<SystemConfigFormValues | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  const load = useCallback(() => {
+    systemConfigApi
+      .get()
+      .then((r) => {
+        setForm(systemConfigToForm(r.data));
+        setError('');
+      })
+      .catch(() => setError('Failed to load configuration. Please try again.'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const retry = () => {
+    setLoading(true);
+    load();
+  };
+
+  const set =
+    (k: keyof SystemConfigFormValues) => (e: ChangeEvent<HTMLInputElement>) =>
+      setForm((f) => (f ? { ...f, [k]: e.target.value } : f));
+
+  const handleSave = async () => {
+    if (!form) return;
+    setError('');
+    setSaved(false);
+    setSaving(true);
+    try {
+      const r = await systemConfigApi.update(buildUpdateSystemConfigPayload(form));
+      setForm(systemConfigToForm(r.data));
+      setSaved(true);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string | string[] } } })
+        ?.response?.data?.message;
+      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to save configuration.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <AdminPageHeader
+        title="System Settings"
+        detail="Runtime AIMRS rules. Changes apply immediately once saved and are recorded in the audit trail."
+        action={
+          form ? (
+            <PrimaryButton icon={Save} onClick={handleSave}>
+              {saving ? 'Saving…' : 'Save changes'}
+            </PrimaryButton>
+          ) : undefined
+        }
+      />
+
+      {!form && error ? (
+        <Panel title="System Settings">
+          <div className="space-y-3 p-5">
+            <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            <button
+              type="button"
+              onClick={retry}
+              disabled={loading}
+              className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-60"
+            >
+              {loading ? 'Retrying…' : 'Retry'}
+            </button>
+          </div>
+        </Panel>
+      ) : !form ? (
+        <Panel title="System Settings">
+          <div className="p-5">
+            <LoadingSkeleton rows={6} />
+          </div>
+        </Panel>
+      ) : (
+        <>
+          {error && (
+            <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+          )}
+          {saved && (
+            <div className="border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+              Settings saved.
+            </div>
+          )}
+
+          <Panel title="Requisition SLA">
+            <div className="p-5">
+              <Field label="Requisition Approval SLA (hours)">
+                <input
+                  type="number"
+                  min={1}
+                  max={168}
+                  value={form.slaApprovalHours}
+                  onChange={set('slaApprovalHours')}
+                  className={inputClass}
+                />
+              </Field>
+              <p className="mt-1 text-xs text-slate-500">
+                Breach alert fires past this; the pending-approval nudge fires at half of it.
+              </p>
+            </div>
+          </Panel>
+
+          <Panel title="Inventory Alerts">
+            <div className="p-5">
+              <Field label="Default Low-Stock Reorder Level (units)">
+                <input
+                  type="number"
+                  min={0}
+                  max={100000}
+                  value={form.defaultReorderLevel}
+                  onChange={set('defaultReorderLevel')}
+                  className={inputClass}
+                />
+              </Field>
+              <p className="mt-1 text-xs text-slate-500">
+                Fallback threshold for IES supply items that have no per-item reorder level set.
+              </p>
+            </div>
+          </Panel>
+
+          <Panel title="Replacement — Useful-Life Threshold (years)">
+            <div className="space-y-4 p-5">
+              <Field label="PPE">
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={form.usefulLifePPE}
+                  onChange={set('usefulLifePPE')}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="SEP">
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={form.usefulLifeSEP}
+                  onChange={set('usefulLifeSEP')}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="IES">
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={form.usefulLifeIES}
+                  onChange={set('usefulLifeIES')}
+                  className={inputClass}
+                />
+              </Field>
+              <p className="text-xs text-slate-500">
+                A serviceable asset older than its class threshold may be replaced.
+              </p>
+            </div>
+          </Panel>
+
+          <Panel title="Security">
+            <div className="p-5">
+              <Field label="Max Failed Login Attempts">
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={form.maxLoginAttempts}
+                  onChange={set('maxLoginAttempts')}
+                  className={inputClass}
+                />
+              </Field>
+              <p className="mt-1 text-xs text-slate-500">
+                Account locks after this many consecutive failed sign-ins.
+              </p>
+            </div>
+          </Panel>
+
+          <p className="px-1 text-xs text-slate-400">
+            Numbering formats, notification routing, forms &amp; print, data retention, and
+            localization are planned and not yet configurable here.
+          </p>
+        </>
+      )}
+    </div>
+  );
 }
 
 function SystemHealthPage() {

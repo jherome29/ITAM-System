@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildUpdateSystemConfigPayload,
+  systemConfigToForm,
+  type SystemConfig,
   type SystemConfigFormValues,
 } from '@/lib/api/systemConfig';
 
@@ -11,6 +13,13 @@ const base: SystemConfigFormValues = {
   usefulLifePPE: '5',
   usefulLifeSEP: '3',
   usefulLifeIES: '1',
+};
+
+const config: SystemConfig = {
+  slaApprovalHours: 24,
+  defaultReorderLevel: 10,
+  usefulLifeYears: { PPE: 5, SEP: 3, IES: 1 },
+  maxLoginAttempts: 5,
 };
 
 describe('buildUpdateSystemConfigPayload', () => {
@@ -29,5 +38,27 @@ describe('buildUpdateSystemConfigPayload', () => {
       usefulLifeIES: '2',
     });
     expect(p.usefulLifeYears).toEqual({ PPE: 7, SEP: 4, IES: 2 });
+  });
+});
+
+describe('systemConfigToForm', () => {
+  it('maps every numeric config value to its string form field', () => {
+    expect(systemConfigToForm(config)).toEqual({
+      slaApprovalHours: '24',
+      defaultReorderLevel: '10',
+      maxLoginAttempts: '5',
+      usefulLifePPE: '5',
+      usefulLifeSEP: '3',
+      usefulLifeIES: '1',
+    });
+  });
+
+  it('round-trips through buildUpdateSystemConfigPayload', () => {
+    expect(buildUpdateSystemConfigPayload(systemConfigToForm(config))).toEqual({
+      slaApprovalHours: 24,
+      defaultReorderLevel: 10,
+      maxLoginAttempts: 5,
+      usefulLifeYears: { PPE: 5, SEP: 3, IES: 1 },
+    });
   });
 });

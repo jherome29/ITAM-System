@@ -20,6 +20,18 @@ export interface SystemConfigFormValues {
   usefulLifeIES: string;
 }
 
+// SystemConfig (numbers from the API) -> the string values the form inputs bind to.
+export function systemConfigToForm(c: SystemConfig): SystemConfigFormValues {
+  return {
+    slaApprovalHours: String(c.slaApprovalHours),
+    defaultReorderLevel: String(c.defaultReorderLevel),
+    maxLoginAttempts: String(c.maxLoginAttempts),
+    usefulLifePPE: String(c.usefulLifeYears.PPE),
+    usefulLifeSEP: String(c.usefulLifeYears.SEP),
+    usefulLifeIES: String(c.usefulLifeYears.IES),
+  };
+}
+
 export function buildUpdateSystemConfigPayload(
   v: SystemConfigFormValues,
 ): UpdateSystemConfigPayload {
