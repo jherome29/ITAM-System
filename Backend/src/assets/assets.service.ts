@@ -22,7 +22,7 @@ import {
   NotificationAlertType,
   UserRole,
 } from '../../../packages/shared/src/enums';
-import { DEFAULT_REORDER_LEVEL } from '../../../packages/shared/src/constants';
+import { SystemConfigService } from '../system-config/system-config.service';
 
 // ─── State Machine ─────────────────────────────────────────────────────────
 // Valid asset lifecycle transitions per CLAUDE.md section 5.4:
@@ -80,6 +80,7 @@ export class AssetsService {
     private readonly auditService: AuditService,
     private readonly usersService: UsersService,
     private readonly notificationsService: NotificationsService,
+    private readonly systemConfig: SystemConfigService,
   ) {}
 
   // ── List all assets (paginated, optional search + status filter) ──────────
@@ -343,7 +344,9 @@ export class AssetsService {
     if (patch.quantity !== undefined || patch.reorderLevel !== undefined) {
       const effectiveQty = patch.quantity ?? existing.quantity;
       const effectiveThreshold =
-        patch.reorderLevel ?? existing.reorderLevel ?? DEFAULT_REORDER_LEVEL;
+        patch.reorderLevel ??
+        existing.reorderLevel ??
+        this.systemConfig.getDefaultReorderLevel();
       if (effectiveQty > effectiveThreshold) patch.lowStockNotifiedAt = null;
     }
     await this.assetRepo.update(id, patch);
@@ -565,10 +568,10 @@ export class AssetsService {
   }
 
   // ── Low-stock threshold for one asset ────────────────────────────────────
-  // Per-item reorder_level wins; DEFAULT_REORDER_LEVEL is the system fallback
-  // for IES lines that never had one configured.
+  // Per-item reorder_level wins; the SystemConfig default reorder level is the
+  // system fallback for IES lines that never had one configured.
   private lowStockThreshold(asset: AssetEntity): number {
-    return asset.reorderLevel ?? DEFAULT_REORDER_LEVEL;
+    return asset.reorderLevel ?? this.systemConfig.getDefaultReorderLevel();
   }
 
   // ── Shared per-asset low-stock alert ─────────────────────────────────────
@@ -604,17 +607,18 @@ export class AssetsService {
 
   // ── Low-stock watcher — called by SchedulerService ──────────────────────
   // SVC: Deliver and Support — surface IES supply lines that have fallen to
-  // or below their reorder level (per-item reorderLevel, else
-  // DEFAULT_REORDER_LEVEL). Fires exactly once per asset (dedup via
+  // or below their reorder level (per-item reorderLevel, else the SystemConfig
+  // default reorder level). Fires exactly once per asset (dedup via
   // lowStockNotifiedAt) via the shared _sendLowStockAlert helper. Returns the
   // count of assets newly notified — never negative; SchedulerService.runWatcher
   // owns the -1 "errored" sentinel.
   async checkLowStock(): Promise<number> {
+    const fallback = this.systemConfig.getDefaultReorderLevel();
     const low = await this.assetRepo
       .createQueryBuilder('a')
       .where('a.assetClass = :cls', { cls: AssetClass.IES })
       .andWhere('a.quantity <= COALESCE(a.reorderLevel, :fallback)', {
-        fallback: DEFAULT_REORDER_LEVEL,
+        fallback,
       })
       .andWhere('a.lowStockNotifiedAt IS NULL')
       .getMany();
