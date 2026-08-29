@@ -5,9 +5,18 @@ connect to (frontend client → backend endpoint → DB), and what is just dead 
 delete. Hand a role section to a teammate; hand this whole file back to an LLM to
 resume the migration.
 
-**Snapshot:** 2026-08-28 · working tree of branch `feature/notifications-auto-fire-sla-cron`.
+**Snapshot:** 2026-08-29 · working tree of branch `feature/notifications-auto-fire-sla-cron`.
 The porting work below is already on `origin/main` (see callout); this branch adds the
 notifications/SLA commits on top and is not upstream yet.
+
+> **2026-08-29:** notifications are now real for **every** role. The new-layout
+> `[[...slug]]` routers for Approving Officer, Property Custodian, Property Officer,
+> Management & Audit, and Master Admin now return `<NotificationsContent />` for the
+> `notifications` segment (was `WorkflowPage` mock for all but IT Asset Custodian);
+> a "Notifications" nav entry was added where missing. The **TopBar bell** now reads
+> `notificationsApi.list()` (real unread count + newest 3). The dev-only "Preview role"
+> switcher (`RoleSwitcher.tsx`) was deleted. `notificationMockRows` is now only
+> referenced by `WorkflowPage.tsx` and no longer reachable for any `notifications` route.
 
 > ### The redesigned-layout porting is DONE and on `main` — READ THIS
 > The 5-phase port that wired the redesigned layout to the real backend
@@ -99,7 +108,7 @@ Management&Audit's dashboard below; needs a trends/utilization reporting endpoin
 |---|---|---|
 | `dashboard`, `approvals`, `requisitions` | LIVE (`ApprovingOfficerDashboard`, `isLiveFetchPage`) | — |
 | `approval-history` | WorkflowPage MOCK | add `role+slug` to `isLiveFetchPage` + a `fetchLiveRows()` branch on `requisitionsApi.list()` filtered to decided items |
-| `notifications` | WorkflowPage MOCK | router has no `NotificationsContent` branch — add `if (segment === 'notifications') return <NotificationsContent />` like the IT Asset Custodian router |
+| `notifications` | **LIVE** (2026-08-29) | router now returns `<NotificationsContent />` for this segment |
 
 ### IT Asset Custodian — `app/it-asset-custodian/[[...slug]]` — LIVE (one gap)
 Dashboard, notifications, assets (list/new/detail), QR scanner, reports/forms, and
@@ -142,7 +151,7 @@ Dashboard KPIs (`reportsApi.kpi()`), all 4 report tabs (`ReportsContent`), `form
 
 | Item | File | Mock source | Connect to |
 |---|---|---|---|
-| Top-bar notification bell | `components/shell/TopBar.tsx` | `notificationMockRows` (when `useMockData`) | `notificationsApi.list()` (unread), `PATCH /notifications/:id/read` |
+| ~~Top-bar notification bell~~ | `components/shell/TopBar.tsx` | **LIVE** (2026-08-29) — now `notificationsApi.list()`: real unread count + newest 3, refetch on open | — |
 | Generic list pages | `components/prototype/WorkflowPage.tsx` | `assets/requisitions/audit/disposal/maintenance/inventory/reports/users/notifications` `.mock` via `rowsFor()` | **migration pattern (already proven ~12×):** add `role + slug` to `isLiveFetchPage`, add a branch to `fetchLiveRows()` calling the right `lib/api` client, map with the existing `*ApiToRow` helpers. Repeat per role+slug until the mock imports are unreferenced, then delete them. |
 
 ---
@@ -167,7 +176,7 @@ Dashboard KPIs (`reportsApi.kpi()`), all 4 report tabs (`ReportsContent`), `form
 | B | `assets` custodian filter (BE) + wire Employee dashboard/assigned-assets; **Returns/Incidents module** (BE + FE tab) |
 | C | **System Config module** (BE) + wire old `admin/config` + Master Admin `configuration` / `reference-data` |
 | D | Master-Admin governance domains (access reviews, org units, approval config, custodian coverage, system-events, scheduled jobs) — BE + FE; then wire the 4 "Preview data" dashboard panels |
-| E | `isLiveFetchPage` extensions: Approving Officer `approval-history` + `notifications` branch; Property Officer `disposal` + `audit`; TopBar bell → `notificationsApi` |
+| E | `isLiveFetchPage` extensions: Approving Officer `approval-history`; Property Officer `disposal` + `audit`. (`notifications` for all roles + TopBar bell done 2026-08-29.) |
 | F | **Physical count / reconciliation** (BE) + wire the `physical-inventory` slugs and Property Officer `reconciliation`; also fixes RPCI/RPCPPE reports. Replacement-validation rules + Property Officer `replacements`/`corrections`. |
 | — | Trends/utilization endpoint (#7) — small, fold into D or E |
 

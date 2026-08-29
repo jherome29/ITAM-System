@@ -99,11 +99,34 @@ port off `feature/port-real-wiring-to-new-layout`:
 - New `scheduler` module (`@nestjs/schedule`) with cron watchers: SLA breach, 12 h pending-approval nudge, overdue return, low stock — each with a dedup stamp so it fires once, plus an admin `run-checks` endpoint.
 - `expectedReturnDate` captured on ISSUED (re-armed every issue); reorder-level re-arm on stock replenish.
 - Supply-stock model: quantity + reorder level on the register form and registry/detail UI; transactional stock decrement in `fulfill()`.
-- Went through a final-review round (lock, DTO validation, re-arm gap, cross-request write, migration note). Manual verification steps: `MANUAL-TEST-CHECKLIST.md`. Plan/spec kept until this branch merges.
+- Went through a final-review round (lock, DTO validation, re-arm gap, cross-request write, migration note), then a full manual pass — see 2026-08-29 section below. Plan/spec + `MANUAL-TEST-CHECKLIST.md` deleted 2026-08-29 (`git log` is the record).
+
+## Done 2026-08-29 — notifications/SLA manual checklist A–G passed; incidental fixes
+
+Full manual verification of `feature/notifications-auto-fire-sla-cron` against a live Supabase DB (former `MANUAL-TEST-CHECKLIST.md`, now deleted). **All of A–G pass:**
+- **A** access control on `POST /v1/notifications/run-checks` — 200 / 403 / 401.
+- **B** supply-stock + low-stock alert — register IES item, amber "Low" pill, alert to Property Custodian + System Admin, dedup, re-arm by quantity *and* by reorder-level.
+- **C** overdue-return — alert to holder + owning custodian role (IT Personnel for ICT, **Property Custodian for Fixed/Supplies** — recipient branch verified both ways), dedup, re-arm via Return + re-issue.
+- **D** SLA breach (→ supervisor + requester + every System Admin + every Management) and 12 h pending nudge (→ supervisor only), each with dedup.
+- **E** supply decrement on fulfillment — quantity draws down transactionally, audit `REQUISITION_FULFILLED.metadata.stockDecrements`, **immediate** low-stock alert on crossing the reorder level, `400` on insufficient stock (nothing decremented), `400` (not `500`) on a non-UUID `assetId`.
+- **F** frontend surfaces — IES-only fields, expected-return display, amber icons for `sla_breach`/`low_stock`/`overdue_return` (code-verified).
+- **G** cron timer — `@Cron` handlers fire autonomously (observed a watcher re-stamp + notify ~31 s after a manual stamp-clear, no `run-checks` call). Temporary `EVERY_30_SECONDS` change reverted.
+
+**Incidental fixes made during the pass (same branch):**
+- **The backend could not boot at all.** `nest start` (webpack) compiled TypeORM's dynamic `PlatformTools.load('pg')` into a stub that throws `MODULE_NOT_FOUND` unconditionally → `DriverPackageNotInstalledError` regardless of `pg` being installed. Fixed by adding `typeorm` + `pg` to `webpack.config.js` `externals` (same pattern as `bcrypt`/`pdfkit`). Jest was unaffected (no webpack), which is why CI stayed green.
+- **`GET /v1/requisitions/mine` 403'd for Property Custodian / Property Officer** — the two roles were missing from its `@Roles` list, though the sibling `/stats` route already had them.
+- **`POST /v1/requisitions` didn't return `items`** — `create()` saved line items separately and never attached them, so the employee "My Requisitions" list crashed (`request.items.map` on `undefined`) the moment a freshly-submitted requisition was prepended. `create()` now hydrates `items` to match `findOne`/`findMine`; the list-filter reads are also guarded.
+- **Notifications UI was mock for most roles.** The new-layout `[[...slug]]` pages for Approving Officer, Property Custodian, Property Officer, Management & Audit, and Master Admin never routed `notifications` to the real `<NotificationsContent />` (only IT Asset Custodian did) — they fell through to `WorkflowPage`'s `notificationMockRows`. All now wired to the real API, with a "Notifications" nav entry added for the three roles that lacked one. **TopBar notification bell** likewise switched from `notificationMockRows` to `notificationsApi.list()` (real unread count + newest 3, refetch on open).
+- **Property Custodian / Property Officer landed on `/employee/dashboard` after login** — both missing from the login `ROLE_REDIRECTS` map; added.
+- **Removed the "Preview role" switcher** (`RoleSwitcher.tsx`, deleted; unwired from `TopBar`) — it changed the URL skin without re-authenticating, so every role's data looked identical (it was always the one logged-in user's). Testing is login-only now.
+
+**Verified:** `tsc`/`eslint` clean (both packages); backend webpack build succeeds; backend requisitions suite 49/49; frontend suite 30/30.
+
+**Doc drift noted, not changed:** CLAUDE.md §5's notification table says low stock → "IT Personnel, System Admin" and SLA breach → "System Admin, Management"; the code sends low stock to **Property Custodian** + System Admin, and SLA breach also to the **requester + supervisor**. Reconcile spec vs. code with the team.
 
 ## Suggested order of next work
 
-1. ~~**Notifications + SLA job**~~ — **built 2026-08-27** on `feature/notifications-auto-fire-sla-cron`; merge that PR to close it on `main`.
+1. ~~**Notifications + SLA job**~~ — **built 2026-08-27, manually verified A–G 2026-08-29** on `feature/notifications-auto-fire-sla-cron`; PR to `develop` open. Merge to close it on `main`.
 2. **System Config backend + wire `/admin/config`** — no config endpoint exists yet (SLA target, stock thresholds, approval routes, lockout policy). Also unblocks Master Admin's `configuration` / `reference-data` pages. New backend work, not just a wire.
 3. **Replacement validation** — a real compliance/audit-readiness gap; worth closing before any real requisition volume goes through the replacement path.
 4. **Disposal workflow** — turn the status flag into an actual documented flow with the required fields (matches your COA/audit obligations).
@@ -111,7 +134,7 @@ port off `feature/port-real-wiring-to-new-layout`:
 6. **Alternate approver** — smaller, but blocks a documented requirement outright.
 7. **Master Admin governance backend** — access reviews, org units, approval-route config, custodian coverage, master data, system-events feed, scheduled-jobs status. All still mock (`admin.mock.ts`); no backend at all. Biggest remaining greenfield chunk. See `MOCK-DATA-WIRING.md` Part D.
 8. **Physical count / reconciliation + the 2 missing reports** — also unblocks the `physical-inventory` slugs and Property Officer `reconciliation`; needed before any real audit-readiness claim.
-9. **Small wiring leftovers** — Employee assigned-assets custodian filter + returns/incidents module; Approving Officer `approval-history`/`notifications`; Property Officer `disposal`/`audit`; TopBar notification bell. Mostly one-liners once the backends above exist — full list in `MOCK-DATA-WIRING.md`.
+9. **Small wiring leftovers** — Employee assigned-assets custodian filter + returns/incidents module; Approving Officer `approval-history`; Property Officer `disposal`/`audit`. Mostly one-liners once the backends above exist — full list in `MOCK-DATA-WIRING.md`. (Notifications for every role + the TopBar bell were wired 2026-08-29.)
 
 The frontend redesign and its wiring are done — what's left above is backend logic plus a little UI, making the system actually do what it already claims to do.
 
