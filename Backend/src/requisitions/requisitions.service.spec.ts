@@ -22,6 +22,7 @@ import {
   NotificationAlertType,
   AssetType,
   AssetClass,
+  AssetCondition,
 } from '../../../packages/shared/src/enums';
 import { SLA_APPROVAL_HOURS } from '../../../packages/shared/src/constants';
 
@@ -54,6 +55,17 @@ const makeReq = (
     ...overrides,
   }) as unknown as RequisitionEntity;
 
+const makeAsset = (overrides: Partial<AssetEntity> = {}): AssetEntity =>
+  ({
+    id: 'asset-uuid-1',
+    custodianId: 'emp-uuid-1',
+    condition: AssetCondition.SERVICEABLE,
+    acquisitionDate: new Date(), // brand new → within useful life
+    assetClass: AssetClass.PPE,
+    itemDescription: 'Dell Latitude 5540',
+    ...overrides,
+  }) as unknown as AssetEntity;
+
 describe('RequisitionsService', () => {
   let service: RequisitionsService;
 
@@ -71,6 +83,7 @@ describe('RequisitionsService', () => {
 
   const mockAssetsService = {
     notifyLowStockIfBelowThreshold: jest.fn().mockResolvedValue(false),
+    findOne: jest.fn(),
   };
 
   const mockReqRepo = {
@@ -321,6 +334,138 @@ describe('RequisitionsService', () => {
 
       expect(mockReqRepo.create).not.toHaveBeenCalled();
       expect(mockAuditService.log).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── CLAUDE.md §17 — replacement requisitions must be justified ───────────
+  describe('create() — replacement validation', () => {
+    const requester = {
+      id: 'emp-uuid-1',
+      officeOrSection: 'Digital Forensics',
+      division: 'Operations',
+    };
+
+    const replacementDto = (overrides: Record<string, unknown> = {}) => ({
+      requisitionType: RequisitionType.REPLACEMENT,
+      justification: 'Old unit failing',
+      requiredDate: '2026-09-01',
+      items: [
+        {
+          assetType: 'ICT',
+          assetClass: 'PPE',
+          itemDescription: 'Laptop',
+          quantity: 1,
+        },
+      ],
+      replacedAssetId: 'asset-uuid-1',
+      ...overrides,
+    });
+
+    const submit = (dto: unknown) =>
+      service.create(
+        dto as never,
+        'emp-uuid-1',
+        UserRole.EMPLOYEE,
+        '127.0.0.1',
+      );
+
+    beforeEach(() => {
+      mockUsersService.findOne.mockResolvedValue(requester);
+      mockUsersService.findSupervisorForSection.mockResolvedValue({
+        id: 'sup-uuid-1',
+      });
+      mockReqRepo.count.mockResolvedValue(0);
+      const saved = makeReq({ requisitionType: RequisitionType.REPLACEMENT });
+      mockReqRepo.create.mockReturnValue(saved);
+      mockReqRepo.save.mockResolvedValue(saved);
+      mockItemRepo.create.mockReturnValue({});
+      mockItemRepo.save.mockResolvedValue([]);
+    });
+
+    it('rejects a replacement requisition with no replacedAssetId', async () => {
+      await expect(
+        submit(replacementDto({ replacedAssetId: undefined })),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockAssetsService.findOne).not.toHaveBeenCalled();
+    });
+
+    it('propagates NotFound when the replaced asset does not exist', async () => {
+      mockAssetsService.findOne.mockRejectedValue(
+        new NotFoundException('gone'),
+      );
+      await expect(submit(replacementDto())).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects when the requester is not the current custodian of the replaced asset', async () => {
+      mockAssetsService.findOne.mockResolvedValue(
+        makeAsset({ custodianId: 'someone-else' }),
+      );
+      await expect(submit(replacementDto())).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('rejects when the replaced asset is serviceable and within its useful life', async () => {
+      mockAssetsService.findOne.mockResolvedValue(
+        makeAsset({
+          condition: AssetCondition.SERVICEABLE,
+          acquisitionDate: new Date(),
+          assetClass: AssetClass.PPE,
+        }),
+      );
+      await expect(submit(replacementDto())).rejects.toThrow(
+        /serviceable and within its useful life/i,
+      );
+    });
+
+    it('allows the replacement when the asset condition is not serviceable, recording basis "condition"', async () => {
+      mockAssetsService.findOne.mockResolvedValue(
+        makeAsset({
+          condition: AssetCondition.UNSERVICEABLE,
+          acquisitionDate: new Date(),
+        }),
+      );
+
+      await submit(replacementDto());
+
+      expect(mockReqRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ replacedAssetId: 'asset-uuid-1' }),
+      );
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            replacedAssetId: 'asset-uuid-1',
+            replacementBasis: 'condition',
+          }),
+        }),
+      );
+    });
+
+    it('allows the replacement when a serviceable asset is past its useful-life age, recording basis "useful_life"', async () => {
+      const eightYearsAgo = new Date();
+      eightYearsAgo.setFullYear(eightYearsAgo.getFullYear() - 8); // PPE threshold is 5y
+      mockAssetsService.findOne.mockResolvedValue(
+        makeAsset({
+          condition: AssetCondition.SERVICEABLE,
+          acquisitionDate: eightYearsAgo,
+          assetClass: AssetClass.PPE,
+        }),
+      );
+
+      await submit(replacementDto());
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            replacementBasis: 'useful_life',
+          }),
+        }),
+      );
+    });
+
+    it('does not run replacement validation for a NEW requisition carrying a stray replacedAssetId', async () => {
+      await submit(replacementDto({ requisitionType: RequisitionType.NEW }));
+      expect(mockAssetsService.findOne).not.toHaveBeenCalled();
     });
   });
 

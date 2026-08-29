@@ -46,6 +46,8 @@ export interface CreateRequisitionDto {
   justification: string;
   requiredDate: string;
   items: Array<{ itemDescription: string; quantity: number; assetType: string; assetClass: string; justification?: string }>;
+  /** Required by the backend only when requisitionType === 'replacement'. */
+  replacedAssetId?: string;
 }
 
 export const requisitionsApi = {
