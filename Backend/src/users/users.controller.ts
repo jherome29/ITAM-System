@@ -16,6 +16,7 @@ import {
   UpdateUserDto,
   AssignRoleDto,
   ResetPasswordDto,
+  AvailabilityDto,
 } from './dto/user.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -29,7 +30,7 @@ interface AuthenticatedRequest {
 }
 
 // SVC: Plan — user account management
-// All routes: SYSTEM_ADMIN only (except GET list which also allows MANAGEMENT read)
+// All routes: SYSTEM_ADMIN only, except: GET list also allows MANAGEMENT; PATCH me/availability allows SUPERVISOR (self-service).
 
 @Controller('v1/users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -62,6 +63,22 @@ export class UsersController {
   async create(@Body() dto: CreateUserDto, @Req() req: AuthenticatedRequest) {
     const user = await this.svc.create(dto, req.user.id, req.user.role, req.ip);
     return { message: 'User account created', data: user };
+  }
+
+  /** PATCH /api/v1/users/me/availability — supervisor sets their own availability */
+  @Patch('me/availability')
+  @Roles(UserRole.SUPERVISOR, UserRole.SYSTEM_ADMIN)
+  async updateOwnAvailability(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: AvailabilityDto,
+  ) {
+    const user = await this.svc.setOwnAvailability(
+      req.user.id,
+      dto,
+      req.user.role,
+      req.ip,
+    );
+    return { message: 'Availability updated', data: user };
   }
 
   /** PATCH /api/v1/users/:id — Update profile fields */
