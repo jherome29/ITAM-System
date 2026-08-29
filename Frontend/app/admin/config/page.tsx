@@ -3,6 +3,31 @@
 import { useState } from 'react';
 import { Settings, Save } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
+import type { UpdateSystemConfigPayload } from '@/lib/api/systemConfig';
+
+export interface SystemConfigFormValues {
+  slaApprovalHours: string;
+  defaultReorderLevel: string;
+  maxLoginAttempts: string;
+  usefulLifePPE: string;
+  usefulLifeSEP: string;
+  usefulLifeIES: string;
+}
+
+export function buildUpdateSystemConfigPayload(
+  v: SystemConfigFormValues,
+): UpdateSystemConfigPayload {
+  return {
+    slaApprovalHours: Number(v.slaApprovalHours),
+    defaultReorderLevel: Number(v.defaultReorderLevel),
+    maxLoginAttempts: Number(v.maxLoginAttempts),
+    usefulLifeYears: {
+      PPE: Number(v.usefulLifePPE),
+      SEP: Number(v.usefulLifeSEP),
+      IES: Number(v.usefulLifeIES),
+    },
+  };
+}
 
 const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors';
 
