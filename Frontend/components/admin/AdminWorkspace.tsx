@@ -2,6 +2,7 @@ import { AdminDashboard } from './AdminDashboard';
 import { AdminGovernancePages } from './AdminGovernancePages';
 import { AdminIdentityPages } from './AdminIdentityPages';
 import { AdminPlatformPages } from './AdminPlatformPages';
+import { NotificationsContent } from '@/components/shared/NotificationsContent';
 
 const identitySlugs = ['users', 'roles', 'access-reviews', 'organizational-units'] as const;
 const governanceSlugs = ['approval-configuration', 'custodian-assignments'] as const;
@@ -9,6 +10,7 @@ const platformSlugs = ['reference-data', 'configuration', 'technical-logs', 'sec
 
 export function AdminWorkspace({ slug }: Readonly<{ slug: string }>) {
   if (slug === 'dashboard') return <AdminDashboard />;
+  if (slug === 'notifications') return <NotificationsContent />;
   if (identitySlugs.includes(slug as (typeof identitySlugs)[number])) {
     return <AdminIdentityPages slug={slug as (typeof identitySlugs)[number]} />;
   }
