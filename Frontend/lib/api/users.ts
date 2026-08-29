@@ -12,6 +12,9 @@ export interface User {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  alternateApproverId: string | null;
+  unavailable: boolean;
+  unavailableUntil: string | null;
 }
 
 export interface CreateUserDto {
@@ -30,6 +33,9 @@ export interface UpdateUserDto {
   lastName?: string;
   division?: string;
   officeOrSection?: string;
+  alternateApproverId?: string | null;
+  unavailable?: boolean;
+  unavailableUntil?: string | null;
 }
 
 export const usersApi = {
@@ -59,4 +65,7 @@ export const usersApi = {
 
   unlock: (id: string) =>
     client.patch<ApiResponse<User>>(`/v1/users/${id}/unlock`).then((r) => r.data),
+
+  setMyAvailability: (payload: { unavailable: boolean; unavailableUntil: string | null }) =>
+    client.patch<ApiResponse<User>>('/v1/users/me/availability', payload).then((r) => r.data),
 };
