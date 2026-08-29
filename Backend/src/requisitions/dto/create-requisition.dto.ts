@@ -7,6 +7,8 @@ import {
   IsInt,
   Min,
   IsArray,
+  IsUUID,
+  ValidateIf,
   ValidateNested,
   ArrayMinSize,
 } from 'class-validator';
@@ -59,4 +61,16 @@ export class CreateRequisitionDto {
   @ValidateNested({ each: true })
   @Type(() => RequisitionItemDto)
   items!: RequisitionItemDto[];
+
+  // Required only for a REPLACEMENT requisition — the asset being replaced.
+  // The service validates that the requester is its custodian and that it
+  // meets a replacement criterion (CLAUDE.md §17).
+  @ValidateIf(
+    (o: CreateRequisitionDto) =>
+      o.requisitionType === RequisitionType.REPLACEMENT,
+  )
+  @IsUUID('4', {
+    message: 'replacedAssetId is required for a replacement requisition',
+  })
+  replacedAssetId?: string;
 }

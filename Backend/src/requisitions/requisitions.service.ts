@@ -25,13 +25,18 @@ import {
 } from './dto/approval.dto';
 import {
   RequisitionStatus,
+  RequisitionType,
   AuditAction,
   UserRole,
   NotificationAlertType,
   AssetType,
   AssetClass,
+  AssetCondition,
 } from '../../../packages/shared/src/enums';
-import { SLA_APPROVAL_HOURS } from '../../../packages/shared/src/constants';
+import {
+  SLA_APPROVAL_HOURS,
+  USEFUL_LIFE_YEARS,
+} from '../../../packages/shared/src/constants';
 import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 
 // SVC: Engage & Design and Transition — multi-level approval workflow
@@ -236,12 +241,63 @@ export class RequisitionsService {
 
   // ── Submit new requisition ─────────────────────────────────────────────────
   // Status: draft → pending_supervisor
+  /**
+   * Replacement requisitions must be justified before they enter the approval
+   * queue (CLAUDE.md §17). The requester must be the current custodian of the
+   * named asset, and the asset must meet at least one criterion: its condition
+   * is no longer serviceable, or it has passed the useful-life age for its
+   * class. Returns which criterion was met, for the audit trail.
+   */
+  private async validateReplacement(
+    replacedAssetId: string | undefined,
+    requestedById: string,
+  ): Promise<'condition' | 'useful_life'> {
+    if (!replacedAssetId) {
+      throw new BadRequestException(
+        'A replacement requisition must identify the asset being replaced.',
+      );
+    }
+
+    const asset = await this.assetsService.findOne(replacedAssetId);
+
+    if (asset.custodianId !== requestedById) {
+      throw new ForbiddenException(
+        'You can only request a replacement for an asset currently assigned to you.',
+      );
+    }
+
+    if (asset.condition !== AssetCondition.SERVICEABLE) {
+      return 'condition';
+    }
+
+    const ageYears =
+      (Date.now() - new Date(asset.acquisitionDate).getTime()) /
+      (365.25 * 24 * 60 * 60 * 1_000);
+    if (ageYears >= USEFUL_LIFE_YEARS[asset.assetClass]) {
+      return 'useful_life';
+    }
+
+    const acquired = new Date(asset.acquisitionDate).toISOString().slice(0, 10);
+    throw new BadRequestException(
+      `Replacement not justified: "${asset.itemDescription}" is serviceable and ` +
+        `within its useful life (acquired ${acquired}; ` +
+        `${USEFUL_LIFE_YEARS[asset.assetClass]}-year threshold for ${asset.assetClass}).`,
+    );
+  }
+
   async create(
     dto: CreateRequisitionDto,
     requestedById: string,
     userRole: UserRole,
     ipAddress: string,
   ): Promise<RequisitionEntity> {
+    // A replacement requisition must name an asset the requester holds that has
+    // actually met a replacement criterion, before anything else runs (§17).
+    const replacementBasis =
+      dto.requisitionType === RequisitionType.REPLACEMENT
+        ? await this.validateReplacement(dto.replacedAssetId, requestedById)
+        : null;
+
     // Resolve the requester's own Supervisor server-side — per CLAUDE.md §6
     // requesters do not nominate an approver, the org chart (division /
     // officeOrSection) determines it. Without this, supervisorId stays null
@@ -272,6 +328,10 @@ export class RequisitionsService {
       requisitionType: dto.requisitionType,
       justification: dto.justification,
       requiredDate: new Date(dto.requiredDate),
+      replacedAssetId:
+        dto.requisitionType === RequisitionType.REPLACEMENT
+          ? (dto.replacedAssetId ?? null)
+          : null,
       supervisorId: supervisor.id,
       status: RequisitionStatus.PENDING_SUPERVISOR,
       submittedAt,
@@ -309,6 +369,9 @@ export class RequisitionsService {
         requestNumber,
         requisitionType: dto.requisitionType,
         itemCount: dto.items.length,
+        ...(replacementBasis
+          ? { replacedAssetId: dto.replacedAssetId, replacementBasis }
+          : {}),
       },
     });
 

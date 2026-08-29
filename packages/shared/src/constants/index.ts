@@ -1,5 +1,19 @@
 // SVC: Plan — system-wide constants. No magic numbers anywhere else.
 
+import { AssetClass } from '../enums';
+
+/**
+ * Replacement validation — an asset older than this (years since acquisition)
+ * has met its useful-life threshold and may be replaced even while still
+ * serviceable (CLAUDE.md §17). Placeholder defaults per asset class; intended
+ * to move into the System Config store once that module exists.
+ */
+export const USEFUL_LIFE_YEARS: Record<AssetClass, number> = {
+  [AssetClass.PPE]: 5,
+  [AssetClass.SEP]: 3,
+  [AssetClass.IES]: 1,
+};
+
 /** Maximum failed login attempts before account lockout (Security by Design) */
 export const MAX_LOGIN_ATTEMPTS = 5;
 

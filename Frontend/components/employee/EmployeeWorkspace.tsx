@@ -98,26 +98,59 @@ function EmployeeRequisitions({ initialCreateOpen = false }: Readonly<{ initialC
 // component's "New requisition" flow and EmployeeCatalogue's catalogue-driven request modal,
 // which still passes real Asset.assetType/assetClass values straight through) get a real,
 // persisted Requisition back via onSubmit instead of a client-fabricated one.
+export interface RequisitionFormValues {
+  requisitionType: string;
+  justification: string;
+  requiredDate: string;
+  itemDescription: string;
+  quantity: string;
+  assetType: string;
+  assetClass: string;
+  replacedAssetId: string;
+}
+
+// Raw form values → API payload. `replacedAssetId` rides along only for a
+// replacement request with a non-blank value; the backend rejects a
+// replacement without it (CLAUDE.md §17).
+export function buildCreateRequisitionDto(v: RequisitionFormValues): CreateRequisitionDto {
+  const dto: CreateRequisitionDto = {
+    requisitionType: v.requisitionType,
+    justification: v.justification,
+    requiredDate: v.requiredDate,
+    items: [{
+      itemDescription: v.itemDescription,
+      quantity: Number(v.quantity),
+      assetType: v.assetType,
+      assetClass: v.assetClass,
+      justification: v.justification,
+    }],
+  };
+  const replacedAssetId = v.replacedAssetId.trim();
+  if (v.requisitionType === 'replacement' && replacedAssetId) {
+    dto.replacedAssetId = replacedAssetId;
+  }
+  return dto;
+}
+
 function RequisitionForm({ defaultItemDescription = '', defaultAssetType = 'ICT', defaultAssetClass = 'SEP', onSubmit }: Readonly<{ defaultItemDescription?: string; defaultAssetType?: string; defaultAssetClass?: string; onSubmit: (created: Requisition) => void }>) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [requisitionType, setRequisitionType] = useState('new');
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
     const data = new FormData(event.currentTarget);
-    const dto: CreateRequisitionDto = {
+    const dto = buildCreateRequisitionDto({
       requisitionType: String(data.get('requisitionType')),
       justification: String(data.get('justification')),
       requiredDate: String(data.get('requiredDate')),
-      items: [{
-        itemDescription: String(data.get('itemDescription')),
-        quantity: Number(data.get('quantity')),
-        assetType: String(data.get('assetType')),
-        assetClass: String(data.get('assetClass')),
-        justification: String(data.get('justification')),
-      }],
-    };
+      itemDescription: String(data.get('itemDescription')),
+      quantity: String(data.get('quantity')),
+      assetType: String(data.get('assetType')),
+      assetClass: String(data.get('assetClass')),
+      replacedAssetId: String(data.get('replacedAssetId') ?? ''),
+    });
     setSubmitting(true);
     try {
       const res = await requisitionsApi.create(dto);
@@ -134,7 +167,10 @@ function RequisitionForm({ defaultItemDescription = '', defaultAssetType = 'ICT'
     {error && <div className="border border-red-200 bg-red-50 p-3 text-xs text-red-700">{error}</div>}
     <Field label="Item or requirement"><input name="itemDescription" required defaultValue={defaultItemDescription} className={inputClass} /></Field>
     <div className="grid gap-4 sm:grid-cols-2"><Field label="Asset type"><select name="assetType" defaultValue={defaultAssetType} className={inputClass}><option value="ICT">ICT</option><option value="Fixed">Fixed</option><option value="Supplies">Supplies</option></select></Field><Field label="Asset class"><select name="assetClass" defaultValue={defaultAssetClass} className={inputClass}><option value="PPE">PPE</option><option value="SEP">SEP</option><option value="IES">IES</option></select></Field></div>
-    <Field label="Request type"><select name="requisitionType" className={inputClass}><option value="new">New</option><option value="replacement">Replacement</option><option value="repair">Repair</option><option value="supply">Supply</option></select></Field>
+    <Field label="Request type"><select name="requisitionType" value={requisitionType} onChange={(e) => setRequisitionType(e.target.value)} className={inputClass}><option value="new">New</option><option value="replacement">Replacement</option><option value="repair">Repair</option><option value="supply">Supply</option></select></Field>
+    {requisitionType === 'replacement' && (
+      <Field label="Asset ID of the item being replaced"><input name="replacedAssetId" required className={inputClass} placeholder="Copy the Asset ID from that asset's detail page" /></Field>
+    )}
     <div className="grid gap-4 sm:grid-cols-2"><Field label="Quantity"><input name="quantity" type="number" min="1" max="99" defaultValue="1" className={inputClass} /></Field><Field label="Required date"><input name="requiredDate" required type="date" className={inputClass} /></Field></div>
     <Field label="Business justification"><textarea name="justification" required minLength={20} className={`${inputClass} h-28 py-2`} placeholder="Explain the operational need and intended use." /></Field>
     <div className="border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">Submission routes to your assigned Approving Officer. Availability and issuance are confirmed by the responsible custodian after approval.</div>
