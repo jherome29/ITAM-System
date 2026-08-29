@@ -283,7 +283,9 @@ export class RequisitionsService {
     const items = dto.items.map((item) =>
       this.itemRepo.create({ ...item, requisitionId: saved.id }),
     );
-    await this.itemRepo.save(items);
+    saved.items = await this.itemRepo.save(items);
+    // Return shape must match findOne/findMine (both hydrate `items`) — callers
+    // that render the freshly-created requisition rely on the relation being present.
 
     // Notify the resolved supervisor
     await this.notificationsService.notify(

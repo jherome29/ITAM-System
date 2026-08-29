@@ -81,6 +81,8 @@ export class RequisitionsController {
     UserRole.IT_PERSONNEL,
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
   )
   async findMine(
     @Req() req: AuthReq,
