@@ -13,6 +13,10 @@ export interface AuthUser {
   role: string;
   division: string;
   officeOrSection: string;
+  // Present on the GET /v1/auth/profile response since the user entity carries
+  // these columns; used by the approving officer's self-service availability card.
+  unavailable?: boolean;
+  unavailableUntil?: string | null;
 }
 
 export interface LoginResponse {

@@ -6,6 +6,7 @@ import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { usersApi, type CreateUserDto, type User } from '@/lib/api/users';
+import { alternateApproverOptions } from '@/lib/users/availability';
 import { accessReviews, organizationUnits } from '@/lib/mock/admin.mock';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
 
@@ -99,7 +100,7 @@ function UsersPage() {
     <Panel title="Account Directory" detail={`${users.length} accounts shown - deactivation preserves audit history`}>
       {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>User</th><th className={thClass}>Office</th><th className={thClass}>Role</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{users.length === 0 ? <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-400">No accounts found.</td></tr> : users.map((user) => <tr key={user.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelectedId(user.id)} className="text-left"><span className="block font-bold text-slate-950">{userName(user)}</span><span className="text-xs text-slate-500">{user.employeeId} - {user.email}</span></button></td><td className={tdClass}>{user.division} / {user.officeOrSection}</td><td className={tdClass}>{user.role}</td><td className={tdClass}><StatusChip status={user.isActive ? 'Active' : 'Inactive'} tone={user.isActive ? 'green' : 'red'} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View account', onClick: () => setSelectedId(user.id) }, { label: 'Reset password', onClick: () => handleResetPassword(user.id, userName(user)) }, user.isActive ? { label: 'Deactivate account', danger: true, onClick: () => handleDeactivate(user.id, userName(user)) } : { label: 'Unlock account', onClick: () => handleUnlock(user.id, userName(user)) }]} /></td></tr>)}</tbody></table></TableWrap>}
     </Panel>
-    <DetailDrawer open={Boolean(selected)} title={selected ? userName(selected) : 'Account details'} onClose={() => setSelectedId(null)}>{selected && <div className="space-y-5"><div className="grid grid-cols-2 gap-3">{[['Employee ID', selected.employeeId], ['Account ID', selected.id], ['Email', selected.email], ['Role', selected.role], ['Division', selected.division], ['Office / Section', selected.officeOrSection]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>)}</div><Panel title="Account status"><div className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Status</span><StatusChip status={selected.isActive ? 'Active' : 'Inactive'} tone={selected.isActive ? 'green' : 'red'} /></div></div></Panel><div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => handleResetPassword(selected.id, userName(selected))}>Reset password</SecondaryButton>{selected.isActive ? <SecondaryButton onClick={() => handleDeactivate(selected.id, userName(selected))}>Deactivate account</SecondaryButton> : <SecondaryButton onClick={() => handleUnlock(selected.id, userName(selected))}>Unlock account</SecondaryButton>}</div><p className="text-xs text-slate-500">Actions call the live users API and create append-only audit events.</p></div>}</DetailDrawer>
+    <DetailDrawer open={Boolean(selected)} title={selected ? userName(selected) : 'Account details'} onClose={() => setSelectedId(null)}>{selected && <div className="space-y-5"><div className="grid grid-cols-2 gap-3">{[['Employee ID', selected.employeeId], ['Account ID', selected.id], ['Email', selected.email], ['Role', selected.role], ['Division', selected.division], ['Office / Section', selected.officeOrSection]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>)}</div><Panel title="Account status"><div className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Status</span><StatusChip status={selected.isActive ? 'Active' : 'Inactive'} tone={selected.isActive ? 'green' : 'red'} /></div></div></Panel>{selected.role === 'supervisor' && <ApprovalRoutingPanel key={selected.id} user={selected} />}<div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => handleResetPassword(selected.id, userName(selected))}>Reset password</SecondaryButton>{selected.isActive ? <SecondaryButton onClick={() => handleDeactivate(selected.id, userName(selected))}>Deactivate account</SecondaryButton> : <SecondaryButton onClick={() => handleUnlock(selected.id, userName(selected))}>Unlock account</SecondaryButton>}</div><p className="text-xs text-slate-500">Actions call the live users API and create append-only audit events.</p></div>}</DetailDrawer>
     <DetailDrawer open={creating} title="Create account" onClose={() => setCreating(false)}><AccountForm onSave={(user) => { setUsers((current) => [user, ...current]); setCreating(false); setToast(`${userName(user)} was added to the account directory.`); }} /></DetailDrawer>
     <Toast message={toast} />
   </div>;
@@ -144,6 +145,63 @@ function AccountForm({ onSave }: Readonly<{ onSave: (user: User) => void }>) {
     {error && <div className="text-sm text-red-700">{error}</div>}
     <PrimaryButton type="submit" disabled={submitting}>{submitting ? 'Creating…' : 'Create account'}</PrimaryButton>
   </form>;
+}
+
+// Approval routing for a supervisor account: which colleague covers their queue
+// (alternate approver) and whether they are currently marked away. Rendered inside
+// the user DetailDrawer, keyed by user id so it re-mounts per selected account.
+function ApprovalRoutingPanel({ user }: Readonly<{ user: User }>) {
+  const [supervisors, setSupervisors] = useState<User[]>([]);
+  const [altId, setAltId] = useState<string>(user.alternateApproverId ?? '');
+  const [unavailable, setUnavailable] = useState<boolean>(user.unavailable);
+  const [until, setUntil] = useState<string>(user.unavailableUntil ? user.unavailableUntil.slice(0, 10) : '');
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    usersApi.list(1, 100).then((r) => setSupervisors(r.data.data)).catch(() => setSupervisors([]));
+  }, []);
+
+  const options = alternateApproverOptions(supervisors, user.id);
+
+  async function save() {
+    setMsg(null); setErr(null);
+    try {
+      await usersApi.update(user.id, {
+        alternateApproverId: altId === '' ? null : altId,
+        unavailable,
+        unavailableUntil: until === '' ? null : until,
+      });
+      setMsg('Approval routing saved.');
+    } catch {
+      setErr('Could not save approval routing.');
+    }
+  }
+
+  return (
+    <Panel title="Approval routing">
+      <div className="space-y-4 p-4">
+        <label className="block text-sm">
+          <span className="mb-1 block font-bold text-slate-600">Alternate approver</span>
+          <select className={inputClass} value={altId} onChange={(e) => setAltId(e.target.value)}>
+            <option value="">— none —</option>
+            {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={unavailable} onChange={(e) => setUnavailable(e.target.checked)} />
+          <span className="font-bold text-slate-600">Currently unavailable</span>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block font-bold text-slate-600">Unavailable until (optional)</span>
+          <input type="date" className={inputClass} value={until} onChange={(e) => setUntil(e.target.value)} />
+        </label>
+        <SecondaryButton onClick={save}>Save approval routing</SecondaryButton>
+        {msg && <p className="text-sm text-green-700">{msg}</p>}
+        {err && <p className="text-sm text-red-700">{err}</p>}
+      </div>
+    </Panel>
+  );
 }
 
 function RolesPage() {
