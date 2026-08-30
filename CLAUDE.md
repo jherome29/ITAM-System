@@ -613,8 +613,13 @@ docker-compose up --build
 
 # Run tests
 cd Backend && npm run test           # Unit tests
-cd Backend && npm run test:e2e       # Integration tests
-cd Backend && npm run test:cov       # Coverage report
+cd Backend && npm run test:cov       # Coverage report (thresholds enforced)
+cd Backend && npm run test:e2e:local # E2E suite — spins a throwaway postgres:16
+                                     # (docker-compose.e2e.yml, NODE_ENV=test),
+                                     # exactly like CI's backend-e2e job. Needs
+                                     # Docker running. Plain `npm run test:e2e`
+                                     # targets Supabase and will not connect
+                                     # from jest — use the :local variant.
 ```
 
 ---

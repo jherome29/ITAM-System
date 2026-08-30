@@ -2,7 +2,7 @@
 
 > **For:** Nelson James Casambros · Andrei Fredrick Montaniel · Jairus Nathan Valenton
 > **Target Completion:** October 2026
-> **Last updated:** August 28, 2026
+> **Last updated:** August 30, 2026
 
 Read this file first, then **CLAUDE.md** (the single source of truth for the whole project). Everything else is linked from one of these two.
 
@@ -24,9 +24,15 @@ If you have an old local clone with a branch called `FE-Updated-not-finished`: t
 
 **Now on `main` (2026-08-27, PR #82 → #83):** the full redesigned-layout backend wiring — all 5 porting phases. IT Asset Custodian, Approving Officer, Property Custodian, Property Officer, Management & Audit, and Master Admin's Users/Roles/Audit now call the real backend. What's still mock is greenfield backend work only — see `MOCK-DATA-WIRING.md`.
 
-**Open branch awaiting merge:** `feature/notifications-auto-fire-sla-cron` — automated notification watchers (SLA breach, 12 h pending-approval nudge, overdue return, low stock) via a new `scheduler` module + `@nestjs/schedule`, plus the supply-stock model (quantity/reorder level, transactional decrement on fulfill). Went through a final-review round; manual test steps in `MANUAL-TEST-CHECKLIST.md`.
+**Landed on `develop` since 2026-08-28** (not on `main` yet — `develop` is ahead):
+- **PR #84** — automated notification watchers (SLA breach, 12 h pending nudge, overdue return, low stock) via a new `scheduler` module + `@nestjs/schedule`; supply-stock model (quantity/reorder level, transactional decrement on fulfill). Dedup stamps + an admin `run-checks` endpoint.
+- **PR #86** — replacement-requisition validation: a `replacement` requisition is only accepted if the requester holds the asset *and* it is unserviceable or past its useful life.
+- **PR #87** — System Config module: `system_config` key-value table (migration 006), `GET`/`PATCH /api/v1/system-config` (SYSTEM_ADMIN, audited); SLA hours / reorder level / useful-life years / max login attempts are runtime-tunable and read live. UI: **Master Admin → System Settings**; old `/admin/config` deleted.
+- **PR #89 / #90** — Alternate Approver: designate a backup supervisor; when the primary is marked unavailable (self-service toggle or admin) new requisitions route to the backup at submit; a requisition past its 24 h SLA is reassigned to the backup by the watcher (migration 007, `requisition_reassigned` audit action).
 
-For a fast, plain-language read of what's actually wired to the backend vs. still fake, see **`SYSTEM-STATUS.md`**; for a screen-by-screen mock inventory with the backend each needs, see **`MOCK-DATA-WIRING.md`** — both at the repo root.
+**Open branch awaiting merge:** `chore/phase5-security-tests` — expands `Backend/test/security.e2e-spec.ts` to all 8 PHASE-5-TESTING Step 5.1 scenarios, plus `npm run test:e2e:local` (a throwaway `postgres:16` for running the e2e suite locally the way CI does).
+
+For a one-screen state map see **`FEATURE-STATUS.md`** (✅ / 🟡 / 🔴 mock / ⬜); for the full path to CICC handover see **`PATH-TO-DONE.md`**; for the plain-language gap list see **`SYSTEM-STATUS.md`**; for a screen-by-screen mock inventory see **`MOCK-DATA-WIRING.md`** — all at the repo root.
 
 ---
 
@@ -40,6 +46,18 @@ For a fast, plain-language read of what's actually wired to the backend vs. stil
 # From the project root — installs Frontend + Backend + packages/shared
 npm install
 ```
+
+### Running tests
+```bash
+cd Backend && npm run test            # unit
+cd Backend && npm run test:cov        # unit + coverage thresholds
+cd Backend && npm run test:e2e:local  # e2e — needs Docker; spins a throwaway
+                                      # postgres:16 (docker-compose.e2e.yml),
+                                      # NODE_ENV=test, like CI's backend-e2e job.
+cd Frontend && npm run test           # frontend (vitest)
+```
+Plain `npm run test:e2e` boots against Supabase and jest can't connect — always
+use the `:local` variant on a dev machine.
 
 ### Environment files
 
@@ -104,23 +122,29 @@ Full role details and page routes: **`docs/guides/ROLES.md`**
 
 ## 4. What Has Been Built
 
+### Merged to `develop` since 2026-08-28 (see §1 for the PR list)
+- **Automated notifications + SLA enforcement** — cron watchers fire once each (dedup) and reach every relevant role; live TopBar bell; `POST /notifications/run-checks` triggers a pass on demand.
+- **System Config** — SLA hours / default reorder level / useful-life years / max login attempts editable at runtime (admin, audited), read live by the workflow / watchers / auth.
+- **Replacement validation** — enforced in `requisitions.service.create()`.
+- **Alternate approver** — planned-absence routing at submit + SLA-breach reassignment; supervisor self-service availability; admin designation panel.
+- **Formal security e2e suite** (branch `chore/phase5-security-tests`, PR pending) — 8 ASVS scenarios end-to-end.
+
 ### Solid, all on `main`
 - Auth: JWT + httpOnly refresh tokens, bcrypt, account lockout, RBAC guards, real login for all 7 roles — no mock accounts anywhere in the codebase anymore
 - 7 roles: the original 5 (Employee, Supervisor, IT Personnel, System Admin, Management) plus Property Custodian and Property Officer, scoped to Fixed + Supplies assets
 - Assets module: registry, lifecycle state machine, QR generation, search + status filter, asset-type scope enforcement on every write path (not just reads)
 - Requisitions module: submit → approve/reject → fulfill workflow, real end to end as of 2026-08-19 — both the API and the actual UI (Supervisor's queue, the Approving Officer's real-time queue, and IT Personnel's fulfillment page all work against real data with real actions now, not just tested at the API level)
 - Audit module: append-only log, action filter, per-record lookup — now including User Management (was the one module missing it; fixed 2026-08-19)
-- Notifications module: in-system alerts, mark read, mark all read (nothing auto-creates them yet — see gap list)
+- Notifications module: in-system alerts, mark read, mark all read — **now auto-created** by the `scheduler` cron watchers (merged to `develop`, see §1)
 - Users module: CRUD, role assignment, deactivate, reset password, unlock, search
 - Reports module: real PDF (pdfkit) + Excel (exceljs), all 18 COA forms (generation mechanism is solid; several forms' *layout* diverges from the official template — see `docs/guides/COA-FORMS-AUDIT.md`)
 - **The whole redesigned layout is wired now (2026-08-27, on `main`).** All 5 porting phases: IT Asset Custodian (every screen), Approving Officer (dashboard + queues + real actions), Property Custodian & Property Officer (dashboards, asset registries, QR, fulfillment/custody/disposal), Management & Audit Viewer (dashboard KPIs, all report tabs, forms archive, audit), Master Admin (Users/Roles/Audit + 2 of 6 dashboard panels), and a shared COA-forms generator. Screen-by-screen mock inventory: `MOCK-DATA-WIRING.md`.
 - Asset registration: a real, reachable, working page now exists in navigation for IT Asset Custodian and Property Custodian
 - Report generation, asset lifecycle updates, user creation, and role assignment — all previously *wired but silently broken* by uppercase-vs-lowercase-enum mismatches — fixed on `main`.
 
-### Known-fake despite looking real — no backend exists yet (see `SYSTEM-STATUS.md` / `MOCK-DATA-WIRING.md` for the full list)
-- `/admin/config` + Master Admin `configuration` / `reference-data` — no system-config endpoint of any kind
-- Master Admin governance pages (approval workflows, custodian coverage, master data, system health, org units, access reviews) — no backend at all; they honestly disclose "...in frontend mock state"
-- `physical-inventory` slugs, Property Officer corrections / reconciliation / replacements — no physical-count or replacement-validation backend
+### Known-fake despite looking real — no backend exists yet (see `FEATURE-STATUS.md` 🔴 / `MOCK-DATA-WIRING.md` for the full list)
+- Master Admin `reference-data` + governance pages (approval workflows, custodian coverage, master data, system health, org units, access reviews) — no backend at all; they honestly disclose "...in frontend mock state". (System Settings itself is now **real** — see §1 PR #87.)
+- `physical-inventory` slugs, Property Officer corrections / reconciliation — no physical-count backend. (Replacement-validation backend now exists — PR #86 — but the standalone Property Officer `replacements` screen is still the mock list.)
 - Employee "returns & incidents" and "assigned assets" — no returns/incidents module; assigned-assets needs a custodian filter on `GET /v1/assets`
 - Two "Preview data"-labeled chart panels on the Management / Management&Audit dashboards
 
@@ -128,21 +152,21 @@ Full role details and page routes: **`docs/guides/ROLES.md`**
 
 ## 5. What Still Needs to Be Done
 
-Don't duplicate the gap list here — **`SYSTEM-STATUS.md`** at the repo root is the maintained, current version of this. Read that for specifics and suggested order of work. Highlights as of this handoff:
+Don't duplicate the gap list here — **`PATH-TO-DONE.md`** (everything between here and CICC handover) and **`SYSTEM-STATUS.md`** (the plain-language gap list + suggested order) at the repo root are the maintained versions. Highlights as of this handoff:
 
 | Priority | Item |
 |---|---|
-| ~~1~~ | ~~Notifications + SLA cron job~~ — **built** on `feature/notifications-auto-fire-sla-cron`; merge the PR |
-| 2 | System-config backend + wire `/admin/config` (also unblocks Master Admin `configuration` / `reference-data`) |
-| 3 | Replacement requisition validation (useful-life / condition / loss-damage) |
+| ~~1~~ | ~~Notifications + SLA cron job~~ — **merged, PR #84** |
+| ~~2~~ | ~~System-config backend~~ — **merged, PR #87** (Master Admin → System Settings) |
+| ~~3~~ | ~~Replacement requisition validation~~ — **merged, PR #86** |
 | 4 | Disposal workflow (currently just a status flag, no required fields) |
 | 5 | Fix the 18 COA form templates against their references (`docs/guides/COA-FORMS-AUDIT.md`) |
-| 6 | Alternate approver designation |
+| ~~6~~ | ~~Alternate approver designation~~ — **merged, PR #89 / #90** |
 | 7 | Master Admin governance backend (access reviews, org units, approval config, custodian coverage, master data, system events) |
 | 8 | Physical count / reconciliation workflow + 2 missing management reports |
 | 9 | Small wiring leftovers (`MOCK-DATA-WIRING.md` Parts B–C) — mostly one-liners once the backends above exist |
 
-Also still open regardless of branch: JMeter load test, OWASP ZAP scan, UAT with CICC — see `docs/phases/PHASE-5-TESTING.md`. Tooling not yet added (Husky pre-commit hooks, MFA/TOTP, idle session timeout, Playwright e2e) is tracked in `docs/guides/FUTURE-TOOLING.md` with trigger points for when to add each.
+Phase 5 (`docs/phases/PHASE-5-TESTING.md`): the **formal Jest security suite is done** (8 scenarios, branch `chore/phase5-security-tests`); JMeter load test, OWASP ZAP scan, and UAT with CICC are still open and are best run once the build above is functionally complete — see `PATH-TO-DONE.md` §C for the rationale. Tooling not yet added (Husky, MFA/TOTP, idle session timeout, Playwright e2e): `docs/guides/FUTURE-TOOLING.md`.
 
 ---
 
@@ -151,12 +175,14 @@ Also still open regardless of branch: JMeter load test, OWASP ZAP scan, UAT with
 | # | File | Why |
 |---|---|---|
 | 1 | **`CLAUDE.md`** | Single source of truth. Read every section before writing code. |
-| 2 | **`SYSTEM-STATUS.md`** | Fast-read current gap list — what's real vs. still fake. |
-| 3 | **`CHECKS.md`** | Run every check before marking any task done. Non-negotiable. |
-| 4 | **`docs/guides/ROLES.md`** | Role descriptions, permissions, page routes. |
-| 5 | **`docs/guides/SECURITY.md`** | Canonical security spec — wins over CLAUDE.md on security specifics if they ever disagree. |
-| 6 | **`packages/shared/src/enums/index.ts`** | All shared enums (UserRole, AssetStatus, RequisitionStatus, etc.) — use these, never hardcode strings. |
-| 7 | **`docs/phases/PHASE-5-TESTING.md`** | Testing & Evaluation phase guide (Jest security tests, ZAP, JMeter). |
+| 2 | **`FEATURE-STATUS.md`** | One-screen ✅ / 🟡 / 🔴 mock / ⬜ map of the whole system. |
+| 3 | **`SYSTEM-STATUS.md`** | Plain-language gap list + suggested order of work. |
+| 4 | **`PATH-TO-DONE.md`** | Everything between feature-complete and CICC handover, checklist form. |
+| 5 | **`CHECKS.md`** | Run every check before marking any task done. Non-negotiable. |
+| 6 | **`docs/guides/ROLES.md`** | Role descriptions, permissions, page routes. |
+| 7 | **`docs/guides/SECURITY.md`** | Canonical security spec — wins over CLAUDE.md on security specifics if they ever disagree. |
+| 8 | **`packages/shared/src/enums/index.ts`** | All shared enums (UserRole, AssetStatus, RequisitionStatus, etc.) — use these, never hardcode strings. |
+| 9 | **`docs/phases/PHASE-5-TESTING.md`** | Testing & Evaluation phase guide (Jest security tests, ZAP, JMeter). |
 
 ---
 
@@ -207,9 +233,9 @@ Before opening any PR, run every check in **`CHECKS.md`** in order — or tell C
 ## 10. Database Notes
 
 - **Dev database:** Shared Supabase instance — do not drop tables, other teammates are using it live.
-- **Schema changes:** write a `.sql` file in `Database/schemas/` (or `Database/migrations/` for post-launch changes) and run it manually in the Supabase SQL Editor. `synchronize: false` means nothing happens automatically.
+- **Schema changes:** write a `.sql` file in `Database/schemas/` (or `Database/migrations/` for post-launch changes) and run it manually in the Supabase SQL Editor. `synchronize: false` means nothing happens automatically. Migrations through **`007_alternate_approver.sql`** are applied to dev Supabase as of 2026-08-30 (006 = system_config, 007 = alternate approver).
 - **Production:** raw PostgreSQL managed by CICC IT. No Supabase SDK features in application code — see `Database/README.md`.
-- The `user_role` Postgres enum includes `property_custodian` and `property_officer`, matching the code now merged into `main`.
+- The `user_role` enum includes `property_custodian` / `property_officer`; the `audit_action` enum now also has `system_config_updated` (migration 006) and `requisition_reassigned` (migration 007).
 
 ---
 
