@@ -15,9 +15,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const backendDir = join(repoRoot, 'Backend');
 const compose = ['compose', '-f', join(repoRoot, 'docker-compose.e2e.yml')];
+// shell:true so `npm`/`docker` resolve their .cmd shims on Windows
 const run = (cmd, args, opts = {}) =>
-  spawnSync(cmd, args, { stdio: 'inherit', shell: false, ...opts });
+  spawnSync(cmd, args, { stdio: 'inherit', shell: true, ...opts });
 
 const down = () => run('docker', [...compose, 'down', '-v', '--remove-orphans']);
 
@@ -31,22 +33,18 @@ if (up.status !== 0) {
 let code = 1;
 try {
   const passthrough = process.argv.slice(2); // e.g. a test-path filter
-  const jest = run(
-    'npx',
-    ['jest', '--config', './test/jest-e2e.json', ...passthrough],
-    {
-      cwd: join(repoRoot, 'Backend'),
-      env: {
-        ...process.env,
-        NODE_ENV: 'test',
-        DATABASE_URL:
-          'postgresql://aimrs_test:aimrs_test@localhost:5433/aimrs_test?sslmode=disable',
-        JWT_SECRET:
-          process.env.JWT_SECRET ?? 'local-e2e-jwt-secret-32-chars-minimum-xx',
-        JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? '8h',
-      },
+  const jest = run('npm', ['run', 'test:e2e', '--', ...passthrough], {
+    cwd: backendDir,
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      DATABASE_URL:
+        'postgresql://aimrs_test:aimrs_test@localhost:5433/aimrs_test?sslmode=disable',
+      JWT_SECRET:
+        process.env.JWT_SECRET ?? 'local-e2e-jwt-secret-32-chars-minimum-xx',
+      JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? '8h',
     },
-  );
+  });
   code = jest.status ?? 1;
 } finally {
   console.log('▶ tearing down the e2e Postgres…');
