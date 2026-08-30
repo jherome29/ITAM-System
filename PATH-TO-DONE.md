@@ -36,14 +36,14 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 > *accumulate*, they don't expire when features are added — so its skeleton is being
 > built **now** as a permanent CI gate.
 
-- [~] **Formal Jest security suite** — *started now.* `Backend/test/security.e2e-spec.ts`
-      already has 401 (no token), 403 (wrong role), audit-log immutability (no PUT/DELETE +
-      DB trigger). Adding: tampered JWT → 401, account lockout → 401 + non-revealing
-      message, rate-limit → 429, SQL-injection / extra-field DTO → 400, no
-      `passwordHash`/`refreshTokenHash` in any response. Per-module privilege-escalation
-      cases get added as those modules land. `docs/guides/SECURITY.md`.
-      - [ ] **Check first:** does the app have rate limiting (`@nestjs/throttler`)? If not,
-            the 429 scenario is a *fix*, not just a test.
+- [~] **Formal Jest security suite** — all 8 Step-5.1 scenarios written in
+      `Backend/test/security.e2e-spec.ts` (branch `chore/phase5-security-tests`, PR pending):
+      no-token 401, privilege escalation 403 (+ forged-role JWT still 403), tampered JWT 401,
+      lockout 403 with no timing leak, `@Throttle` limit asserted, audit-log immutability,
+      unknown-field 400 + SQLi bound safely, no `passwordHash`/`refreshTokenHash` in responses.
+      Rate limiting confirmed present (`@nestjs/throttler`, login 10/min). Runs in CI
+      `backend-e2e`. Per-module privilege-escalation cases get added as those modules land.
+      `docs/guides/SECURITY.md`.
 - [ ] Frontend test coverage — no coverage gate on `Frontend/` yet (backend has 70%).
 - [ ] **OWASP ZAP scan** *(after the build)* — you run ZAP against the running system,
       save the PDF; then paste HIGH findings for fixes (`PHASE-5-TESTING.md` §5.3–5.4).

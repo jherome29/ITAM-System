@@ -6,10 +6,9 @@ delete. Hand a role section to a teammate; hand this whole file back to an LLM t
 resume the migration.
 
 **Snapshot:** 2026-08-30 · `origin/develop`. The redesigned-layout port is on `origin/main`
-(see callout). Since then, merged to `develop`: notifications/SLA (**PR #84**), replacement
-validation (**PR #86**), System Config (**PR #87**). Alternate Approver is built and
-manually verified (**PR open**, branch `feature/alternate-approver`). Quick-read companion:
-`FEATURE-STATUS.md`.
+(see callout). Merged to `develop` since: notifications/SLA (**PR #84**), replacement
+validation (**PR #86**), System Config (**PR #87**), Alternate Approver (**PR #89 / #90**).
+Quick-read companion: `FEATURE-STATUS.md`; full path to handover: `PATH-TO-DONE.md`.
 
 > **2026-08-29:** notifications are now real for **every** role. The new-layout
 > `[[...slug]]` routers for Approving Officer, Property Custodian, Property Officer,
@@ -164,7 +163,7 @@ Dashboard KPIs (`reportsApi.kpi()`), all 4 report tabs (`ReportsContent`), `form
 ## Part D — Backend work that does not exist yet
 
 1. **`assets` — custodian/assignee filter.** `GET /v1/assets` has `page,limit,search,status,assetType`. Add `custodianId` (or `assignedToMe`) so Employee "assigned assets" / dashboard can be real.
-2. ~~**System Config module.**~~ **Core done — `feature/system-config`, PR pending.** Key-value `system_config` table + `GET`/`PATCH /api/v1/system-config` (admin-only, audited); SLA hours / default reorder level / useful-life years / max login attempts, read live by `requisitions.service`, the low-stock watcher, and `auth.service`. UI = **Master Admin → System Settings** (`SystemSettingsPage`); old `/admin/config` deleted. Still open: `SystemSettingsPage`'s other tabs + `reference-data` on this module; approval routes + session policy deferred.
+2. ~~**System Config module.**~~ **Done — merged to `develop` via PR #87.** Key-value `system_config` table + `GET`/`PATCH /api/v1/system-config` (admin-only, audited); SLA hours / default reorder level / useful-life years / max login attempts, read live by `requisitions.service`, the low-stock watcher, and `auth.service`. UI = **Master Admin → System Settings** (`SystemSettingsPage`); old `/admin/config` deleted. Still open: `SystemSettingsPage`'s other tabs + `reference-data` on this module; approval routes + session policy deferred.
 3. **Returns / Incidents module.** Entity + endpoints for return request, repair request, damage/loss/theft report + audit logging. Consumed by Employee "Returns & Incidents".
 4. **Physical count / reconciliation.** Consumed by `physical-inventory` slugs (IT Asset Custodian, Property Custodian) and Property Officer `reconciliation`; also fixes the known RPCI / RPCPPE / Physical Count Summary report gap.
 5. ~~**Replacement-validation rules.**~~ **Backend done — merged to `develop` via PR #86.** `validateReplacement()` runs inside `requisitions.service.create()` (useful-life / condition checks, requester-must-be-custodian; useful-life read live from System Config). The Property Officer `replacements` screen is still `WorkflowPage` mock — wiring it to a standalone view of this is the remaining FE task.
@@ -173,19 +172,24 @@ Dashboard KPIs (`reportsApi.kpi()`), all 4 report tabs (`ReportsContent`), `form
 
 ---
 
-## Suggested task split
+## Suggested task split (refreshed 2026-08-30)
 
-| Owner | Scope |
-|---|---|
-| A | Part A dead-code deletion + move `dashboard.mock.ts` types out |
-| B | `assets` custodian filter (BE) + wire Employee dashboard/assigned-assets; **Returns/Incidents module** (BE + FE tab) |
-| C | **System Config module** (BE) + wire old `admin/config` + Master Admin `configuration` / `reference-data` |
-| D | Master-Admin governance domains (access reviews, org units, approval config, custodian coverage, system-events, scheduled jobs) — BE + FE; then wire the 4 "Preview data" dashboard panels |
-| E | `isLiveFetchPage` extensions: Approving Officer `approval-history`; Property Officer `disposal` + `audit`. (`notifications` for all roles + TopBar bell done 2026-08-29.) |
-| F | **Physical count / reconciliation** (BE) + wire the `physical-inventory` slugs and Property Officer `reconciliation`; also fixes RPCI/RPCPPE reports. Replacement-validation rules + Property Officer `replacements`/`corrections`. |
-| — | Trends/utilization endpoint (#7) — small, fold into D or E |
+Notifications/SLA (#84), replacement validation (#86), system config (#87), and
+alternate approver (#89/#90) are **done**. What's left, split for the 4-person team —
+adjust to taste:
 
-Per task: keep `NEXT_PUBLIC_USE_MOCK_DATA` working until the slice is fully real, add the
-DB migration (`Database/migrations/`, `synchronize:false`), enforce the role guard, write
-the audit-log entry, run `CHECKS.md` before marking done. Update **`SYSTEM-STATUS.md`**
-(the plan's checkboxes are abandoned) when a slice lands.
+| Owner | Scope | Size |
+|---|---|---|
+| **1** | **Master-Admin governance** (Part D #6) — the biggest chunk, decompose into its own specs: access-review workflow + org-unit registry first, then approval-route config + custodian-coverage report, then reference/master-data CRUD; `technical-logs`/`security` panels can read from the `scheduler` module + `auditApi`. Then wire the 4 "Preview data" panels on the Master Admin dashboard. | L |
+| **2** | **Physical count / reconciliation** (Part D #4) — new BE module + the `physical-inventory` slugs (IT Asset Custodian, Property Custodian) + Property Officer `reconciliation`; unblocks 2 of the 8 missing reports (RPCI, RPCPPE, Physical Count Summary). | L |
+| **3** | **Disposal workflow** (`SYSTEM-STATUS.md` #4) — turn the dispose-flag into a documented flow with the COA-required fields — **plus** **Returns / Incidents module** (Part D #3) + the Employee "Returns & Incidents" tab. | M |
+| **4** | **Quick wins + coverage:** Part A dead-code deletion (grep-verify each file) + move `dashboard.mock.ts` type exports out; `assets` `custodianId` filter (Part D #1) + wire Employee assigned-assets; the `isLiveFetchPage` one-liners — Approving Officer `approval-history`, Property Officer `disposal` / `audit` / `replacements` (wire to the existing replacement-validation backend) / `corrections`; Trends/utilisation endpoint (Part D #7) + the chart panels. Then a `Frontend/` coverage gate (`PATH-TO-DONE.md` §C). | S each |
+| shared | **COA form template corrections** — `docs/guides/COA-FORMS-AUDIT.md`, split the 18 forms by group; interleave with the above. | M |
+
+**Per task:** keep `NEXT_PUBLIC_USE_MOCK_DATA` working until the slice is fully real;
+any schema change is a hand-run `Database/schemas/NNN_*.sql` (`synchronize:false`);
+enforce the `@Roles` guard and write the audit-log entry; run every check in `CHECKS.md`
+(including `npm run test:e2e:local` for controller/guard/DB changes) before marking done;
+tick the item in `PATH-TO-DONE.md` and refresh `SYSTEM-STATUS.md` when a slice lands.
+For the big features (owners 1–3) run brainstorm → spec → plan first, like system
+config / alternate approver.
