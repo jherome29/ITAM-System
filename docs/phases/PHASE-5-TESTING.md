@@ -24,6 +24,12 @@ CLAUDE.md + SECURITY.md
 > gate that catches regressions during the remaining build. Steps 5.3–5.5 (ZAP,
 > JMeter, UAT) test the whole system surface and are best run once, at the end.
 > Seeded 2026-08-30 — see `PATH-TO-DONE.md` §C.
+>
+> **Run the e2e suite locally** (needs Docker Desktop running):
+> `cd Backend && npm run test:e2e:local` — or `… -- security.e2e-spec` for one
+> file. It spins a throwaway `postgres:16` (`docker-compose.e2e.yml`, tmpfs) with
+> `NODE_ENV=test`, exactly like CI's `backend-e2e` job, then tears it down.
+> Plain `npm run test:e2e` points at Supabase and will not connect from jest.
 
 Paste this into Claude Code to generate the security test suite:
 
