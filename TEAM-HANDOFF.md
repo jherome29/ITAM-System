@@ -41,6 +41,18 @@ For a fast, plain-language read of what's actually wired to the backend vs. stil
 npm install
 ```
 
+### Running tests
+```bash
+cd Backend && npm run test            # unit
+cd Backend && npm run test:cov        # unit + coverage thresholds
+cd Backend && npm run test:e2e:local  # e2e — needs Docker; spins a throwaway
+                                      # postgres:16 (docker-compose.e2e.yml),
+                                      # NODE_ENV=test, like CI's backend-e2e job.
+cd Frontend && npm run test           # frontend (vitest)
+```
+Plain `npm run test:e2e` boots against Supabase and jest can't connect — always
+use the `:local` variant on a dev machine.
+
 ### Environment files
 
 **Backend — create `Backend/.env`:**

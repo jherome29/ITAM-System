@@ -96,8 +96,9 @@ cd Frontend && npm run dev
 # Unit tests
 cd Backend && npm run test
 
-# Integration tests
-cd Backend && npm run test:e2e
+# E2E tests — needs Docker; spins a throwaway Postgres like CI's backend-e2e job
+# (plain `npm run test:e2e` targets Supabase and won't connect from jest)
+cd Backend && npm run test:e2e:local
 
 # Coverage report (must meet thresholds — see CHECKS.md)
 cd Backend && npm run test:cov

@@ -74,6 +74,11 @@ cd Backend && npm run test
 **What it checks:** Jest unit tests for all service files. Every test must pass — no exceptions.
 **If it fails:** Read the failing test output. Fix the underlying service logic or test, do not skip or comment out tests.
 
+> **If the change touches a controller, a guard, a DTO, or the DB layer**, also run
+> the e2e suite: `cd Backend && npm run test:e2e:local` (needs Docker — it spins a
+> throwaway `postgres:16` like CI's `backend-e2e` job). Plain `npm run test:e2e`
+> targets Supabase and will not connect from jest.
+
 ---
 
 ## 5. Backend — Test Coverage

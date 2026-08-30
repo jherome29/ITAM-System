@@ -401,6 +401,14 @@ async findAll() {
 
 ### Privilege Escalation Test (Required in Jest)
 
+> **Implemented.** `Backend/test/security.e2e-spec.ts` covers all 8 scenarios from
+> `docs/phases/PHASE-5-TESTING.md` Step 5.1 end-to-end (privilege escalation, no
+> token, tampered JWT, account lockout, throttle config, audit-log immutability,
+> input validation / SQLi, no credential fields in responses). Run it with
+> `cd Backend && npm run test:e2e:local -- security.e2e-spec` (needs Docker); it
+> also runs in CI's `backend-e2e` job. Add a per-endpoint 403 case here as each
+> new guarded route lands.
+
 ```typescript
 it('should return 403 when Employee tries to access asset lifecycle endpoint', async () => {
   const employeeToken = generateTestToken(UserRole.EMPLOYEE);

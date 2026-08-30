@@ -71,7 +71,7 @@ Cover all of these scenarios:
    Login response → must not contain passwordHash or refreshTokenHash
    Any user response → must not contain password fields
 
-Run with: npm run test -- --testPathPattern=security
+Run with: cd Backend && npm run test:e2e:local -- security.e2e-spec   (needs Docker)
 All 8 scenarios must pass before this phase is complete.
 ```
 
