@@ -18,10 +18,8 @@ describe('Alternate approver (e2e)', () => {
   let userRepo: Repository<UserEntity>;
 
   const password = 'E2eTest@Password123!';
-  let adminId: string;
   let primaryId: string;
   let alternateId: string;
-  const seedIds: string[] = [];
 
   const login = async (email: string) =>
     (
@@ -40,23 +38,52 @@ describe('Alternate approver (e2e)', () => {
     userRepo = moduleFixture.get(getRepositoryToken(UserEntity));
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-    const mk = (over: Partial<UserEntity>) => userRepo.create({
-      passwordHash, isActive: true, division: 'CISD', officeOrSection: 'AA-E2E',
-      firstName: 'E2E', lastName: 'User', ...over,
-    } as UserEntity);
+    const mk = (over: Partial<UserEntity>) =>
+      userRepo.create({
+        passwordHash,
+        isActive: true,
+        division: 'CISD',
+        officeOrSection: 'AA-E2E',
+        firstName: 'E2E',
+        lastName: 'User',
+        ...over,
+      } as UserEntity);
 
-    const admin = await userRepo.save(mk({ employeeId: 'E2E-AA-ADM', email: 'e2e.aa.admin@cicc.gov.ph', role: UserRole.SYSTEM_ADMIN }));
-    const primary = await userRepo.save(mk({ employeeId: 'E2E-AA-SUP1', email: 'e2e.aa.sup1@cicc.gov.ph', role: UserRole.SUPERVISOR }));
-    const alternate = await userRepo.save(mk({ employeeId: 'E2E-AA-SUP2', email: 'e2e.aa.sup2@cicc.gov.ph', role: UserRole.SUPERVISOR, officeOrSection: 'BB-E2E' }));
-    const employee = await userRepo.save(mk({ employeeId: 'E2E-AA-EMP', email: 'e2e.aa.emp@cicc.gov.ph', role: UserRole.EMPLOYEE }));
-    adminId = admin.id; primaryId = primary.id; alternateId = alternate.id;
-    seedIds.push(admin.id, primary.id, alternate.id, employee.id);
+    await userRepo.save(
+      mk({
+        employeeId: 'E2E-AA-ADM',
+        email: 'e2e.aa.admin@cicc.gov.ph',
+        role: UserRole.SYSTEM_ADMIN,
+      }),
+    );
+    const primary = await userRepo.save(
+      mk({
+        employeeId: 'E2E-AA-SUP1',
+        email: 'e2e.aa.sup1@cicc.gov.ph',
+        role: UserRole.SUPERVISOR,
+      }),
+    );
+    const alternate = await userRepo.save(
+      mk({
+        employeeId: 'E2E-AA-SUP2',
+        email: 'e2e.aa.sup2@cicc.gov.ph',
+        role: UserRole.SUPERVISOR,
+        officeOrSection: 'BB-E2E',
+      }),
+    );
+    await userRepo.save(
+      mk({
+        employeeId: 'E2E-AA-EMP',
+        email: 'e2e.aa.emp@cicc.gov.ph',
+        role: UserRole.EMPLOYEE,
+      }),
+    );
+    primaryId = primary.id;
+    alternateId = alternate.id;
   });
 
   afterAll(async () => {
-    if (userRepo && seedIds.length) {
-      await userRepo.delete(seedIds);
-    }
+    // The CI test DB is disposable — no teardown of the rows this suite creates.
     if (app) await app.close();
   });
 
@@ -78,8 +105,8 @@ describe('Alternate approver (e2e)', () => {
       .send({ unavailable: true, unavailableUntil: null })
       .expect(200);
 
-    // employee submits — findSupervisorForSection resolves the primary (section AA-E2E),
-    // who is unavailable → routed to the alternate
+    // employee submits — findSupervisorForSection resolves the primary (section
+    // AA-E2E), who is unavailable → routed to the alternate
     const empToken = await login('e2e.aa.emp@cicc.gov.ph');
     const created = await request(app.getHttpServer())
       .post('/api/v1/requisitions')
@@ -88,7 +115,14 @@ describe('Alternate approver (e2e)', () => {
         requisitionType: 'new',
         justification: 'e2e alternate approver',
         requiredDate: new Date(Date.now() + 7 * 864e5).toISOString(),
-        items: [{ assetType: 'ICT', assetClass: 'SEP', itemDescription: 'e2e keyboard', quantity: 1 }],
+        items: [
+          {
+            assetType: 'ICT',
+            assetClass: 'SEP',
+            itemDescription: 'e2e keyboard',
+            quantity: 1,
+          },
+        ],
       })
       .expect(201);
 
@@ -96,17 +130,15 @@ describe('Alternate approver (e2e)', () => {
     expect(created.body.data.supervisorId).toBe(alternateId);
     expect(created.body.data.alternateRoutedAt).toBeTruthy();
 
-    // the alternate can approve it (ownership check passes — supervisorId is theirs now)
+    // the alternate can approve it (ownership check passes — supervisorId is
+    // theirs now). approve() is @HttpCode(OK) → 200, not 201.
     const altToken = await login('e2e.aa.sup2@cicc.gov.ph');
     const approved = await request(app.getHttpServer())
       .post(`/api/v1/requisitions/${reqId}/approve`)
       .set('Authorization', `Bearer ${altToken}`)
       .send({ comments: 'ok' })
-      .expect(201);
+      .expect(200);
     expect(approved.body.data.status).toBe('pending_fulfillment');
-
-    // clean the requisition row (leave the fixture users for afterAll)
-    // (no requisition-delete endpoint — acceptable to leave the e2e row; the CI DB is disposable)
   });
 
   it('routes back to the primary once they are available again', async () => {
@@ -125,7 +157,14 @@ describe('Alternate approver (e2e)', () => {
         requisitionType: 'new',
         justification: 'e2e primary back',
         requiredDate: new Date(Date.now() + 7 * 864e5).toISOString(),
-        items: [{ assetType: 'ICT', assetClass: 'SEP', itemDescription: 'e2e mouse', quantity: 1 }],
+        items: [
+          {
+            assetType: 'ICT',
+            assetClass: 'SEP',
+            itemDescription: 'e2e mouse',
+            quantity: 1,
+          },
+        ],
       })
       .expect(201);
 
