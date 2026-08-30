@@ -28,7 +28,7 @@ export class UsersService {
     private readonly auditService: AuditService,
   ) {}
 
-  async findAll(page = 1, limit = 50, search?: string) {
+  async findAll(page = 1, limit = 50, search?: string, role?: string) {
     const qb = this.userRepo
       .createQueryBuilder('u')
       .orderBy('u.lastName', 'ASC')
@@ -42,6 +42,13 @@ export class UsersService {
         '(LOWER(u.firstName) LIKE LOWER(:q) OR LOWER(u.lastName) LIKE LOWER(:q) OR LOWER(u.email) LIKE LOWER(:q) OR LOWER(u.employeeId) LIKE LOWER(:q))',
         { q },
       );
+    }
+
+    // Server-side role filter — callers that only want one role (e.g. the
+    // alternate-approver picker fetching supervisors) must not paginate past
+    // CICC's ~362 personnel to find them.
+    if (role) {
+      qb.andWhere('u.role = :role', { role });
     }
 
     const [data, total] = await qb.getManyAndCount();
@@ -72,7 +79,9 @@ export class UsersService {
    */
   isUnavailable(user: UserEntity): boolean {
     if (!user.unavailable) return false;
-    if (user.unavailableUntil === null || user.unavailableUntil === undefined) return true;
+    if (user.unavailableUntil === null || user.unavailableUntil === undefined) {
+      return true;
+    }
     return user.unavailableUntil.getTime() > Date.now();
   }
 
@@ -163,17 +172,44 @@ export class UsersService {
 
     if (dto.alternateApproverId != null) {
       if (dto.alternateApproverId === id) {
-        throw new BadRequestException('A supervisor cannot be their own alternate.');
+        throw new BadRequestException(
+          'A supervisor cannot be their own alternate.',
+        );
       }
-      const alt = await this.userRepo.findOne({ where: { id: dto.alternateApproverId } });
+      const alt = await this.userRepo.findOne({
+        where: { id: dto.alternateApproverId },
+      });
       if (!alt || !alt.isActive || alt.role !== UserRole.SUPERVISOR) {
-        throw new BadRequestException('Alternate approver must be an active supervisor.');
+        throw new BadRequestException(
+          'Alternate approver must be an active supervisor.',
+        );
       }
     }
 
-    const patch: Record<string, unknown> = { ...dto };
+    // Build the write set field-by-field — never spread the whole DTO.
+    // `@IsOptional()` lets `null` past validation for `unavailable`, and a
+    // spread would carry that `null` into the NOT NULL column (Postgres 500).
+    // Copying only present-and-valid keys turns that into a clean 400.
+    const patch: Record<string, unknown> = {};
+    for (const k of [
+      'firstName',
+      'lastName',
+      'email',
+      'division',
+      'officeOrSection',
+      'alternateApproverId',
+    ] as const) {
+      if (dto[k] !== undefined) patch[k] = dto[k];
+    }
+    if (dto.unavailable !== undefined) {
+      if (typeof dto.unavailable !== 'boolean') {
+        throw new BadRequestException('unavailable must be true or false');
+      }
+      patch.unavailable = dto.unavailable;
+    }
     if (dto.unavailableUntil !== undefined) {
-      patch.unavailableUntil = dto.unavailableUntil === null ? null : new Date(dto.unavailableUntil);
+      patch.unavailableUntil =
+        dto.unavailableUntil === null ? null : new Date(dto.unavailableUntil);
     }
     await this.userRepo.update(id, patch);
 

@@ -35,6 +35,7 @@ describe('UsersService', () => {
     skip: jest.fn().mockReturnThis(),
     take: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
     getManyAndCount: jest.fn(),
   };
 
@@ -96,6 +97,14 @@ describe('UsersService', () => {
         expect.stringContaining('LIKE'),
         expect.objectContaining({ q: '%Ana%' }),
       );
+    });
+
+    it('applies a role filter via andWhere when role provided', async () => {
+      mockQb.getManyAndCount.mockResolvedValue([[], 0]);
+      await service.findAll(1, 10, undefined, 'supervisor');
+      expect(mockQb.andWhere).toHaveBeenCalledWith('u.role = :role', {
+        role: 'supervisor',
+      });
     });
   });
 
@@ -331,46 +340,147 @@ describe('UsersService', () => {
 
   describe('update() — alternate approver & availability validation', () => {
     it('rejects alternate/availability fields on a non-supervisor row', async () => {
-      mockRepo.findOne.mockResolvedValueOnce(makeUser({ id: 'u-1', role: UserRole.EMPLOYEE }));
+      mockRepo.findOne.mockResolvedValueOnce(
+        makeUser({ id: 'u-1', role: UserRole.EMPLOYEE }),
+      );
       await expect(
-        service.update('u-1', { unavailable: true } as never, actorId, actorRole, ipAddress),
+        service.update(
+          'u-1',
+          { unavailable: true },
+          actorId,
+          actorRole,
+          ipAddress,
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(mockRepo.update).not.toHaveBeenCalled();
     });
 
     it('rejects a supervisor naming themselves as alternate', async () => {
-      mockRepo.findOne.mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }));
+      mockRepo.findOne.mockResolvedValueOnce(
+        makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }),
+      );
       await expect(
-        service.update('sup-1', { alternateApproverId: 'sup-1' } as never, actorId, actorRole, ipAddress),
+        service.update(
+          'sup-1',
+          { alternateApproverId: 'sup-1' },
+          actorId,
+          actorRole,
+          ipAddress,
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('rejects an alternate that is inactive or not a supervisor', async () => {
       mockRepo.findOne
-        .mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }))       // the row being edited
-        .mockResolvedValueOnce(makeUser({ id: 'x', role: UserRole.EMPLOYEE }));            // the proposed alternate
+        .mockResolvedValueOnce(
+          makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }),
+        ) // the row being edited
+        .mockResolvedValueOnce(makeUser({ id: 'x', role: UserRole.EMPLOYEE })); // the proposed alternate
       await expect(
-        service.update('sup-1', { alternateApproverId: 'x' } as never, actorId, actorRole, ipAddress),
+        service.update(
+          'sup-1',
+          { alternateApproverId: 'x' },
+          actorId,
+          actorRole,
+          ipAddress,
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('accepts a valid alternate designation and writes it', async () => {
       mockRepo.findOne
-        .mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }))
-        .mockResolvedValueOnce(makeUser({ id: 'sup-2', role: UserRole.SUPERVISOR, isActive: true }))
-        .mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR, alternateApproverId: 'sup-2' })); // refetch
+        .mockResolvedValueOnce(
+          makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }),
+        )
+        .mockResolvedValueOnce(
+          makeUser({ id: 'sup-2', role: UserRole.SUPERVISOR, isActive: true }),
+        )
+        .mockResolvedValueOnce(
+          makeUser({
+            id: 'sup-1',
+            role: UserRole.SUPERVISOR,
+            alternateApproverId: 'sup-2',
+          }),
+        ); // refetch
       mockRepo.update.mockResolvedValue({ affected: 1 });
-      const result = await service.update('sup-1', { alternateApproverId: 'sup-2' } as never, actorId, actorRole, ipAddress);
-      expect(mockRepo.update).toHaveBeenCalledWith('sup-1', { alternateApproverId: 'sup-2' });
+      const result = await service.update(
+        'sup-1',
+        { alternateApproverId: 'sup-2' },
+        actorId,
+        actorRole,
+        ipAddress,
+      );
+      expect(mockRepo.update).toHaveBeenCalledWith('sup-1', {
+        alternateApproverId: 'sup-2',
+      });
       expect(result.alternateApproverId).toBe('sup-2');
+    });
+
+    // I4 — patch is built field-by-field; a spread would let `null` through.
+    it('rejects { unavailable: null } on a supervisor with 400 and never writes', async () => {
+      mockRepo.findOne.mockResolvedValueOnce(
+        makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }),
+      );
+      await expect(
+        service.update(
+          'sup-1',
+          { unavailable: null } as never,
+          actorId,
+          actorRole,
+          ipAddress,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('converts a string unavailableUntil to a Date before writing', async () => {
+      mockRepo.findOne.mockResolvedValue(
+        makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }),
+      );
+      mockRepo.update.mockResolvedValue({ affected: 1 });
+      await service.update(
+        'sup-1',
+        { unavailableUntil: '2026-09-15T00:00:00.000Z' },
+        actorId,
+        actorRole,
+        ipAddress,
+      );
+      expect(mockRepo.update).toHaveBeenCalledWith('sup-1', {
+        unavailableUntil: new Date('2026-09-15T00:00:00.000Z'),
+      });
+    });
+
+    it('writes alternateApproverId: null to clear the designation', async () => {
+      mockRepo.findOne.mockResolvedValue(
+        makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }),
+      );
+      mockRepo.update.mockResolvedValue({ affected: 1 });
+      await service.update(
+        'sup-1',
+        { alternateApproverId: null },
+        actorId,
+        actorRole,
+        ipAddress,
+      );
+      expect(mockRepo.update).toHaveBeenCalledWith('sup-1', {
+        alternateApproverId: null,
+      });
     });
   });
 
   describe('setOwnAvailability()', () => {
     it('writes only the availability fields on the caller row and audits with self=true', async () => {
       mockRepo.findOne
-        .mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }))                       // existence check
-        .mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR, unavailable: true }));   // refetch
+        .mockResolvedValueOnce(
+          makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }),
+        ) // existence check
+        .mockResolvedValueOnce(
+          makeUser({
+            id: 'sup-1',
+            role: UserRole.SUPERVISOR,
+            unavailable: true,
+          }),
+        ); // refetch
       mockRepo.update.mockResolvedValue({ affected: 1 });
 
       await service.setOwnAvailability(
@@ -395,13 +505,25 @@ describe('UsersService', () => {
 
     it('clears the end date when unavailableUntil is null', async () => {
       mockRepo.findOne
-        .mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }))
-        .mockResolvedValueOnce(makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }));
+        .mockResolvedValueOnce(
+          makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }),
+        )
+        .mockResolvedValueOnce(
+          makeUser({ id: 'sup-1', role: UserRole.SUPERVISOR }),
+        );
       mockRepo.update.mockResolvedValue({ affected: 1 });
 
-      await service.setOwnAvailability('sup-1', { unavailable: false, unavailableUntil: null }, UserRole.SUPERVISOR, ipAddress);
+      await service.setOwnAvailability(
+        'sup-1',
+        { unavailable: false, unavailableUntil: null },
+        UserRole.SUPERVISOR,
+        ipAddress,
+      );
 
-      expect(mockRepo.update).toHaveBeenCalledWith('sup-1', { unavailable: false, unavailableUntil: null });
+      expect(mockRepo.update).toHaveBeenCalledWith('sup-1', {
+        unavailable: false,
+        unavailableUntil: null,
+      });
     });
   });
 
@@ -563,25 +685,48 @@ describe('UsersService', () => {
 
   describe('isUnavailable()', () => {
     it('is false when the flag is off, regardless of the date', () => {
-      expect(service.isUnavailable(makeUser({ unavailable: false, unavailableUntil: null }))).toBe(false);
       expect(
-        service.isUnavailable(makeUser({ unavailable: false, unavailableUntil: new Date(Date.now() + 3.6e6) })),
+        service.isUnavailable(
+          makeUser({ unavailable: false, unavailableUntil: null }),
+        ),
+      ).toBe(false);
+      expect(
+        service.isUnavailable(
+          makeUser({
+            unavailable: false,
+            unavailableUntil: new Date(Date.now() + 3.6e6),
+          }),
+        ),
       ).toBe(false);
     });
 
     it('is true when the flag is on with no end date', () => {
-      expect(service.isUnavailable(makeUser({ unavailable: true, unavailableUntil: null }))).toBe(true);
+      expect(
+        service.isUnavailable(
+          makeUser({ unavailable: true, unavailableUntil: null }),
+        ),
+      ).toBe(true);
     });
 
     it('is true when the flag is on and the end date is in the future', () => {
       expect(
-        service.isUnavailable(makeUser({ unavailable: true, unavailableUntil: new Date(Date.now() + 3.6e6) })),
+        service.isUnavailable(
+          makeUser({
+            unavailable: true,
+            unavailableUntil: new Date(Date.now() + 3.6e6),
+          }),
+        ),
       ).toBe(true);
     });
 
     it('is false when the flag is on but the end date has passed', () => {
       expect(
-        service.isUnavailable(makeUser({ unavailable: true, unavailableUntil: new Date(Date.now() - 3.6e6) })),
+        service.isUnavailable(
+          makeUser({
+            unavailable: true,
+            unavailableUntil: new Date(Date.now() - 3.6e6),
+          }),
+        ),
       ).toBe(false);
     });
   });
