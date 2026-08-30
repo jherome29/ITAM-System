@@ -58,9 +58,9 @@ export function PrimaryButton({
   );
 }
 
-export function SecondaryButton({ icon: Icon, children, onClick }: Readonly<{ icon?: LucideIcon; children: ReactNode; onClick?: () => void }>) {
+export function SecondaryButton({ icon: Icon, children, onClick, disabled = false }: Readonly<{ icon?: LucideIcon; children: ReactNode; onClick?: () => void; disabled?: boolean }>) {
   return (
-    <button type="button" onClick={onClick} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
+    <button type="button" onClick={onClick} disabled={disabled} className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
       {Icon && <Icon className="h-4 w-4" />}
       {children}
     </button>

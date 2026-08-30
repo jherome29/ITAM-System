@@ -39,9 +39,10 @@ export interface UpdateUserDto {
 }
 
 export const usersApi = {
-  list: (page = 1, limit = 20, search?: string) => {
+  list: (page = 1, limit = 20, search?: string, role?: string) => {
     const params: Record<string, string | number> = { page, limit };
     if (search) params.search = search;
+    if (role) params.role = role;
     return client.get<ApiResponse<PaginatedResponse<User>>>('/v1/users', { params }).then((r) => r.data);
   },
 

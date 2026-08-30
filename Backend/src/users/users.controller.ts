@@ -44,8 +44,9 @@ export class UsersController {
     @Query('page') page = 1,
     @Query('limit') limit = 50,
     @Query('search') search?: string,
+    @Query('role') role?: string,
   ) {
-    const result = await this.svc.findAll(+page, +limit, search);
+    const result = await this.svc.findAll(+page, +limit, search, role);
     return { message: 'Users retrieved', data: result };
   }
 
