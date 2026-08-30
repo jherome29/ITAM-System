@@ -12,6 +12,9 @@ export interface User {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  alternateApproverId: string | null;
+  unavailable: boolean;
+  unavailableUntil: string | null;
 }
 
 export interface CreateUserDto {
@@ -30,12 +33,16 @@ export interface UpdateUserDto {
   lastName?: string;
   division?: string;
   officeOrSection?: string;
+  alternateApproverId?: string | null;
+  unavailable?: boolean;
+  unavailableUntil?: string | null;
 }
 
 export const usersApi = {
-  list: (page = 1, limit = 20, search?: string) => {
+  list: (page = 1, limit = 20, search?: string, role?: string) => {
     const params: Record<string, string | number> = { page, limit };
     if (search) params.search = search;
+    if (role) params.role = role;
     return client.get<ApiResponse<PaginatedResponse<User>>>('/v1/users', { params }).then((r) => r.data);
   },
 
@@ -59,4 +66,7 @@ export const usersApi = {
 
   unlock: (id: string) =>
     client.patch<ApiResponse<User>>(`/v1/users/${id}/unlock`).then((r) => r.data),
+
+  setMyAvailability: (payload: { unavailable: boolean; unavailableUntil: string | null }) =>
+    client.patch<ApiResponse<User>>('/v1/users/me/availability', payload).then((r) => r.data),
 };

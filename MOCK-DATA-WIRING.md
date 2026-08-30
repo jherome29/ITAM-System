@@ -5,10 +5,11 @@ connect to (frontend client → backend endpoint → DB), and what is just dead 
 delete. Hand a role section to a teammate; hand this whole file back to an LLM to
 resume the migration.
 
-**Snapshot:** 2026-08-29 · `origin/develop`. The redesigned-layout port is on `origin/main`
-(see callout). Since then: notifications/SLA (**PR #84**) and replacement validation
-(**PR #86**) are merged to `develop`; System Config is built and manually verified but its
-PR to `develop` is **still open** (branch `feature/system-config`).
+**Snapshot:** 2026-08-30 · `origin/develop`. The redesigned-layout port is on `origin/main`
+(see callout). Since then, merged to `develop`: notifications/SLA (**PR #84**), replacement
+validation (**PR #86**), System Config (**PR #87**). Alternate Approver is built and
+manually verified (**PR open**, branch `feature/alternate-approver`). Quick-read companion:
+`FEATURE-STATUS.md`.
 
 > **2026-08-29:** notifications are now real for **every** role. The new-layout
 > `[[...slug]]` routers for Approving Officer, Property Custodian, Property Officer,
@@ -95,7 +96,8 @@ reports (`ReportsContent`), audit, notifications all real. Nothing.
 | Screen | Mock source | Connect to | Backend / DB work |
 |---|---|---|---|
 | Dashboard · Users (CRUD) · Role assignment · Audit trail · Notifications | — | `usersApi`, `auditApi`, `NotificationsContent` | none — LIVE |
-| **System Configuration** — Master Admin → System Settings (`AdminPlatformPages.tsx` → `SystemSettingsPage`, `/master-admin/configuration`) | **LIVE** (`feature/system-config`, PR pending) — `systemConfigApi` load/save, load-error retry. Old `/admin/config` page **deleted**. | `systemConfigApi` → `GET`/`PATCH /api/v1/system-config` | **core done** — `system-config` module: key-value `system_config` table, admin-only + audited, SLA hours / reorder level / useful-life years / max login attempts. Still pending in `SystemSettingsPage`: the numbering / notifications / forms & print / data retention / localization tabs (labelled "not yet configurable"), `reference-data`, + deferred settings (approval routes, session policy, PPE cost threshold) |
+| **System Configuration** — Master Admin → System Settings (`AdminPlatformPages.tsx` → `SystemSettingsPage`, `/master-admin/configuration`) | **LIVE** (merged to `develop`, PR #87) — `systemConfigApi` load/save, load-error retry. Old `/admin/config` page **deleted**. | `systemConfigApi` → `GET`/`PATCH /api/v1/system-config` | **core done** — `system-config` module: key-value `system_config` table, admin-only + audited, SLA hours / reorder level / useful-life years / max login attempts. Still pending in `SystemSettingsPage`: the numbering / notifications / forms & print / data retention / localization tabs (labelled "not yet configurable"), `reference-data`, + deferred settings (approval routes, session policy, PPE cost threshold) |
+| **Approval routing panel** — Master Admin → Users → open a supervisor (`AdminIdentityPages.tsx`) | **LIVE** (2026-08-30, alternate approver — PR open) — designate an alternate approver + mark unavailable/until | `usersApi.update` → `PATCH /users/:id` (`alternateApproverId` / `unavailable` / `unavailableUntil`); `GET /users?role=supervisor` | done on `feature/alternate-approver` |
 
 ### Management — `app/management/*` — PARTIAL (near-LIVE)
 Dashboard KPI cards + SLA panel real (`reportsApi.kpi()`); reports and audit trail real.
@@ -109,6 +111,7 @@ Management&Audit's dashboard below; needs a trends/utilization reporting endpoin
 | Slug | State | To finish |
 |---|---|---|
 | `dashboard`, `approvals`, `requisitions` | LIVE (`ApprovingOfficerDashboard`, `isLiveFetchPage`) | — |
+| "My availability" card (on `dashboard`) | **LIVE** (2026-08-30, alternate approver) | supervisor self-service unavailable/until toggle → `PATCH /users/me/availability` |
 | `approval-history` | WorkflowPage MOCK | add `role+slug` to `isLiveFetchPage` + a `fetchLiveRows()` branch on `requisitionsApi.list()` filtered to decided items |
 | `notifications` | **LIVE** (2026-08-29) | router now returns `<NotificationsContent />` for this segment |
 

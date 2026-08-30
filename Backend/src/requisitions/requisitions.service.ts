@@ -13,6 +13,7 @@ import { RequisitionEntity } from './entities/requisition.entity';
 import { RequisitionItemEntity } from './entities/requisition-item.entity';
 import { RequisitionApprovalEntity } from './entities/requisition-approval.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
+import { UserEntity } from '../users/entities/user.entity';
 import { AssetsService } from '../assets/assets.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -313,6 +314,30 @@ export class RequisitionsService {
       );
     }
 
+    // Alternate Approver (CLAUDE.md §5, §17) — if the resolved primary is
+    // currently unavailable and has a usable designated backup, route to them.
+    // One hop only: an unusable alternate falls back to the primary (the SLA
+    // watcher is the backstop). "Usable" = active SUPERVISOR, not itself away.
+    let approverId = supervisor.id;
+    let routedToAlternate = false;
+    if (
+      this.usersService.isUnavailable(supervisor) &&
+      supervisor.alternateApproverId
+    ) {
+      const alt = await this.usersService
+        .findOne(supervisor.alternateApproverId)
+        .catch(() => null);
+      if (
+        alt &&
+        alt.isActive &&
+        alt.role === UserRole.SUPERVISOR &&
+        !this.usersService.isUnavailable(alt)
+      ) {
+        approverId = alt.id;
+        routedToAlternate = true;
+      }
+    }
+
     // Generate request number: REQ-YYYY-NNNN
     const count = await this.reqRepo.count();
     const requestNumber = `REQ-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
@@ -332,7 +357,8 @@ export class RequisitionsService {
         dto.requisitionType === RequisitionType.REPLACEMENT
           ? (dto.replacedAssetId ?? null)
           : null,
-      supervisorId: supervisor.id,
+      supervisorId: approverId,
+      ...(routedToAlternate ? { alternateRoutedAt: new Date() } : {}),
       status: RequisitionStatus.PENDING_SUPERVISOR,
       submittedAt,
       slaDeadline,
@@ -347,15 +373,27 @@ export class RequisitionsService {
     // Return shape must match findOne/findMine (both hydrate `items`) — callers
     // that render the freshly-created requisition rely on the relation being present.
 
-    // Notify the resolved supervisor
-    await this.notificationsService.notify(
-      supervisor.id,
-      NotificationAlertType.PENDING_APPROVAL,
-      'New Requisition Awaiting Approval',
-      `Requisition ${requestNumber} requires your approval. Required by: ${dto.requiredDate}.`,
-      saved.id,
-      'requisition',
-    );
+    // Notify the approver. When routed to an alternate, ALTERNATE_APPROVER
+    // replaces the ordinary pending-approval notice and explains the why.
+    if (routedToAlternate) {
+      await this.notificationsService.notify(
+        approverId,
+        NotificationAlertType.ALTERNATE_APPROVER,
+        'Requisition Routed to You (Alternate Approver)',
+        `Requisition ${requestNumber} has been routed to you because ${supervisor.firstName} ${supervisor.lastName} is unavailable. Please review it.`,
+        saved.id,
+        'requisition',
+      );
+    } else {
+      await this.notificationsService.notify(
+        approverId,
+        NotificationAlertType.PENDING_APPROVAL,
+        'New Requisition Awaiting Approval',
+        `Requisition ${requestNumber} requires your approval. Required by: ${dto.requiredDate}.`,
+        saved.id,
+        'requisition',
+      );
+    }
 
     // Audit log
     await this.auditService.log({
@@ -374,6 +412,22 @@ export class RequisitionsService {
           : {}),
       },
     });
+
+    if (routedToAlternate) {
+      await this.auditService.log({
+        userId: requestedById,
+        userRole,
+        action: AuditAction.REQUISITION_REASSIGNED,
+        affectedRecordId: saved.id,
+        affectedRecordType: 'requisition',
+        ipAddress,
+        metadata: {
+          reason: 'primary_unavailable',
+          primaryApproverId: supervisor.id,
+          alternateApproverId: approverId,
+        },
+      });
+    }
 
     return saved;
   }
@@ -799,7 +853,69 @@ export class RequisitionsService {
             ),
           ),
         );
-        await this.reqRepo.update(req.id, { slaBreachNotifiedAt: new Date() });
+        // Alternate Approver (CLAUDE.md §5, §17) — resolve a usable alternate
+        // BEFORE the stamp is written. The `slaBreachNotifiedAt` stamp is what
+        // removes this row from the `slaBreachNotifiedAt IS NULL` query, so the
+        // stamp and the reassignment MUST land in one write: a crash between two
+        // separate writes would leave the requisition marked-as-handled yet
+        // never reassigned. The breach notices above already reached the primary
+        // (still `req.supervisorId` in memory), preserving spec §6.2 ordering.
+        let current: UserEntity | null = null;
+        let alt: UserEntity | null = null;
+        if (req.alternateRoutedAt == null && req.supervisorId) {
+          current = await this.usersService
+            .findOne(req.supervisorId)
+            .catch(() => null);
+          const altId = current?.alternateApproverId ?? null;
+          if (altId) {
+            const candidate = await this.usersService
+              .findOne(altId)
+              .catch(() => null);
+            if (
+              candidate &&
+              candidate.isActive &&
+              candidate.role === UserRole.SUPERVISOR &&
+              !this.usersService.isUnavailable(candidate)
+            ) {
+              alt = candidate;
+            }
+          }
+        }
+
+        await this.reqRepo.update(req.id, {
+          slaBreachNotifiedAt: new Date(),
+          ...(alt
+            ? { supervisorId: alt.id, alternateRoutedAt: new Date() }
+            : {}),
+        });
+
+        if (alt) {
+          await this.notificationsService.notify(
+            alt.id,
+            NotificationAlertType.ALTERNATE_APPROVER,
+            'Requisition Reassigned to You (Alternate Approver)',
+            `Requisition ${req.requestNumber} was reassigned to you after its approval SLA passed with no decision from ${current!.firstName} ${current!.lastName}.`,
+            req.id,
+            'requisition',
+          );
+          const requester = await this.usersService
+            .findOne(req.requestedById)
+            .catch(() => null);
+          await this.auditService.log({
+            userId: req.requestedById,
+            userRole: requester?.role ?? UserRole.EMPLOYEE,
+            action: AuditAction.REQUISITION_REASSIGNED,
+            affectedRecordId: req.id,
+            affectedRecordType: 'requisition',
+            ipAddress: '',
+            metadata: {
+              reason: 'sla_breach',
+              primaryApproverId: current!.id,
+              alternateApproverId: alt.id,
+              systemInitiated: true,
+            },
+          });
+        }
       }),
     );
 

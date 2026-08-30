@@ -185,6 +185,7 @@ function RequisitionForm({ defaultItemDescription = '', defaultAssetType = 'ICT'
 // submittedAt/supervisorDecidedAt/fulfilledAt carry the same lifecycle information.
 function RequisitionDetailView({ request }: Readonly<{ request: Requisition }>) {
   const timeline: Array<{ label: string; at: string }> = [{ label: 'Submitted for approval', at: request.submittedAt }];
+  if (request.alternateRoutedAt) timeline.push({ label: 'Routed to alternate approver', at: request.alternateRoutedAt });
   if (request.supervisorDecidedAt) timeline.push({ label: request.supervisorDecision === 'rejected' ? 'Rejected by supervisor' : 'Approved by supervisor', at: request.supervisorDecidedAt });
   if (request.fulfilledAt) timeline.push({ label: 'Fulfilled by IT Personnel', at: request.fulfilledAt });
 

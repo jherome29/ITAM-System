@@ -13,7 +13,7 @@ const ACTION_OPTIONS = [
   'system_config_updated',
   'asset_created', 'asset_updated', 'asset_issued', 'asset_returned', 'asset_transferred',
   'asset_flagged_repair', 'asset_flagged_disposal',
-  'requisition_submitted', 'requisition_approved', 'requisition_rejected', 'requisition_fulfilled',
+  'requisition_submitted', 'requisition_approved', 'requisition_rejected', 'requisition_fulfilled', 'requisition_reassigned',
   'report_generated', 'form_generated',
 ];
 
