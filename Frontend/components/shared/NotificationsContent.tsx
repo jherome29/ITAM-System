@@ -11,7 +11,7 @@ function NotifIcon({ type }: Readonly<{ type: string }>) {
     return <CheckCircle className="w-5 h-5 text-green-600" />;
   if (type === 'requisition_rejected')
     return <XCircle className="w-5 h-5 text-red-500" />;
-  if (type === 'sla_breach' || type === 'low_stock' || type === 'overdue_return')
+  if (type === 'sla_breach' || type === 'low_stock' || type === 'overdue_return' || type === 'alternate_approver')
     return <AlertCircle className="w-5 h-5 text-amber-500" />;
   return <AlertCircle className="w-5 h-5 text-blue-500" />;
 }

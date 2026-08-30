@@ -14,6 +14,7 @@ export interface Requisition {
   supervisorDecision: string | null;
   supervisorComments: string | null;
   supervisorDecidedAt: string | null;
+  alternateRoutedAt?: string | null;
   itPersonnelId: string | null;
   fulfilledAt: string | null;
   fulfillmentNotes: string | null;

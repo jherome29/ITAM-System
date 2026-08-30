@@ -101,6 +101,7 @@ export enum AuditAction {
   FORM_GENERATED   = 'form_generated',
 
   SYSTEM_CONFIG_UPDATED = 'system_config_updated',
+  REQUISITION_REASSIGNED = 'requisition_reassigned',
 }
 
 export enum OfficialFormType {
