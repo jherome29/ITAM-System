@@ -3,8 +3,9 @@
 One-screen map of what the system actually does today. For the detailed
 version see `SYSTEM-STATUS.md` (narrative) and `MOCK-DATA-WIRING.md` (per-screen).
 
-Legend: ✅ real backend + real UI, verified · 🟡 works with a gap / UI is still
-mock / built-but-not-merged · ⬜ planned, no backend yet · 🚫 out of scope.
+Legend: ✅ real backend + real UI, verified · 🟡 works but has a caveat ·
+🔴 UI renders but the data is fake / nothing persists · ⬜ planned, no backend
+yet · 🚫 out of scope.
 
 ---
 
@@ -52,24 +53,36 @@ live by the workflow / watchers / auth. *(built, PR pending)*
 
 ---
 
-## 🟡 Partial / has a known gap
+## 🟡 Works but has a caveat
 
-- **Master Admin governance pages** — access reviews, org units, approval-route
-  config, custodian coverage, system-events feed, scheduled-jobs status: UI
-  exists but is mock (`admin.mock.ts`), no backend at all. *Biggest remaining chunk.*
-- **Management dashboard charts** — trend / utilisation panels show "Preview
-  data"; no trends endpoint yet.
-- **Approving Officer `approval-history`, Property Officer `disposal` / `audit`** —
-  still the generic mock list; the backend exists, just needs wiring (one-liners).
-- **COA form templates** — all 18 render, but fields/signatories need correcting
-  against the real references (Move-In/Move-Out property-type bug, RSMI zeroed
-  cost, WMR & IIRUP missing sections).
 - **Alternate approver** — after an SLA hand-off the backup inherits an
   already-blown deadline with no fresh clock or second escalation (deliberate:
   "one hop, no chain"); "unavailable until <date>" is date-granularity (expires
   ~08:00 that day).
-- **Employee "my assigned assets"** slice — shows preview data (needs an
-  assigned-to-me asset filter).
+- **COA form templates** — all 18 render, but fields/signatories need correcting
+  against the real references (Move-In/Move-Out property-type bug, RSMI zeroed
+  cost, WMR & IIRUP missing sections).
+
+---
+
+## 🔴 Still on mock data (UI renders, nothing real behind it)
+
+- **Master Admin** — access reviews, org units, approval-route config, custodian
+  coverage, master/reference data, system health & jobs, security policies. All
+  `admin.mock.ts`; **no backend at all** (biggest remaining chunk). Dashboard: 2
+  of 6 panels are real.
+- **Management dashboards** — trend / utilisation / KPI chart panels show
+  "Preview data" (no trends endpoint).
+- **Employee** — "my assigned assets" panel (preview data); Returns & Incidents
+  tab (in-memory only, nothing persists).
+- **Approving Officer** — `approval-history` list (backend exists — needs wiring).
+- **Property Officer** — `disposal`, `audit` (backend exists — needs wiring);
+  `corrections`, `reconciliation`, `replacements` (no backend).
+- **Generic fallthrough** — any role + screen not on the live-fetch allow-list
+  renders `WorkflowPage.tsx` mock rows by default.
+- **Dead mock code** — `lib/services/mock-*.service.ts` (×5), `laptops.mock.ts`
+  + `LaptopAssetDetail/Form`, `AssetInventoryGallery.tsx`, `RoleDashboard.tsx`:
+  unreferenced, safe to delete.
 
 ---
 
@@ -81,8 +94,9 @@ live by the workflow / watchers / auth. *(built, PR pending)*
   damage/loss/theft report + audit.
 - **Physical count / reconciliation** — blocks the RPCI / RPCPPE / Physical Count
   Summary reports and the physical-inventory screens.
-- **Alternate approver refinements** — alternate-of-the-alternate chains, fresh
-  SLA clock on hand-off, notify the away primary. *(none planned; listed for clarity)*
+- **Master Admin governance backend** — the modules behind the 🔴 Master Admin
+  screens above.
+- **Trends / utilisation endpoint** — for the 🔴 Management chart panels.
 
 ---
 
@@ -90,4 +104,4 @@ live by the workflow / watchers / auth. *(built, PR pending)*
 
 Procurement / supplier management · financial accounting / payroll / depreciation ·
 external gov integrations (PhilGEPS, COA eNGAS) · HR management · native mobile app ·
-actual disposal execution (manual COA process).
+actual disposal execution (manual COA process) · alternate-of-the-alternate chains.
