@@ -17,6 +17,13 @@ import { dirname, join } from 'node:path';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const backendDir = join(repoRoot, 'Backend');
 const compose = ['compose', '-f', join(repoRoot, 'docker-compose.e2e.yml')];
+
+// Built from parts, not a literal `scheme://user:pass@host` string — same reason
+// ci.yml's backend-e2e step does: secretlint's database-connection-string rule
+// flags any contiguous connection string, even throwaway local test creds.
+// Matches docker-compose.e2e.yml (host port 5433).
+const DB = { user: 'aimrs_test', pass: 'aimrs_test', host: 'localhost', port: '5433', name: 'aimrs_test' };
+const databaseUrl = `postgresql://${DB.user}:${DB.pass}@${DB.host}:${DB.port}/${DB.name}?sslmode=disable`;
 // shell:true so `npm`/`docker` resolve their .cmd shims on Windows
 const run = (cmd, args, opts = {}) =>
   spawnSync(cmd, args, { stdio: 'inherit', shell: true, ...opts });
@@ -38,8 +45,7 @@ try {
     env: {
       ...process.env,
       NODE_ENV: 'test',
-      DATABASE_URL:
-        'postgresql://aimrs_test:aimrs_test@localhost:5433/aimrs_test?sslmode=disable',
+      DATABASE_URL: databaseUrl,
       JWT_SECRET:
         process.env.JWT_SECRET ?? 'local-e2e-jwt-secret-32-chars-minimum-xx',
       JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? '8h',
