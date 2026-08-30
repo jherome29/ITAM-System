@@ -11,26 +11,27 @@ import * as bcrypt from 'bcrypt';
 import { UserRole } from '../../../packages/shared/src/enums';
 
 // ── Helper — build a mock UserEntity ─────────────────────────────────────────
-const makeUser = (overrides: Partial<UserEntity> = {}): UserEntity => ({
-  id: 'user-uuid-1',
-  employeeId: 'EMP-001',
-  firstName: 'Juan',
-  lastName: 'dela Cruz',
-  email: 'juan@cicc.gov.ph',
-  passwordHash: '',
-  role: UserRole.EMPLOYEE,
-  division: 'CISD',
-  officeOrSection: 'IT',
-  isActive: true,
-  failedLoginAttempts: 0,
-  lockedUntil: null,
-  tokenVersion: 0,
-  refreshTokenHash: null,
-  refreshTokenExpiresAt: null,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  ...overrides,
-}) as UserEntity;
+const makeUser = (overrides: Partial<UserEntity> = {}): UserEntity =>
+  ({
+    id: 'user-uuid-1',
+    employeeId: 'EMP-001',
+    firstName: 'Juan',
+    lastName: 'dela Cruz',
+    email: 'juan@cicc.gov.ph',
+    passwordHash: '',
+    role: UserRole.EMPLOYEE,
+    division: 'CISD',
+    officeOrSection: 'IT',
+    isActive: true,
+    failedLoginAttempts: 0,
+    lockedUntil: null,
+    tokenVersion: 0,
+    refreshTokenHash: null,
+    refreshTokenExpiresAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  }) as UserEntity;
 
 // ── Build the QB chain mock that AuthService uses ────────────────────────────
 const makeQb = (resolvedUser: UserEntity | null) => ({
