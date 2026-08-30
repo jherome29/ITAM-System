@@ -50,6 +50,7 @@ const makeReq = (
     slaDeadline: new Date(Date.now() + 24 * 60 * 60 * 1_000),
     slaBreachNotifiedAt: null,
     pendingNudgeNotifiedAt: null,
+    alternateRoutedAt: null,
     items: [],
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -693,16 +694,23 @@ describe('RequisitionsService', () => {
     });
 
     it('keeps the primary when the primary has no alternate designated', async () => {
-      mockUsersService.findSupervisorForSection.mockResolvedValue({
+      // The primary IS away (isUnavailable → true for sup-uuid-1) but has no
+      // alternate on file. Every other attribute is that of a usable supervisor,
+      // so the ONLY reason routing is skipped is the missing alternateApproverId
+      // — this isolates the `&& supervisor.alternateApproverId` short-circuit.
+      const awayNoAlternate = {
         ...primary,
+        isActive: true,
+        role: UserRole.SUPERVISOR,
+        unavailable: true,
+        unavailableUntil: null,
         alternateApproverId: null,
-      });
+      };
+      mockUsersService.findSupervisorForSection.mockResolvedValue(
+        awayNoAlternate,
+      );
       mockUsersService.findOne.mockImplementation((id: string) =>
-        Promise.resolve(
-          id === 'emp-uuid-1'
-            ? requester
-            : { ...primary, alternateApproverId: null },
-        ),
+        Promise.resolve(id === 'emp-uuid-1' ? requester : awayNoAlternate),
       );
 
       await service.create(
@@ -717,6 +725,10 @@ describe('RequisitionsService', () => {
         unknown
       >;
       expect(saved.supervisorId).toBe('sup-uuid-1');
+      expect(saved.alternateRoutedAt).toBeUndefined();
+      expect(mockAuditService.log).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: AuditAction.REQUISITION_REASSIGNED }),
+      );
     });
   });
 
@@ -1563,6 +1575,14 @@ describe('RequisitionsService', () => {
       getMany: jest.fn().mockResolvedValue(rows),
     });
 
+    // Default: the breached requisition's supervisor has no alternate on file,
+    // so the reassignment resolution yields "no hand-off" and only the
+    // slaBreachNotifiedAt stamp is written. Tests that exercise reassignment
+    // override findOne with their own implementation.
+    beforeEach(() => {
+      mockUsersService.findOne.mockResolvedValue({ alternateApproverId: null });
+    });
+
     it('notifies supervisor, requester, every system_admin and every management user once, then stamps the requisition', async () => {
       const breached = makeReq({
         id: 'r1',
@@ -1654,12 +1674,16 @@ describe('RequisitionsService', () => {
       expect(mockReqRepo.update).not.toHaveBeenCalled();
     });
 
-    it('reassigns a breached requisition to the current supervisor\'s alternate and notifies + audits once', async () => {
+    it("reassigns a breached requisition to the current supervisor's alternate and notifies + audits once", async () => {
       const breached = makeReq({
-        id: 'r9', requestNumber: 'REQ-9', supervisorId: 'sup-a', requestedById: 'emp-9',
+        id: 'r9',
+        requestNumber: 'REQ-9',
+        supervisorId: 'sup-a',
+        requestedById: 'emp-9',
         status: RequisitionStatus.PENDING_SUPERVISOR,
         slaDeadline: new Date(Date.now() - 60_000),
-        slaBreachNotifiedAt: null, alternateRoutedAt: null,
+        slaBreachNotifiedAt: null,
+        alternateRoutedAt: null,
       });
       mockReqRepo.createQueryBuilder.mockReturnValue({
         where: jest.fn().mockReturnThis(),
@@ -1669,38 +1693,67 @@ describe('RequisitionsService', () => {
       mockUsersService.findByRole.mockResolvedValue([]);
       mockUsersService.isUnavailable = jest.fn().mockReturnValue(false);
       mockUsersService.findOne.mockImplementation((id: string) => {
-        if (id === 'sup-a') return Promise.resolve({ id: 'sup-a', firstName: 'Sam', lastName: 'Ang', alternateApproverId: 'sup-b' });
-        if (id === 'sup-b') return Promise.resolve({ id: 'sup-b', role: UserRole.SUPERVISOR, isActive: true, alternateApproverId: null });
-        if (id === 'emp-9') return Promise.resolve({ id: 'emp-9', role: UserRole.EMPLOYEE });
+        if (id === 'sup-a')
+          return Promise.resolve({
+            id: 'sup-a',
+            firstName: 'Sam',
+            lastName: 'Ang',
+            alternateApproverId: 'sup-b',
+          });
+        if (id === 'sup-b')
+          return Promise.resolve({
+            id: 'sup-b',
+            role: UserRole.SUPERVISOR,
+            isActive: true,
+            alternateApproverId: null,
+          });
+        if (id === 'emp-9')
+          return Promise.resolve({ id: 'emp-9', role: UserRole.EMPLOYEE });
         return Promise.resolve(null);
       });
       mockReqRepo.update.mockResolvedValue({ affected: 1 });
 
       await service.checkSlaBreaches();
 
+      // I5 — the stamp and the reassignment land in ONE write, so a crash
+      // between two writes can't leave the row stamped-but-unrouted.
+      expect(mockReqRepo.update).toHaveBeenCalledTimes(1);
       expect(mockReqRepo.update).toHaveBeenCalledWith('r9', {
+        slaBreachNotifiedAt: expect.any(Date),
         supervisorId: 'sup-b',
         alternateRoutedAt: expect.any(Date),
       });
       expect(mockNotifService.notify).toHaveBeenCalledWith(
-        'sup-b', NotificationAlertType.ALTERNATE_APPROVER,
-        expect.any(String), expect.any(String), 'r9', 'requisition',
+        'sup-b',
+        NotificationAlertType.ALTERNATE_APPROVER,
+        expect.any(String),
+        expect.any(String),
+        'r9',
+        'requisition',
       );
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
           action: AuditAction.REQUISITION_REASSIGNED,
           affectedRecordId: 'r9',
-          metadata: expect.objectContaining({ reason: 'sla_breach', systemInitiated: true, alternateApproverId: 'sup-b' }),
+          metadata: expect.objectContaining({
+            reason: 'sla_breach',
+            systemInitiated: true,
+            alternateApproverId: 'sup-b',
+          }),
         }),
       );
     });
 
     it('does not reassign a requisition already routed to an alternate', async () => {
       const breached = makeReq({
-        id: 'r10', requestNumber: 'REQ-10', supervisorId: 'sup-b', requestedById: 'emp-10',
+        id: 'r10',
+        requestNumber: 'REQ-10',
+        supervisorId: 'sup-b',
+        requestedById: 'emp-10',
         status: RequisitionStatus.PENDING_SUPERVISOR,
         slaDeadline: new Date(Date.now() - 60_000),
-        slaBreachNotifiedAt: null, alternateRoutedAt: new Date(Date.now() - 30_000),
+        slaBreachNotifiedAt: null,
+        alternateRoutedAt: new Date(Date.now() - 30_000),
       });
       mockReqRepo.createQueryBuilder.mockReturnValue({
         where: jest.fn().mockReturnThis(),
@@ -1713,8 +1766,14 @@ describe('RequisitionsService', () => {
       await service.checkSlaBreaches();
 
       // only the slaBreachNotifiedAt stamp update — no supervisor reassignment
-      expect(mockReqRepo.update).toHaveBeenCalledWith('r10', { slaBreachNotifiedAt: expect.any(Date) });
-      expect(mockReqRepo.update).not.toHaveBeenCalledWith('r10', expect.objectContaining({ supervisorId: expect.anything() }));
+      expect(mockReqRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockReqRepo.update).toHaveBeenCalledWith('r10', {
+        slaBreachNotifiedAt: expect.any(Date),
+      });
+      expect(mockReqRepo.update).not.toHaveBeenCalledWith(
+        'r10',
+        expect.objectContaining({ supervisorId: expect.anything() }),
+      );
       expect(mockAuditService.log).not.toHaveBeenCalledWith(
         expect.objectContaining({ action: AuditAction.REQUISITION_REASSIGNED }),
       );
@@ -1722,10 +1781,14 @@ describe('RequisitionsService', () => {
 
     it('sends the breach notice but does not reassign when there is no usable alternate', async () => {
       const breached = makeReq({
-        id: 'r11', requestNumber: 'REQ-11', supervisorId: 'sup-a', requestedById: 'emp-11',
+        id: 'r11',
+        requestNumber: 'REQ-11',
+        supervisorId: 'sup-a',
+        requestedById: 'emp-11',
         status: RequisitionStatus.PENDING_SUPERVISOR,
         slaDeadline: new Date(Date.now() - 60_000),
-        slaBreachNotifiedAt: null, alternateRoutedAt: null,
+        slaBreachNotifiedAt: null,
+        alternateRoutedAt: null,
       });
       mockReqRepo.createQueryBuilder.mockReturnValue({
         where: jest.fn().mockReturnThis(),
@@ -1733,14 +1796,26 @@ describe('RequisitionsService', () => {
         getMany: jest.fn().mockResolvedValue([breached]),
       });
       mockUsersService.findByRole.mockResolvedValue([]);
-      mockUsersService.findOne.mockResolvedValue({ id: 'sup-a', alternateApproverId: null });
+      mockUsersService.findOne.mockResolvedValue({
+        id: 'sup-a',
+        alternateApproverId: null,
+      });
       mockReqRepo.update.mockResolvedValue({ affected: 1 });
 
       await service.checkSlaBreaches();
 
-      const breachNotify = mockNotifService.notify.mock.calls.filter((c) => c[1] === NotificationAlertType.SLA_BREACH);
+      const breachNotify = mockNotifService.notify.mock.calls.filter(
+        (c) => c[1] === NotificationAlertType.SLA_BREACH,
+      );
       expect(breachNotify.length).toBeGreaterThan(0);
-      expect(mockReqRepo.update).not.toHaveBeenCalledWith('r11', expect.objectContaining({ supervisorId: expect.anything() }));
+      expect(mockReqRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockReqRepo.update).toHaveBeenCalledWith('r11', {
+        slaBreachNotifiedAt: expect.any(Date),
+      });
+      expect(mockReqRepo.update).not.toHaveBeenCalledWith(
+        'r11',
+        expect.objectContaining({ supervisorId: expect.anything() }),
+      );
     });
   });
 
@@ -1857,7 +1932,6 @@ describe('RequisitionsService', () => {
 
   describe('Alternate approver — enum + type foundation', () => {
     it('defines a REQUISITION_REASSIGNED audit action', () => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       expect(AuditAction.REQUISITION_REASSIGNED).toBe('requisition_reassigned');
     });
   });

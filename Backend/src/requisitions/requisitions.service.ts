@@ -13,6 +13,7 @@ import { RequisitionEntity } from './entities/requisition.entity';
 import { RequisitionItemEntity } from './entities/requisition-item.entity';
 import { RequisitionApprovalEntity } from './entities/requisition-approval.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
+import { UserEntity } from '../users/entities/user.entity';
 import { AssetsService } from '../assets/assets.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -852,55 +853,68 @@ export class RequisitionsService {
             ),
           ),
         );
-        await this.reqRepo.update(req.id, { slaBreachNotifiedAt: new Date() });
-
-        // Alternate Approver (CLAUDE.md §5, §17) — the breach notices above have
-        // already reached the primary; now hand the requisition to their
-        // alternate if there is a usable one and it has not been routed before.
+        // Alternate Approver (CLAUDE.md §5, §17) — resolve a usable alternate
+        // BEFORE the stamp is written. The `slaBreachNotifiedAt` stamp is what
+        // removes this row from the `slaBreachNotifiedAt IS NULL` query, so the
+        // stamp and the reassignment MUST land in one write: a crash between two
+        // separate writes would leave the requisition marked-as-handled yet
+        // never reassigned. The breach notices above already reached the primary
+        // (still `req.supervisorId` in memory), preserving spec §6.2 ordering.
+        let current: UserEntity | null = null;
+        let alt: UserEntity | null = null;
         if (req.alternateRoutedAt == null && req.supervisorId) {
-          const current = await this.usersService
+          current = await this.usersService
             .findOne(req.supervisorId)
             .catch(() => null);
           const altId = current?.alternateApproverId ?? null;
           if (altId) {
-            const alt = await this.usersService.findOne(altId).catch(() => null);
+            const candidate = await this.usersService
+              .findOne(altId)
+              .catch(() => null);
             if (
-              alt &&
-              alt.isActive &&
-              alt.role === UserRole.SUPERVISOR &&
-              !this.usersService.isUnavailable(alt)
+              candidate &&
+              candidate.isActive &&
+              candidate.role === UserRole.SUPERVISOR &&
+              !this.usersService.isUnavailable(candidate)
             ) {
-              await this.reqRepo.update(req.id, {
-                supervisorId: alt.id,
-                alternateRoutedAt: new Date(),
-              });
-              await this.notificationsService.notify(
-                alt.id,
-                NotificationAlertType.ALTERNATE_APPROVER,
-                'Requisition Reassigned to You (Alternate Approver)',
-                `Requisition ${req.requestNumber} was reassigned to you after its approval SLA passed with no decision from ${current!.firstName} ${current!.lastName}.`,
-                req.id,
-                'requisition',
-              );
-              const requester = await this.usersService
-                .findOne(req.requestedById)
-                .catch(() => null);
-              await this.auditService.log({
-                userId: req.requestedById,
-                userRole: requester?.role ?? UserRole.EMPLOYEE,
-                action: AuditAction.REQUISITION_REASSIGNED,
-                affectedRecordId: req.id,
-                affectedRecordType: 'requisition',
-                ipAddress: '',
-                metadata: {
-                  reason: 'sla_breach',
-                  primaryApproverId: current!.id,
-                  alternateApproverId: alt.id,
-                  systemInitiated: true,
-                },
-              });
+              alt = candidate;
             }
           }
+        }
+
+        await this.reqRepo.update(req.id, {
+          slaBreachNotifiedAt: new Date(),
+          ...(alt
+            ? { supervisorId: alt.id, alternateRoutedAt: new Date() }
+            : {}),
+        });
+
+        if (alt) {
+          await this.notificationsService.notify(
+            alt.id,
+            NotificationAlertType.ALTERNATE_APPROVER,
+            'Requisition Reassigned to You (Alternate Approver)',
+            `Requisition ${req.requestNumber} was reassigned to you after its approval SLA passed with no decision from ${current!.firstName} ${current!.lastName}.`,
+            req.id,
+            'requisition',
+          );
+          const requester = await this.usersService
+            .findOne(req.requestedById)
+            .catch(() => null);
+          await this.auditService.log({
+            userId: req.requestedById,
+            userRole: requester?.role ?? UserRole.EMPLOYEE,
+            action: AuditAction.REQUISITION_REASSIGNED,
+            affectedRecordId: req.id,
+            affectedRecordType: 'requisition',
+            ipAddress: '',
+            metadata: {
+              reason: 'sla_breach',
+              primaryApproverId: current!.id,
+              alternateApproverId: alt.id,
+              systemInitiated: true,
+            },
+          });
         }
       }),
     );
