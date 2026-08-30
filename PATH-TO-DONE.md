@@ -29,15 +29,30 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 
 ## C. Phase 5 — Testing & Evaluation  → `docs/phases/PHASE-5-TESTING.md`
 
-- [ ] **JMeter load test** — 362 concurrent users: login, requisition submit, dashboard, QR scan,
-      approval, report access. Identify + fix bottlenecks.
-- [ ] **OWASP ZAP / ASVS** security scan against the running system; triage findings.
-- [ ] **Formal Jest security suite** — privilege-escalation (Employee → disposal flag → 403),
-      unauthenticated API access → 403, audit-log immutability (no PUT/DELETE). `docs/guides/SECURITY.md`.
-- [ ] Frontend test coverage — there's no coverage gate on `Frontend/` yet (backend has 70%).
-- [ ] **UAT with CICC** — structured instrument for Employees / Supervisors / IT Personnel;
-      measure requisition time, inventory accuracy, access-control enforcement, audit completeness,
-      satisfaction vs the manual process.
+> **Sequencing decision (2026-08-30):** everything here except the security Jest suite
+> tests the *whole system surface*, so running it before the build is functionally
+> complete means re-running / re-triaging it after every new module. Do those **once, at
+> the end**, on prod-like infra. The security suite is the exception — security tests
+> *accumulate*, they don't expire when features are added — so its skeleton is being
+> built **now** as a permanent CI gate.
+
+- [~] **Formal Jest security suite** — *started now.* `Backend/test/security.e2e-spec.ts`
+      already has 401 (no token), 403 (wrong role), audit-log immutability (no PUT/DELETE +
+      DB trigger). Adding: tampered JWT → 401, account lockout → 401 + non-revealing
+      message, rate-limit → 429, SQL-injection / extra-field DTO → 400, no
+      `passwordHash`/`refreshTokenHash` in any response. Per-module privilege-escalation
+      cases get added as those modules land. `docs/guides/SECURITY.md`.
+      - [ ] **Check first:** does the app have rate limiting (`@nestjs/throttler`)? If not,
+            the 429 scenario is a *fix*, not just a test.
+- [ ] Frontend test coverage — no coverage gate on `Frontend/` yet (backend has 70%).
+- [ ] **OWASP ZAP scan** *(after the build)* — you run ZAP against the running system,
+      save the PDF; then paste HIGH findings for fixes (`PHASE-5-TESTING.md` §5.3–5.4).
+- [ ] **JMeter load test** *(after the build)* — 362 users, 60s ramp, the 4 hot endpoints.
+      Needs a **production build**, a **dedicated Postgres** (Supabase dev caps connections
+      ~60), and **realistic data volume**. The `.jmx` plan can be authored earlier.
+- [ ] **UAT with CICC** *(after the build)* — structured instrument for Employees /
+      Supervisors / IT Personnel; measure requisition time, inventory accuracy,
+      access-control enforcement, audit completeness, satisfaction vs the manual process.
 
 ## D. Production readiness  → CLAUDE.md §2, §13, §15  (blocked on CICC server access)
 
