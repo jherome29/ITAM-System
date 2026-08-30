@@ -9,6 +9,7 @@ import { AuditModule } from '../audit/audit.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { AssetsModule } from '../assets/assets.module';
+import { SystemConfigModule } from '../system-config/system-config.module';
 
 // SVC: Engage & Design and Transition — multi-level approval workflow
 
@@ -29,6 +30,7 @@ import { AssetsModule } from '../assets/assets.module';
     // already forms a resolvable cycle, so RequisitionsModule → AssetsModule
     // needs the matching forwardRef.
     forwardRef(() => AssetsModule),
+    SystemConfigModule,
   ],
   controllers: [RequisitionsController],
   providers: [RequisitionsService],

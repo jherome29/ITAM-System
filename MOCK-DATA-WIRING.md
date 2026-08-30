@@ -5,9 +5,10 @@ connect to (frontend client → backend endpoint → DB), and what is just dead 
 delete. Hand a role section to a teammate; hand this whole file back to an LLM to
 resume the migration.
 
-**Snapshot:** 2026-08-29 · working tree of branch `feature/notifications-auto-fire-sla-cron`.
-The porting work below is already on `origin/main` (see callout); this branch adds the
-notifications/SLA commits on top and is not upstream yet.
+**Snapshot:** 2026-08-29 · `origin/develop`. The redesigned-layout port is on `origin/main`
+(see callout). Since then: notifications/SLA (**PR #84**) and replacement validation
+(**PR #86**) are merged to `develop`; System Config is built and manually verified but its
+PR to `develop` is **still open** (branch `feature/system-config`).
 
 > **2026-08-29:** notifications are now real for **every** role. The new-layout
 > `[[...slug]]` routers for Approving Officer, Property Custodian, Property Officer,
@@ -45,8 +46,9 @@ notifications/SLA commits on top and is not upstream yet.
 | Generic mock page | `Frontend/components/prototype/WorkflowPage.tsx` | drives the new-layout list pages a role router does NOT special-case; an `isLiveFetchPage` allow-list decides mock vs real per role+slug |
 
 **Backend modules that exist:** `assets`, `audit`, `auth`, `notifications`, `reports`,
-`requisitions`, `scheduler`, `users`.
-**Do NOT exist yet:** system-config, returns/incidents, physical-count / reconciliation,
+`requisitions`, `scheduler`, `system-config` (new — `feature/system-config`, PR pending),
+`users`.
+**Do NOT exist yet:** returns/incidents, physical-count / reconciliation,
 inventory-corrections, replacement-validation, and every Master-Admin governance domain
 (access reviews, org units, approval-route config, custodian coverage, reference/master
 data, system-events feed, scheduled-jobs status).
@@ -93,7 +95,7 @@ reports (`ReportsContent`), audit, notifications all real. Nothing.
 | Screen | Mock source | Connect to | Backend / DB work |
 |---|---|---|---|
 | Dashboard · Users (CRUD) · Role assignment · Audit trail · Notifications | — | `usersApi`, `auditApi`, `NotificationsContent` | none — LIVE |
-| **System Configuration** (`admin/config/page.tsx`) | hard-coded form, false-success banner, nothing persists | new `configApi` | **new backend module** (Part D #2) — SLA target (24 h), stock thresholds, approval routes, lockout/session policy; single settings table or key-value config |
+| **System Configuration** — Master Admin → System Settings (`AdminPlatformPages.tsx` → `SystemSettingsPage`, `/master-admin/configuration`) | **LIVE** (`feature/system-config`, PR pending) — `systemConfigApi` load/save, load-error retry. Old `/admin/config` page **deleted**. | `systemConfigApi` → `GET`/`PATCH /api/v1/system-config` | **core done** — `system-config` module: key-value `system_config` table, admin-only + audited, SLA hours / reorder level / useful-life years / max login attempts. Still pending in `SystemSettingsPage`: the numbering / notifications / forms & print / data retention / localization tabs (labelled "not yet configurable"), `reference-data`, + deferred settings (approval routes, session policy, PPE cost threshold) |
 
 ### Management — `app/management/*` — PARTIAL (near-LIVE)
 Dashboard KPI cards + SLA panel real (`reportsApi.kpi()`); reports and audit trail real.
@@ -159,10 +161,10 @@ Dashboard KPIs (`reportsApi.kpi()`), all 4 report tabs (`ReportsContent`), `form
 ## Part D — Backend work that does not exist yet
 
 1. **`assets` — custodian/assignee filter.** `GET /v1/assets` has `page,limit,search,status,assetType`. Add `custodianId` (or `assignedToMe`) so Employee "assigned assets" / dashboard can be real.
-2. **System Config module.** Store for SLA target, stock thresholds, approval routes, lockout/session policy. Consumed by old `admin/config` + Master Admin `configuration` / `reference-data`.
+2. ~~**System Config module.**~~ **Core done — `feature/system-config`, PR pending.** Key-value `system_config` table + `GET`/`PATCH /api/v1/system-config` (admin-only, audited); SLA hours / default reorder level / useful-life years / max login attempts, read live by `requisitions.service`, the low-stock watcher, and `auth.service`. UI = **Master Admin → System Settings** (`SystemSettingsPage`); old `/admin/config` deleted. Still open: `SystemSettingsPage`'s other tabs + `reference-data` on this module; approval routes + session policy deferred.
 3. **Returns / Incidents module.** Entity + endpoints for return request, repair request, damage/loss/theft report + audit logging. Consumed by Employee "Returns & Incidents".
 4. **Physical count / reconciliation.** Consumed by `physical-inventory` slugs (IT Asset Custodian, Property Custodian) and Property Officer `reconciliation`; also fixes the known RPCI / RPCPPE / Physical Count Summary report gap.
-5. **Replacement-validation rules.** Consumed by Property Officer `replacements` — useful-life / condition / loss-damage checks before a replacement requisition (CLAUDE.md §17).
+5. ~~**Replacement-validation rules.**~~ **Backend done — merged to `develop` via PR #86.** `validateReplacement()` runs inside `requisitions.service.create()` (useful-life / condition checks, requester-must-be-custodian; useful-life read live from System Config). The Property Officer `replacements` screen is still `WorkflowPage` mock — wiring it to a standalone view of this is the remaining FE task.
 6. **Master-Admin governance domains** (all 100 % mock in `admin.mock.ts`): access-review workflow, org-unit registry, approval-route config, custodian-coverage report, reference/master-data CRUD, system-events feed, scheduled-jobs status (may expose from `scheduler`).
 7. **Trends / utilization reporting** endpoint — for the "Preview data" chart panels on the Management and Management&Audit dashboards.
 

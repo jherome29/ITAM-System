@@ -13,6 +13,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
+import { SystemConfigModule } from './system-config/system-config.module';
 import { SnakeNamingStrategy } from './common/snake-naming.strategy';
 
 @Module({
@@ -87,6 +88,7 @@ import { SnakeNamingStrategy } from './common/snake-naming.strategy';
     NotificationsModule,
     ReportsModule,
     SchedulerModule,
+    SystemConfigModule,
   ],
   providers: [
     // Rate limiting enforced globally on every route (SECURITY.md §3)

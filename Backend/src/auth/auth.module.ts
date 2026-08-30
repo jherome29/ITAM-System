@@ -9,6 +9,7 @@ import { JwtStrategy } from './guards/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { UserEntity } from '../users/entities/user.entity';
 import { AuditModule } from '../audit/audit.module';
+import { SystemConfigModule } from '../system-config/system-config.module';
 
 // SVC: Design & Transition — RBAC enforcement, JWT session management
 // Security by Design: bcrypt hashing, account lockout, JWT rotation
@@ -30,6 +31,7 @@ import { AuditModule } from '../audit/audit.module';
     }),
     TypeOrmModule.forFeature([UserEntity]),
     AuditModule,
+    SystemConfigModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, RolesGuard],

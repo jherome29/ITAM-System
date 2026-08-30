@@ -33,11 +33,8 @@ import {
   AssetClass,
   AssetCondition,
 } from '../../../packages/shared/src/enums';
-import {
-  SLA_APPROVAL_HOURS,
-  USEFUL_LIFE_YEARS,
-} from '../../../packages/shared/src/constants';
 import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
+import { SystemConfigService } from '../system-config/system-config.service';
 
 // SVC: Engage & Design and Transition — multi-level approval workflow
 // Approval routing (CLAUDE.md section 6, Module 2):
@@ -63,6 +60,7 @@ export class RequisitionsService {
     private readonly auditService: AuditService,
     private readonly notificationsService: NotificationsService,
     private readonly usersService: UsersService,
+    private readonly systemConfig: SystemConfigService,
   ) {}
 
   // ── Role-filtered list ─────────────────────────────────────────────────────
@@ -270,10 +268,11 @@ export class RequisitionsService {
       return 'condition';
     }
 
+    const usefulLife = this.systemConfig.getUsefulLifeYears()[asset.assetClass];
     const ageYears =
       (Date.now() - new Date(asset.acquisitionDate).getTime()) /
       (365.25 * 24 * 60 * 60 * 1_000);
-    if (ageYears >= USEFUL_LIFE_YEARS[asset.assetClass]) {
+    if (ageYears >= usefulLife) {
       return 'useful_life';
     }
 
@@ -281,7 +280,7 @@ export class RequisitionsService {
     throw new BadRequestException(
       `Replacement not justified: "${asset.itemDescription}" is serviceable and ` +
         `within its useful life (acquired ${acquired}; ` +
-        `${USEFUL_LIFE_YEARS[asset.assetClass]}-year threshold for ${asset.assetClass}).`,
+        `${usefulLife}-year threshold for ${asset.assetClass}).`,
     );
   }
 
@@ -318,8 +317,9 @@ export class RequisitionsService {
     const count = await this.reqRepo.count();
     const requestNumber = `REQ-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
     const submittedAt = new Date();
+    const slaHours = this.systemConfig.getSlaApprovalHours();
     const slaDeadline = new Date(
-      submittedAt.getTime() + SLA_APPROVAL_HOURS * 60 * 60 * 1_000,
+      submittedAt.getTime() + slaHours * 60 * 60 * 1_000,
     );
 
     const req = this.reqRepo.create({
@@ -757,7 +757,7 @@ export class RequisitionsService {
 
   // ── SLA breach check — called by a scheduled job (SchedulerService) ───────
   // SVC: Improve — audit-readiness: surface pending_supervisor requisitions that
-  // have blown the SLA_APPROVAL_HOURS approval window. Fires exactly once per
+  // have blown the configured SLA approval window. Fires exactly once per
   // requisition (dedup via slaBreachNotifiedAt) and reaches the Module 5 alert
   // recipient set: the nominated supervisor, the requester, and every
   // System Administrator + Management user for oversight. Returns the count of
@@ -765,6 +765,7 @@ export class RequisitionsService {
   // owns the -1 "errored" sentinel).
   async checkSlaBreaches(): Promise<number> {
     const now = new Date();
+    const slaHours = this.systemConfig.getSlaApprovalHours();
     const breached = await this.reqRepo
       .createQueryBuilder('r')
       .where('r.status = :status', {
@@ -792,7 +793,7 @@ export class RequisitionsService {
               uid,
               NotificationAlertType.SLA_BREACH,
               'SLA Breach — Requisition Overdue',
-              `Requisition ${req.requestNumber} has exceeded the ${SLA_APPROVAL_HOURS}-hour approval SLA.`,
+              `Requisition ${req.requestNumber} has exceeded the ${slaHours}-hour approval SLA.`,
               req.id,
               'requisition',
             ),
@@ -807,7 +808,7 @@ export class RequisitionsService {
 
   // ── Pending-approval nudge — called by the same scheduled job ─────────────
   // SVC: Engage — Module 5 alert: a requisition still sitting in
-  // pending_supervisor once it has burned through half the SLA_APPROVAL_HOURS
+  // pending_supervisor once it has burned through half the configured SLA
   // approval window — but before the deadline itself, since breached ones are
   // checkSlaBreaches' job — earns its nominated supervisor a single reminder.
   // Deduped via pendingNudgeNotifiedAt so a supervisor is nudged at most once
@@ -815,8 +816,9 @@ export class RequisitionsService {
   // SchedulerService.runWatcher owns the -1 "errored" sentinel).
   async checkPendingApprovalNudges(): Promise<number> {
     const now = new Date();
+    const slaHours = this.systemConfig.getSlaApprovalHours();
     const nudgeThreshold = new Date(
-      now.getTime() - (SLA_APPROVAL_HOURS / 2) * 60 * 60 * 1000,
+      now.getTime() - (slaHours / 2) * 60 * 60 * 1000,
     );
 
     const pending = await this.reqRepo
@@ -836,7 +838,7 @@ export class RequisitionsService {
             req.supervisorId,
             NotificationAlertType.PENDING_APPROVAL,
             'Requisition Approaching its Approval SLA',
-            `Requisition ${req.requestNumber} has been awaiting your approval for over ${SLA_APPROVAL_HOURS / 2} hours.`,
+            `Requisition ${req.requestNumber} has been awaiting your approval for over ${Math.round(slaHours / 2)} hours.`,
             req.id,
             'requisition',
           );
