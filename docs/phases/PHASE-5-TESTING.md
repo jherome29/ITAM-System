@@ -19,6 +19,12 @@ CLAUDE.md + SECURITY.md
 
 ## Step 5.1 — Jest Security Tests
 
+> **Can start before the rest of Phase 5.** Security tests accumulate rather than
+> expire when new features are added, so seeding this suite early gives you a CI
+> gate that catches regressions during the remaining build. Steps 5.3–5.5 (ZAP,
+> JMeter, UAT) test the whole system surface and are best run once, at the end.
+> Seeded 2026-08-30 — see `PATH-TO-DONE.md` §C.
+
 Paste this into Claude Code to generate the security test suite:
 
 ```
