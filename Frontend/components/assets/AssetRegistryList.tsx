@@ -20,6 +20,9 @@ import {
 import { assetsApi, type Asset } from "@/lib/api/assets";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { LoadingSkeleton } from "@/components/ui/LoadingSkeleton";
+import { CenteredModal } from "@/components/ui/CenteredModal";
+import { Toast } from "@/components/ui/Toast";
+import { RegisterAssetForm } from "@/components/assets/RegisterAssetForm";
 
 const STATUS_OPTIONS = [
   "registered",
@@ -177,6 +180,9 @@ export function AssetRegistryList({
   const [filterStatus, setFilterStatus] = useState("");
   const [filterClass, setFilterClass] = useState("");
   const [view, setView] = useState<"grid" | "list">("grid");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [toast, setToast] = useState("");
 
   useEffect(() => {
     assetsApi
@@ -200,7 +206,7 @@ export function AssetRegistryList({
         setError("The asset registry could not be loaded. Please try again.");
       })
       .finally(() => setLoading(false));
-  }, [page, search, filterStatus, filterClass, assetType]);
+  }, [page, search, filterStatus, filterClass, assetType, refreshKey]);
 
   const startRecord = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const endRecord = Math.min(page * PAGE_SIZE, total);
@@ -240,13 +246,14 @@ export function AssetRegistryList({
           >
             <QrCode className="h-4 w-4" /> Scan tag
           </Link>
-          <Link
-            href={`${basePath}/new`}
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
             className="inline-flex h-10 items-center gap-2 rounded-md bg-blue-700 px-4 text-sm font-bold text-white shadow-sm hover:bg-blue-800"
           >
             <Plus className="h-4 w-4" />{" "}
             {assetType === "Supplies" ? "Record stock" : "Add asset"}
-          </Link>
+          </button>
         </div>
       </header>
 
@@ -412,6 +419,30 @@ export function AssetRegistryList({
           showQuantity={assetType === "Supplies"}
         />
       )}
+
+      <CenteredModal
+        open={createOpen}
+        title={
+          assetType === "Supplies" ? "Record New Stock" : "Register New Asset"
+        }
+        description="All fields marked * are required. Complete per CICC asset tagging procedure."
+        onClose={() => setCreateOpen(false)}
+      >
+        <RegisterAssetForm
+          basePath={basePath}
+          embedded
+          defaultAssetType={assetType ?? "ICT"}
+          onCancel={() => setCreateOpen(false)}
+          onCreated={(asset) => {
+            setCreateOpen(false);
+            setLoading(true);
+            setPage(1);
+            setRefreshKey((current) => current + 1);
+            setToast(`${asset.itemDescription} was registered successfully.`);
+          }}
+        />
+      </CenteredModal>
+      <Toast message={toast} />
     </div>
   );
 }
