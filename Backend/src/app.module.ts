@@ -13,6 +13,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
+import { HealthController } from './health/health.controller';
 import { SystemConfigModule } from './system-config/system-config.module';
 import { SnakeNamingStrategy } from './common/snake-naming.strategy';
 
@@ -56,15 +57,22 @@ import { SnakeNamingStrategy } from './common/snake-naming.strategy';
         logging: config.get<string>('NODE_ENV') === 'development',
         // Converts camelCase entity properties to snake_case DB columns (employee_id, etc.)
         namingStrategy: new SnakeNamingStrategy(),
-        // Supabase (dev) and managed production Postgres require SSL with real
-        // certificate validation — rejectUnauthorized:false disables MITM
-        // protection on the primary DB connection and must never be used.
-        // CI's e2e Postgres is a local, unencrypted Docker service container
-        // (NODE_ENV=test) — SSL must be off there or the connection fails outright.
-        ssl:
-          config.get<string>('NODE_ENV') === 'test'
-            ? false
-            : { rejectUnauthorized: true },
+        // TLS on the primary DB connection. Default is verified SSL — required by
+        // Supabase (dev) and managed production Postgres. DATABASE_SSL overrides:
+        //   'disable'    → no SSL          (local docker-compose / CI Postgres)
+        //   'no-verify'  → SSL, cert NOT verified (a dev box behind a TLS-
+        //                  intercepting proxy — set this in Backend/.env, never
+        //                  in code)
+        //   unset/other  → SSL, full certificate verification (production)
+        // NODE_ENV=test keeps the historical "no SSL" default for CI's throwaway
+        // e2e Postgres when DATABASE_SSL is not set.
+        ssl: ((): boolean | { rejectUnauthorized: boolean } => {
+          const mode = config.get<string>('DATABASE_SSL');
+          if (mode === 'disable') return false;
+          if (mode === 'no-verify') return { rejectUnauthorized: false };
+          if (!mode && config.get<string>('NODE_ENV') === 'test') return false;
+          return { rejectUnauthorized: true };
+        })(),
       }),
     }),
 
@@ -90,6 +98,7 @@ import { SnakeNamingStrategy } from './common/snake-naming.strategy';
     SchedulerModule,
     SystemConfigModule,
   ],
+  controllers: [HealthController],
   providers: [
     // Rate limiting enforced globally on every route (SECURITY.md §3)
     { provide: APP_GUARD, useClass: ThrottlerGuard },
