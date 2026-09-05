@@ -55,6 +55,9 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me-32-chars-min}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:3000}
+      DB_POOL_MAX: ${DB_POOL_MAX:-20}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-60}
+      THROTTLE_TTL: ${THROTTLE_TTL:-60000}
     ports:
       - '3001:3001'
     healthcheck:

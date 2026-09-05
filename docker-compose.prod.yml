@@ -32,6 +32,11 @@ services:
       # Number of proxy hops to trust so req.ip / audit logs record the real
       # client IP. CICC IT's proxy must forward X-Forwarded-For.
       TRUST_PROXY: ${TRUST_PROXY:-1}
+      # DB connection pool ceiling (keep <= Postgres max_connections) and the
+      # per-IP rate limit (requests / THROTTLE_TTL ms).
+      DB_POOL_MAX: ${DB_POOL_MAX:-20}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-60}
+      THROTTLE_TTL: ${THROTTLE_TTL:-60000}
     ports:
       - '3001:3001'
     healthcheck:
