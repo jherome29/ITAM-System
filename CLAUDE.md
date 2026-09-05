@@ -5,7 +5,6 @@
 > **Academic Institution:** University of Santo Tomas, College of Information and Computing Sciences, Department of Information Systems
 > **Capstone Group:** Casambros, Nelson James · Montaniel, Andrei Fredrick · Ocampo, Jherome Luis · Valenton, Jairus Nathan
 > **Adviser:** Asst. Prof. Arne B. Barcelo, PhD
-> **Target Completion:** October 2026
 
 ---
 
@@ -512,7 +511,7 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 ### Stress/Performance Testing (Apache JMeter)
 - Simulates 362 concurrent users performing: login, requisition submission, dashboard view, QR scan, approval, report access
 - Identifies performance bottlenecks before deployment
-- Run during Testing & Evaluation phase (Aug 16 – Sep 15, 2026)
+- Run during the Testing & Evaluation phase
 
 ### User Acceptance Testing (UAT)
 - Structured evaluation instrument for Employees, Supervisors, IT Personnel
@@ -574,15 +573,17 @@ Every user story must include security acceptance criteria:
 
 ---
 
-## 14. Project Timeline
+## 14. Project Phases
 
-| Phase | Duration | Deliverable |
-|---|---|---|
-| Planning & Requirements Analysis | Feb 25 – Mar 31, 2026 | Requirements documentation, stakeholder interviews |
-| System Design | Apr 1 – May 15, 2026 | Architecture, DB schema, UI mockups, SVC mapping |
-| **System Development** | **Jun 1 – Aug 15, 2026** | **← WE ARE HERE** All core modules implemented |
-| Testing & Evaluation | Aug 16 – Sep 15, 2026 | Unit, stress, UAT, security testing |
-| Deployment & Acceptance | Sep 16 – Oct 5, 2026 | Final system, documentation, CICC handover |
+Sequence only — dates are tracked in the team's own schedule, not here.
+
+| Phase | Deliverable |
+|---|---|
+| Planning & Requirements Analysis | Requirements documentation, stakeholder interviews |
+| System Design | Architecture, DB schema, UI mockups, SVC mapping |
+| System Development | All core modules implemented |
+| Testing & Evaluation | Unit, stress, UAT, security testing |
+| Deployment & Acceptance | Final system, documentation, CICC handover |
 
 ---
 
