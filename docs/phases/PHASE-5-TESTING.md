@@ -153,6 +153,14 @@ Explain what caused it and what the fix does.
 Apache JMeter tests performance under load — simulating
 362 concurrent users as stated in CLAUDE.md.
 
+> **Early k6 baseline already run** (`perf/`, 2026-09-06) — an approximation of
+> this on `GET /assets` only, against a docker Postgres seeded to ~CICC scale
+> (`perf/seed-volume.sql`): 362 VUs, 22,962 requests, **0 failures, p95 758 ms**
+> on a single contended machine. It de-risks this step but does **not** replace
+> it — the formal JMeter run covers all workflows on prod-like infra and is the
+> number for the paper. Run `k6 run perf/load-assets.js` anytime for a quick
+> re-check. See `perf/README.md`.
+
 1. Download Apache JMeter from `https://jmeter.apache.org`
 2. Create a test plan:
    - Thread Group: 362 threads (users)

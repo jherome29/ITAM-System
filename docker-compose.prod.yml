@@ -1,33 +1,72 @@
-version: '3.9'
+# Production topology — CICC-managed host. Build context is the repo root.
+# The database is external (CICC-managed Postgres); only the two app services
+# run here. TLS terminates at CICC IT's reverse proxy in front of these ports.
+#
+# Required env (compose fails fast if unset):
+#   DATABASE_URL  JWT_SECRET  JWT_REFRESH_SECRET  ALLOWED_ORIGIN
+#   NEXT_PUBLIC_API_URL   (browser-facing backend URL — baked at image build)
+#
+#   docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml up -d
 
 services:
   backend:
     build:
-      context: ./Backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Backend/Dockerfile
       target: production
+    image: aimrs-backend:latest
     container_name: aimrs_backend_prod
     restart: always
     environment:
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: ${DATABASE_URL}
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
-      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      # Leave unset for verified TLS to a managed Postgres; 'disable' only if the
+      # DB genuinely speaks no TLS on the CICC network.
+      DATABASE_SSL: ${DATABASE_SSL:-}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:?ALLOWED_ORIGIN is required}
+      # Number of proxy hops to trust so req.ip / audit logs record the real
+      # client IP. CICC IT's proxy must forward X-Forwarded-For.
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      # DB connection pool ceiling (keep <= Postgres max_connections) and the
+      # per-IP rate limit (requests / THROTTLE_TTL ms).
+      DB_POOL_MAX: ${DB_POOL_MAX:-20}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-60}
+      THROTTLE_TTL: ${THROTTLE_TTL:-60000}
     ports:
       - '3001:3001'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3001/api/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   frontend:
     build:
-      context: ./Frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Frontend/Dockerfile
       target: production
+      args:
+        # NEXT_PUBLIC_* are inlined by `next build` — must be a build arg, not a
+        # runtime env, or the browser bundle calls the wrong API host.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
+        NEXT_PUBLIC_APP_NAME: AIMRS
+    image: aimrs-frontend:latest
     container_name: aimrs_frontend_prod
     restart: always
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-      NEXT_PUBLIC_APP_NAME: AIMRS
+    depends_on:
+      backend:
+        condition: service_healthy
     ports:
       - '3000:3000'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
