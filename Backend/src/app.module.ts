@@ -13,6 +13,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
+import { HealthController } from './health/health.controller';
 import { SystemConfigModule } from './system-config/system-config.module';
 import { SnakeNamingStrategy } from './common/snake-naming.strategy';
 
@@ -56,25 +57,46 @@ import { SnakeNamingStrategy } from './common/snake-naming.strategy';
         logging: config.get<string>('NODE_ENV') === 'development',
         // Converts camelCase entity properties to snake_case DB columns (employee_id, etc.)
         namingStrategy: new SnakeNamingStrategy(),
-        // Supabase (dev) and managed production Postgres require SSL with real
-        // certificate validation — rejectUnauthorized:false disables MITM
-        // protection on the primary DB connection and must never be used.
-        // CI's e2e Postgres is a local, unencrypted Docker service container
-        // (NODE_ENV=test) — SSL must be off there or the connection fails outright.
-        ssl:
-          config.get<string>('NODE_ENV') === 'test'
-            ? false
-            : { rejectUnauthorized: true },
+        // TLS on the primary DB connection. Default is verified SSL — required by
+        // Supabase (dev) and managed production Postgres. DATABASE_SSL overrides:
+        //   'disable'    → no SSL          (local docker-compose / CI Postgres)
+        //   'no-verify'  → SSL, cert NOT verified (a dev box behind a TLS-
+        //                  intercepting proxy — set this in Backend/.env, never
+        //                  in code)
+        //   unset/other  → SSL, full certificate verification (production)
+        // NODE_ENV=test keeps the historical "no SSL" default for CI's throwaway
+        // e2e Postgres when DATABASE_SSL is not set.
+        ssl: ((): boolean | { rejectUnauthorized: boolean } => {
+          const mode = config.get<string>('DATABASE_SSL');
+          if (mode === 'disable') return false;
+          if (mode === 'no-verify') return { rejectUnauthorized: false };
+          if (!mode && config.get<string>('NODE_ENV') === 'test') return false;
+          return { rejectUnauthorized: true };
+        })(),
+        // Connection pool. pg's default is 10 — too small once the ~362 CICC
+        // users generate concurrent requests (each awaiting a DB round-trip
+        // holds a connection). DB_POOL_MAX tunes it against the Postgres
+        // `max_connections` the deployment allows.
+        extra: {
+          max: parseInt(config.get<string>('DB_POOL_MAX') ?? '20', 10),
+        },
       }),
     }),
 
-    // Rate limiting — OWASP ASVS control against brute-force
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60_000, // 1 minute window
-        limit: 60, // Max 60 requests per minute per IP
-      },
-    ]),
+    // Rate limiting — OWASP ASVS control against brute-force. Per-IP.
+    // Defaults: 60 requests / 60s. THROTTLE_TTL / THROTTLE_LIMIT tune it per
+    // environment (e.g. raised far up for a single-IP load test, since real
+    // users each get their own per-IP budget).
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [
+        {
+          ttl: parseInt(config.get<string>('THROTTLE_TTL') ?? '60000', 10),
+          limit: parseInt(config.get<string>('THROTTLE_LIMIT') ?? '60', 10),
+        },
+      ],
+    }),
 
     // Cron engine for the automated notification watchers (SchedulerModule)
     ScheduleModule.forRoot(),
@@ -90,6 +112,7 @@ import { SnakeNamingStrategy } from './common/snake-naming.strategy';
     SchedulerModule,
     SystemConfigModule,
   ],
+  controllers: [HealthController],
   providers: [
     // Rate limiting enforced globally on every route (SECURITY.md §3)
     { provide: APP_GUARD, useClass: ThrottlerGuard },

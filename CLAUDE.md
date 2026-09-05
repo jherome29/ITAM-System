@@ -5,7 +5,6 @@
 > **Academic Institution:** University of Santo Tomas, College of Information and Computing Sciences, Department of Information Systems
 > **Capstone Group:** Casambros, Nelson James · Montaniel, Andrei Fredrick · Ocampo, Jherome Luis · Valenton, Jairus Nathan
 > **Adviser:** Asst. Prof. Arne B. Barcelo, PhD
-> **Target Completion:** October 2026
 
 ---
 
@@ -299,8 +298,11 @@ Key screens:
 - Audit Trail Page (full immutable log of all system actions with filters)
 
 **Additional admin API endpoints (implemented):**
-- `PATCH /api/v1/users/:id/reset-password` — force-reset a user's password (requires `newPassword` matching full complexity rules); increments `tokenVersion` to invalidate all existing sessions
+- `PATCH /api/v1/users/:id/reset-password` — force-reset a user's password (requires `newPassword` matching full complexity rules); increments `tokenVersion` to invalidate all existing sessions. The IT-Personnel-facing UI is an in-app dialog (`PasswordResetDialog`) with a live complexity checklist — not a `window.prompt`.
 - `PATCH /api/v1/users/:id/unlock` — clear `failedLoginAttempts` and `lockedUntil` on a locked account; use when a user is locked out due to repeated failed login attempts
+- `PATCH /api/v1/users/:id/activate` — reactivate a deactivated account (`isActive = true`, also clears the lockout), audited. The counterpart to `deactivate` — before this there was no way back from `isActive = false` except a direct DB write. The admin UI shows **"Reactivate account"** for inactive accounts.
+
+**Health endpoint (no auth):** `GET /api/health` — runs `SELECT 1`, returns `{ status, db, uptime }`, `503` when the DB is unreachable. Consumed by the `docker-compose*.yml` healthchecks and CICC IT's reverse proxy.
 
 ### Module 5: Notifications & Alerts
 
@@ -486,6 +488,10 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 16. **`TRANSFERRED` lifecycle uses `toLocation`** — The `UpdateLifecycleDto` accepts `toLocation` (string) for the `TRANSFERRED` transition — this is the receiving office/section name. It is stored in the audit log metadata; the asset's `officeOrSection` is not automatically updated.
 17. **`PATCH /api/v1/assets/:id` is for metadata edits only** — This endpoint accepts `UpdateAssetDto` (all 16 non-status fields optional). It does NOT accept `status`, `assetClass`, `assetType`, `qrCode`, `barcodeValue`, `id`, `custodianId`. Status transitions must go through `PATCH /api/v1/assets/:id/lifecycle`. Do not confuse the two endpoints.
 
+18. **Docker build context is the repo root, not `Backend/` or `Frontend/`** — this is an npm-workspaces monorepo and both apps import `packages/shared`. `docker build -f Backend/Dockerfile .` (context `.`) with the Dockerfiles copying `packages/shared` beside the app. Reverting to `context: ./Backend` re-breaks the build (the `../../../packages/shared` import escapes the context). There is one root `package-lock.json` — no per-workspace lockfiles.
+
+19. **DB TLS is `DATABASE_SSL`-driven** — default (unset) is verified SSL. `disable` for a local/CI Postgres that speaks no TLS; `no-verify` for a dev machine behind a TLS-intercepting proxy (set it in `Backend/.env`, never in code). This replaced the uncommitted `rejectUnauthorized: false` hack that used to live in `app.module.ts`.
+
 ### Out of Scope (Never Build These)
 - Procurement and supplier management
 - Financial accounting / payroll / depreciation for financial reporting
@@ -512,7 +518,13 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 ### Stress/Performance Testing (Apache JMeter)
 - Simulates 362 concurrent users performing: login, requisition submission, dashboard view, QR scan, approval, report access
 - Identifies performance bottlenecks before deployment
-- Run during Testing & Evaluation phase (Aug 16 – Sep 15, 2026)
+- Run during the Testing & Evaluation phase — needs a prod-like environment, a dedicated Postgres, and realistic data volume. The `.jmx` plan can be authored earlier.
+
+### Load-test baseline (k6) — `perf/`
+- An early first-pass check that de-risks the formal JMeter run — **not** a replacement for it, and deliberately **not** a CI gate.
+- `perf/load-assets.js` ramps to 362 VUs on `GET /api/v1/assets`; `perf/seed-volume.sql` brings a throwaway docker Postgres to ~CICC scale (362 users / 2,000 assets / 8,000 audit rows). `perf/README.md` has the procedure.
+- Baseline (2026-09-06, single contended machine): 362 VUs, 0 errors, p95 758 ms. The DB query is ~1 ms; latency under load is the single Node event loop serialising work — if the formal test confirms it at scale, the answer is 2–4 backend replicas behind a load balancer (a small compose change), not a code rewrite.
+- Pool + rate-limit are now env-tunable — `DB_POOL_MAX` (default 20, was pg's 10), `THROTTLE_LIMIT` / `THROTTLE_TTL` (defaults 60 / 60 s per IP, unchanged).
 
 ### User Acceptance Testing (UAT)
 - Structured evaluation instrument for Employees, Supervisors, IT Personnel
@@ -549,6 +561,12 @@ Promotion flow: `feature/<ticket-id>-<desc>` → `develop` → `main`
 | `develop` | Integration — all feature work lands here first | `shared-pkg`, `backend-ci`, `frontend-ci`, `backend-e2e` | 1 |
 | `feature/<ticket-id>-<desc>` | Individual feature work | CI runs on push, no gate | 0 |
 
+> CI also runs a **`docker-build`** job on every push — validates both compose
+> files and builds both Dockerfiles' `production` target (the app images were
+> never built in CI before, only the e2e Postgres container). Currently
+> non-gating; promote it to a required check on `main` once it has run green
+> for a while.
+
 #### Branch Protection Summary
 - `feature/*` — no protection (developer pushes freely)
 - `develop` — requires PR + 1 review + `backend-ci`, `frontend-ci`, `backend-e2e`, `shared-pkg` green
@@ -574,15 +592,17 @@ Every user story must include security acceptance criteria:
 
 ---
 
-## 14. Project Timeline
+## 14. Project Phases
 
-| Phase | Duration | Deliverable |
-|---|---|---|
-| Planning & Requirements Analysis | Feb 25 – Mar 31, 2026 | Requirements documentation, stakeholder interviews |
-| System Design | Apr 1 – May 15, 2026 | Architecture, DB schema, UI mockups, SVC mapping |
-| **System Development** | **Jun 1 – Aug 15, 2026** | **← WE ARE HERE** All core modules implemented |
-| Testing & Evaluation | Aug 16 – Sep 15, 2026 | Unit, stress, UAT, security testing |
-| Deployment & Acceptance | Sep 16 – Oct 5, 2026 | Final system, documentation, CICC handover |
+Sequence only — dates are tracked in the team's own schedule, not here.
+
+| Phase | Deliverable |
+|---|---|
+| Planning & Requirements Analysis | Requirements documentation, stakeholder interviews |
+| System Design | Architecture, DB schema, UI mockups, SVC mapping |
+| System Development | All core modules implemented |
+| Testing & Evaluation | Unit, stress, UAT, security testing |
+| Deployment & Acceptance | Final system, documentation, CICC handover |
 
 ---
 
@@ -598,18 +618,26 @@ cd Frontend && npm install
 cd ../Backend && npm install
 
 # Environment variables (never commit .env files)
-# Backend/.env
-DATABASE_URL=postgresql://...         # Supabase during dev
-JWT_SECRET=...                        # Strong random string
-JWT_EXPIRES_IN=8h
-SUPABASE_URL=...                      # Dev/test only
-SUPABASE_ANON_KEY=...                 # Dev/test only
+# Backend/.env — copy Backend/.env.example, which documents every var:
+#   DATABASE_URL      Supabase (dev) / raw PG (prod)
+#   DATABASE_SSL      unset = verified TLS · 'disable' (local docker/CI) ·
+#                     'no-verify' (dev box behind a TLS-intercepting proxy —
+#                     set here, never in code; replaces the old app.module.ts hack)
+#   DB_POOL_MAX       pg pool ceiling (default 20)
+#   JWT_SECRET / JWT_REFRESH_SECRET   >= 32 random chars (Joi-enforced at startup)
+#   ALLOWED_ORIGIN    CORS origin
+#   TRUST_PROXY       proxy hops to trust so audit-log IPs are the real client
+#                     (set 1 in prod behind CICC IT's proxy; unset when direct)
+#   THROTTLE_LIMIT / THROTTLE_TTL     per-IP rate limit (default 60 / 60000ms)
+#   SUPABASE_URL / SUPABASE_ANON_KEY  dev/test only
 
 # Frontend/.env.local
 NEXT_PUBLIC_API_URL=http://localhost:3001/api
 
-# Docker (recommended for consistent dev environment)
-docker-compose up --build
+# Docker (recommended for consistent dev environment). Build context is the
+# repo root (npm workspaces); the dev compose runs postgres:16 and applies all
+# Database/schemas/*.sql + the dev seed on first boot.
+docker compose up --build
 
 # Run tests
 cd Backend && npm run test           # Unit tests
