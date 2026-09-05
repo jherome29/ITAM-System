@@ -6,10 +6,15 @@ const nextConfig: NextConfig = {
     root: path.resolve(__dirname, ".."),
   },
   async rewrites() {
+    // Same-origin /api/* proxy for when NEXT_PUBLIC_API_URL is unset. Defaults to
+    // localhost for non-container dev; in Docker/prod set BACKEND_INTERNAL_URL to
+    // the backend service (e.g. http://backend:3001).
+    const backend =
+      process.env.BACKEND_INTERNAL_URL ?? "http://127.0.0.1:3001";
     return [
       {
         source: "/api/:path*",
-        destination: "http://127.0.0.1:3001/api/:path*",
+        destination: `${backend}/api/:path*`,
       },
     ];
   },
