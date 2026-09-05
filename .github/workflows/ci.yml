@@ -186,3 +186,31 @@ jobs:
           JWT_SECRET: ci-test-jwt-secret-32-chars-minimum
           JWT_EXPIRES_IN: 8h
           NODE_ENV: test
+
+  # ── Docker Build ─────────────────────────────────────────────────────────
+  # Both Dockerfiles build from the repo root (npm-workspaces monorepo). This
+  # job catches a broken Dockerfile / import path before the CICC handover. It
+  # is build-only — a full `compose up` + smoke needs a DB and is covered by
+  # backend-e2e. Add buildx `type=gha` caching here if build time becomes a pain.
+  docker-build:
+    name: Docker Build
+    needs: shared-pkg
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Validate compose files
+        run: |
+          docker compose -f docker-compose.yml config -q
+          DATABASE_URL=placeholder JWT_SECRET=placeholder JWT_REFRESH_SECRET=placeholder \
+          ALLOWED_ORIGIN=http://localhost:3000 NEXT_PUBLIC_API_URL=http://localhost:3001/api \
+            docker compose -f docker-compose.prod.yml config -q
+
+      - name: Build backend image (production target)
+        run: docker build -f Backend/Dockerfile --target production -t aimrs-backend:ci .
+
+      - name: Build frontend image (production target)
+        run: |
+          docker build -f Frontend/Dockerfile --target production \
+            --build-arg NEXT_PUBLIC_API_URL=http://localhost:3001/api \
+            -t aimrs-frontend:ci .
