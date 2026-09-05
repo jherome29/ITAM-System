@@ -106,20 +106,27 @@ void bootstrap(); // void prevents no-floating-promises lint error
 ## 3. Rate Limiting (`Backend/src/app.module.ts`)
 
 Apply rate limiting globally. The login endpoint gets a stricter limit.
+The global window/limit are env-driven (`THROTTLE_TTL` / `THROTTLE_LIMIT`,
+default 60000 ms / 60) so an environment can tune them — e.g. a single-IP
+load test lifts the limit, since real users each get their own per-IP budget.
 
 ```typescript
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [
-    ThrottlerModule.forRoot([
-      {
-        name: 'global',
-        ttl: 60000,   // 1 minute window
-        limit: 100,   // 100 requests per minute per IP (general API)
-      },
-    ]),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [
+        {
+          ttl: parseInt(config.get('THROTTLE_TTL') ?? '60000', 10),
+          limit: parseInt(config.get('THROTTLE_LIMIT') ?? '60', 10),
+        },
+      ],
+    }),
     // ...other modules
   ],
   providers: [
@@ -698,16 +705,24 @@ export enum AuditAction {
 
 ### How to Extract IP from Request
 
+Set `TRUST_PROXY` (Express `trust proxy` in `main.ts`) and read **`req.ip`** —
+it then reflects `X-Forwarded-For` instead of the reverse-proxy's own address,
+so audit entries record the real client. Without `trust proxy`, `req.ip` is the
+proxy for every request (§8.3 requires the client IP on every audit entry).
+
 ```typescript
-// Helper — use in every controller that logs audit events
-function getClientIp(request: Request): string {
-  return (
-    (request.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
-    request.socket.remoteAddress ??
-    'unknown'
-  );
+// main.ts — opt-in so a directly-exposed server can't be fed a spoofed header
+const trustProxy = process.env.TRUST_PROXY;
+if (trustProxy && trustProxy !== 'false' && trustProxy !== '0') {
+  app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
 }
+
+// controllers — just pass req.ip
+this.auditService.log({ /* ... */ ipAddress: req.ip });
 ```
+
+The auth endpoints still parse `X-Forwarded-For` manually as a fallback; new
+code should use `req.ip`.
 
 ---
 
@@ -802,19 +817,38 @@ export function middleware(request: NextRequest) {
 
 All required environment variables. Never commit `.env` files.
 
+Canonical template: **`Backend/.env.example`** (copy to `Backend/.env`).
+
 ```bash
 # Backend/.env
 
 # Database
 DATABASE_URL=postgresql://user:password@host:5432/aimrs_db
 
+# DB TLS. Unset = verified SSL (Supabase, managed prod Postgres — the secure
+# default). 'disable' = no SSL (local docker-compose / CI Postgres). 'no-verify'
+# = SSL but certificate NOT validated — only for a dev machine behind a
+# TLS-intercepting proxy; set it here, NEVER in code. Replaced the old
+# `rejectUnauthorized: false` hardcode in app.module.ts.
+DATABASE_SSL=
+
+# Connection pool ceiling (keep <= Postgres max_connections)
+DB_POOL_MAX=20
+
 # JWT — must be at least 32 random characters (Joi validation enforces this at startup)
 # Generate with: node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 JWT_SECRET=<minimum-64-character-random-string>
+JWT_REFRESH_SECRET=<another-64-character-random-string>
 JWT_EXPIRES_IN=8h
 
 # CORS
 ALLOWED_ORIGIN=http://localhost:3000  # Next.js URL
+
+# Reverse-proxy trust — number of hops. Set to 1 in production (TLS terminates
+# at CICC IT's proxy) so req.ip / audit-log IPs are the real client, not the
+# proxy. Leave unset/0 when the app is directly exposed (X-Forwarded-For is
+# spoofable otherwise).
+TRUST_PROXY=
 
 # Environment
 NODE_ENV=development  # set to 'production' on CICC servers
@@ -823,9 +857,9 @@ NODE_ENV=development  # set to 'production' on CICC servers
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 
-# Rate limiting (optional override)
+# Rate limiting — per IP. Now actually wired (ThrottlerModule.forRootAsync).
 THROTTLE_TTL=60000
-THROTTLE_LIMIT=100
+THROTTLE_LIMIT=60
 
 # Frontend/.env.local
 NEXT_PUBLIC_API_URL=http://localhost:3001/api

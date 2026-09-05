@@ -261,3 +261,4 @@ curl -s -I http://localhost:3001/api/v1/auth/login | grep -i "x-content-type\|x-
 | 10 | Secret Scan | Root | `secretlint "**/*"` | No output |
 | 11 | Dep Audit | Frontend | `npm run audit:check` | No high CVEs |
 | 11a–d | Smoke Tests | — | curl commands | Correct HTTP codes |
+| 12 | Docker build *(only if a `Dockerfile` / `docker-compose*.yml` changed)* | Root | `docker build -f Backend/Dockerfile --target production .` and same for `Frontend/Dockerfile` (`--build-arg NEXT_PUBLIC_API_URL=…`) | Both images build. CI's `docker-build` job runs this on every push. |
