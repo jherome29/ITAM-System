@@ -1,4 +1,10 @@
-version: '3.9'
+# Local development stack. Build context is the repo root (npm-workspaces
+# monorepo). Brings up Postgres + backend + frontend; source dirs are bind-
+# mounted for hot reload. Not used by CI (that runs jest natively) and not the
+# production topology — see docker-compose.prod.yml for that.
+#
+#   POSTGRES_PASSWORD is the only required var; everything else has a dev default.
+#   docker compose up --build
 
 services:
   postgres:
@@ -8,13 +14,22 @@ services:
     environment:
       POSTGRES_DB: aimrs_dev
       POSTGRES_USER: aimrs_user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aimrs_dev_pw}
     ports:
       - '5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./Database/schemas/001_initial_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
-      - ./Database/seeds/001_dev_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
+      # Schema files run in name order on first boot, then the seed. Mounted
+      # individually (not the whole dir) so nothing is written back into
+      # Database/schemas/. Add new schema files here as they are created.
+      - ./Database/schemas/001_initial_schema.sql:/docker-entrypoint-initdb.d/01_initial.sql:ro
+      - ./Database/schemas/002_security_hardening.sql:/docker-entrypoint-initdb.d/02_security.sql:ro
+      - ./Database/schemas/003_property_roles.sql:/docker-entrypoint-initdb.d/03_property_roles.sql:ro
+      - ./Database/schemas/004_supply_stock_and_notification_dedup.sql:/docker-entrypoint-initdb.d/04_supply_stock.sql:ro
+      - ./Database/schemas/005_replacement_validation.sql:/docker-entrypoint-initdb.d/05_replacement.sql:ro
+      - ./Database/schemas/006_system_config.sql:/docker-entrypoint-initdb.d/06_system_config.sql:ro
+      - ./Database/schemas/007_alternate_approver.sql:/docker-entrypoint-initdb.d/07_alternate_approver.sql:ro
+      - ./Database/seeds/001_dev_seed.sql:/docker-entrypoint-initdb.d/99_seed.sql:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U aimrs_user -d aimrs_dev']
       interval: 10s
@@ -23,8 +38,9 @@ services:
 
   backend:
     build:
-      context: ./Backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Backend/Dockerfile
+      target: development
     container_name: aimrs_backend
     restart: unless-stopped
     depends_on:
@@ -33,35 +49,49 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3001
-      DATABASE_URL: ${DATABASE_URL}
-      JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: ${DATABASE_URL:-postgres://aimrs_user:${POSTGRES_PASSWORD:-aimrs_dev_pw}@postgres:5432/aimrs_dev}
+      DATABASE_SSL: disable  # local Postgres container speaks no TLS
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me-at-least-32-chars}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me-32-chars-min}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:3000}
+      DB_POOL_MAX: ${DB_POOL_MAX:-20}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-60}
+      THROTTLE_TTL: ${THROTTLE_TTL:-60000}
     ports:
       - '3001:3001'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3001/api/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     volumes:
-      - ./Backend:/app
-      - /app/node_modules
-    command: npm run start:dev
+      - ./Backend/src:/repo/Backend/src
+      - ./packages/shared/src:/repo/packages/shared/src
 
   frontend:
     build:
-      context: ./Frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Frontend/Dockerfile
+      target: development
     container_name: aimrs_frontend
     restart: unless-stopped
     depends_on:
       - backend
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:3001/api
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001/api}
       NEXT_PUBLIC_APP_NAME: AIMRS
+      # `next dev`'s /api/* rewrite proxies to the backend container, not localhost
+      BACKEND_INTERNAL_URL: http://backend:3001
     ports:
       - '3000:3000'
     volumes:
-      - ./Frontend:/app
-      - /app/node_modules
-      - /app/.next
-    command: npm run dev
+      - ./Frontend/app:/repo/Frontend/app
+      - ./Frontend/components:/repo/Frontend/components
+      - ./Frontend/lib:/repo/Frontend/lib
+      - ./Frontend/public:/repo/Frontend/public
+      - ./packages/shared/src:/repo/packages/shared/src
 
 volumes:
   postgres_data:

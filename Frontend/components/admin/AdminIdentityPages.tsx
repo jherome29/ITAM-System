@@ -38,6 +38,7 @@ function UsersPage() {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [toast, setToast] = useState('');
 
   const fetchUsers = (q?: string) => {
@@ -68,24 +69,13 @@ function UsersPage() {
     }
   };
 
-  const handleUnlock = async (id: string, name: string) => {
+  const handleReactivate = async (id: string, name: string) => {
     try {
-      await usersApi.unlock(id);
+      await usersApi.activate(id);
       fetchUsers(search || undefined);
-      setToast(`${name} unlocked.`);
+      setToast(`${name} reactivated.`);
     } catch {
-      setToast(`Failed to unlock ${name}.`);
-    }
-  };
-
-  const handleResetPassword = async (id: string, name: string) => {
-    const newPassword = window.prompt(`New password for ${name} (must meet complexity rules):`);
-    if (!newPassword) return;
-    try {
-      await usersApi.resetPassword(id, newPassword);
-      setToast(`Password reset for ${name}.`);
-    } catch {
-      setToast(`Failed to reset password for ${name}.`);
+      setToast(`Failed to reactivate ${name}.`);
     }
   };
 
@@ -98,12 +88,97 @@ function UsersPage() {
     </div>
     <SearchToolbar value={search} onChange={handleSearchChange} />
     <Panel title="Account Directory" detail={`${users.length} accounts shown - deactivation preserves audit history`}>
-      {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>User</th><th className={thClass}>Office</th><th className={thClass}>Role</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{users.length === 0 ? <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-400">No accounts found.</td></tr> : users.map((user) => <tr key={user.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelectedId(user.id)} className="text-left"><span className="block font-bold text-slate-950">{userName(user)}</span><span className="text-xs text-slate-500">{user.employeeId} - {user.email}</span></button></td><td className={tdClass}>{user.division} / {user.officeOrSection}</td><td className={tdClass}>{user.role}</td><td className={tdClass}><StatusChip status={user.isActive ? 'Active' : 'Inactive'} tone={user.isActive ? 'green' : 'red'} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View account', onClick: () => setSelectedId(user.id) }, { label: 'Reset password', onClick: () => handleResetPassword(user.id, userName(user)) }, user.isActive ? { label: 'Deactivate account', danger: true, onClick: () => handleDeactivate(user.id, userName(user)) } : { label: 'Unlock account', onClick: () => handleUnlock(user.id, userName(user)) }]} /></td></tr>)}</tbody></table></TableWrap>}
+      {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>User</th><th className={thClass}>Office</th><th className={thClass}>Role</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{users.length === 0 ? <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-400">No accounts found.</td></tr> : users.map((user) => <tr key={user.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelectedId(user.id)} className="text-left"><span className="block font-bold text-slate-950">{userName(user)}</span><span className="text-xs text-slate-500">{user.employeeId} - {user.email}</span></button></td><td className={tdClass}>{user.division} / {user.officeOrSection}</td><td className={tdClass}>{user.role}</td><td className={tdClass}><StatusChip status={user.isActive ? 'Active' : 'Inactive'} tone={user.isActive ? 'green' : 'red'} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View account', onClick: () => setSelectedId(user.id) }, { label: 'Reset password', onClick: () => setResetTarget(user) }, user.isActive ? { label: 'Deactivate account', danger: true, onClick: () => handleDeactivate(user.id, userName(user)) } : { label: 'Reactivate account', onClick: () => handleReactivate(user.id, userName(user)) }]} /></td></tr>)}</tbody></table></TableWrap>}
     </Panel>
-    <DetailDrawer open={Boolean(selected)} title={selected ? userName(selected) : 'Account details'} onClose={() => setSelectedId(null)}>{selected && <div className="space-y-5"><div className="grid grid-cols-2 gap-3">{[['Employee ID', selected.employeeId], ['Account ID', selected.id], ['Email', selected.email], ['Role', selected.role], ['Division', selected.division], ['Office / Section', selected.officeOrSection]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>)}</div><Panel title="Account status"><div className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Status</span><StatusChip status={selected.isActive ? 'Active' : 'Inactive'} tone={selected.isActive ? 'green' : 'red'} /></div></div></Panel>{selected.role === 'supervisor' && <ApprovalRoutingPanel key={selected.id} user={selected} onSaved={(u) => setUsers((prev) => prev.map((x) => (x.id === u.id ? u : x)))} />}<div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => handleResetPassword(selected.id, userName(selected))}>Reset password</SecondaryButton>{selected.isActive ? <SecondaryButton onClick={() => handleDeactivate(selected.id, userName(selected))}>Deactivate account</SecondaryButton> : <SecondaryButton onClick={() => handleUnlock(selected.id, userName(selected))}>Unlock account</SecondaryButton>}</div><p className="text-xs text-slate-500">Actions call the live users API and create append-only audit events.</p></div>}</DetailDrawer>
+    <DetailDrawer open={Boolean(selected)} title={selected ? userName(selected) : 'Account details'} onClose={() => setSelectedId(null)}>{selected && <div className="space-y-5"><div className="grid grid-cols-2 gap-3">{[['Employee ID', selected.employeeId], ['Account ID', selected.id], ['Email', selected.email], ['Role', selected.role], ['Division', selected.division], ['Office / Section', selected.officeOrSection]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>)}</div><Panel title="Account status"><div className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Status</span><StatusChip status={selected.isActive ? 'Active' : 'Inactive'} tone={selected.isActive ? 'green' : 'red'} /></div></div></Panel>{selected.role === 'supervisor' && <ApprovalRoutingPanel key={selected.id} user={selected} onSaved={(u) => setUsers((prev) => prev.map((x) => (x.id === u.id ? u : x)))} />}<div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => setResetTarget(selected)}>Reset password</SecondaryButton>{selected.isActive ? <SecondaryButton onClick={() => handleDeactivate(selected.id, userName(selected))}>Deactivate account</SecondaryButton> : <SecondaryButton onClick={() => handleReactivate(selected.id, userName(selected))}>Reactivate account</SecondaryButton>}</div><p className="text-xs text-slate-500">Actions call the live users API and create append-only audit events.</p></div>}</DetailDrawer>
     <DetailDrawer open={creating} title="Create account" onClose={() => setCreating(false)}><AccountForm onSave={(user) => { setUsers((current) => [user, ...current]); setCreating(false); setToast(`${userName(user)} was added to the account directory.`); }} /></DetailDrawer>
+    <PasswordResetDialog key={resetTarget?.id ?? 'none'} user={resetTarget} onClose={() => setResetTarget(null)} onDone={(name) => setToast(`Password reset for ${name}. They have been signed out of all sessions.`)} />
     <Toast message={toast} />
   </div>;
+}
+
+// Password complexity rules — mirror of ResetPasswordDto in
+// Backend/src/users/dto/user.dto.ts. Kept in sync manually; the server is the
+// real gate and its rejection message is surfaced verbatim on failure.
+const PASSWORD_RULES: ReadonlyArray<{ label: string; test: (v: string) => boolean }> = [
+  { label: 'At least 12 characters', test: (v) => v.length >= 12 },
+  { label: 'An uppercase letter', test: (v) => /[A-Z]/.test(v) },
+  { label: 'A lowercase letter', test: (v) => /[a-z]/.test(v) },
+  { label: 'A number', test: (v) => /\d/.test(v) },
+  { label: 'A special character', test: (v) => /[@$!%*?&#^()\-_=+]/.test(v) },
+];
+
+function PasswordResetDialog({ user, onClose, onDone }: Readonly<{ user: User | null; onClose: () => void; onDone: (name: string) => void }>) {
+  const [value, setValue] = useState('');
+  const [show, setShow] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  if (!user) return null;
+
+  const name = `${user.firstName} ${user.lastName}`;
+  const checks = PASSWORD_RULES.map((rule) => ({ label: rule.label, ok: rule.test(value) }));
+  const valid = checks.every((check) => check.ok);
+
+  const submit = async () => {
+    if (!valid || submitting) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      await usersApi.resetPassword(user.id, value);
+      onDone(name);
+      onClose();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
+      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to reset password.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4">
+      <section className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl">
+        <h2 className="text-lg font-bold text-slate-950">Reset password</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Set a new password for <span className="font-semibold">{name}</span>. They will be signed out of every session and must sign in with the new password.
+        </p>
+        <form className="mt-4 space-y-3" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+          <div>
+            <label htmlFor="reset-password" className="mb-1 block text-xs font-bold text-slate-600">New password</label>
+            <div className="flex gap-2">
+              <input
+                id="reset-password"
+                type={show ? 'text' : 'password'}
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+                autoComplete="new-password"
+                autoFocus
+                className={inputClass}
+              />
+              <button type="button" onClick={() => setShow((current) => !current)} className="rounded-md border border-slate-200 px-3 text-xs font-bold text-slate-600 hover:bg-slate-50">
+                {show ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
+          <ul className="space-y-1 text-xs">
+            {checks.map((check) => (
+              <li key={check.label} className={check.ok ? 'text-green-700' : 'text-slate-500'}>
+                <span aria-hidden="true">{check.ok ? '✓' : '○'}</span> {check.label}
+              </li>
+            ))}
+          </ul>
+          {error && <p className="text-sm text-red-700">{error}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose} className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Cancel</button>
+            <button type="submit" disabled={!valid || submitting} className="rounded-md bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50">
+              {submitting ? 'Resetting…' : 'Reset password'}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
 }
 
 function AccountForm({ onSave }: Readonly<{ onSave: (user: User) => void }>) {

@@ -713,6 +713,39 @@ describe('AssetsService', () => {
         { assetTypeScope: [AssetType.SUPPLIES] },
       );
     });
+
+    it('applies an asset class filter for the registry category selector', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(
+        1,
+        20,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        AssetClass.PPE,
+      );
+      expect(qb.andWhere).toHaveBeenCalledWith('a.assetClass = :assetClass', {
+        assetClass: AssetClass.PPE,
+      });
+    });
+
+    it('rejects an invalid asset class filter', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await expect(
+        service.findAll(
+          1,
+          20,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          'not-a-class',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 
   // ── findCatalogue() — available-only list ─────────────────────────────────

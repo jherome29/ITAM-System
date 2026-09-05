@@ -41,16 +41,17 @@ cicc/
 # 1. Clone and enter the project
 cd cicc
 
-# 2. Copy env files
-cp Backend/.env.example Backend/.env       # Fill in your values
-cp Frontend/.env.local.example Frontend/.env.local
+# 2. Env — Backend/.env.example documents every var
+cp Backend/.env.example Backend/.env       # fill in / adjust
+# (the dev compose has sane defaults for everything but POSTGRES_PASSWORD)
 
-# 3. Start everything
-docker-compose up --build
+# 3. Start everything (build context is the repo root — a workspaces monorepo)
+docker compose up --build
 
-# Frontend → http://localhost:3000
-# Backend API → http://localhost:3001/api
-# PostgreSQL → localhost:5432
+# Frontend  → http://localhost:3000
+# Backend   → http://localhost:3001/api   (health: /api/health)
+# Postgres  → localhost:5432  (all Database/schemas/*.sql + the dev seed
+#             applied on first boot; login: admin@cicc.gov.ph / ChangeMe@1234!)
 ```
 
 ## Quick Start (Without Docker)
@@ -85,9 +86,10 @@ cd Frontend && npm run dev
 | Auth | `/api/v1/auth` | POST /login |
 | Assets | `/api/v1/assets` | GET, POST, PATCH /:id/lifecycle, POST /:id/qr |
 | Requisitions | `/api/v1/requisitions` | GET, POST, POST /:id/approve\|reject\|fulfill |
-| Users | `/api/v1/users` | GET, POST, PATCH /:id/role\|deactivate |
+| Users | `/api/v1/users` | GET, POST, PATCH /:id/role\|deactivate\|activate\|unlock\|reset-password |
 | Notifications | `/api/v1/notifications` | GET, PATCH /read-all |
 | Audit | `/api/v1/audit` | GET (read-only) |
+| Health | `/api/health` | GET (no auth — liveness + DB readiness) |
 | Reports | `/api/v1/reports` | POST /generate, POST /forms/generate |
 
 ## Running Tests

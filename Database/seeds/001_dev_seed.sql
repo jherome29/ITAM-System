@@ -14,7 +14,7 @@ INSERT INTO users (
   'Administrator',
   'admin@cicc.gov.ph',
   -- bcrypt hash of 'ChangeMe@1234!' — MUST be changed on first login
-  '$2b$12$placeholder_hash_replace_before_use',
+  '$2b$12$eZJ/eWOpGS9KMskbB3sNleH9HGl9R9.ULPz/huLKo1XgBCdlUG136',
   'system_admin',
   'IT Division',
   'Systems Administration',
@@ -31,7 +31,7 @@ INSERT INTO users (
   'Sample',
   'ITPersonnel',
   'it.personnel@cicc.gov.ph',
-  '$2b$12$placeholder_hash_replace_before_use',
+  '$2b$12$eZJ/eWOpGS9KMskbB3sNleH9HGl9R9.ULPz/huLKo1XgBCdlUG136',
   'it_personnel',
   'IT Division',
   'IT Operations',

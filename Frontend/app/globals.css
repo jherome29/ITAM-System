@@ -29,3 +29,56 @@ body {
 .employee-dashboard {
   font-family: "Manrope", "Segoe UI", sans-serif;
 }
+
+/*
+ * Custom scrollbars — app-wide.
+ * Replaces the chunky native Windows scrollbar (arrow buttons + solid grey
+ * track) with a slim, floating overlay-style bar. Applied to every scroll
+ * container so it's consistent across all roles and panels.
+ */
+* {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  /* transparent border + content-box clip = the visible thumb is ~4px,
+     inset from the edge, so it reads as a floating pill rather than a bar */
+  background-color: rgba(100, 116, 139, 0.45); /* slate-500 */
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(71, 85, 105, 0.7); /* slate-600 */
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/*
+ * Variant for dark surfaces (the navy role sidebar). Same slim shape, but a
+ * light thumb so it's visible against #0b2038.
+ */
+.scrollbar-on-dark {
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+.scrollbar-on-dark::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.22);
+}
+
+.scrollbar-on-dark::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.4);
+}

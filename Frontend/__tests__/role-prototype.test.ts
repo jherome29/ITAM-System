@@ -27,6 +27,7 @@ describe('role-based sidebar navigation', () => {
     expect(labels).toContain('ICT Reports & Forms');
     expect(labels).not.toContain('Fixed Asset Registry');
     expect(labels).not.toContain('Supply Inventory');
+    expect(labels).not.toContain('Register New Asset');
     expect(hrefs).toContain('/it-asset-custodian/physical-inventory');
   });
 
@@ -36,6 +37,7 @@ describe('role-based sidebar navigation', () => {
     expect(labels).toContain('Supply Inventory');
     expect(labels).not.toContain('ICT Asset Registry');
     expect(labels).not.toContain('ICT Reports & Forms');
+    expect(labels).not.toContain('Register New Asset');
     expect(roleNavigation[ProposedUserRole.PROPERTY_CUSTODIAN].map((item) => item.href)).toContain('/property-custodian/physical-inventory');
   });
 

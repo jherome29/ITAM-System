@@ -91,6 +91,7 @@ export class AssetsService {
     status?: string,
     assetTypeScope?: AssetType[],
     requestedAssetType?: string,
+    requestedAssetClass?: string,
   ) {
     // Narrow within the caller's already-authorized scope only — never widen
     // it. Property Custodian's UI splits Fixed and Supplies into separate
@@ -123,6 +124,17 @@ export class AssetsService {
 
     if (status) {
       qb.andWhere('a.status = :status', { status: status.toLowerCase() });
+    }
+
+    if (requestedAssetClass) {
+      if (
+        !Object.values(AssetClass).includes(requestedAssetClass as AssetClass)
+      ) {
+        throw new BadRequestException('Invalid assetClass filter.');
+      }
+      qb.andWhere('a.assetClass = :assetClass', {
+        assetClass: requestedAssetClass,
+      });
     }
 
     if (search) {

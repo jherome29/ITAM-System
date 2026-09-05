@@ -377,4 +377,44 @@ export class UsersService {
       message: `User ${user.employeeId} (${user.firstName} ${user.lastName}) deactivated`,
     };
   }
+
+  /**
+   * Reactivate a deactivated account. The counterpart to deactivate() — without
+   * it, an admin-deactivated account can only be restored by a direct DB write.
+   * Also clears any login lockout so the account is immediately usable again.
+   * SVC: Plan — account lifecycle management
+   */
+  async activate(
+    id: string,
+    performedById: string,
+    performedByRole: UserRole,
+    ipAddress: string,
+  ): Promise<{ message: string }> {
+    const user = await this.findOne(id);
+    if (user.isActive) {
+      throw new BadRequestException(`User "${id}" is already active`);
+    }
+    await this.userRepo.update(id, {
+      isActive: true,
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+    });
+
+    // NOTE: No dedicated AuditAction for reactivation — reusing USER_UPDATED with
+    // a metadata marker, matching resetPassword()/unlock(). Flagged for the team:
+    // consider adding a USER_REACTIVATED value to AuditAction (packages/shared).
+    await this.auditService.log({
+      userId: performedById,
+      userRole: performedByRole,
+      action: AuditAction.USER_UPDATED,
+      affectedRecordId: id,
+      affectedRecordType: 'user',
+      ipAddress,
+      metadata: { action: 'account_reactivated', employeeId: user.employeeId },
+    });
+
+    return {
+      message: `User ${user.employeeId} (${user.firstName} ${user.lastName}) reactivated`,
+    };
+  }
 }

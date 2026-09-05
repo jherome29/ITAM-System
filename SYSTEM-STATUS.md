@@ -6,6 +6,8 @@ A fast-read gap check. Order of work so far: frontend UI/UX redesign → securit
 
 > **2026-08-27:** the redesigned-layout backend wiring (all 5 phases of the port) is **merged to `main`** via PR #82 → #83. The redesigned roles now call the real backend wherever a backend exists. What's still mock is tracked screen-by-screen in **`MOCK-DATA-WIRING.md`** — it's almost all greenfield backend work (screens whose backend was never built), not missing wires.
 
+> **2026-09-06 (PRs pending):** deploy/infra pass — `chore/docker-compose-fix` makes both Docker images actually build (they never did — a monorepo import escaped the build context) and `docker compose up --build` brings up a working full stack; adds `GET /api/health`, replaces the `rejectUnauthorized: false` code hack with a `DATABASE_SSL` env var, makes the DB pool and rate-limit env-tunable, adds a CI image-build job and a `perf/` k6 load baseline (362 VUs, 0 errors, p95 758 ms). `fix/admin-shell-ui` adds account **reactivation** (`PATCH /users/:id/activate`), an in-app password-reset dialog, and `TRUST_PROXY` so audit-log IPs are the real client behind a proxy. None of this closes the business-logic gaps below.
+
 ## Solid
 
 - **Login and roles are real.** All 7 roles (5 original + Property Custodian/Officer, added this round) authenticate against the real backend and database. No mock login path exists anymore.

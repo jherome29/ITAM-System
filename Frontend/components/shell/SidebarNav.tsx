@@ -36,28 +36,43 @@ export function SidebarNav({
         mobile ? 'h-full' : 'fixed inset-y-0 left-0 z-30 hidden h-screen lg:flex'
       } ${collapsed && !mobile ? 'w-20' : 'w-64'} flex-col bg-[#0b2038] text-white transition-all`}
     >
-      <div className="flex h-16 items-center gap-3 border-b border-white/10 px-4">
-        <span className="grid h-9 w-9 flex-none place-items-center rounded-lg bg-blue-600">
-          <Shield className="h-5 w-5" />
-        </span>
+      <div
+        className={`flex h-16 items-center border-b border-white/10 ${
+          collapsed && !mobile ? 'justify-center px-2' : 'gap-3 px-4'
+        }`}
+      >
         {(!collapsed || mobile) && (
-          <div className="min-w-0">
-            <p className="truncate text-sm font-bold">{appConfig.appName}</p>
-            <p className="truncate text-xs text-blue-200">CICC Asset Mgmt</p>
-          </div>
+          <>
+            <span className="grid h-9 w-9 flex-none place-items-center rounded-lg bg-blue-600">
+              <Shield className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold">{appConfig.appName}</p>
+              <p className="truncate text-xs text-blue-200">CICC Asset Mgmt</p>
+            </div>
+          </>
         )}
         {mobile ? (
           <button type="button" onClick={onClose} className="ml-auto rounded-md p-2 text-blue-100 hover:bg-white/10" aria-label="Close navigation">
             <X className="h-5 w-5" />
           </button>
         ) : (
-          <button type="button" onClick={onToggle} className="ml-auto rounded-md p-2 text-blue-100 hover:bg-white/10" aria-label="Collapse navigation">
+          <button
+            type="button"
+            onClick={onToggle}
+            className={`${collapsed ? '' : 'ml-auto'} rounded-md p-2 text-blue-100 hover:bg-white/10`}
+            aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+          >
             {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </button>
         )}
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">
+      <nav
+        className={`scrollbar-on-dark flex-1 space-y-1 overflow-y-auto py-5 ${
+          collapsed && !mobile ? 'px-2' : 'px-3'
+        }`}
+      >
         {items.map((item, index) => {
           const Icon = item.icon;
           const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -73,7 +88,9 @@ export function SidebarNav({
                 href={item.href}
                 onClick={onClose}
                 title={item.label}
-                className={`flex h-10 items-center gap-3 rounded-md px-3 text-sm font-semibold transition ${
+                className={`flex h-10 items-center rounded-md text-sm font-semibold transition ${
+                  collapsed && !mobile ? 'justify-center px-0' : 'gap-3 px-3'
+                } ${
                   isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-blue-100 hover:bg-white/10 hover:text-white'
                 }`}
               >

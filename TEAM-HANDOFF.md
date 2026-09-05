@@ -2,7 +2,7 @@
 
 > **For:** Nelson James Casambros · Andrei Fredrick Montaniel · Jairus Nathan Valenton
 > **Target Completion:** October 2026
-> **Last updated:** August 30, 2026
+> **Last updated:** September 6, 2026
 
 Read this file first, then **CLAUDE.md** (the single source of truth for the whole project). Everything else is linked from one of these two.
 
@@ -30,7 +30,11 @@ If you have an old local clone with a branch called `FE-Updated-not-finished`: t
 - **PR #87** — System Config module: `system_config` key-value table (migration 006), `GET`/`PATCH /api/v1/system-config` (SYSTEM_ADMIN, audited); SLA hours / reorder level / useful-life years / max login attempts are runtime-tunable and read live. UI: **Master Admin → System Settings**; old `/admin/config` deleted.
 - **PR #89 / #90** — Alternate Approver: designate a backup supervisor; when the primary is marked unavailable (self-service toggle or admin) new requisitions route to the backup at submit; a requisition past its 24 h SLA is reassigned to the backup by the watcher (migration 007, `requisition_reassigned` audit action).
 
-**Open branch awaiting merge:** `chore/phase5-security-tests` — expands `Backend/test/security.e2e-spec.ts` to all 8 PHASE-5-TESTING Step 5.1 scenarios, plus `npm run test:e2e:local` (a throwaway `postgres:16` for running the e2e suite locally the way CI does).
+**Open branches awaiting merge:**
+- `chore/phase5-security-tests` — expands `Backend/test/security.e2e-spec.ts` to all 8 PHASE-5-TESTING Step 5.1 scenarios, plus `npm run test:e2e:local` (a throwaway `postgres:16` for running the e2e suite locally the way CI does).
+- `Jairus/Update-Asset-Registry` — **merged (PR #94)**: asset-registry card layout + register-asset-in-modal + a `requestedAssetClass` list filter.
+- `fix/admin-shell-ui` — shell/admin fixes: dead `/` breadcrumb crumb removed + acronym labels, slim custom scrollbars app-wide, collapsed-sidebar overlap fix, **`PATCH /users/:id/activate`** (reactivate a deactivated account) + an in-app `PasswordResetDialog` (replaces `window.prompt`), Toast auto-dismiss, `TRUST_PROXY` so audit entries log the real client IP behind a proxy, CLAUDE.md §14 date table trimmed.
+- `chore/docker-compose-fix` — the Docker/deploy pass: **both Dockerfiles now build** (were broken — monorepo import escaped `context: ./Backend`; now repo-root context, `node:22-alpine`, non-root, one root lockfile). Compose reworked (root context, all 7 schemas, `/api/health` healthchecks, prod `${VAR:?err}` fail-fast + build args). New `GET /api/health`. `DATABASE_SSL` env replaces the `rejectUnauthorized` hack. `DB_POOL_MAX` / `THROTTLE_LIMIT` / `THROTTLE_TTL` env-tunable. Real bcrypt hash in the dev seed. CI `docker-build` job. `perf/` k6 load baseline (362 VUs, 0 errors, p95 758 ms on a contended single box). `Backend/.env.example` added.
 
 For a one-screen state map see **`FEATURE-STATUS.md`** (✅ / 🟡 / 🔴 mock / ⬜); for the full path to CICC handover see **`PATH-TO-DONE.md`**; for the plain-language gap list see **`SYSTEM-STATUS.md`**; for a screen-by-screen mock inventory see **`MOCK-DATA-WIRING.md`** — all at the repo root.
 
@@ -96,7 +100,7 @@ cd Frontend && npm run dev
 > if ($p) { Stop-Process -Id $p -Force }
 > ```
 
-> **TLS error connecting to Supabase (`self-signed certificate in certificate chain`):** this happens on some machines/networks. `Backend/src/app.module.ts` sets `ssl.rejectUnauthorized: true` by design — do not commit it as `false`. If you hit this locally, it's fine to flip it to `false` **temporarily and locally only** to keep working, and revert before committing. Ask a teammate if you're not sure why this is strict.
+> **TLS error connecting to Supabase (`self-signed certificate in certificate chain`):** this happens on some machines/networks that intercept TLS. There is no longer a code workaround — set **`DATABASE_SSL=no-verify` in `Backend/.env`** and leave `app.module.ts` alone. Default (unset) is verified SSL; `no-verify` only disables the cert check on *your* box. `disable` (no SSL) is for the local docker-compose Postgres.
 
 ---
 

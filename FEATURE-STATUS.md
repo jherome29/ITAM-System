@@ -42,9 +42,17 @@ max login attempts are editable at runtime (System Admin only, audited) and read
 live by the workflow / watchers / auth. *(built, PR pending)*
 
 **Admin & audit**
-- User CRUD, role assignment, unlock, reset-password.
+- User CRUD, role assignment, unlock, **reactivate** (`PATCH /users/:id/activate` —
+  the counterpart to deactivate), reset-password (in-app dialog, not `window.prompt`).
 - Audit trail: every mutation logged append-only (user, action, record, time, IP,
-  role); filterable; full view for Admin + Management.
+  role); filterable; full view for Admin + Management. Behind a proxy the client IP
+  is real when `TRUST_PROXY` is set. *(activate + TRUST_PROXY: `fix/admin-shell-ui`, PR pending)*
+
+**Infra**
+- Docker: both images build (repo-root context), `docker compose up --build` brings up
+  Postgres (all 7 schemas + seed) + backend + frontend with `/api/health` healthchecks.
+  Prod compose fails fast on missing secrets. CI builds both images. *(`chore/docker-compose-fix`, PR pending)*
+- k6 load baseline: 362 VUs, 0 errors, p95 758 ms (single contended box) — see `perf/`.
 
 **Reports & forms**
 - 18 COA form generators (PDF, stored, re-downloadable).

@@ -59,7 +59,10 @@ export const usersApi = {
     client.patch<ApiResponse<User>>(`/v1/users/${id}/role`, { role }).then((r) => r.data),
 
   deactivate: (id: string) =>
-    client.patch<ApiResponse<User>>(`/v1/users/${id}/deactivate`).then((r) => r.data),
+    client.patch<ApiResponse<null>>(`/v1/users/${id}/deactivate`).then((r) => r.data),
+
+  activate: (id: string) =>
+    client.patch<ApiResponse<null>>(`/v1/users/${id}/activate`).then((r) => r.data),
 
   resetPassword: (id: string, newPassword: string) =>
     client.patch<ApiResponse<null>>(`/v1/users/${id}/reset-password`, { newPassword }).then((r) => r.data),

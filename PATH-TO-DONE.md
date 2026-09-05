@@ -50,6 +50,10 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 - [ ] **JMeter load test** *(after the build)* — 362 users, 60s ramp, the 4 hot endpoints.
       Needs a **production build**, a **dedicated Postgres** (Supabase dev caps connections
       ~60), and **realistic data volume**. The `.jmx` plan can be authored earlier.
+  - [x] **k6 baseline done** (`perf/`, `chore/docker-compose-fix`) — 362 VUs on `GET /assets`
+        against a seeded docker Postgres: 0 errors, p95 758 ms on a single contended box.
+        De-risks the formal run; DB query is ~1 ms, the ceiling is the single Node event
+        loop → scale with backend replicas if the formal test confirms it.
 - [ ] **UAT with CICC** *(after the build)* — structured instrument for Employees /
       Supervisors / IT Personnel; measure requisition time, inventory accuracy,
       access-control enforcement, audit completeness, satisfaction vs the manual process.
@@ -57,7 +61,14 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 ## D. Production readiness  → CLAUDE.md §2, §13, §15  (blocked on CICC server access)
 
 - [ ] Real PostgreSQL (CICC-managed), not Supabase — verify all code runs against raw PG.
-- [ ] Real TLS certs from CICC IT — **remove the `rejectUnauthorized: false` workaround** in `app.module.ts`.
+- [x] The `rejectUnauthorized: false` code hack is gone — `app.module.ts` now reads
+      `DATABASE_SSL` (default = verified TLS; `no-verify` is a `.env`-only dev override).
+      With real CICC certs, just leave `DATABASE_SSL` unset.
+- [ ] Set `TRUST_PROXY=1` on the CICC server (behind their reverse proxy) so audit-log
+      IPs are the real client. CICC IT's proxy must forward `X-Forwarded-For`.
+- [ ] Docker: `docker compose -f docker-compose.prod.yml` — external managed Postgres via
+      `DATABASE_URL`, external TLS/reverse-proxy (CICC IT). Both Dockerfiles + compose
+      verified building/running (`chore/docker-compose-fix`).
 - [ ] `prod-server` GitHub Environment + manual approval gate; `docker-compose.prod.yml` shakeout.
 - [ ] Environment config (`.env`) for prod — JWT secret, DB URL, etc., via secrets not files.
 - [ ] Backup / restore procedure + a tested restore.

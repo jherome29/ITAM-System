@@ -683,6 +683,61 @@ describe('UsersService', () => {
     });
   });
 
+  describe('activate()', () => {
+    it('sets isActive=true, clears the lockout, and returns a message', async () => {
+      mockRepo.findOne.mockResolvedValue(
+        makeUser({ isActive: false, failedLoginAttempts: 5 }),
+      );
+      mockRepo.update.mockResolvedValue(undefined);
+
+      const result = await service.activate(
+        'u-1',
+        actorId,
+        actorRole,
+        ipAddress,
+      );
+      expect(mockRepo.update).toHaveBeenCalledWith('u-1', {
+        isActive: true,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      });
+      expect(result.message).toBeDefined();
+    });
+
+    it('throws NotFoundException when user not found', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+      await expect(
+        service.activate('no-id', actorId, actorRole, ipAddress),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws BadRequestException when the account is already active', async () => {
+      mockRepo.findOne.mockResolvedValue(makeUser({ isActive: true }));
+      await expect(
+        service.activate('u-1', actorId, actorRole, ipAddress),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('logs a USER_UPDATED audit entry marked account_reactivated', async () => {
+      mockRepo.findOne.mockResolvedValue(makeUser({ isActive: false }));
+      mockRepo.update.mockResolvedValue(undefined);
+
+      await service.activate('u-1', actorId, actorRole, ipAddress);
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: actorId,
+          userRole: actorRole,
+          action: AuditAction.USER_UPDATED,
+          affectedRecordId: 'u-1',
+          affectedRecordType: 'user',
+          ipAddress,
+          metadata: expect.objectContaining({ action: 'account_reactivated' }),
+        }),
+      );
+    });
+  });
+
   describe('isUnavailable()', () => {
     it('is false when the flag is off, regardless of the date', () => {
       expect(

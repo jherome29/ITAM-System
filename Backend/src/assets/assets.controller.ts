@@ -55,6 +55,7 @@ export class AssetsController {
     @Query('search') search?: string,
     @Query('status') status?: string,
     @Query('assetType') assetType?: string,
+    @Query('assetClass') assetClass?: string,
     @Req() req?: AuthenticatedRequest,
   ) {
     const assetTypeScope = req
@@ -67,6 +68,7 @@ export class AssetsController {
       status,
       assetTypeScope,
       assetType,
+      assetClass,
     );
     return { message: 'Assets retrieved successfully', data: result };
   }

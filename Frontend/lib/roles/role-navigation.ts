@@ -15,7 +15,6 @@ import {
   ListChecks,
   Package,
   PackageCheck,
-  PlusCircle,
   QrCode,
   RefreshCcw,
   Repeat2,
@@ -56,12 +55,6 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
   [ProposedUserRole.IT_ASSET_CUSTODIAN]: [
     { section: 'ICT Lifecycle', label: 'ICT Dashboard', href: '/it-asset-custodian/dashboard', icon: LayoutDashboard },
     { label: 'ICT Asset Registry', href: '/it-asset-custodian/assets', icon: Boxes },
-    // Points at the real, backend-persisted registration form (left over from before the
-    // 7-role redesign — Backend/src/assets create endpoint accepts IT Personnel and
-    // Property Custodian). The ICT Asset Registry's own "Add asset" button above still
-    // opens a frontend-mock drawer; this entry is the actual reachable save path per
-    // SYSTEM-STATUS.md's "no reachable way to register a new asset that saves" gap.
-    { label: 'Register New Asset', href: '/it-personnel/assets/new', icon: PlusCircle },
     { label: 'ICT Requisition Fulfillment', href: '/it-asset-custodian/fulfillment', icon: ListChecks },
     { label: 'Custody & Issuance', href: '/it-asset-custodian/custody', icon: PackageCheck },
     { label: 'QR Scanner', href: '/it-asset-custodian/qr-scanner', icon: QrCode },
@@ -75,10 +68,6 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { section: 'Property Lifecycle', label: 'Property Dashboard', href: '/property-custodian/dashboard', icon: LayoutDashboard },
     { label: 'Fixed Asset Registry', href: '/property-custodian/fixed-assets', icon: Landmark },
     { label: 'Supply Inventory', href: '/property-custodian/supplies', icon: Boxes },
-    // Real, backend-persisted registration form — Backend/src/assets create endpoint
-    // accepts Property Custodian (scoped server-side to Fixed/Supplies asset types).
-    // See the matching note on IT_ASSET_CUSTODIAN's entry above.
-    { label: 'Register New Asset', href: '/it-personnel/assets/new', icon: PlusCircle },
     { label: 'Property Requisition Fulfillment', href: '/property-custodian/fulfillment', icon: ListChecks },
     { label: 'Custody & Issuance', href: '/property-custodian/custody', icon: PackageCheck },
     { label: 'QR Scanner', href: '/property-custodian/qr-scanner', icon: QrCode },

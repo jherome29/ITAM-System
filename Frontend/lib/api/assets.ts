@@ -1,4 +1,4 @@
-import client, { type ApiResponse, type PaginatedResponse } from './client';
+import client, { type ApiResponse, type PaginatedResponse } from "./client";
 
 export interface Asset {
   id: string;
@@ -59,17 +59,17 @@ export interface CreateAssetDto {
   officeOrSection?: string;
   officeLocation?: string;
   condition?: string;
-  quantity?: number;       // IES only — supply stock on hand
-  reorderLevel?: number;   // IES only — low-stock alert threshold
+  quantity?: number; // IES only — supply stock on hand
+  reorderLevel?: number; // IES only — low-stock alert threshold
 }
 
 export interface UpdateLifecycleDto {
   status: string;
   notes?: string;
-  employeeId?: string;          // For ISSUED — backend resolves to custodian UUID
-  toLocation?: string;          // For TRANSFERRED — receiving office/section
+  employeeId?: string; // For ISSUED — backend resolves to custodian UUID
+  toLocation?: string; // For TRANSFERRED — receiving office/section
   fromLocation?: string;
-  expectedReturnDate?: string;  // For ISSUED — arms the overdue-return watcher
+  expectedReturnDate?: string; // For ISSUED — arms the overdue-return watcher
 }
 
 export interface UpdateAssetDto {
@@ -89,37 +89,55 @@ export interface UpdateAssetDto {
   condition?: string;
   supplier?: string;
   dateOfDelivery?: string;
-  quantity?: number;       // IES only — supply stock on hand
-  reorderLevel?: number;   // IES only — low-stock alert threshold
+  quantity?: number; // IES only — supply stock on hand
+  reorderLevel?: number; // IES only — low-stock alert threshold
 }
 
 export const assetsApi = {
-  list: (page = 1, limit = 15, search?: string, status?: string, assetType?: string) => {
+  list: (
+    page = 1,
+    limit = 15,
+    search?: string,
+    status?: string,
+    assetType?: string,
+    assetClass?: string,
+  ) => {
     const params: Record<string, string | number> = { page, limit };
     if (search) params.search = search;
     if (status) params.status = status;
     if (assetType) params.assetType = assetType;
-    return client.get<ApiResponse<PaginatedResponse<Asset>>>('/v1/assets', { params }).then((r) => r.data);
+    if (assetClass) params.assetClass = assetClass;
+    return client
+      .get<ApiResponse<PaginatedResponse<Asset>>>("/v1/assets", { params })
+      .then((r) => r.data);
   },
 
   stats: () =>
-    client.get<ApiResponse<AssetStats>>('/v1/assets/stats').then((r) => r.data),
+    client.get<ApiResponse<AssetStats>>("/v1/assets/stats").then((r) => r.data),
 
   catalogue: () =>
-    client.get<ApiResponse<PaginatedResponse<Asset>>>('/v1/assets/catalogue').then((r) => r.data),
+    client
+      .get<ApiResponse<PaginatedResponse<Asset>>>("/v1/assets/catalogue")
+      .then((r) => r.data),
 
   getOne: (id: string) =>
     client.get<ApiResponse<Asset>>(`/v1/assets/${id}`).then((r) => r.data),
 
   create: (dto: CreateAssetDto) =>
-    client.post<ApiResponse<Asset>>('/v1/assets', dto).then((r) => r.data),
+    client.post<ApiResponse<Asset>>("/v1/assets", dto).then((r) => r.data),
 
   updateLifecycle: (id: string, dto: UpdateLifecycleDto) =>
-    client.patch<ApiResponse<Asset>>(`/v1/assets/${id}/lifecycle`, dto).then((r) => r.data),
+    client
+      .patch<ApiResponse<Asset>>(`/v1/assets/${id}/lifecycle`, dto)
+      .then((r) => r.data),
 
   generateQr: (id: string) =>
-    client.post<ApiResponse<{ qrCode: string }>>(`/v1/assets/${id}/qr`).then((r) => r.data),
+    client
+      .post<ApiResponse<{ qrCode: string }>>(`/v1/assets/${id}/qr`)
+      .then((r) => r.data),
 
   update: (id: string, dto: UpdateAssetDto) =>
-    client.patch<ApiResponse<Asset>>(`/v1/assets/${id}`, dto).then((r) => r.data),
+    client
+      .patch<ApiResponse<Asset>>(`/v1/assets/${id}`, dto)
+      .then((r) => r.data),
 };
