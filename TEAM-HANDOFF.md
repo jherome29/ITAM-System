@@ -2,7 +2,7 @@
 
 > **For:** Nelson James Casambros · Andrei Fredrick Montaniel · Jairus Nathan Valenton
 > **Target Completion:** October 2026
-> **Last updated:** September 6, 2026
+> **Last updated:** September 9, 2026
 
 Read this file first, then **CLAUDE.md** (the single source of truth for the whole project). Everything else is linked from one of these two.
 
@@ -35,6 +35,7 @@ If you have an old local clone with a branch called `FE-Updated-not-finished`: t
 - `Jairus/Update-Asset-Registry` — **merged (PR #94)**: asset-registry card layout + register-asset-in-modal + a `requestedAssetClass` list filter.
 - `fix/admin-shell-ui` — shell/admin fixes: dead `/` breadcrumb crumb removed + acronym labels, slim custom scrollbars app-wide, collapsed-sidebar overlap fix, **`PATCH /users/:id/activate`** (reactivate a deactivated account) + an in-app `PasswordResetDialog` (replaces `window.prompt`), Toast auto-dismiss, `TRUST_PROXY` so audit entries log the real client IP behind a proxy, CLAUDE.md §14 date table trimmed.
 - `chore/docker-compose-fix` — the Docker/deploy pass: **both Dockerfiles now build** (were broken — monorepo import escaped `context: ./Backend`; now repo-root context, `node:22-alpine`, non-root, one root lockfile). Compose reworked (root context, all 7 schemas, `/api/health` healthchecks, prod `${VAR:?err}` fail-fast + build args). New `GET /api/health`. `DATABASE_SSL` env replaces the `rejectUnauthorized` hack. `DB_POOL_MAX` / `THROTTLE_LIMIT` / `THROTTLE_TTL` env-tunable. Real bcrypt hash in the dev seed. CI `docker-build` job. `perf/` k6 load baseline (362 VUs, 0 errors, p95 758 ms on a contended single box). `Backend/.env.example` added.
+- `feature/master-admin-dashboard` — Master Admin governance/platform mock pages + `admin.mock.ts` **cut as out of scope** (2026-09-09); dashboard rebuilt on live data (`GET /api/v1/admin/dashboard-stats`). Then an admin-hardening pass: **force sign-out** (`PATCH /users/:id/revoke-sessions` — bumps `tokenVersion` only), **unlock** wired into the directory + live **Locked** status + role filter, **per-account activity** panel (`GET /audit/user/:id`), **audit date range** (`startDate`/`endDate` on `GET /audit`), **config provenance** (`meta` on `GET /system-config`), **watcher heartbeat** (`GET /notifications/watcher-status`). Backend test-first, +~40 tests (303 total). No schema change.
 
 For a one-screen state map see **`FEATURE-STATUS.md`** (✅ / 🟡 / 🔴 mock / ⬜); for the full path to CICC handover see **`PATH-TO-DONE.md`**; for the plain-language gap list see **`SYSTEM-STATUS.md`**; for a screen-by-screen mock inventory see **`MOCK-DATA-WIRING.md`** — all at the repo root.
 
@@ -118,7 +119,7 @@ cd Frontend && npm run dev
 
 The 2 Property role accounts, scoped to Fixed + Supplies assets, already existed in the shared dev DB but had no known-working password until 2026-08-21, when they were reset via the real `PATCH /api/v1/users/:id/reset-password` endpoint and verified with a live login. If these no longer work, someone has reset them again since — check with the team rather than assuming this doc is wrong.
 
-> If an account is locked (too many failed logins), a System Admin can unlock it: `PATCH /api/v1/users/:id/unlock`, or force a password reset: `PATCH /api/v1/users/:id/reset-password`.
+> If an account is locked (too many failed logins), a System Admin can unlock it: `PATCH /api/v1/users/:id/unlock`, or force a password reset: `PATCH /api/v1/users/:id/reset-password`. To end a suspect session without changing the password: `PATCH /api/v1/users/:id/revoke-sessions` (`feature/master-admin-dashboard`).
 
 Full role details and page routes: **`docs/guides/ROLES.md`**
 
