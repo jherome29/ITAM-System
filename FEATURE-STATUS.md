@@ -36,17 +36,28 @@ yet · 🚫 out of scope.
 - Cron watchers: SLA breach, 12h pending-approval nudge, overdue return, low
   stock — each fires once (dedup), in-system delivery to every relevant role,
   live TopBar bell. Manual `POST /notifications/run-checks` trigger for testing.
+- `GET /notifications/watcher-status` reports the last completed sweep (time,
+  trigger, per-watcher counts); shown on the admin dashboard's Platform-health
+  panel. *(`feature/master-admin-dashboard`, PR pending)*
 
 **System configuration** — SLA hours, default reorder level, useful-life years,
 max login attempts are editable at runtime (System Admin only, audited) and read
-live by the workflow / watchers / auth. *(built, PR pending)*
+live by the workflow / watchers / auth. `GET /system-config` also returns a
+per-key `meta` (`updatedAt` / `updatedBy`), surfaced as "Last changed … by …"
+on System Settings and the dashboard. *(built, PR pending; `meta` on
+`feature/master-admin-dashboard`)*
 
 **Admin & audit**
 - User CRUD, role assignment, unlock, **reactivate** (`PATCH /users/:id/activate` —
-  the counterpart to deactivate), reset-password (in-app dialog, not `window.prompt`).
+  the counterpart to deactivate), reset-password (in-app dialog, not `window.prompt`),
+  **force sign-out** (`PATCH /users/:id/revoke-sessions` — bumps `tokenVersion`
+  only). Directory has a role filter and a live **Locked** status.
 - Audit trail: every mutation logged append-only (user, action, record, time, IP,
-  role); filterable; full view for Admin + Management. Behind a proxy the client IP
-  is real when `TRUST_PROXY` is set. *(activate + TRUST_PROXY: `fix/admin-shell-ui`, PR pending)*
+  role); filterable by action **and date range**; per-account activity drill-down
+  (`GET /audit/user/:id`) shown in the user drawer; full view for Admin + Management.
+  Behind a proxy the client IP is real when `TRUST_PROXY` is set.
+  *(activate + TRUST_PROXY: `fix/admin-shell-ui`; revoke-sessions / role filter /
+  date range / per-user drill-down: `feature/master-admin-dashboard`; both PR pending)*
 
 **Infra**
 - Docker: both images build (repo-root context), `docker compose up --build` brings up
