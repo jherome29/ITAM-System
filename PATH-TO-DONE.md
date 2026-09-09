@@ -15,8 +15,9 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 - [ ] Delete the dead mock code (5 `mock-*.service.ts`, `laptops.mock.ts`, etc.). `MOCK-DATA-WIRING.md` Part A.
 - [ ] **Disposal workflow** — documented flow + COA-required fields. `SYSTEM-STATUS.md` #4.
 - [ ] **Physical count / reconciliation** — unblocks RPCI / RPCPPE / Physical Count Summary. `SYSTEM-STATUS.md` #8.
-- [ ] **Master Admin governance backend** — access reviews, org units, approval routes, custodian
-      coverage, system events, scheduled jobs, reference data (decompose into sub-projects). `SYSTEM-STATUS.md` #7.
+- [x] ~~Master Admin governance backend~~ — **cut as out of scope (2026-09-09).** The mock
+      governance/platform pages + `admin.mock.ts` were deleted; the Master Admin dashboard
+      was rebuilt on live data (`GET /api/v1/admin/dashboard-stats`). `MOCK-DATA-WIRING.md` Part D #6.
 - [ ] **Trends / utilisation endpoint** — for the Management dashboard chart panels. `MOCK-DATA-WIRING.md` Part D #7.
 - [ ] Small wiring leftovers — employee "assigned assets" filter, Returns/Incidents module. `MOCK-DATA-WIRING.md` Part B.
 

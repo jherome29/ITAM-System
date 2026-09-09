@@ -75,10 +75,6 @@ live by the workflow / watchers / auth. *(built, PR pending)*
 
 ## 🔴 Still on mock data (UI renders, nothing real behind it)
 
-- **Master Admin** — access reviews, org units, approval-route config, custodian
-  coverage, master/reference data, system health & jobs, security policies. All
-  `admin.mock.ts`; **no backend at all** (biggest remaining chunk). Dashboard: 2
-  of 6 panels are real.
 - **Management dashboards** — trend / utilisation / KPI chart panels show
   "Preview data" (no trends endpoint).
 - **Employee** — "my assigned assets" panel (preview data); Returns & Incidents
@@ -102,8 +98,6 @@ live by the workflow / watchers / auth. *(built, PR pending)*
   damage/loss/theft report + audit.
 - **Physical count / reconciliation** — blocks the RPCI / RPCPPE / Physical Count
   Summary reports and the physical-inventory screens.
-- **Master Admin governance backend** — the modules behind the 🔴 Master Admin
-  screens above.
 - **Trends / utilisation endpoint** — for the 🔴 Management chart panels.
 
 ---
@@ -112,4 +106,8 @@ live by the workflow / watchers / auth. *(built, PR pending)*
 
 Procurement / supplier management · financial accounting / payroll / depreciation ·
 external gov integrations (PhilGEPS, COA eNGAS) · HR management · native mobile app ·
-actual disposal execution (manual COA process) · alternate-of-the-alternate chains.
+actual disposal execution (manual COA process) · alternate-of-the-alternate chains ·
+Master Admin governance tooling — access reviews, org-unit registry, approval-route
+config UI, custodian-coverage report, reference/master-data CRUD, system health & jobs
+console, security-policy toggles (cut 2026-09-09; roles are code-defined, config lives
+in System Settings, audit lives in the Audit Log).
