@@ -76,7 +76,7 @@ cd Frontend && npm run dev
 | Database (Dev) | Supabase (managed PostgreSQL) |
 | Database (Prod) | CICC-managed PostgreSQL (raw) |
 | Containerization | Docker + Docker Compose |
-| Testing | Jest (170 backend tests + 23 frontend tests, as of 2026-08-21) + JMeter |
+| Testing | Jest (303 backend + 40 frontend tests, as of 2026-09-09) + JMeter |
 | Report Generation | pdfkit (PDF) + exceljs (Excel/XLSX) |
 
 ## API Endpoints
@@ -86,9 +86,10 @@ cd Frontend && npm run dev
 | Auth | `/api/v1/auth` | POST /login |
 | Assets | `/api/v1/assets` | GET, POST, PATCH /:id/lifecycle, POST /:id/qr |
 | Requisitions | `/api/v1/requisitions` | GET, POST, POST /:id/approve\|reject\|fulfill |
-| Users | `/api/v1/users` | GET, POST, PATCH /:id/role\|deactivate\|activate\|unlock\|reset-password |
-| Notifications | `/api/v1/notifications` | GET, PATCH /read-all |
-| Audit | `/api/v1/audit` | GET (read-only) |
+| Users | `/api/v1/users` | GET, POST, PATCH /:id/role\|deactivate\|activate\|unlock\|reset-password\|revoke-sessions |
+| Notifications | `/api/v1/notifications` | GET, PATCH /read-all, POST /run-checks, GET /watcher-status |
+| Audit | `/api/v1/audit` | GET (read-only; `action` + `startDate`/`endDate` filters), GET /user/:id |
+| System Config | `/api/v1/system-config` | GET (with per-key `meta` provenance), PATCH (admin, audited) |
 | Health | `/api/health` | GET (no auth — liveness + DB readiness) |
 | Reports | `/api/v1/reports` | POST /generate, POST /forms/generate |
 

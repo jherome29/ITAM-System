@@ -1,11 +1,28 @@
 import client, { type ApiResponse } from './client';
 
+export interface SystemConfigMeta {
+  updatedAt: string | null; // ISO; null while the built-in default is in effect
+  updatedBy: string | null; // user id of the last editor, or null
+}
+
 export interface SystemConfig {
   slaApprovalHours: number;
   defaultReorderLevel: number;
   usefulLifeYears: { PPE: number; SEP: number; IES: number };
   maxLoginAttempts: number;
+  // Per-key provenance, keyed by the backend CONFIG_KEYS value
+  // (sla_approval_hours, default_reorder_level, useful_life_years,
+  // max_login_attempts). Optional so older responses still type-check.
+  meta?: Record<string, SystemConfigMeta>;
 }
+
+// Backend CONFIG_KEYS values — the keys of SystemConfig.meta.
+export const CONFIG_META_KEYS = {
+  sla: 'sla_approval_hours',
+  reorder: 'default_reorder_level',
+  usefulLife: 'useful_life_years',
+  maxLogin: 'max_login_attempts',
+} as const;
 
 export type UpdateSystemConfigPayload = Partial<
   Omit<SystemConfig, 'usefulLifeYears'>

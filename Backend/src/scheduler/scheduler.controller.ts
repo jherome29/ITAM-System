@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   HttpCode,
   HttpStatus,
@@ -9,7 +10,11 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../../../packages/shared/src/enums';
-import { SchedulerService, CheckSummary } from './scheduler.service';
+import {
+  SchedulerService,
+  CheckSummary,
+  WatcherSweep,
+} from './scheduler.service';
 
 // SVC: Engage — on-demand trigger for the four automated notification watchers.
 // Demo / testing hook: lets a System Administrator run all watchers immediately
@@ -26,5 +31,19 @@ export class SchedulerController {
   async runChecks(): Promise<{ data: CheckSummary; message: string }> {
     const data = await this.scheduler.runAllChecks();
     return { data, message: 'Notification checks executed' };
+  }
+
+  // SVC: Improve — "are the background watchers actually firing?" read-out for
+  // the System Administrator dashboard. Read-only, no audit entry.
+  @Get('watcher-status')
+  @Roles(UserRole.SYSTEM_ADMIN)
+  watcherStatus(): {
+    data: { lastSweep: WatcherSweep | null };
+    message: string;
+  } {
+    return {
+      data: this.scheduler.getWatcherStatus(),
+      message: 'Watcher status retrieved',
+    };
   }
 }

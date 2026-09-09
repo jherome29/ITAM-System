@@ -15,6 +15,7 @@ import { UsersModule } from './users/users.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { HealthController } from './health/health.controller';
 import { SystemConfigModule } from './system-config/system-config.module';
+import { AdminModule } from './admin/admin.module';
 import { SnakeNamingStrategy } from './common/snake-naming.strategy';
 
 @Module({
@@ -111,6 +112,7 @@ import { SnakeNamingStrategy } from './common/snake-naming.strategy';
     ReportsModule,
     SchedulerModule,
     SystemConfigModule,
+    AdminModule,
   ],
   controllers: [HealthController],
   providers: [

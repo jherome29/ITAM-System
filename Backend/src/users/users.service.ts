@@ -347,6 +347,41 @@ export class UsersService {
   }
 
   /**
+   * Force sign-out: invalidate every JWT ever issued for this account without
+   * touching the password, lock state, or active flag. Incrementing
+   * tokenVersion makes JwtStrategy.validate() reject the stale value on the
+   * user's next request (SECURITY.md §4.3). The recoverable middle ground
+   * between "reset their password" and "deactivate the account" when a session
+   * may be compromised or a device was lost.
+   * SVC: Plan — account/session lifecycle management
+   */
+  async revokeSessions(
+    id: string,
+    performedById: string,
+    performedByRole: UserRole,
+    ipAddress: string,
+  ): Promise<{ message: string }> {
+    const user = await this.findOne(id);
+    await this.userRepo.update(id, { tokenVersion: user.tokenVersion + 1 });
+
+    // NOTE: reuses USER_UPDATED with a metadata marker, matching
+    // unlock()/activate()/resetPassword() — audit_logs.action is a native
+    // Postgres enum, so a dedicated value would need a migration. Flagged for
+    // the team alongside the others.
+    await this.auditService.log({
+      userId: performedById,
+      userRole: performedByRole,
+      action: AuditAction.USER_UPDATED,
+      affectedRecordId: id,
+      affectedRecordType: 'user',
+      ipAddress,
+      metadata: { action: 'sessions_revoked', employeeId: user.employeeId },
+    });
+
+    return { message: `All sessions revoked for ${user.employeeId}` };
+  }
+
+  /**
    * Deactivate — NEVER delete.
    * Deletion would break the audit trail referencing this user.
    * SVC: Plan — account lifecycle management

@@ -192,3 +192,71 @@ describe('SystemConfigService — update() + getAll()', () => {
     expect(snap.usefulLifeYears).toEqual(USEFUL_LIFE_YEARS);
   });
 });
+
+describe('SystemConfigService — getMeta() provenance', () => {
+  let service: SystemConfigService;
+  const rows: {
+    key: string;
+    value: unknown;
+    updatedAt?: Date;
+    updatedBy?: string | null;
+  }[] = [];
+  const mockRepo = {
+    find: jest.fn(() => Promise.resolve(rows)),
+    save: jest.fn((row: unknown) => Promise.resolve(row)),
+  };
+
+  const build = async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        SystemConfigService,
+        { provide: getRepositoryToken(SystemConfigEntity), useValue: mockRepo },
+      ],
+    }).compile();
+    const s = module.get(SystemConfigService);
+    await s.onModuleInit();
+    return s;
+  };
+
+  afterEach(() => {
+    rows.length = 0;
+    jest.clearAllMocks();
+  });
+
+  it('reports null/null for a key that has never been persisted', async () => {
+    service = await build();
+    expect(service.getMeta()[CONFIG_KEYS.SLA_APPROVAL_HOURS]).toEqual({
+      updatedAt: null,
+      updatedBy: null,
+    });
+  });
+
+  it('surfaces the stored row updatedAt (ISO) and updatedBy', async () => {
+    rows.push({
+      key: CONFIG_KEYS.SLA_APPROVAL_HOURS,
+      value: 12,
+      updatedAt: new Date('2026-09-01T08:30:00.000Z'),
+      updatedBy: 'admin-9',
+    });
+    service = await build();
+    expect(service.getMeta()[CONFIG_KEYS.SLA_APPROVAL_HOURS]).toEqual({
+      updatedAt: '2026-09-01T08:30:00.000Z',
+      updatedBy: 'admin-9',
+    });
+  });
+
+  it('records the caller and a fresh timestamp after update()', async () => {
+    service = await build();
+    await service.update(CONFIG_KEYS.MAX_LOGIN_ATTEMPTS, 7, 'admin-3');
+    const meta = service.getMeta()[CONFIG_KEYS.MAX_LOGIN_ATTEMPTS];
+    expect(meta.updatedBy).toBe('admin-3');
+    expect(meta.updatedAt).not.toBeNull();
+    expect(Number.isNaN(Date.parse(meta.updatedAt as string))).toBe(false);
+  });
+
+  it('getAll().meta covers every config key', async () => {
+    service = await build();
+    const keys = Object.values(CONFIG_KEYS);
+    expect(Object.keys(service.getAll().meta).sort()).toEqual([...keys].sort());
+  });
+});

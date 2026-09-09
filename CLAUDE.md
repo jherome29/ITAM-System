@@ -299,8 +299,15 @@ Key screens:
 
 **Additional admin API endpoints (implemented):**
 - `PATCH /api/v1/users/:id/reset-password` — force-reset a user's password (requires `newPassword` matching full complexity rules); increments `tokenVersion` to invalidate all existing sessions. The IT-Personnel-facing UI is an in-app dialog (`PasswordResetDialog`) with a live complexity checklist — not a `window.prompt`.
-- `PATCH /api/v1/users/:id/unlock` — clear `failedLoginAttempts` and `lockedUntil` on a locked account; use when a user is locked out due to repeated failed login attempts
+- `PATCH /api/v1/users/:id/unlock` — clear `failedLoginAttempts` and `lockedUntil` on a locked account; use when a user is locked out due to repeated failed login attempts. Surfaced in the Master Admin user directory (row menu + drawer) only while a lockout is actually in force.
 - `PATCH /api/v1/users/:id/activate` — reactivate a deactivated account (`isActive = true`, also clears the lockout), audited. The counterpart to `deactivate` — before this there was no way back from `isActive = false` except a direct DB write. The admin UI shows **"Reactivate account"** for inactive accounts.
+- `PATCH /api/v1/users/:id/revoke-sessions` — force sign-out: bumps `tokenVersion` only (leaves the password, lock state, and `isActive` untouched), so every issued JWT for that account stops validating on the next request. The recoverable middle ground between `reset-password` and `deactivate` when a session may be compromised. Audited as `USER_UPDATED` with `metadata.action = 'sessions_revoked'` (no dedicated `AuditAction` value — the column is a native PG enum). Admin UI: **"Force sign-out"** on active accounts, behind a confirm.
+
+**Master Admin audit surface:** `GET /api/v1/audit` accepts `action`, `startDate`, and `endDate` query params (a bare `YYYY-MM-DD` widens to the whole UTC day, end inclusive). `GET /api/v1/audit/user/:userId` (System Admin only) powers the per-account "Recent activity" panel in the user drawer.
+
+**System configuration provenance:** `GET /api/v1/system-config` responses carry a `meta` map — `{ updatedAt, updatedBy }` per config key, `null`/`null` while the compiled-in default is in effect. Surfaced as "Last changed … by …" on Master Admin → System Settings and a "Runtime config last changed …" line on the admin dashboard.
+
+**Watcher status (no side effects):** `GET /api/v1/notifications/watcher-status` (System Admin only) returns the last completed scheduler sweep — `{ lastSweep: { at, trigger, summary } | null }`, in-memory per instance. Rendered as "Background watchers — <time> · <trigger>" on the admin dashboard's Platform-health panel; the manual `POST /api/v1/notifications/run-checks` trigger is unchanged.
 
 **Health endpoint (no auth):** `GET /api/health` — runs `SELECT 1`, returns `{ status, db, uptime }`, `503` when the DB is unreachable. Consumed by the `docker-compose*.yml` healthchecks and CICC IT's reverse proxy.
 
@@ -382,8 +389,9 @@ Security controls are NOT add-ons — they are embedded from the first line of c
 ### 8.3 Audit Trail
 - Every system transaction logged: user ID, action type, affected record ID, timestamp (UTC), IP address, user role at time of action
 - Audit logs are **append-only** — no update or delete operations on the audit table
-- Full audit log list (`GET /api/v1/audit`) is restricted to System Administrator and Management
+- Full audit log list (`GET /api/v1/audit`) is restricted to System Administrator and Management; filterable by `action` and by `startDate`/`endDate` (server-side)
 - IT Personnel can view transaction history for individual assets they manage via `GET /api/v1/audit/record/:recordId`
+- System Administrator can pull a single account's activity via `GET /api/v1/audit/user/:userId` (shown in the Master Admin user drawer)
 - Logs exportable as PDF/Excel for COA audit purposes
 
 ### 8.4 Data Minimization
@@ -483,7 +491,7 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 11. **`synchronize: false` in TypeORM** — Auto-sync is disabled. Any change to an entity that adds, removes, or alters a column requires a manual SQL migration run in Supabase SQL Editor (dev) or as a migration file (prod). Never re-enable `synchronize: true` — it can destructively drop columns on a schema mismatch.
 12. **SnakeNamingStrategy** — TypeORM is configured with `SnakeNamingStrategy`. Entity property names in camelCase are automatically mapped to snake_case column names in PostgreSQL (e.g., `pdfContent` → `pdf_content`, `createdAt` → `created_at`). Do not specify `@Column({ name: 'snake_case' })` unless overriding the default — it is handled automatically.
 13. **`@IsEnum` required on form DTOs** — The `GenerateFormDto.formType` field must have `@IsEnum(OfficialFormType)` applied. Without it, NestJS `ValidationPipe` passes any string through and the service throws an unhandled runtime error (500). All enum-typed DTO fields must use `@IsEnum()`.
-14. **`tokenVersion` invalidation** — Making two login calls for the same user in the same session increments `tokenVersion` twice, invalidating all previous tokens for that user. Only make one login call per test/simulation per user. The `reset-password` endpoint also increments `tokenVersion` by +1 to force re-authentication.
+14. **`tokenVersion` invalidation** — Making two login calls for the same user in the same session increments `tokenVersion` twice, invalidating all previous tokens for that user. Only make one login call per test/simulation per user. The `reset-password` and `revoke-sessions` endpoints also increment `tokenVersion` by +1 to force re-authentication.
 15. **`ISSUED` lifecycle uses `employeeId`, not `custodianId`** — The `UpdateLifecycleDto` accepts `employeeId` (string, e.g. `CICC-0042`) for the `ISSUED` transition. The backend resolves it to a UUID via `UsersService.findByEmployeeId()` and sets `custodianId`. Never send a raw UUID to the `employeeId` field — it is a CICC employee ID string, not a UUID. The `custodianId` field on the DTO still exists as a fallback but the IT Personnel UI uses `employeeId`.
 16. **`TRANSFERRED` lifecycle uses `toLocation`** — The `UpdateLifecycleDto` accepts `toLocation` (string) for the `TRANSFERRED` transition — this is the receiving office/section name. It is stored in the audit log metadata; the asset's `officeOrSection` is not automatically updated.
 17. **`PATCH /api/v1/assets/:id` is for metadata edits only** — This endpoint accepts `UpdateAssetDto` (all 16 non-status fields optional). It does NOT accept `status`, `assetClass`, `assetType`, `qrCode`, `barcodeValue`, `id`, `custodianId`. Status transitions must go through `PATCH /api/v1/assets/:id/lifecycle`. Do not confuse the two endpoints.

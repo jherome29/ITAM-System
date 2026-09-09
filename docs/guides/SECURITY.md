@@ -267,6 +267,14 @@ if (user.tokenVersion !== payload.tokenVersion) {
 
 **Effect:** A user logging in on Device B immediately invalidates Device A's access token. Device A's next request gets a 401.
 
+**Admin force sign-out.** `PATCH /api/v1/users/:id/revoke-sessions` (System Admin
+only, audited as `USER_UPDATED` / `metadata.action = 'sessions_revoked'`) pulls the
+same lever deliberately: it increments the target's `tokenVersion` and nothing
+else — password, lock state, and `isActive` are untouched — so every JWT ever
+issued for that account fails `JwtStrategy.validate()` on its next request. Use it
+when a session may be compromised or a device was lost; it is fully recoverable
+(the user just signs in again), unlike `deactivate`.
+
 ---
 
 ### 4.4 JWT Access Token
@@ -414,7 +422,9 @@ async findAll() {
 > input validation / SQLi, no credential fields in responses). Run it with
 > `cd Backend && npm run test:e2e:local -- security.e2e-spec` (needs Docker); it
 > also runs in CI's `backend-e2e` job. Add a per-endpoint 403 case here as each
-> new guarded route lands.
+> new guarded route lands — still owed for `PATCH /api/v1/users/:id/revoke-sessions`
+> and `GET /api/v1/notifications/watcher-status` (both `SYSTEM_ADMIN`; covered at
+> the controller-unit level, not yet in the e2e 403 sweep).
 
 ```typescript
 it('should return 403 when Employee tries to access asset lifecycle endpoint', async () => {

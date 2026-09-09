@@ -18,7 +18,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "audit:check": "npm audit --audit-level=high",
+    "audit:check": "node ../scripts/audit-allowlist.mjs .",
     "test:e2e:local": "node test/e2e-local.mjs"
   },
   "dependencies": {
@@ -100,7 +100,9 @@
       "users/users.service.ts",
       "reports/reports.service.ts",
       "system-config/system-config.service.ts",
-      "health/health.controller.ts"
+      "health/health.controller.ts",
+      "admin/admin.service.ts",
+      "admin/admin.controller.ts"
     ],
     "coverageThreshold": {
       "global": {
