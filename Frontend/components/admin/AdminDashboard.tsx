@@ -36,6 +36,17 @@ function formatUptime(seconds: number): string {
   return `${m}m`;
 }
 
+// Most recent updatedAt across every runtime-config key, or a "still on
+// defaults" note when nothing has been persisted.
+function latestConfigChange(meta: SystemConfig['meta']): string {
+  const times = Object.values(meta ?? {})
+    .map((entry) => entry.updatedAt)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime());
+  if (times.length === 0) return 'never — built-in defaults in effect';
+  return new Date(Math.max(...times)).toLocaleString();
+}
+
 interface AttentionItem {
   tone: AdminTone;
   text: string;
@@ -238,12 +249,15 @@ export function AdminDashboard() {
               <span className="text-sm font-bold text-slate-900">{health ? formatUptime(health.uptime) : '—'}</span>
             </div>
             {config && (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 py-3 text-xs text-slate-600">
-                <div className="flex justify-between gap-2"><span>Approval SLA</span><span className="font-semibold text-slate-800">{config.slaApprovalHours} h</span></div>
-                <div className="flex justify-between gap-2"><span>Default reorder level</span><span className="font-semibold text-slate-800">{config.defaultReorderLevel}</span></div>
-                <div className="flex justify-between gap-2"><span>Max login attempts</span><span className="font-semibold text-slate-800">{config.maxLoginAttempts}</span></div>
-                <div className="flex justify-between gap-2"><span>Useful life P/S/I</span><span className="font-semibold text-slate-800">{config.usefulLifeYears.PPE}/{config.usefulLifeYears.SEP}/{config.usefulLifeYears.IES} yr</span></div>
-              </div>
+              <>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 py-3 text-xs text-slate-600">
+                  <div className="flex justify-between gap-2"><span>Approval SLA</span><span className="font-semibold text-slate-800">{config.slaApprovalHours} h</span></div>
+                  <div className="flex justify-between gap-2"><span>Default reorder level</span><span className="font-semibold text-slate-800">{config.defaultReorderLevel}</span></div>
+                  <div className="flex justify-between gap-2"><span>Max login attempts</span><span className="font-semibold text-slate-800">{config.maxLoginAttempts}</span></div>
+                  <div className="flex justify-between gap-2"><span>Useful life P/S/I</span><span className="font-semibold text-slate-800">{config.usefulLifeYears.PPE}/{config.usefulLifeYears.SEP}/{config.usefulLifeYears.IES} yr</span></div>
+                </div>
+                <p className="pb-3 text-xs text-slate-500">Runtime config last changed {latestConfigChange(config.meta)}</p>
+              </>
             )}
           </div>
         </Panel>

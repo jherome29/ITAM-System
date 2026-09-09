@@ -7,7 +7,11 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SystemConfigEntity } from './entities/system-config.entity';
-import { CONFIG_KEYS, SystemConfigSnapshot } from './system-config.keys';
+import {
+  CONFIG_KEYS,
+  SystemConfigMeta,
+  SystemConfigSnapshot,
+} from './system-config.keys';
 import { AssetClass } from '../../../packages/shared/src/enums';
 import {
   SLA_APPROVAL_HOURS,
@@ -22,6 +26,12 @@ import {
 export class SystemConfigService implements OnModuleInit {
   private readonly logger = new Logger(SystemConfigService.name);
   private cache = new Map<string, unknown>();
+  // Per-key provenance from the system_config row (updated_at / updated_by).
+  // Absent = never persisted, so getMeta() reports null/null for that key.
+  private meta = new Map<
+    string,
+    { updatedAt: Date | null; updatedBy: string | null }
+  >();
 
   constructor(
     @InjectRepository(SystemConfigEntity)
@@ -36,6 +46,12 @@ export class SystemConfigService implements OnModuleInit {
     try {
       const rows = await this.repo.find();
       this.cache = new Map(rows.map((r) => [r.key, r.value]));
+      this.meta = new Map(
+        rows.map((r) => [
+          r.key,
+          { updatedAt: r.updatedAt ?? null, updatedBy: r.updatedBy ?? null },
+        ]),
+      );
     } catch (err) {
       this.logger.error(
         'system_config unreadable; serving compiled-in defaults',
@@ -127,8 +143,26 @@ export class SystemConfigService implements OnModuleInit {
       throw new BadRequestException(`Unknown config key "${key}"`);
     }
     validate(value);
-    await this.repo.save({ key, value, updatedBy, updatedAt: new Date() });
+    const updatedAt = new Date();
+    await this.repo.save({ key, value, updatedBy, updatedAt });
     this.cache.set(key, value);
+    this.meta.set(key, { updatedAt, updatedBy });
+  }
+
+  // Provenance for every known config key, keyed by CONFIG_KEYS value. A key
+  // with no persisted row (still on the compiled-in default) reports null/null.
+  getMeta(): Record<string, SystemConfigMeta> {
+    return Object.values(CONFIG_KEYS).reduce(
+      (acc, key) => {
+        const m = this.meta.get(key);
+        acc[key] = {
+          updatedAt: m?.updatedAt ? m.updatedAt.toISOString() : null,
+          updatedBy: m?.updatedBy ?? null,
+        };
+        return acc;
+      },
+      {} as Record<string, SystemConfigMeta>,
+    );
   }
 
   getAll(): SystemConfigSnapshot {
@@ -137,6 +171,7 @@ export class SystemConfigService implements OnModuleInit {
       defaultReorderLevel: this.getDefaultReorderLevel(),
       usefulLifeYears: this.getUsefulLifeYears(),
       maxLoginAttempts: this.getMaxLoginAttempts(),
+      meta: this.getMeta(),
     };
   }
 }

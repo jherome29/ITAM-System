@@ -10,7 +10,9 @@ import {
   systemConfigApi,
   buildUpdateSystemConfigPayload,
   systemConfigToForm,
+  CONFIG_META_KEYS,
   type SystemConfigFormValues,
+  type SystemConfigMeta,
 } from '@/lib/api/systemConfig';
 import { AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, TableWrap, tdClass, thClass } from './AdminUi';
 
@@ -34,8 +36,27 @@ export function AdminPlatformPages({ slug }: Readonly<{ slug: PlatformSlug }>) {
   return <AuditLogPage />;
 }
 
+// "Who set the SLA to 4 hours, and when?" — the system_config row has carried
+// updated_by / updated_at all along; this just surfaces it per setting.
+function ProvenanceLine({
+  meta,
+  keyName,
+}: Readonly<{ meta: Record<string, SystemConfigMeta> | null; keyName: string }>) {
+  const entry = meta?.[keyName];
+  if (!entry || (!entry.updatedAt && !entry.updatedBy)) {
+    return <p className="mt-1 text-xs text-slate-400">Built-in default — never changed here.</p>;
+  }
+  return (
+    <p className="mt-1 text-xs text-slate-400">
+      Last changed {entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : 'at an unknown time'}
+      {entry.updatedBy ? ` by ${entry.updatedBy}` : ''}
+    </p>
+  );
+}
+
 function SystemSettingsPage() {
   const [form, setForm] = useState<SystemConfigFormValues | null>(null);
+  const [meta, setMeta] = useState<Record<string, SystemConfigMeta> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -46,6 +67,7 @@ function SystemSettingsPage() {
       .get()
       .then((r) => {
         setForm(systemConfigToForm(r.data));
+        setMeta(r.data.meta ?? null);
         setError('');
       })
       .catch(() => setError('Failed to load configuration. Please try again.'))
@@ -73,6 +95,7 @@ function SystemSettingsPage() {
     try {
       const r = await systemConfigApi.update(buildUpdateSystemConfigPayload(form));
       setForm(systemConfigToForm(r.data));
+      setMeta(r.data.meta ?? null);
       setSaved(true);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })
@@ -143,6 +166,7 @@ function SystemSettingsPage() {
               <p className="mt-1 text-xs text-slate-500">
                 Breach alert fires past this; the pending-approval nudge fires at half of it.
               </p>
+              <ProvenanceLine meta={meta} keyName={CONFIG_META_KEYS.sla} />
             </div>
           </Panel>
 
@@ -161,6 +185,7 @@ function SystemSettingsPage() {
               <p className="mt-1 text-xs text-slate-500">
                 Fallback threshold for IES supply items that have no per-item reorder level set.
               </p>
+              <ProvenanceLine meta={meta} keyName={CONFIG_META_KEYS.reorder} />
             </div>
           </Panel>
 
@@ -199,6 +224,7 @@ function SystemSettingsPage() {
               <p className="text-xs text-slate-500">
                 A serviceable asset older than its class threshold may be replaced.
               </p>
+              <ProvenanceLine meta={meta} keyName={CONFIG_META_KEYS.usefulLife} />
             </div>
           </Panel>
 
@@ -217,6 +243,7 @@ function SystemSettingsPage() {
               <p className="mt-1 text-xs text-slate-500">
                 Account locks after this many consecutive failed sign-ins.
               </p>
+              <ProvenanceLine meta={meta} keyName={CONFIG_META_KEYS.maxLogin} />
             </div>
           </Panel>
 
