@@ -8,6 +8,7 @@ import { healthApi, type HealthStatus } from '@/lib/api/health';
 import { systemConfigApi, type SystemConfig } from '@/lib/api/systemConfig';
 import { reportsApi, type KpiData } from '@/lib/api/reports';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
+import { schedulerApi, type WatcherSweep } from '@/lib/api/scheduler';
 import { AdminPageHeader, MetricCard, Panel, StatusChip, type AdminTone } from './AdminUi';
 
 // Backend UserRole enum value -> the label already used on the Users & Roles
@@ -34,6 +35,19 @@ function formatUptime(seconds: number): string {
   if (d > 0) return `${d}d ${h}h`;
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
+}
+
+const SWEEP_TRIGGER_LABEL: Record<WatcherSweep['trigger'], string> = {
+  'hourly-cron': 'hourly cron',
+  'daily-cron': 'daily cron',
+  manual: 'manual run',
+};
+
+// The scheduler holds this in memory per instance, so "no sweep recorded yet"
+// just means none has run since the backend last started.
+function formatSweep(sweep: WatcherSweep | null): string {
+  if (!sweep) return 'No sweep recorded yet';
+  return `${new Date(sweep.at).toLocaleString()} · ${SWEEP_TRIGGER_LABEL[sweep.trigger]}`;
 }
 
 // Most recent updatedAt across every runtime-config key, or a "still on
@@ -87,6 +101,7 @@ export function AdminDashboard() {
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [kpi, setKpi] = useState<KpiData | null>(null);
   const [recentLogs, setRecentLogs] = useState<AuditLog[]>([]);
+  const [sweep, setSweep] = useState<WatcherSweep | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
@@ -98,7 +113,8 @@ export function AdminDashboard() {
       systemConfigApi.get(),
       reportsApi.kpi(),
       auditApi.list(1, 6),
-    ]).then(([s, h, c, k, a]) => {
+      schedulerApi.watcherStatus(),
+    ]).then(([s, h, c, k, a, w]) => {
       if (cancelled) return;
       if (s.status === 'fulfilled') setStats(s.value.data);
       else setFailed(true);
@@ -106,6 +122,7 @@ export function AdminDashboard() {
       if (c.status === 'fulfilled') setConfig(c.value.data);
       if (k.status === 'fulfilled') setKpi(k.value.data);
       if (a.status === 'fulfilled') setRecentLogs(a.value.data.data);
+      if (w.status === 'fulfilled') setSweep(w.value.data.lastSweep);
       setLoading(false);
     });
     return () => { cancelled = true; };
@@ -247,6 +264,10 @@ export function AdminDashboard() {
             <div className="flex items-center justify-between py-3">
               <span className="text-sm text-slate-600">Backend uptime</span>
               <span className="text-sm font-bold text-slate-900">{health ? formatUptime(health.uptime) : '—'}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3 py-3">
+              <span className="text-sm text-slate-600">Background watchers</span>
+              <span className="text-right text-sm font-semibold text-slate-900">{formatSweep(sweep)}</span>
             </div>
             {config && (
               <>

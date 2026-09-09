@@ -18,15 +18,30 @@ export interface CheckSummary {
   lowStock: number;
 }
 
+export interface WatcherSweep {
+  at: string; // ISO timestamp the sweep finished
+  trigger: 'hourly-cron' | 'daily-cron' | 'manual';
+  summary: Partial<CheckSummary>; // only the watchers that sweep touched
+}
+
 // SVC: Engage — automated alert scheduling
 @Injectable()
 export class SchedulerService {
   private readonly logger = new Logger(SchedulerService.name);
 
+  // Last completed sweep — the System Administrator's only window into whether
+  // the background watchers are actually firing. In-memory and per-instance;
+  // resets on restart (acceptable — it answers "are they running right now?").
+  private lastSweep: WatcherSweep | null = null;
+
   constructor(
     private readonly requisitions: RequisitionsService,
     private readonly assets: AssetsService,
   ) {}
+
+  getWatcherStatus(): { lastSweep: WatcherSweep | null } {
+    return { lastSweep: this.lastSweep };
+  }
 
   /**
    * Runs a single watcher with its failure isolated: a rejection is logged and
@@ -63,6 +78,11 @@ export class SchedulerService {
     this.logger.log(
       `hourly: slaBreaches=${slaBreaches} pendingNudges=${pendingNudges}`,
     );
+    this.lastSweep = {
+      at: new Date().toISOString(),
+      trigger: 'hourly-cron',
+      summary: { slaBreaches, pendingNudges },
+    };
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_7AM)
@@ -76,10 +96,15 @@ export class SchedulerService {
     this.logger.log(
       `daily: overdueReturns=${overdueReturns} lowStock=${lowStock}`,
     );
+    this.lastSweep = {
+      at: new Date().toISOString(),
+      trigger: 'daily-cron',
+      summary: { overdueReturns, lowStock },
+    };
   }
 
   async runAllChecks(): Promise<CheckSummary> {
-    return {
+    const summary: CheckSummary = {
       slaBreaches: await this.runWatcher('checkSlaBreaches', () =>
         this.requisitions.checkSlaBreaches(),
       ),
@@ -93,5 +118,11 @@ export class SchedulerService {
         this.assets.checkLowStock(),
       ),
     };
+    this.lastSweep = {
+      at: new Date().toISOString(),
+      trigger: 'manual',
+      summary,
+    };
+    return summary;
   }
 }

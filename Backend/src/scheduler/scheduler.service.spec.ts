@@ -103,4 +103,40 @@ describe('SchedulerService', () => {
     expect(requisitions.checkPendingApprovalNudges).toHaveBeenCalledTimes(1);
     expect(errorLog).toHaveBeenCalledTimes(1);
   });
+
+  describe('getWatcherStatus()', () => {
+    it('reports no sweep before any watcher has run', () => {
+      expect(service.getWatcherStatus()).toEqual({ lastSweep: null });
+    });
+
+    it('records a manual sweep after runAllChecks with the full summary', async () => {
+      requisitions.checkSlaBreaches.mockResolvedValue(2);
+      requisitions.checkPendingApprovalNudges.mockResolvedValue(1);
+      assets.checkOverdueReturns.mockResolvedValue(0);
+      assets.checkLowStock.mockResolvedValue(3);
+
+      await service.runAllChecks();
+      const { lastSweep } = service.getWatcherStatus();
+
+      expect(lastSweep?.trigger).toBe('manual');
+      expect(lastSweep?.summary).toEqual({
+        slaBreaches: 2,
+        pendingNudges: 1,
+        overdueReturns: 0,
+        lowStock: 3,
+      });
+      expect(Number.isNaN(Date.parse(lastSweep?.at ?? ''))).toBe(false);
+    });
+
+    it('records an hourly-cron sweep with just the hourly counts', async () => {
+      requisitions.checkSlaBreaches.mockResolvedValue(1);
+      requisitions.checkPendingApprovalNudges.mockResolvedValue(0);
+
+      await service.hourlyChecks();
+      const { lastSweep } = service.getWatcherStatus();
+
+      expect(lastSweep?.trigger).toBe('hourly-cron');
+      expect(lastSweep?.summary).toEqual({ slaBreaches: 1, pendingNudges: 0 });
+    });
+  });
 });
