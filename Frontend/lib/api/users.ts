@@ -10,6 +10,10 @@ export interface User {
   division: string;
   officeOrSection: string;
   isActive: boolean;
+  // Lockout state — surfaced so the admin directory can flag and act on locked
+  // accounts. Both columns come straight off UserEntity (not select:false).
+  failedLoginAttempts: number;
+  lockedUntil: string | null;
   createdAt: string;
   updatedAt: string;
   alternateApproverId: string | null;

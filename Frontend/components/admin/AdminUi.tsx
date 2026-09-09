@@ -116,6 +116,11 @@ export function StatusChip({ status, tone }: Readonly<{ status: string; tone?: A
   return <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${toneStyles[inferred]}`}>{status}</span>;
 }
 
+// A filter option is either a bare string (value === label) or an explicit
+// value/label pair — the latter lets callers show "IT Personnel" while
+// filtering on the API's "it_personnel" slug.
+type FilterOption = string | { value: string; label: string };
+
 export function SearchToolbar({
   value,
   onChange,
@@ -129,7 +134,7 @@ export function SearchToolbar({
   onChange: (value: string) => void;
   filterLabel?: string;
   filterValue?: string;
-  filterOptions?: string[];
+  filterOptions?: FilterOption[];
   onFilterChange?: (value: string) => void;
   children?: ReactNode;
 }>) {
@@ -144,7 +149,12 @@ export function SearchToolbar({
         <SlidersHorizontal className="pointer-events-none absolute left-3 h-4 w-4" />
         <span className="sr-only">{filterLabel}</span>
         <select value={filterValue} onChange={(event) => onFilterChange?.(event.target.value)} className="h-full w-full appearance-none bg-transparent pr-8 outline-none" aria-label={filterLabel}>
-          {filterOptions.map((option) => <option key={option} value={option}>{option === 'All' ? filterLabel : option}</option>)}
+          {filterOptions.map((option) => {
+            const optionValue = typeof option === 'string' ? option : option.value;
+            const optionLabel =
+              typeof option === 'string' ? (option === 'All' ? filterLabel : option) : option.label;
+            return <option key={optionValue} value={optionValue}>{optionLabel}</option>;
+          })}
         </select>
       </label>
       {children}

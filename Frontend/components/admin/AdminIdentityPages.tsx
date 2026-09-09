@@ -29,17 +29,31 @@ const USER_ROLE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'property_officer', label: 'Property Officer' },
 ];
 
+const ROLE_FILTER_OPTIONS = [{ value: 'All', label: 'All roles' }, ...USER_ROLE_OPTIONS];
+
+// A lockout is in force only while lockedUntil is set AND still in the future —
+// the auth service leaves the stale timestamp in place after it expires.
+const isLockedNow = (u: User): boolean =>
+  Boolean(u.lockedUntil) && new Date(u.lockedUntil as string).getTime() > Date.now();
+
+function AccountStatusChip({ user }: Readonly<{ user: User }>) {
+  if (!user.isActive) return <StatusChip status="Inactive" tone="red" />;
+  if (isLockedNow(user)) return <StatusChip status="Locked" tone="red" />;
+  return <StatusChip status="Active" tone="green" />;
+}
+
 function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('All');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [toast, setToast] = useState('');
 
-  const fetchUsers = (q?: string) => {
-    usersApi.list(1, 50, q)
+  const fetchUsers = (q?: string, role?: string) => {
+    usersApi.list(1, 50, q, role)
       .then((res) => setUsers(res.data.data))
       .catch(() => setToast('Failed to load users.'))
       .finally(() => setLoading(false));
@@ -47,10 +61,18 @@ function UsersPage() {
 
   useEffect(() => { fetchUsers(); }, []);
 
+  const roleParam = roleFilter === 'All' ? undefined : roleFilter;
+
   const handleSearchChange = (value: string) => {
     setSearch(value);
     setLoading(true);
-    fetchUsers(value || undefined);
+    fetchUsers(value || undefined, roleParam);
+  };
+
+  const handleRoleFilterChange = (value: string) => {
+    setRoleFilter(value);
+    setLoading(true);
+    fetchUsers(search || undefined, value === 'All' ? undefined : value);
   };
 
   const selected = users.find((user) => user.id === selectedId);
@@ -69,7 +91,7 @@ function UsersPage() {
   const handleReactivate = async (id: string, name: string) => {
     try {
       await usersApi.activate(id);
-      fetchUsers(search || undefined);
+      fetchUsers(search || undefined, roleParam);
       setToast(`${name} reactivated.`);
     } catch {
       setToast(`Failed to reactivate ${name}.`);
@@ -83,11 +105,18 @@ function UsersPage() {
       <MetricCard label="Active" value={String(users.filter((user) => user.isActive).length)} detail="" tone="green" icon={UserCheck} />
       <MetricCard label="Inactive" value={String(users.filter((user) => !user.isActive).length)} detail="" tone="red" icon={ShieldCheck} />
     </div>
-    <SearchToolbar value={search} onChange={handleSearchChange} />
+    <SearchToolbar
+      value={search}
+      onChange={handleSearchChange}
+      filterLabel="All roles"
+      filterValue={roleFilter}
+      filterOptions={ROLE_FILTER_OPTIONS}
+      onFilterChange={handleRoleFilterChange}
+    />
     <Panel title="Account Directory" detail={`${users.length} accounts shown - deactivation preserves audit history`}>
-      {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>User</th><th className={thClass}>Office</th><th className={thClass}>Role</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{users.length === 0 ? <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-400">No accounts found.</td></tr> : users.map((user) => <tr key={user.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelectedId(user.id)} className="text-left"><span className="block font-bold text-slate-950">{userName(user)}</span><span className="text-xs text-slate-500">{user.employeeId} - {user.email}</span></button></td><td className={tdClass}>{user.division} / {user.officeOrSection}</td><td className={tdClass}>{user.role}</td><td className={tdClass}><StatusChip status={user.isActive ? 'Active' : 'Inactive'} tone={user.isActive ? 'green' : 'red'} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View account', onClick: () => setSelectedId(user.id) }, { label: 'Reset password', onClick: () => setResetTarget(user) }, user.isActive ? { label: 'Deactivate account', danger: true, onClick: () => handleDeactivate(user.id, userName(user)) } : { label: 'Reactivate account', onClick: () => handleReactivate(user.id, userName(user)) }]} /></td></tr>)}</tbody></table></TableWrap>}
+      {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>User</th><th className={thClass}>Office</th><th className={thClass}>Role</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{users.length === 0 ? <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-400">No accounts found.</td></tr> : users.map((user) => <tr key={user.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelectedId(user.id)} className="text-left"><span className="block font-bold text-slate-950">{userName(user)}</span><span className="text-xs text-slate-500">{user.employeeId} - {user.email}</span></button></td><td className={tdClass}>{user.division} / {user.officeOrSection}</td><td className={tdClass}>{user.role}</td><td className={tdClass}><AccountStatusChip user={user} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View account', onClick: () => setSelectedId(user.id) }, { label: 'Reset password', onClick: () => setResetTarget(user) }, user.isActive ? { label: 'Deactivate account', danger: true, onClick: () => handleDeactivate(user.id, userName(user)) } : { label: 'Reactivate account', onClick: () => handleReactivate(user.id, userName(user)) }]} /></td></tr>)}</tbody></table></TableWrap>}
     </Panel>
-    <DetailDrawer open={Boolean(selected)} title={selected ? userName(selected) : 'Account details'} onClose={() => setSelectedId(null)}>{selected && <div className="space-y-5"><div className="grid grid-cols-2 gap-3">{[['Employee ID', selected.employeeId], ['Account ID', selected.id], ['Email', selected.email], ['Role', selected.role], ['Division', selected.division], ['Office / Section', selected.officeOrSection]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>)}</div><Panel title="Account status"><div className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Status</span><StatusChip status={selected.isActive ? 'Active' : 'Inactive'} tone={selected.isActive ? 'green' : 'red'} /></div></div></Panel>{selected.role === 'supervisor' && <ApprovalRoutingPanel key={selected.id} user={selected} onSaved={(u) => setUsers((prev) => prev.map((x) => (x.id === u.id ? u : x)))} />}<div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => setResetTarget(selected)}>Reset password</SecondaryButton>{selected.isActive ? <SecondaryButton onClick={() => handleDeactivate(selected.id, userName(selected))}>Deactivate account</SecondaryButton> : <SecondaryButton onClick={() => handleReactivate(selected.id, userName(selected))}>Reactivate account</SecondaryButton>}</div><p className="text-xs text-slate-500">Actions call the live users API and create append-only audit events.</p></div>}</DetailDrawer>
+    <DetailDrawer open={Boolean(selected)} title={selected ? userName(selected) : 'Account details'} onClose={() => setSelectedId(null)}>{selected && <div className="space-y-5"><div className="grid grid-cols-2 gap-3">{[['Employee ID', selected.employeeId], ['Account ID', selected.id], ['Email', selected.email], ['Role', selected.role], ['Division', selected.division], ['Office / Section', selected.officeOrSection]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>)}</div><Panel title="Account status"><div className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Status</span><AccountStatusChip user={selected} /></div>{isLockedNow(selected) && <div className="flex items-center justify-between"><span className="text-sm text-slate-600">Locked until</span><span className="text-sm font-semibold text-slate-900">{new Date(selected.lockedUntil as string).toLocaleString()}</span></div>}{selected.failedLoginAttempts > 0 && <div className="flex items-center justify-between"><span className="text-sm text-slate-600">Failed sign-ins</span><span className="text-sm font-semibold text-slate-900">{selected.failedLoginAttempts}</span></div>}</div></Panel>{selected.role === 'supervisor' && <ApprovalRoutingPanel key={selected.id} user={selected} onSaved={(u) => setUsers((prev) => prev.map((x) => (x.id === u.id ? u : x)))} />}<div className="flex flex-wrap gap-2"><SecondaryButton onClick={() => setResetTarget(selected)}>Reset password</SecondaryButton>{selected.isActive ? <SecondaryButton onClick={() => handleDeactivate(selected.id, userName(selected))}>Deactivate account</SecondaryButton> : <SecondaryButton onClick={() => handleReactivate(selected.id, userName(selected))}>Reactivate account</SecondaryButton>}</div><p className="text-xs text-slate-500">Actions call the live users API and create append-only audit events.</p></div>}</DetailDrawer>
     <DetailDrawer open={creating} title="Create account" onClose={() => setCreating(false)}><AccountForm onSave={(user) => { setUsers((current) => [user, ...current]); setCreating(false); setToast(`${userName(user)} was added to the account directory.`); }} /></DetailDrawer>
     <PasswordResetDialog key={resetTarget?.id ?? 'none'} user={resetTarget} onClose={() => setResetTarget(null)} onDone={(name) => setToast(`Password reset for ${name}. They have been signed out of all sessions.`)} />
     <Toast message={toast} />
