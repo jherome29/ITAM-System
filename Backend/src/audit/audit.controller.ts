@@ -32,8 +32,16 @@ export class AuditController {
     @Query('page') page = 1,
     @Query('limit') limit = 50,
     @Query('action') action?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
   ) {
-    const result = await this.svc.findAll(+page, +limit, action);
+    const result = await this.svc.findAll(
+      +page,
+      +limit,
+      action,
+      startDate,
+      endDate,
+    );
     return { message: 'Audit logs retrieved', data: result };
   }
 

@@ -12,6 +12,7 @@ describe('AuditService', () => {
     skip: jest.fn().mockReturnThis(),
     take: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
     getManyAndCount: jest.fn(),
   };
 
@@ -87,6 +88,42 @@ describe('AuditService', () => {
       expect(result.total).toBe(1);
       expect(result.data).toHaveLength(1);
       expect(mockQb.orderBy).toHaveBeenCalledWith('a.timestamp', 'DESC');
+    });
+
+    it('filters by action via andWhere', async () => {
+      mockQb.getManyAndCount.mockResolvedValue([[], 0]);
+      await service.findAll(1, 20, 'user_login');
+      expect(mockQb.andWhere).toHaveBeenCalledWith('a.action = :action', {
+        action: 'user_login',
+      });
+    });
+
+    it('lower-bounds a date-only startDate at the start of that UTC day', async () => {
+      mockQb.getManyAndCount.mockResolvedValue([[], 0]);
+      await service.findAll(1, 20, undefined, '2026-09-01');
+      expect(mockQb.andWhere).toHaveBeenCalledWith(
+        'a.timestamp >= :startDate',
+        {
+          startDate: new Date('2026-09-01T00:00:00.000Z'),
+        },
+      );
+    });
+
+    it('upper-bounds a date-only endDate at the end of that UTC day (inclusive)', async () => {
+      mockQb.getManyAndCount.mockResolvedValue([[], 0]);
+      await service.findAll(1, 20, undefined, undefined, '2026-09-30');
+      expect(mockQb.andWhere).toHaveBeenCalledWith('a.timestamp <= :endDate', {
+        endDate: new Date('2026-09-30T23:59:59.999Z'),
+      });
+    });
+
+    it('ignores an unparseable date bound instead of filtering on Invalid Date', async () => {
+      mockQb.getManyAndCount.mockResolvedValue([[], 0]);
+      await service.findAll(1, 20, undefined, 'not-a-date');
+      expect(mockQb.andWhere).not.toHaveBeenCalledWith(
+        'a.timestamp >= :startDate',
+        expect.anything(),
+      );
     });
   });
 
