@@ -17,7 +17,7 @@
 | Property Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
 | Property Officer | property.officer@cicc.gov.ph | PropertyOfficer@2026! |
 
-> **Note:** If an account gets locked after too many failed login attempts, a System Administrator can unlock it via `PATCH /api/v1/users/:id/unlock` or reset the password via `PATCH /api/v1/users/:id/reset-password`.
+> **Note:** If an account gets locked after too many failed login attempts, a System Administrator can unlock it via `PATCH /api/v1/users/:id/unlock` or reset the password via `PATCH /api/v1/users/:id/reset-password`. To end a possibly-compromised session without changing the password, use `PATCH /api/v1/users/:id/revoke-sessions`.
 >
 > The 2 Property role passwords above were reset 2026-08-21 via the real `PATCH /api/v1/users/:id/reset-password` endpoint and verified with a live login (both accounts existed with no known-working password before this). If you find these no longer work, someone has reset them again since — check with the team rather than assuming this doc is wrong.
 
@@ -133,10 +133,13 @@ Full system access. Manages user accounts, roles, and system configuration. Also
 - Log in and view the system health / admin dashboard
 - Create new user accounts
 - Deactivate user accounts (no deletion — preserves audit trail)
+- Reactivate a deactivated account (`PATCH /api/v1/users/:id/activate` — also clears the lockout)
 - Assign or change user roles
 - Reset user passwords (`PATCH /api/v1/users/:id/reset-password`)
-- Unlock locked accounts (`PATCH /api/v1/users/:id/unlock`)
-- View the full immutable audit trail (all system actions, filterable and exportable)
+- Unlock locked accounts (`PATCH /api/v1/users/:id/unlock`) — the directory flags a **Locked** status and shows the action only while a lockout is live
+- Force-sign-out a user — revoke every active session without changing their password (`PATCH /api/v1/users/:id/revoke-sessions`)
+- Filter the user directory by role; open an account to see its recent activity (`GET /api/v1/audit/user/:userId`)
+- View the full immutable audit trail (all system actions; filter by action type and by date range; exportable)
 - Approve or reject requisitions
 - View all inventory dashboards
 - Generate reports and official COA forms
