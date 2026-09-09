@@ -4,7 +4,7 @@ import { AdminPlatformPages } from './AdminPlatformPages';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
 
 const identitySlugs = ['users', 'roles'] as const;
-const platformSlugs = ['configuration', 'security', 'audit'] as const;
+const platformSlugs = ['configuration', 'audit'] as const;
 
 export function AdminWorkspace({ slug }: Readonly<{ slug: string }>) {
   if (slug === 'dashboard') return <AdminDashboard />;

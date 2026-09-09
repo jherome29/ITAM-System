@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useId, useState, type ChangeEvent } from 'react';
-import { Activity, Archive, Clock3, Download, FileClock, KeyRound, LockKeyhole, Save, ShieldCheck } from 'lucide-react';
+import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
+import { Activity, Archive, Download, FileClock, KeyRound, Save } from 'lucide-react';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
@@ -12,9 +12,9 @@ import {
   systemConfigToForm,
   type SystemConfigFormValues,
 } from '@/lib/api/systemConfig';
-import { AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
+import { AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, TableWrap, tdClass, thClass } from './AdminUi';
 
-type PlatformSlug = 'configuration' | 'security' | 'audit';
+type PlatformSlug = 'configuration' | 'audit';
 
 function downloadCsv(filename: string, rows: Array<Record<string, string | number>>) {
   if (rows.length === 0) return;
@@ -31,7 +31,6 @@ function downloadCsv(filename: string, rows: Array<Record<string, string | numbe
 
 export function AdminPlatformPages({ slug }: Readonly<{ slug: PlatformSlug }>) {
   if (slug === 'configuration') return <SystemSettingsPage />;
-  if (slug === 'security') return <SecurityPoliciesPage />;
   return <AuditLogPage />;
 }
 
@@ -229,24 +228,6 @@ function SystemSettingsPage() {
       )}
     </div>
   );
-}
-
-const securitySections = ['Authentication', 'Sessions', 'Access Policy', 'Network', 'Emergency Access'] as const;
-
-function SecurityPoliciesPage() {
-  const [section, setSection] = useState<(typeof securitySections)[number]>('Authentication');
-  const [dirty, setDirty] = useState(false);
-  const [toast, setToast] = useState('');
-  return <div className="space-y-4"><AdminPageHeader title="Security Policies" detail="Configure authentication, session, access, and emergency controls. Sensitive changes require reauthentication and audit capture." action={<PrimaryButton icon={Save} onClick={() => { setDirty(false); setToast('Security policy saved in frontend mock state.'); }}>Save policy</PrimaryButton>} />
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Security posture" value="82%" detail="Three controls need attention" tone="amber" icon={ShieldCheck} /><MetricCard label="MFA coverage" value="94%" detail="Mandatory for administrators" tone="green" icon={KeyRound} /><MetricCard label="Locked accounts" value="1" detail="No active compromise detected" tone="red" icon={LockKeyhole} /><MetricCard label="Session policy" value="15 min" detail="Idle timeout target" tone="green" icon={Clock3} /></div>
-    {dirty && <div className="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Security policy changes are unsaved. Production save will require administrator reauthentication.</div>}
-    <div className="grid gap-4 xl:grid-cols-[240px_1fr]"><Panel title="Policy Areas" detail="Security by Design controls"><nav className="p-2">{securitySections.map((item) => <button key={item} type="button" onClick={() => setSection(item)} className={`block w-full rounded-md px-3 py-2.5 text-left text-sm ${section === item ? 'bg-blue-50 font-bold text-blue-800' : 'text-slate-700 hover:bg-slate-50'}`}>{item}</button>)}</nav></Panel><Panel title={section} detail="Current policy and recommended control state"><form className="space-y-5 p-5" onChange={() => setDirty(true)} onSubmit={(event) => event.preventDefault()}>{section === 'Authentication' && <><PolicyToggle label="Require MFA for privileged accounts" detail="Mandatory for Master Administrator, custodians, approvers, and audit viewers" checked /><PolicyToggle label="Require MFA for all accounts" detail="Phased enrollment can be enabled after privileged rollout" /><div className="grid gap-4 md:grid-cols-2"><Field label="Failed attempts before lockout"><input type="number" defaultValue="5" min="3" max="10" className={inputClass} /></Field><Field label="Automatic unlock"><select className={inputClass}><option>30 minutes</option><option>Administrator only</option></select></Field></div></>}{section === 'Sessions' && <><div className="grid gap-4 md:grid-cols-2"><Field label="Idle timeout"><select className={inputClass}><option>15 minutes</option><option>30 minutes</option></select></Field><Field label="Maximum access-token lifetime"><select className={inputClass}><option>8 hours</option><option>4 hours</option></select></Field></div><PolicyToggle label="Prevent concurrent sessions" detail="A new login invalidates the previous token version" checked /><PolicyToggle label="Terminate sessions after password reset" detail="Forces reauthentication on all devices" checked /></>}{section === 'Access Policy' && <><PolicyToggle label="Deny access by default" detail="Routes without explicit role authorization are rejected" checked /><PolicyToggle label="Require annual role review" detail="Privileged access should be reviewed more frequently" checked /><PolicyToggle label="Detect separation-of-duty conflicts" detail="Warn when approval and fulfillment rights overlap" checked /></>}{section === 'Network' && <><PolicyToggle label="Require HTTPS in production" detail="TLS is managed by CICC IT" checked /><Field label="Trusted administrative network ranges"><textarea className={`${inputClass} h-24 py-2`} defaultValue="10.10.0.0/16" /></Field><p className="text-xs text-slate-500">Network restrictions must be enforced by the backend and CICC infrastructure, not only by this interface.</p></>}{section === 'Emergency Access' && <><PolicyToggle label="Enable emergency administrator account" detail="Disabled by default; activation requires two-person approval" /><Field label="Emergency access review interval"><select className={inputClass}><option>Every use</option><option>Daily while active</option></select></Field><div className="border border-red-200 bg-red-50 p-3 text-sm text-red-900">Emergency access must be time-limited, independently reviewed, and fully audited.</div></>}</form></Panel></div>
-    <Panel title="Active Administrative Sessions" detail="Current privileged sessions available for revocation"><div className="divide-y divide-slate-100"><div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-bold">Ricardo Torres - Master Administrator</p><p className="mt-1 text-xs text-slate-500">Current session - 10.10.2.14 - started today at 8:42 PM</p></div><StatusChip status="Active" /></div><div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-bold">System Administration workstation</p><p className="mt-1 text-xs text-slate-500">Previous token invalidated by newer login</p></div><StatusChip status="Terminated" /></div></div></Panel><Toast message={toast} /></div>;
-}
-
-function PolicyToggle({ label, detail, checked = false }: Readonly<{ label: string; detail: string; checked?: boolean }>) {
-  const inputId = useId();
-  return <label htmlFor={inputId} className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4"><span><span className="block text-sm font-bold text-slate-900">{label}</span><span className="mt-1 block text-xs text-slate-500">{detail}</span></span><input id={inputId} type="checkbox" defaultChecked={checked} aria-label={label} className="mt-1 h-5 w-5 flex-none accent-blue-700" /></label>;
 }
 
 function AuditLogPage() {
