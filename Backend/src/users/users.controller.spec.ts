@@ -1,6 +1,34 @@
 import { UsersController } from './users.controller';
 import { UserRole } from '../../../packages/shared/src/enums';
 
+describe('UsersController — revokeSessions', () => {
+  it('delegates to the service with the target id and the acting admin id/role/ip', async () => {
+    const svc = {
+      revokeSessions: jest
+        .fn()
+        .mockResolvedValue({ message: 'All sessions revoked for EMP-001' }),
+    };
+    const controller = new UsersController(svc as never);
+    const req = {
+      user: { id: 'admin-1', role: UserRole.SYSTEM_ADMIN },
+      ip: '10.0.0.9',
+    };
+
+    const res = await controller.revokeSessions('user-2', req as never);
+
+    expect(svc.revokeSessions).toHaveBeenCalledWith(
+      'user-2',
+      'admin-1',
+      UserRole.SYSTEM_ADMIN,
+      '10.0.0.9',
+    );
+    expect(res).toEqual({
+      message: 'All sessions revoked for EMP-001',
+      data: null,
+    });
+  });
+});
+
 describe('UsersController — self-service availability', () => {
   const svc = {
     setOwnAvailability: jest

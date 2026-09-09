@@ -634,6 +634,54 @@ describe('UsersService', () => {
     });
   });
 
+  describe('revokeSessions()', () => {
+    it('bumps tokenVersion so every issued JWT for that user stops validating', async () => {
+      mockRepo.findOne.mockResolvedValue(makeUser({ tokenVersion: 4 }));
+      mockRepo.update.mockResolvedValue(undefined);
+
+      await service.revokeSessions('u-1', actorId, actorRole, ipAddress);
+
+      expect(mockRepo.update).toHaveBeenCalledWith('u-1', { tokenVersion: 5 });
+    });
+
+    it('does not touch the password, lock state, or active flag', async () => {
+      mockRepo.findOne.mockResolvedValue(makeUser({ tokenVersion: 0 }));
+      mockRepo.update.mockResolvedValue(undefined);
+
+      await service.revokeSessions('u-1', actorId, actorRole, ipAddress);
+
+      const patch = mockRepo.update.mock.calls[0][1];
+      expect(Object.keys(patch)).toEqual(['tokenVersion']);
+    });
+
+    it('logs a USER_UPDATED audit entry marked sessions_revoked', async () => {
+      mockRepo.findOne.mockResolvedValue(makeUser());
+      mockRepo.update.mockResolvedValue(undefined);
+
+      await service.revokeSessions('u-1', actorId, actorRole, ipAddress);
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: actorId,
+          userRole: actorRole,
+          action: AuditAction.USER_UPDATED,
+          affectedRecordId: 'u-1',
+          affectedRecordType: 'user',
+          ipAddress,
+          metadata: expect.objectContaining({ action: 'sessions_revoked' }),
+        }),
+      );
+    });
+
+    it('throws NotFoundException for an unknown user and never writes', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+      await expect(
+        service.revokeSessions('no-id', actorId, actorRole, ipAddress),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('deactivate()', () => {
     it('sets isActive=false and returns success message', async () => {
       mockRepo.findOne.mockResolvedValue(makeUser({ isActive: true }));

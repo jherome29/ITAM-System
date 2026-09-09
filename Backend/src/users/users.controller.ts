@@ -152,6 +152,22 @@ export class UsersController {
     return { message: result.message, data: null };
   }
 
+  /** PATCH /api/v1/users/:id/revoke-sessions — Force sign-out (invalidate all JWTs) */
+  @Patch(':id/revoke-sessions')
+  @Roles(UserRole.SYSTEM_ADMIN)
+  async revokeSessions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const result = await this.svc.revokeSessions(
+      id,
+      req.user.id,
+      req.user.role,
+      req.ip,
+    );
+    return { message: result.message, data: null };
+  }
+
   /** PATCH /api/v1/users/:id/activate — Reactivate a deactivated account */
   @Patch(':id/activate')
   @Roles(UserRole.SYSTEM_ADMIN)
