@@ -100,7 +100,9 @@
       "users/users.service.ts",
       "reports/reports.service.ts",
       "system-config/system-config.service.ts",
-      "health/health.controller.ts"
+      "health/health.controller.ts",
+      "admin/admin.service.ts",
+      "admin/admin.controller.ts"
     ],
     "coverageThreshold": {
       "global": {
