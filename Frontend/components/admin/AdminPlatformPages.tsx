@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useId, useMemo, useState, type ChangeEvent } from 'react';
-import { Activity, Archive, CheckCircle2, Clock3, Database, Download, FileClock, KeyRound, LockKeyhole, Plus, RefreshCw, Save, Server, ShieldCheck } from 'lucide-react';
+import { Activity, Archive, CheckCircle2, Clock3, Database, Download, FileClock, KeyRound, LockKeyhole, RefreshCw, Save, Server, ShieldCheck } from 'lucide-react';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
@@ -12,10 +12,10 @@ import {
   systemConfigToForm,
   type SystemConfigFormValues,
 } from '@/lib/api/systemConfig';
-import { masterDataGroups, scheduledJobs, systemEvents } from '@/lib/mock/admin.mock';
+import { scheduledJobs, systemEvents } from '@/lib/mock/admin.mock';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
 
-type PlatformSlug = 'reference-data' | 'configuration' | 'technical-logs' | 'security' | 'audit';
+type PlatformSlug = 'configuration' | 'technical-logs' | 'security' | 'audit';
 
 function downloadCsv(filename: string, rows: Array<Record<string, string | number>>) {
   if (rows.length === 0) return;
@@ -31,27 +31,10 @@ function downloadCsv(filename: string, rows: Array<Record<string, string | numbe
 }
 
 export function AdminPlatformPages({ slug }: Readonly<{ slug: PlatformSlug }>) {
-  if (slug === 'reference-data') return <MasterDataPage />;
   if (slug === 'configuration') return <SystemSettingsPage />;
   if (slug === 'technical-logs') return <SystemHealthPage />;
   if (slug === 'security') return <SecurityPoliciesPage />;
   return <AuditLogPage />;
-}
-
-function MasterDataPage() {
-  const [groups, setGroups] = useState(masterDataGroups);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('All');
-  const [selected, setSelected] = useState<(typeof masterDataGroups)[number] | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [toast, setToast] = useState('');
-  const rows = groups.filter((group) => (filter === 'All' || group.status === filter) && Object.values(group).join(' ').toLowerCase().includes(search.toLowerCase()));
-  return <div className="space-y-4"><AdminPageHeader title="Master Data" detail="Maintain controlled values used across asset registration, lifecycle workflows, reports, locations, and official forms." action={<PrimaryButton icon={Plus} onClick={() => setCreating(true)}>Add reference set</PrimaryButton>} />
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Reference groups" value="6" detail="90 controlled values" tone="blue" icon={Database} /><MetricCard label="Protected groups" value="2" detail="System-required values" tone="green" icon={LockKeyhole} /><MetricCard label="Review due" value="1" detail="Location directory" tone="amber" icon={Clock3} /><MetricCard label="Dependency errors" value="0" detail="No orphaned references" tone="green" icon={CheckCircle2} /></div>
-    <SearchToolbar value={search} onChange={setSearch} filterLabel="All reference sets" filterValue={filter} filterOptions={['All', 'Healthy', 'Protected', 'Review due']} onFilterChange={setFilter} />
-    <div className="grid min-w-0 gap-4 xl:grid-cols-[260px_minmax(0,1fr)]"><Panel title="Reference Groups" detail="Select a controlled domain"><nav className="p-2" aria-label="Master data groups">{groups.map((group) => <button key={group.id} type="button" onClick={() => setSelected(group)} className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2.5 text-left text-sm ${selected?.id === group.id ? 'bg-blue-50 font-bold text-blue-800' : 'text-slate-700 hover:bg-slate-50'}`}><span>{group.name}</span><span className="text-xs text-slate-400">{group.records}</span></button>)}</nav></Panel><Panel title="Controlled Reference Sets" detail="Codes cannot be duplicated; protected values cannot be deleted"><TableWrap><table className="min-w-[920px] w-full"><thead><tr><th className={thClass}>Reference set</th><th className={thClass}>Records</th><th className={thClass}>Used by</th><th className={thClass}>Owner</th><th className={thClass}>Last changed</th><th className={thClass}>Health</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{rows.map((group) => <tr key={group.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelected(group)} className="text-left font-bold text-slate-950">{group.name}<span className="block text-xs font-normal text-slate-500">{group.id}</span></button></td><td className={tdClass}>{group.records}</td><td className={tdClass}>{group.usedBy}</td><td className={tdClass}>{group.owner}</td><td className={tdClass}>{group.lastChanged}</td><td className={tdClass}><StatusChip status={group.status} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'Manage values', onClick: () => setSelected(group) }, { label: 'Export values', onClick: () => { downloadCsv(`${group.id.toLowerCase()}.csv`, [{ code: `${group.id}-001`, name: 'Sample active value', status: 'Active' }, { code: `${group.id}-002`, name: 'Protected system value', status: 'Protected' }]); setToast(`${group.name} CSV downloaded.`); } }, { label: 'View dependencies', onClick: () => setToast(`${group.records} values checked; dependencies are shown in the detail panel.`) }]} /></td></tr>)}</tbody></table></TableWrap></Panel></div>
-    <DetailDrawer open={Boolean(selected)} title={selected?.name ?? 'Reference set'} onClose={() => setSelected(null)}>{selected && <div className="space-y-4"><div className="grid grid-cols-2 gap-3">{[['Values', String(selected.records)], ['Owner', selected.owner], ['Used by', selected.usedBy], ['Last changed', selected.lastChanged]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>)}</div><Panel title="Sample values"><div className="divide-y divide-slate-100 px-4">{['Active value 01', 'Active value 02', 'Protected system value'].map((value, index) => <div key={value} className="flex items-center justify-between py-3 text-sm"><span><strong>{`CODE-${index + 1}`}</strong> - {value}</span><StatusChip status={index === 2 ? 'Protected' : 'Active'} /></div>)}</div></Panel><div className="border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">A value in use must be deactivated or replaced; deleting it could invalidate historical asset and form records.</div><PrimaryButton onClick={() => { setGroups((current) => current.map((group) => group.id === selected.id ? { ...group, records: group.records + 1, lastChanged: 'Today' } : group)); setSelected((current) => current ? { ...current, records: current.records + 1, lastChanged: 'Today' } : current); setToast(`A new value was added to ${selected.name} in frontend mock state.`); }}>Add value</PrimaryButton></div>}</DetailDrawer>
-    <DetailDrawer open={creating} title="Add reference set" onClose={() => setCreating(false)}><form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const group = { id: `REF-${String(groups.length + 1).padStart(3, '0')}`, name: String(data.get('name')), records: 0, usedBy: String(data.get('usedBy')), lastChanged: 'Today', owner: String(data.get('owner')), status: 'Healthy' }; setGroups((current) => [...current, group]); setCreating(false); setToast(`${group.name} reference set was created in frontend mock state.`); }}><Field label="Reference set name"><input name="name" required className={inputClass} /></Field><Field label="Used by"><input name="usedBy" required className={inputClass} placeholder="Modules or workflows that consume this data" /></Field><Field label="Data owner"><input name="owner" required className={inputClass} /></Field><PrimaryButton type="submit">Create reference set</PrimaryButton></form></DetailDrawer><Toast message={toast} /></div>;
 }
 
 function SystemSettingsPage() {

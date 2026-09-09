@@ -91,7 +91,6 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { section: 'Overview', label: 'Admin Dashboard', href: '/master-admin/dashboard', icon: LayoutDashboard },
     { section: 'Identity & Access', label: 'Users & Accounts', href: '/master-admin/users', icon: Users },
     { label: 'Roles & Permissions', href: '/master-admin/roles', icon: KeyRound },
-    { section: 'Data Management', label: 'Master Data', href: '/master-admin/reference-data', icon: FileText },
     { section: 'Platform', label: 'System Settings', href: '/master-admin/configuration', icon: Settings },
     { label: 'System Health & Jobs', href: '/master-admin/technical-logs', icon: RefreshCcw },
     { section: 'Security & Audit', label: 'Security Policies', href: '/master-admin/security', icon: ShieldCheck },
