@@ -7,15 +7,14 @@ import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { usersApi, type CreateUserDto, type UpdateUserDto, type User } from '@/lib/api/users';
 import { alternateApproverOptions, buildAvailabilityPayload } from '@/lib/users/availability';
-import { accessReviews, organizationUnits } from '@/lib/mock/admin.mock';
+import { organizationUnits } from '@/lib/mock/admin.mock';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
 
-type IdentitySlug = 'users' | 'roles' | 'access-reviews' | 'organizational-units';
+type IdentitySlug = 'users' | 'roles' | 'organizational-units';
 
 export function AdminIdentityPages({ slug }: Readonly<{ slug: IdentitySlug }>) {
   if (slug === 'users') return <UsersPage />;
   if (slug === 'roles') return <RolesPage />;
-  if (slug === 'access-reviews') return <AccessReviewsPage />;
   return <OrganizationPage />;
 }
 
@@ -368,16 +367,6 @@ function RolesPage() {
     </Panel>
     <Toast message={toast} />
   </div>;
-}
-
-function AccessReviewsPage() {
-  const [reviews, setReviews] = useState(accessReviews);
-  const [creating, setCreating] = useState(false);
-  const [toast, setToast] = useState('');
-  return <div className="space-y-4"><AdminPageHeader title="Access Reviews" detail="Certify privileged, dormant, and custodian access on a recurring schedule while preserving reviewer evidence." action={<PrimaryButton icon={Plus} onClick={() => setCreating(true)}>Start review</PrimaryButton>} />
-    <div className="grid gap-3 sm:grid-cols-3"><MetricCard label="Open reviews" value="2" detail="32 accounts in scope" tone="amber" icon={UserCheck} /><MetricCard label="At risk" value="1" detail="Due within two days" tone="red" icon={ShieldCheck} /><MetricCard label="Certified this quarter" value="8" detail="No unresolved exceptions" tone="green" icon={Users} /></div>
-    <Panel title="Certification Campaigns" detail="Reviewers retain, revoke, or modify access with a recorded justification"><div className="divide-y divide-slate-100">{reviews.map((review) => <article key={review.id} className="grid gap-4 p-4 lg:grid-cols-[1.4fr_1fr_1fr_auto] lg:items-center"><div><p className="font-bold text-slate-950">{review.name}</p><p className="mt-1 text-xs text-slate-500">{review.id} - {review.scope}</p></div><div><p className="text-xs text-slate-500">Owner</p><p className="text-sm font-semibold">{review.owner}</p></div><div><div className="flex justify-between text-xs"><span>{review.progress}% complete</span><span>Due {review.due}</span></div><div className="mt-2 h-2 bg-slate-100"><div className={`h-full ${review.status === 'At risk' ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${review.progress}%` }} /></div></div><div className="flex items-center justify-between gap-3 lg:justify-end"><StatusChip status={review.status} /><SecondaryButton onClick={() => { setReviews((current) => current.map((item) => item.id === review.id ? { ...item, progress: Math.min(100, item.progress + 10), status: item.progress >= 90 ? 'Completed' : 'In progress' } : item)); setToast(`${review.name} certification progress was updated in frontend mock state.`); }}>Review</SecondaryButton></div></article>)}</div></Panel>
-    <DetailDrawer open={creating} title="Start access review" onClose={() => setCreating(false)}><form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const review = { id: `REV-2026-${String(reviews.length + 1).padStart(2, '0')}`, name: String(data.get('name')), owner: String(data.get('owner')), scope: String(data.get('scope')), due: String(data.get('due')), progress: 0, status: 'In progress' }; setReviews((current) => [review, ...current]); setCreating(false); setToast(`${review.name} was started in frontend mock state.`); }}><Field label="Campaign name"><input name="name" required className={inputClass} /></Field><Field label="Accounts or roles in scope"><input name="scope" required className={inputClass} placeholder="Example: All privileged accounts" /></Field><Field label="Review owner"><input name="owner" required className={inputClass} /></Field><Field label="Due date"><input name="due" required type="date" className={inputClass} /></Field><PrimaryButton type="submit">Start certification</PrimaryButton></form></DetailDrawer><Toast message={toast} /></div>;
 }
 
 function OrganizationPage() {

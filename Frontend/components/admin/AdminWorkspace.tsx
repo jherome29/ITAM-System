@@ -4,7 +4,7 @@ import { AdminIdentityPages } from './AdminIdentityPages';
 import { AdminPlatformPages } from './AdminPlatformPages';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
 
-const identitySlugs = ['users', 'roles', 'access-reviews', 'organizational-units'] as const;
+const identitySlugs = ['users', 'roles', 'organizational-units'] as const;
 const governanceSlugs = ['approval-configuration', 'custodian-assignments'] as const;
 const platformSlugs = ['reference-data', 'configuration', 'technical-logs', 'security', 'audit'] as const;
 
