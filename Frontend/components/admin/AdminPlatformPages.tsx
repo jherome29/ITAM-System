@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useState, type ChangeEvent } from 'react';
-import { Activity, Archive, CheckCircle2, Clock3, Database, Download, FileClock, KeyRound, LockKeyhole, RefreshCw, Save, Server, ShieldCheck } from 'lucide-react';
+import { useCallback, useEffect, useId, useState, type ChangeEvent } from 'react';
+import { Activity, Archive, Clock3, Download, FileClock, KeyRound, LockKeyhole, Save, ShieldCheck } from 'lucide-react';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
@@ -12,10 +12,9 @@ import {
   systemConfigToForm,
   type SystemConfigFormValues,
 } from '@/lib/api/systemConfig';
-import { scheduledJobs, systemEvents } from '@/lib/mock/admin.mock';
-import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
+import { AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
 
-type PlatformSlug = 'configuration' | 'technical-logs' | 'security' | 'audit';
+type PlatformSlug = 'configuration' | 'security' | 'audit';
 
 function downloadCsv(filename: string, rows: Array<Record<string, string | number>>) {
   if (rows.length === 0) return;
@@ -32,7 +31,6 @@ function downloadCsv(filename: string, rows: Array<Record<string, string | numbe
 
 export function AdminPlatformPages({ slug }: Readonly<{ slug: PlatformSlug }>) {
   if (slug === 'configuration') return <SystemSettingsPage />;
-  if (slug === 'technical-logs') return <SystemHealthPage />;
   if (slug === 'security') return <SecurityPoliciesPage />;
   return <AuditLogPage />;
 }
@@ -231,19 +229,6 @@ function SystemSettingsPage() {
       )}
     </div>
   );
-}
-
-function SystemHealthPage() {
-  const [search, setSearch] = useState('');
-  const [tab, setTab] = useState<'Events' | 'Scheduled Jobs'>('Events');
-  const [selected, setSelected] = useState<(typeof systemEvents)[number] | null>(null);
-  const [toast, setToast] = useState('');
-  const events = useMemo(() => systemEvents.filter((event) => Object.values(event).join(' ').toLowerCase().includes(search.toLowerCase())), [search]);
-  return <div className="space-y-4"><AdminPageHeader title="System Health & Jobs" detail="Monitor platform services, diagnostic events, and scheduled automation without mixing them with user audit evidence." action={<SecondaryButton icon={RefreshCw} onClick={() => setToast('Health checks refreshed.')}>Refresh checks</SecondaryButton>} />
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Frontend" value="Available" detail="HTTP 200 - 42 ms" tone="green" icon={CheckCircle2} /><MetricCard label="Backend API" value="Starting" detail="Waiting for database" tone="amber" icon={Server} /><MetricCard label="Database" value="Unavailable" detail="Tenant/user not found" tone="red" icon={Database} /><MetricCard label="Scheduled jobs" value="3" detail="One completed with warning" tone="amber" icon={Clock3} /></div>
-    <div className="flex border-b border-slate-200" role="tablist">{(['Events', 'Scheduled Jobs'] as const).map((item) => <button key={item} type="button" role="tab" aria-selected={tab === item} onClick={() => setTab(item)} className={`border-b-2 px-4 py-2 text-sm font-bold ${tab === item ? 'border-blue-700 text-blue-700' : 'border-transparent text-slate-500'}`}>{item}</button>)}</div>
-    {tab === 'Events' ? <><SearchToolbar value={search} onChange={setSearch} filterLabel="All technical events" /><Panel title="Technical Events" detail="Runtime and service diagnostics; sensitive fields are never displayed"><TableWrap><table className="min-w-[1120px] w-full"><thead><tr><th className={thClass}>Timestamp</th><th className={thClass}>Severity</th><th className={thClass}>Service</th><th className={thClass}>Event</th><th className={thClass}>Correlation ID</th><th className={thClass}>Duration</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{events.map((event) => <tr key={event.id} className="hover:bg-slate-50"><td className={tdClass}>{event.timestamp}<span className="block text-xs text-slate-500">{event.id}</span></td><td className={tdClass}><StatusChip status={event.severity} /></td><td className={tdClass}>{event.service}</td><td className={tdClass}>{event.event}</td><td className={`${tdClass} font-mono text-xs`}>{event.correlationId}</td><td className={tdClass}>{event.duration}</td><td className={tdClass}><StatusChip status={event.status} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'Inspect event', onClick: () => setSelected(event) }, { label: 'Copy correlation ID', onClick: () => { void navigator.clipboard.writeText(event.correlationId); setToast(`${event.correlationId} copied.`); } }, { label: 'Mark reviewed', onClick: () => setToast(`${event.id} marked reviewed in mock state.`) }]} /></td></tr>)}</tbody></table></TableWrap></Panel></> : <Panel title="Scheduled Jobs" detail="Automation schedule, execution duration, and latest result"><TableWrap><table className="min-w-[960px] w-full"><thead><tr><th className={thClass}>Job</th><th className={thClass}>Schedule</th><th className={thClass}>Last run</th><th className={thClass}>Next run</th><th className={thClass}>Duration</th><th className={thClass}>Result</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{scheduledJobs.map((job) => <tr key={job.id}><td className={`${tdClass} font-bold text-slate-950`}>{job.name}<span className="block text-xs font-normal text-slate-500">{job.id}</span></td><td className={tdClass}>{job.schedule}</td><td className={tdClass}>{job.lastRun}</td><td className={tdClass}>{job.nextRun}</td><td className={tdClass}>{job.duration}</td><td className={tdClass}><StatusChip status={job.result} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View history', onClick: () => setToast(`${job.name} completed successfully on its two previous runs.`) }, { label: 'Run now', onClick: () => setToast(`${job.name} queued for execution in frontend mock state.`) }]} /></td></tr>)}</tbody></table></TableWrap></Panel>}
-    <DetailDrawer open={Boolean(selected)} title={selected?.event ?? 'Technical event'} onClose={() => setSelected(null)}>{selected && <div className="space-y-4">{Object.entries(selected).map(([key, value]) => <div key={key} className="flex justify-between gap-4 border-b border-slate-100 pb-3 text-sm"><span className="capitalize text-slate-500">{key.replace(/([A-Z])/g, ' $1')}</span><span className="text-right font-mono text-xs font-semibold">{value}</span></div>)}<div className="border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">Use the correlation ID to connect related service events. Credentials, tokens, request bodies, and stack traces are intentionally excluded.</div></div>}</DetailDrawer><Toast message={toast} /></div>;
 }
 
 const securitySections = ['Authentication', 'Sessions', 'Access Policy', 'Network', 'Emergency Access'] as const;
