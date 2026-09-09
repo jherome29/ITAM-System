@@ -4,7 +4,10 @@ import type { LucideIcon } from 'lucide-react';
 import { MoreHorizontal, Search, SlidersHorizontal } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import type { AdminTone } from '@/lib/mock/admin.mock';
+
+// Semantic colour role for admin cards, chips, and status rows. Owned here
+// because every admin surface pulls it from this module.
+export type AdminTone = 'blue' | 'green' | 'amber' | 'red' | 'slate';
 
 const toneStyles: Record<AdminTone, string> = {
   blue: 'bg-blue-50 text-blue-700 ring-blue-200',
