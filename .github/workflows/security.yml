@@ -70,9 +70,10 @@ jobs:
 
       # npm audit --workspace is unreliable across npm versions.
       # Run from each directory directly for consistent behavior.
-      # Threshold restored to high on 2026-08-15: multer 2.2.0 (fixed) shipped,
-      # resolving the DoS advisory that forced the critical-only threshold on
-      # 2026-06-18. No known-unfixable high/critical CVEs remain as of this date.
+      # Threshold stays "high" (2026-08-15). 2026-09-09: a small set of advisories
+      # with no non-breaking upstream fix is carried in scripts/audit-allowlist.mjs
+      # (the multer DoS chain reached through every @nestjs/* package) — the plain
+      # `npm audit` below stays for the artifact; the gate is the allowlist script.
       - name: Backend audit (JSON report)
         run: cd Backend && npm audit --audit-level=high --json > /tmp/backend-audit.json || true
 
@@ -88,14 +89,15 @@ jobs:
             /tmp/frontend-audit.json
           retention-days: 30
 
-      # Fails the job on high/critical CVEs. If a future advisory has no
-      # upstream fix, add a scoped `npm audit fix --omit` / advisory-specific
-      # exception here instead of dropping this threshold globally again.
-      - name: Fail on Backend high/critical CVEs
-        run: cd Backend && npm audit --audit-level=high
+      # Fails the job on any high/critical advisory that is NOT in
+      # scripts/audit-allowlist.mjs. The allowlist holds only advisories with no
+      # non-breaking upstream fix, each with a written reason — a genuinely
+      # fixable CVE still fails here. Prefer upgrading over adding an entry.
+      - name: Fail on un-allowlisted Backend high/critical CVEs
+        run: node scripts/audit-allowlist.mjs Backend
 
-      - name: Fail on Frontend high/critical CVEs
-        run: cd Frontend && npm audit --audit-level=high
+      - name: Fail on un-allowlisted Frontend high/critical CVEs
+        run: node scripts/audit-allowlist.mjs Frontend
 
   # ── OWASP Dependency-Check ────────────────────────────────────────────────
   # continue-on-error: true prevents a slow NVD DB fetch or empty NVD_API_KEY

@@ -10,6 +10,10 @@ export interface User {
   division: string;
   officeOrSection: string;
   isActive: boolean;
+  // Lockout state — surfaced so the admin directory can flag and act on locked
+  // accounts. Both columns come straight off UserEntity (not select:false).
+  failedLoginAttempts: number;
+  lockedUntil: string | null;
   createdAt: string;
   updatedAt: string;
   alternateApproverId: string | null;
@@ -69,6 +73,11 @@ export const usersApi = {
 
   unlock: (id: string) =>
     client.patch<ApiResponse<User>>(`/v1/users/${id}/unlock`).then((r) => r.data),
+
+  // Force sign-out: bumps tokenVersion server-side so every issued JWT for the
+  // account stops validating. Password and active flag are left untouched.
+  revokeSessions: (id: string) =>
+    client.patch<ApiResponse<null>>(`/v1/users/${id}/revoke-sessions`).then((r) => r.data),
 
   setMyAvailability: (payload: { unavailable: boolean; unavailableUntil: string | null }) =>
     client.patch<ApiResponse<User>>('/v1/users/me/availability', payload).then((r) => r.data),

@@ -49,9 +49,12 @@ Quick-read companion: `FEATURE-STATUS.md`; full path to handover: `PATH-TO-DONE.
 `requisitions`, `scheduler`, `system-config` (new — `feature/system-config`, PR pending),
 `users`.
 **Do NOT exist yet:** returns/incidents, physical-count / reconciliation,
-inventory-corrections, replacement-validation, and every Master-Admin governance domain
-(access reviews, org units, approval-route config, custodian coverage, reference/master
-data, system-events feed, scheduled-jobs status).
+inventory-corrections, replacement-validation.
+**Cut as out of scope (2026-09-09):** the Master-Admin governance domains
+(access reviews, org-unit registry, approval-route config, custodian coverage,
+reference/master data, system-events feed, scheduled-jobs status). The mock
+pages and `admin.mock.ts` were deleted; the Master Admin surface is now
+Dashboard / Users / Roles / System Settings / Audit / Notifications, all live.
 
 ---
 
@@ -94,7 +97,7 @@ reports (`ReportsContent`), audit, notifications all real. Nothing.
 ### System Administrator — `app/admin/*` — PARTIAL
 | Screen | Mock source | Connect to | Backend / DB work |
 |---|---|---|---|
-| Dashboard · Users (CRUD) · Role assignment · Audit trail · Notifications | — | `usersApi`, `auditApi`, `NotificationsContent` | none — LIVE |
+| Dashboard · Users (CRUD) · Role assignment · Audit trail · Notifications | — | `usersApi`, `auditApi`, `NotificationsContent` | none — LIVE. Directory adds a role filter, live **Locked** status + `unlock`, **force sign-out** (`revoke-sessions`), and a per-account activity panel (`auditApi.byUser`); audit page adds a server-side date range. See the Master Admin table below for the full list. |
 | **System Configuration** — Master Admin → System Settings (`AdminPlatformPages.tsx` → `SystemSettingsPage`, `/master-admin/configuration`) | **LIVE** (merged to `develop`, PR #87) — `systemConfigApi` load/save, load-error retry. Old `/admin/config` page **deleted**. | `systemConfigApi` → `GET`/`PATCH /api/v1/system-config` | **core done** — `system-config` module: key-value `system_config` table, admin-only + audited, SLA hours / reorder level / useful-life years / max login attempts. Still pending in `SystemSettingsPage`: the numbering / notifications / forms & print / data retention / localization tabs (labelled "not yet configurable"), `reference-data`, + deferred settings (approval routes, session policy, PPE cost threshold) |
 | **Approval routing panel** — Master Admin → Users → open a supervisor (`AdminIdentityPages.tsx`) | **LIVE** (2026-08-30, alternate approver — PR open) — designate an alternate approver + mark unavailable/until | `usersApi.update` → `PATCH /users/:id` (`alternateApproverId` / `unavailable` / `unavailableUntil`); `GET /users?role=supervisor` | done on `feature/alternate-approver` |
 
@@ -119,15 +122,24 @@ Dashboard, notifications, assets (list/new/detail), QR scanner, reports/forms, a
 `WorkflowPage` slugs `fulfillment` / `custody` / `maintenance` / `disposal` all real.
 - `physical-inventory` slug → WorkflowPage MOCK — no physical-count backend exists (Part D #4)
 
-### Master Admin — `app/master-admin/[[...slug]]` → `components/admin/AdminWorkspace.tsx` — MOSTLY MOCK
+### Master Admin — `app/master-admin/[[...slug]]` → `components/admin/AdminWorkspace.tsx` — LIVE
 | Slug(s) | Component | State | Backend / DB work |
 |---|---|---|---|
-| `users`, `roles`, `audit` | `AdminIdentityPages` / `AdminPlatformPages` | **LIVE** (`usersApi`, `auditApi`) | — |
-| `dashboard` | `AdminDashboard` | PARTIAL — 2 of 6 panels real (`usersApi.list`, `auditApi.list`); other 4 use `admin.mock` (`adminActivityTrend`, `accessReviews`, `scheduledJobs`, `systemEvents`), labeled "Preview data" | wire the 4 panels once their sources exist |
-| `access-reviews`, `organizational-units` | `AdminIdentityPages` | MOCK (`accessReviews`, `organizationUnits`) | **new** — access-review workflow; org-unit registry |
-| `approval-configuration`, `custodian-assignments` | `AdminGovernancePages` | MOCK (`approvalWorkflows`, `custodianCoverage`) | **new** — approval-route config table; custodian-coverage report (derivable from `users` + `assets`) |
-| `reference-data`, `configuration` | `AdminPlatformPages` | MOCK (`masterDataGroups`) | **new** — reference/master-data CRUD; shares the config module (Part D #2) |
-| `technical-logs`, `security` | `AdminPlatformPages` | MOCK (`scheduledJobs`, `systemEvents`) | scheduled-jobs status can come from the `scheduler` module; system-events feed can reuse `auditApi` |
+| `users`, `roles` | `AdminIdentityPages` | **LIVE** (`usersApi`, `auditApi.byUser`) — role filter, live **Locked** status + `unlock`, **force sign-out** (`revoke-sessions`), per-account activity panel | — |
+| `configuration` | `AdminPlatformPages` → `SystemSettingsPage` | **LIVE** (`systemConfigApi`) — shows per-key `meta` provenance | — (aspirational tabs still labelled "not yet configurable") |
+| `audit` | `AdminPlatformPages` → `AuditLogPage` | **LIVE** (`auditApi`) — server-side From/To date range | — |
+| `dashboard` | `AdminDashboard` | **LIVE** — `adminApi.dashboardStats` (`GET /api/v1/admin/dashboard-stats`), `healthApi.check`, `systemConfigApi`, `reportsApi.kpi`, `auditApi.list`, `schedulerApi.watcherStatus` | — |
+| `notifications` | `NotificationsContent` | **LIVE** (`notificationsApi`) | — |
+
+> The governance/platform mock pages (access reviews, org-unit registry,
+> approval-route config, custodian coverage, master data, system health/jobs,
+> security policies) were **removed as out of scope** on 2026-09-09, along with
+> `admin.mock.ts` and their nav entries. The dashboard rebuild needed
+> `admin/dashboard-stats`; a follow-up hardening pass on the same branch added
+> `PATCH /v1/users/:id/revoke-sessions`, `GET /v1/notifications/watcher-status`,
+> `startDate`/`endDate` on `GET /v1/audit`, and a `meta` block on
+> `GET /v1/system-config` — everything else was wiring endpoints that already
+> existed (`unlock`, `audit/user/:id`).
 
 ### Property Custodian — `app/property-custodian/[[...slug]]` — LIVE (one gap)
 Dashboard, `fixed-assets` / `supplies` / `assets` (real `AssetRegistryList` /
@@ -167,7 +179,7 @@ Dashboard KPIs (`reportsApi.kpi()`), all 4 report tabs (`ReportsContent`), `form
 3. **Returns / Incidents module.** Entity + endpoints for return request, repair request, damage/loss/theft report + audit logging. Consumed by Employee "Returns & Incidents".
 4. **Physical count / reconciliation.** Consumed by `physical-inventory` slugs (IT Asset Custodian, Property Custodian) and Property Officer `reconciliation`; also fixes the known RPCI / RPCPPE / Physical Count Summary report gap.
 5. ~~**Replacement-validation rules.**~~ **Backend done — merged to `develop` via PR #86.** `validateReplacement()` runs inside `requisitions.service.create()` (useful-life / condition checks, requester-must-be-custodian; useful-life read live from System Config). The Property Officer `replacements` screen is still `WorkflowPage` mock — wiring it to a standalone view of this is the remaining FE task.
-6. **Master-Admin governance domains** (all 100 % mock in `admin.mock.ts`): access-review workflow, org-unit registry, approval-route config, custodian-coverage report, reference/master-data CRUD, system-events feed, scheduled-jobs status (may expose from `scheduler`).
+6. ~~**Master-Admin governance domains.**~~ **Cut as out of scope (2026-09-09).** Access-review workflow, org-unit registry, approval-route config, custodian-coverage report, reference/master-data CRUD, system-events feed, and scheduled-jobs status were never in the capstone scope; the mock pages, their nav entries, and `admin.mock.ts` were deleted. The Master Admin dashboard was rebuilt on live data (`GET /api/v1/admin/dashboard-stats`, `Backend/src/admin/`). A follow-up admin-hardening pass on the same branch added `PATCH /v1/users/:id/revoke-sessions`, `GET /v1/notifications/watcher-status`, `startDate`/`endDate` on `GET /v1/audit`, and a `meta` block on `GET /v1/system-config` — a *narrow* slice of the cut "system health & jobs" console (just the last-sweep heartbeat), not a re-opening of it.
 7. **Trends / utilization reporting** endpoint — for the "Preview data" chart panels on the Management and Management&Audit dashboards.
 
 ---
@@ -180,7 +192,7 @@ adjust to taste:
 
 | Owner | Scope | Size |
 |---|---|---|
-| **1** | **Master-Admin governance** (Part D #6) — the biggest chunk, decompose into its own specs: access-review workflow + org-unit registry first, then approval-route config + custodian-coverage report, then reference/master-data CRUD; `technical-logs`/`security` panels can read from the `scheduler` module + `auditApi`. Then wire the 4 "Preview data" panels on the Master Admin dashboard. | L |
+| **1** | ~~Master-Admin governance~~ — **cut as out of scope (2026-09-09)**; mock pages + `admin.mock.ts` deleted, dashboard rebuilt on `GET /api/v1/admin/dashboard-stats`. Reassign this owner to help with #2 or the disposal workflow. | — |
 | **2** | **Physical count / reconciliation** (Part D #4) — new BE module + the `physical-inventory` slugs (IT Asset Custodian, Property Custodian) + Property Officer `reconciliation`; unblocks 2 of the 8 missing reports (RPCI, RPCPPE, Physical Count Summary). | L |
 | **3** | **Disposal workflow** (`SYSTEM-STATUS.md` #4) — turn the dispose-flag into a documented flow with the COA-required fields — **plus** **Returns / Incidents module** (Part D #3) + the Employee "Returns & Incidents" tab. | M |
 | **4** | **Quick wins + coverage:** Part A dead-code deletion (grep-verify each file) + move `dashboard.mock.ts` type exports out; `assets` `custodianId` filter (Part D #1) + wire Employee assigned-assets; the `isLiveFetchPage` one-liners — Approving Officer `approval-history`, Property Officer `disposal` / `audit` / `replacements` (wire to the existing replacement-validation backend) / `corrections`; Trends/utilisation endpoint (Part D #7) + the chart panels. Then a `Frontend/` coverage gate (`PATH-TO-DONE.md` §C). | S each |

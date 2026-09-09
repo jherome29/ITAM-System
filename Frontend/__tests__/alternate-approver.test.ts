@@ -5,6 +5,7 @@ import type { User } from '@/lib/api/users';
 const u = (over: Partial<User>): User => ({
   id: 'x', email: 'x@cicc.gov.ph', firstName: 'A', lastName: 'B', employeeId: 'E',
   role: 'supervisor', division: 'D', officeOrSection: 'S', isActive: true,
+  failedLoginAttempts: 0, lockedUntil: null,
   createdAt: '', updatedAt: '', alternateApproverId: null, unavailable: false, unavailableUntil: null,
   ...over,
 });

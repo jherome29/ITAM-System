@@ -119,10 +119,10 @@ Target to work toward: **70% across all metrics** (CLAUDE.md §12).
 ```bash
 cd Backend && npm run audit:check
 ```
-**Pass condition:** Exit code 0. No critical severity vulnerabilities reported.
-**What it checks:** `npm audit --audit-level=critical` against all backend dependencies.
-**Note:** Threshold is temporarily `critical` (not `high`) — `multer` has a high-severity DoS CVE with no upstream fix as of 2026-06-18 (latest multer is 2.1.1, still in vulnerable range). Revisit when multer >=2.2.0 is released and `@nestjs/platform-express` updates its dependency.
-**If it fails:** Run `npm audit fix` for auto-fixable issues. For manual fixes, check the advisory and update the specific package. Do not use `--force` unless the breaking change has been reviewed.
+**Pass condition:** Exit code 0.
+**What it checks:** `node ../scripts/audit-allowlist.mjs .` — runs `npm audit` and fails on any **high/critical** advisory that is **not** in `scripts/audit-allowlist.mjs`.
+**Note:** The allowlist (as of 2026-09-09) holds only the four `multer` DoS advisories — `multer` is pulled in transitively by every `@nestjs/*` package and the only "fix" npm offers is downgrading NestJS 11 → 7. Each entry has a written reason; re-check when `@nestjs/platform-express` bumps its `multer` dependency. Everything else high/critical still fails the gate.
+**If it fails:** Prefer a targeted in-range bump — `npm update <pkg>` (or edit the pin) then `npm install` — and re-verify tests/build. Only add a GHSA to the allowlist when there is genuinely no non-breaking fix, with a reason. Never `npm audit fix` (it reshuffles the whole tree) and never `--force`.
 
 ---
 
@@ -194,8 +194,8 @@ secretlint "**/*"
 ```bash
 cd Frontend && npm run audit:check
 ```
-**Pass condition:** Exit code 0. No high or critical vulnerabilities.
-**What it checks:** `npm audit --audit-level=high` for all frontend dependencies.
+**Pass condition:** Exit code 0.
+**What it checks:** `node ../scripts/audit-allowlist.mjs .` — same allowlist gate as check 6 (see its Note). No frontend advisories are allowlisted; every high/critical fails.
 
 ---
 
