@@ -36,7 +36,6 @@ const nextConfig: NextConfig = {
       { source: "/property-officer/disposal-review", destination: "/property-officer/disposal", permanent: false },
       { source: "/property-officer/reports-forms", destination: "/property-officer/reports", permanent: false },
       { source: "/property-officer/audit-history", destination: "/property-officer/audit", permanent: false },
-      { source: "/master-admin/approval-config", destination: "/master-admin/approval-configuration", permanent: false },
       { source: "/management-audit/maintenance-disposal-reports", destination: "/management-audit/maintenance-disposal", permanent: false },
       { source: "/management-audit/physical-count-reports", destination: "/management-audit/physical-count", permanent: false },
       { source: "/management-audit/audit-log", destination: "/management-audit/audit", permanent: false },
