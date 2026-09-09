@@ -91,7 +91,6 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { section: 'Overview', label: 'Admin Dashboard', href: '/master-admin/dashboard', icon: LayoutDashboard },
     { section: 'Identity & Access', label: 'Users & Accounts', href: '/master-admin/users', icon: Users },
     { label: 'Roles & Permissions', href: '/master-admin/roles', icon: KeyRound },
-    { label: 'Organization Structure', href: '/master-admin/organizational-units', icon: Landmark },
     { section: 'Workflow Governance', label: 'Approval Workflows', href: '/master-admin/approval-configuration', icon: ClipboardCheck },
     { label: 'Custodian Coverage', href: '/master-admin/custodian-assignments', icon: PackageCheck },
     { section: 'Data Management', label: 'Master Data', href: '/master-admin/reference-data', icon: FileText },

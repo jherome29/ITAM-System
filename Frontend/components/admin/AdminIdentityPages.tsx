@@ -7,15 +7,13 @@ import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { usersApi, type CreateUserDto, type UpdateUserDto, type User } from '@/lib/api/users';
 import { alternateApproverOptions, buildAvailabilityPayload } from '@/lib/users/availability';
-import { organizationUnits } from '@/lib/mock/admin.mock';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
 
-type IdentitySlug = 'users' | 'roles' | 'organizational-units';
+type IdentitySlug = 'users' | 'roles';
 
 export function AdminIdentityPages({ slug }: Readonly<{ slug: IdentitySlug }>) {
   if (slug === 'users') return <UsersPage />;
-  if (slug === 'roles') return <RolesPage />;
-  return <OrganizationPage />;
+  return <RolesPage />;
 }
 
 // Real backend UserRole enum values (packages/shared/src/enums/index.ts) — the
@@ -367,18 +365,4 @@ function RolesPage() {
     </Panel>
     <Toast message={toast} />
   </div>;
-}
-
-function OrganizationPage() {
-  const [units, setUnits] = useState(organizationUnits);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('All');
-  const [selected, setSelected] = useState<(typeof organizationUnits)[number] | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [toast, setToast] = useState('');
-  const rows = units.filter((unit) => (filter === 'All' || unit.type === filter || unit.status === filter) && Object.values(unit).join(' ').toLowerCase().includes(search.toLowerCase()));
-  return <div className="space-y-4"><AdminPageHeader title="Organization Structure" detail="Maintain CICC offices, divisions, sections, and reporting relationships used for access scope, approvals, and custody." action={<PrimaryButton icon={Plus} onClick={() => setCreating(true)}>Add unit</PrimaryButton>} />
-    <div className="grid min-w-0 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]"><Panel title="Hierarchy" detail="Reporting structure"><div className="p-3"><div className="border-l-2 border-blue-200 pl-3"><p className="py-2 text-sm font-bold text-slate-950">CICC</p>{units.filter((unit) => unit.parent === 'CICC').map((unit) => <div key={unit.id} className="border-l border-slate-200 pl-3"><button type="button" onClick={() => setSelected(unit)} className="w-full py-2 text-left text-sm font-semibold text-slate-700 hover:text-blue-700">{unit.name}</button>{units.filter((child) => child.parent === unit.name).map((child) => <button key={child.id} type="button" onClick={() => setSelected(child)} className="block w-full border-l border-slate-200 py-2 pl-3 text-left text-xs text-slate-600 hover:text-blue-700">{child.name}</button>)}</div>)}</div></div></Panel><div className="min-w-0 space-y-4"><SearchToolbar value={search} onChange={setSearch} filterLabel="All unit types" filterValue={filter} filterOptions={['All', 'Agency', 'Division', 'Service', 'Section', 'Unit', 'Active']} onFilterChange={setFilter} /><Panel title="Organizational Units" detail={`${rows.length} hierarchy records`}><TableWrap><table className="min-w-[1050px] w-full"><thead><tr><th className={thClass}>Unit</th><th className={thClass}>Type</th><th className={thClass}>Parent</th><th className={thClass}>Unit head</th><th className={thClass}>Users</th><th className={thClass}>Custodian</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{rows.map((unit) => <tr key={unit.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelected(unit)} className="text-left font-bold text-slate-950">{unit.name}<span className="block text-xs font-normal text-slate-500">{unit.code}</span></button></td><td className={tdClass}>{unit.type}</td><td className={tdClass}>{unit.parent}</td><td className={tdClass}>{unit.head}</td><td className={tdClass}>{unit.users}</td><td className={tdClass}>{unit.custodian}</td><td className={tdClass}><StatusChip status={unit.status} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View unit', onClick: () => setSelected(unit) }, { label: 'Mark inactive', onClick: () => { setUnits((current) => current.map((item) => item.id === unit.id ? { ...item, status: 'Inactive' } : item)); setToast(`${unit.name} marked inactive in mock state.`); } }, { label: 'Review dependencies', onClick: () => setToast(`${unit.users} user dependencies and related workflow links found.`) }]} /></td></tr>)}</tbody></table></TableWrap></Panel></div></div>
-    <DetailDrawer open={Boolean(selected)} title={selected?.name ?? 'Organizational unit'} onClose={() => setSelected(null)}>{selected && <div className="space-y-4">{[['Unit code', selected.code], ['Type', selected.type], ['Parent', selected.parent], ['Unit head', selected.head], ['Assigned users', String(selected.users)], ['Custodian coverage', selected.custodian]].map(([label, value]) => <div key={label} className="flex justify-between gap-4 border-b border-slate-100 pb-3 text-sm"><span className="text-slate-500">{label}</span><span className="text-right font-semibold">{value}</span></div>)}<div className="border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Before deactivation, AIMRS checks users, assets, approval workflows, and custodian assignments that depend on this unit.</div><SecondaryButton onClick={() => setToast(`${selected.users} user dependencies checked; no destructive action was performed.`)}>Review dependencies</SecondaryButton></div>}</DetailDrawer>
-    <DetailDrawer open={creating} title="Add organizational unit" onClose={() => setCreating(false)}><form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const unit = { id: `OU-${String(units.length + 1).padStart(3, '0')}`, code: String(data.get('code')), name: String(data.get('name')), type: String(data.get('type')), parent: String(data.get('parent')), head: String(data.get('head')), users: 0, custodian: 'Unassigned', status: 'Active' }; setUnits((current) => [...current, unit]); setCreating(false); setToast(`${unit.name} was added to the organization hierarchy in frontend mock state.`); }}><div className="grid gap-4 sm:grid-cols-2"><Field label="Unit code"><input name="code" required className={inputClass} placeholder="AS-UNIT" /></Field><Field label="Unit type"><select name="type" className={inputClass}><option>Division</option><option>Service</option><option>Section</option><option>Unit</option></select></Field></div><Field label="Unit name"><input name="name" required className={inputClass} /></Field><Field label="Parent unit"><select name="parent" className={inputClass}>{units.map((unit) => <option key={unit.id} value={unit.name}>{unit.name}</option>)}</select></Field><Field label="Unit head"><input name="head" required className={inputClass} /></Field><PrimaryButton type="submit">Add unit</PrimaryButton></form></DetailDrawer><Toast message={toast} /></div>;
 }
