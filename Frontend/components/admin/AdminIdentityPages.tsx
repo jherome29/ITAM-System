@@ -6,6 +6,7 @@ import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { usersApi, type CreateUserDto, type UpdateUserDto, type User } from '@/lib/api/users';
+import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { alternateApproverOptions, buildAvailabilityPayload } from '@/lib/users/availability';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
 
@@ -40,6 +41,56 @@ function AccountStatusChip({ user }: Readonly<{ user: User }>) {
   if (!user.isActive) return <StatusChip status="Inactive" tone="red" />;
   if (isLockedNow(user)) return <StatusChip status="Locked" tone="red" />;
   return <StatusChip status="Active" tone="green" />;
+}
+
+// "What has this account been doing?" — the one drill-down the System Admin
+// needs and that GET /v1/audit/user/:userId already served with no UI hanging
+// off it. Read-only; mounts fresh per selected account (keyed on user id).
+function UserAuditHistory({ userId }: Readonly<{ userId: string }>) {
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  useEffect(() => {
+    let cancelled = false;
+    auditApi
+      .byUser(userId, 1, 20)
+      .then((res) => {
+        if (cancelled) return;
+        setLogs(res.data.data);
+        setState('ready');
+      })
+      .catch(() => {
+        if (!cancelled) setState('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  return (
+    <Panel title="Recent activity" detail="Last 20 audit entries performed by this account">
+      <div className="divide-y divide-slate-100 px-4">
+        {state === 'loading' && <p className="py-6 text-center text-xs text-slate-400">Loading activity…</p>}
+        {state === 'error' && <p className="py-6 text-center text-xs text-red-600">Could not load this account&apos;s audit history.</p>}
+        {state === 'ready' && logs.length === 0 && (
+          <p className="py-6 text-center text-xs text-slate-400">No audit entries recorded for this account.</p>
+        )}
+        {state === 'ready' &&
+          logs.map((log) => (
+            <div key={log.id} className="py-3">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-semibold text-slate-900">{log.action.replace(/_/g, ' ')}</p>
+                <span className="whitespace-nowrap text-xs text-slate-500">{new Date(log.timestamp).toLocaleString()}</span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                {log.affectedRecordType ?? 'record'}
+                {log.affectedRecordId ? ` ${log.affectedRecordId.slice(0, 8)}…` : ''} · {log.ipAddress || 'no-ip'}
+              </p>
+            </div>
+          ))}
+      </div>
+    </Panel>
+  );
 }
 
 function UsersPage() {
@@ -126,7 +177,7 @@ function UsersPage() {
     <Panel title="Account Directory" detail={`${users.length} accounts shown - deactivation preserves audit history`}>
       {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>User</th><th className={thClass}>Office</th><th className={thClass}>Role</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{users.length === 0 ? <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-400">No accounts found.</td></tr> : users.map((user) => <tr key={user.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelectedId(user.id)} className="text-left"><span className="block font-bold text-slate-950">{userName(user)}</span><span className="text-xs text-slate-500">{user.employeeId} - {user.email}</span></button></td><td className={tdClass}>{user.division} / {user.officeOrSection}</td><td className={tdClass}>{user.role}</td><td className={tdClass}><AccountStatusChip user={user} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View account', onClick: () => setSelectedId(user.id) }, { label: 'Reset password', onClick: () => setResetTarget(user) }, ...(isLockedNow(user) ? [{ label: 'Unlock account', onClick: () => handleUnlock(user.id, userName(user)) }] : []), user.isActive ? { label: 'Deactivate account', danger: true, onClick: () => handleDeactivate(user.id, userName(user)) } : { label: 'Reactivate account', onClick: () => handleReactivate(user.id, userName(user)) }]} /></td></tr>)}</tbody></table></TableWrap>}
     </Panel>
-    <DetailDrawer open={Boolean(selected)} title={selected ? userName(selected) : 'Account details'} onClose={() => setSelectedId(null)}>{selected && <div className="space-y-5"><div className="grid grid-cols-2 gap-3">{[['Employee ID', selected.employeeId], ['Account ID', selected.id], ['Email', selected.email], ['Role', selected.role], ['Division', selected.division], ['Office / Section', selected.officeOrSection]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>)}</div><Panel title="Account status"><div className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Status</span><AccountStatusChip user={selected} /></div>{isLockedNow(selected) && <div className="flex items-center justify-between"><span className="text-sm text-slate-600">Locked until</span><span className="text-sm font-semibold text-slate-900">{new Date(selected.lockedUntil as string).toLocaleString()}</span></div>}{selected.failedLoginAttempts > 0 && <div className="flex items-center justify-between"><span className="text-sm text-slate-600">Failed sign-ins</span><span className="text-sm font-semibold text-slate-900">{selected.failedLoginAttempts}</span></div>}</div></Panel>{selected.role === 'supervisor' && <ApprovalRoutingPanel key={selected.id} user={selected} onSaved={(u) => setUsers((prev) => prev.map((x) => (x.id === u.id ? u : x)))} />}<div className="flex flex-wrap gap-2">{isLockedNow(selected) && <SecondaryButton onClick={() => handleUnlock(selected.id, userName(selected))}>Unlock account</SecondaryButton>}<SecondaryButton onClick={() => setResetTarget(selected)}>Reset password</SecondaryButton>{selected.isActive ? <SecondaryButton onClick={() => handleDeactivate(selected.id, userName(selected))}>Deactivate account</SecondaryButton> : <SecondaryButton onClick={() => handleReactivate(selected.id, userName(selected))}>Reactivate account</SecondaryButton>}</div><p className="text-xs text-slate-500">Actions call the live users API and create append-only audit events.</p></div>}</DetailDrawer>
+    <DetailDrawer open={Boolean(selected)} title={selected ? userName(selected) : 'Account details'} onClose={() => setSelectedId(null)}>{selected && <div className="space-y-5"><div className="grid grid-cols-2 gap-3">{[['Employee ID', selected.employeeId], ['Account ID', selected.id], ['Email', selected.email], ['Role', selected.role], ['Division', selected.division], ['Office / Section', selected.officeOrSection]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>)}</div><Panel title="Account status"><div className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Status</span><AccountStatusChip user={selected} /></div>{isLockedNow(selected) && <div className="flex items-center justify-between"><span className="text-sm text-slate-600">Locked until</span><span className="text-sm font-semibold text-slate-900">{new Date(selected.lockedUntil as string).toLocaleString()}</span></div>}{selected.failedLoginAttempts > 0 && <div className="flex items-center justify-between"><span className="text-sm text-slate-600">Failed sign-ins</span><span className="text-sm font-semibold text-slate-900">{selected.failedLoginAttempts}</span></div>}</div></Panel>{selected.role === 'supervisor' && <ApprovalRoutingPanel key={selected.id} user={selected} onSaved={(u) => setUsers((prev) => prev.map((x) => (x.id === u.id ? u : x)))} />}<UserAuditHistory key={selected.id} userId={selected.id} /><div className="flex flex-wrap gap-2">{isLockedNow(selected) && <SecondaryButton onClick={() => handleUnlock(selected.id, userName(selected))}>Unlock account</SecondaryButton>}<SecondaryButton onClick={() => setResetTarget(selected)}>Reset password</SecondaryButton>{selected.isActive ? <SecondaryButton onClick={() => handleDeactivate(selected.id, userName(selected))}>Deactivate account</SecondaryButton> : <SecondaryButton onClick={() => handleReactivate(selected.id, userName(selected))}>Reactivate account</SecondaryButton>}</div><p className="text-xs text-slate-500">Actions call the live users API and create append-only audit events.</p></div>}</DetailDrawer>
     <DetailDrawer open={creating} title="Create account" onClose={() => setCreating(false)}><AccountForm onSave={(user) => { setUsers((current) => [user, ...current]); setCreating(false); setToast(`${userName(user)} was added to the account directory.`); }} /></DetailDrawer>
     <PasswordResetDialog key={resetTarget?.id ?? 'none'} user={resetTarget} onClose={() => setResetTarget(null)} onDone={(name) => setToast(`Password reset for ${name}. They have been signed out of all sessions.`)} />
     <Toast message={toast} />
