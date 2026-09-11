@@ -7,6 +7,13 @@ Legend: ✅ real backend + real UI, verified · 🟡 works but has a caveat ·
 🔴 UI renders but the data is fake / nothing persists · ⬜ planned, no backend
 yet · 🚫 out of scope.
 
+> **2026-09-10:** every *(PR pending)* / *(built, PR pending)* tag below is now
+> **merged to `origin/main`** — alternate approver (#89/#90), watcher-status +
+> config `meta` + revoke-sessions + audit date range + directory role/lock filters
+> (#98), system config (#87), `fix/admin-shell-ui` activate + TRUST_PROXY (#96),
+> the Docker/deploy pass (#95), and the formal Jest security suite (#92).
+> `origin/develop` and `origin/main` are byte-identical.
+
 ---
 
 ## ✅ Working
@@ -24,7 +31,7 @@ yet · 🚫 out of scope.
 - **Alternate approver** — when a supervisor is marked unavailable, new
   requisitions route to a designated backup at submit time; a requisition that
   blows its 24h SLA with no decision is reassigned to the backup by the watcher.
-  Self-service "I'm away" toggle + admin designation. *(built, PR pending)*
+  Self-service "I'm away" toggle + admin designation. *(merged, PR #89/#90)*
 
 **Assets**
 - Register / edit / lifecycle transitions (issue, return, transfer, repair,
@@ -38,14 +45,13 @@ yet · 🚫 out of scope.
   live TopBar bell. Manual `POST /notifications/run-checks` trigger for testing.
 - `GET /notifications/watcher-status` reports the last completed sweep (time,
   trigger, per-watcher counts); shown on the admin dashboard's Platform-health
-  panel. *(`feature/master-admin-dashboard`, PR pending)*
+  panel. *(merged, PR #98)*
 
 **System configuration** — SLA hours, default reorder level, useful-life years,
 max login attempts are editable at runtime (System Admin only, audited) and read
 live by the workflow / watchers / auth. `GET /system-config` also returns a
 per-key `meta` (`updatedAt` / `updatedBy`), surfaced as "Last changed … by …"
-on System Settings and the dashboard. *(built, PR pending; `meta` on
-`feature/master-admin-dashboard`)*
+on System Settings and the dashboard. *(merged, PR #87; `meta` via PR #98)*
 
 **Admin & audit**
 - User CRUD, role assignment, unlock, **reactivate** (`PATCH /users/:id/activate` —
@@ -56,13 +62,13 @@ on System Settings and the dashboard. *(built, PR pending; `meta` on
   role); filterable by action **and date range**; per-account activity drill-down
   (`GET /audit/user/:id`) shown in the user drawer; full view for Admin + Management.
   Behind a proxy the client IP is real when `TRUST_PROXY` is set.
-  *(activate + TRUST_PROXY: `fix/admin-shell-ui`; revoke-sessions / role filter /
-  date range / per-user drill-down: `feature/master-admin-dashboard`; both PR pending)*
+  *(activate + TRUST_PROXY: PR #96; revoke-sessions / role filter /
+  date range / per-user drill-down: PR #98 — both merged)*
 
 **Infra**
 - Docker: both images build (repo-root context), `docker compose up --build` brings up
   Postgres (all 7 schemas + seed) + backend + frontend with `/api/health` healthchecks.
-  Prod compose fails fast on missing secrets. CI builds both images. *(`chore/docker-compose-fix`, PR pending)*
+  Prod compose fails fast on missing secrets. CI builds both images. *(merged, PR #95)*
 - k6 load baseline: 362 VUs, 0 errors, p95 758 ms (single contended box) — see `perf/`.
 
 **Reports & forms**
