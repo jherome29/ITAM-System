@@ -2,7 +2,7 @@
 
 > **For:** Nelson James Casambros · Andrei Fredrick Montaniel · Jairus Nathan Valenton
 > **Target Completion:** October 2026
-> **Last updated:** September 9, 2026
+> **Last updated:** September 10, 2026
 
 Read this file first, then **CLAUDE.md** (the single source of truth for the whole project). Everything else is linked from one of these two.
 
@@ -24,18 +24,18 @@ If you have an old local clone with a branch called `FE-Updated-not-finished`: t
 
 **Now on `main` (2026-08-27, PR #82 → #83):** the full redesigned-layout backend wiring — all 5 porting phases. IT Asset Custodian, Approving Officer, Property Custodian, Property Officer, Management & Audit, and Master Admin's Users/Roles/Audit now call the real backend. What's still mock is greenfield backend work only — see `MOCK-DATA-WIRING.md`.
 
-**Landed on `develop` since 2026-08-28** (not on `main` yet — `develop` is ahead):
+**Now on `main` (merged 2026-08-28 → 2026-09-10; `origin/develop` and `origin/main` are byte-identical):**
 - **PR #84** — automated notification watchers (SLA breach, 12 h pending nudge, overdue return, low stock) via a new `scheduler` module + `@nestjs/schedule`; supply-stock model (quantity/reorder level, transactional decrement on fulfill). Dedup stamps + an admin `run-checks` endpoint.
 - **PR #86** — replacement-requisition validation: a `replacement` requisition is only accepted if the requester holds the asset *and* it is unserviceable or past its useful life.
 - **PR #87** — System Config module: `system_config` key-value table (migration 006), `GET`/`PATCH /api/v1/system-config` (SYSTEM_ADMIN, audited); SLA hours / reorder level / useful-life years / max login attempts are runtime-tunable and read live. UI: **Master Admin → System Settings**; old `/admin/config` deleted.
 - **PR #89 / #90** — Alternate Approver: designate a backup supervisor; when the primary is marked unavailable (self-service toggle or admin) new requisitions route to the backup at submit; a requisition past its 24 h SLA is reassigned to the backup by the watcher (migration 007, `requisition_reassigned` audit action).
+- **PR #92** — `chore/phase5-security-tests`: `Backend/test/security.e2e-spec.ts` expanded to all 8 PHASE-5-TESTING Step 5.1 scenarios, plus `npm run test:e2e:local` (a throwaway `postgres:16` for running the e2e suite locally the way CI does).
+- **PR #94** — `Jairus/Update-Asset-Registry`: asset-registry card layout + register-asset-in-modal + a `requestedAssetClass` list filter.
+- **PR #95** — `chore/docker-compose-fix`, the Docker/deploy pass: **both Dockerfiles now build** (were broken — monorepo import escaped `context: ./Backend`; now repo-root context, `node:22-alpine`, non-root, one root lockfile). Compose reworked (root context, all 7 schemas, `/api/health` healthchecks, prod `${VAR:?err}` fail-fast + build args). New `GET /api/health`. `DATABASE_SSL` env replaces the `rejectUnauthorized` hack. `DB_POOL_MAX` / `THROTTLE_LIMIT` / `THROTTLE_TTL` env-tunable. Real bcrypt hash in the dev seed. CI `docker-build` job. `perf/` k6 load baseline (362 VUs, 0 errors, p95 758 ms on a contended single box). `Backend/.env.example` added.
+- **PR #96** — `fix/admin-shell-ui`: dead `/` breadcrumb crumb removed + acronym labels, slim custom scrollbars app-wide, collapsed-sidebar overlap fix, **`PATCH /users/:id/activate`** (reactivate a deactivated account) + an in-app `PasswordResetDialog` (replaces `window.prompt`), Toast auto-dismiss, `TRUST_PROXY` so audit entries log the real client IP behind a proxy, CLAUDE.md §14 date table trimmed.
+- **PR #98** — `feature/master-admin-dashboard`: Master Admin governance/platform mock pages + `admin.mock.ts` **cut as out of scope** (2026-09-09); dashboard rebuilt on live data (`GET /api/v1/admin/dashboard-stats`). Then an admin-hardening pass: **force sign-out** (`PATCH /users/:id/revoke-sessions` — bumps `tokenVersion` only), **unlock** wired into the directory + live **Locked** status + role filter, **per-account activity** panel (`GET /audit/user/:id`), **audit date range** (`startDate`/`endDate` on `GET /audit`), **config provenance** (`meta` on `GET /system-config`), **watcher heartbeat** (`GET /notifications/watcher-status`). Backend test-first, +~40 tests (303 total). No schema change.
 
-**Open branches awaiting merge:**
-- `chore/phase5-security-tests` — expands `Backend/test/security.e2e-spec.ts` to all 8 PHASE-5-TESTING Step 5.1 scenarios, plus `npm run test:e2e:local` (a throwaway `postgres:16` for running the e2e suite locally the way CI does).
-- `Jairus/Update-Asset-Registry` — **merged (PR #94)**: asset-registry card layout + register-asset-in-modal + a `requestedAssetClass` list filter.
-- `fix/admin-shell-ui` — shell/admin fixes: dead `/` breadcrumb crumb removed + acronym labels, slim custom scrollbars app-wide, collapsed-sidebar overlap fix, **`PATCH /users/:id/activate`** (reactivate a deactivated account) + an in-app `PasswordResetDialog` (replaces `window.prompt`), Toast auto-dismiss, `TRUST_PROXY` so audit entries log the real client IP behind a proxy, CLAUDE.md §14 date table trimmed.
-- `chore/docker-compose-fix` — the Docker/deploy pass: **both Dockerfiles now build** (were broken — monorepo import escaped `context: ./Backend`; now repo-root context, `node:22-alpine`, non-root, one root lockfile). Compose reworked (root context, all 7 schemas, `/api/health` healthchecks, prod `${VAR:?err}` fail-fast + build args). New `GET /api/health`. `DATABASE_SSL` env replaces the `rejectUnauthorized` hack. `DB_POOL_MAX` / `THROTTLE_LIMIT` / `THROTTLE_TTL` env-tunable. Real bcrypt hash in the dev seed. CI `docker-build` job. `perf/` k6 load baseline (362 VUs, 0 errors, p95 758 ms on a contended single box). `Backend/.env.example` added.
-- `feature/master-admin-dashboard` — Master Admin governance/platform mock pages + `admin.mock.ts` **cut as out of scope** (2026-09-09); dashboard rebuilt on live data (`GET /api/v1/admin/dashboard-stats`). Then an admin-hardening pass: **force sign-out** (`PATCH /users/:id/revoke-sessions` — bumps `tokenVersion` only), **unlock** wired into the directory + live **Locked** status + role filter, **per-account activity** panel (`GET /audit/user/:id`), **audit date range** (`startDate`/`endDate` on `GET /audit`), **config provenance** (`meta` on `GET /system-config`), **watcher heartbeat** (`GET /notifications/watcher-status`). Backend test-first, +~40 tests (303 total). No schema change.
+**Open branches awaiting merge:** none with code. Only `docs/admin-dashboard-plan` (2 superseded planning-doc commits). Health on `main` (2026-09-10): backend `tsc` clean + 303/303 unit tests; frontend `tsc` clean + 40/40 tests + production build clean. Not re-run this pass: ESLint (both), backend webpack build, coverage %, `audit:check` (both), `secretlint`, backend e2e (Docker), Docker image builds.
 
 For a one-screen state map see **`FEATURE-STATUS.md`** (✅ / 🟡 / 🔴 mock / ⬜); for the full path to CICC handover see **`PATH-TO-DONE.md`**; for the plain-language gap list see **`SYSTEM-STATUS.md`**; for a screen-by-screen mock inventory see **`MOCK-DATA-WIRING.md`** — all at the repo root.
 
@@ -127,12 +127,14 @@ Full role details and page routes: **`docs/guides/ROLES.md`**
 
 ## 4. What Has Been Built
 
-### Merged to `develop` since 2026-08-28 (see §1 for the PR list)
+### Merged to `main` since 2026-08-28 (see §1 for the PR list)
 - **Automated notifications + SLA enforcement** — cron watchers fire once each (dedup) and reach every relevant role; live TopBar bell; `POST /notifications/run-checks` triggers a pass on demand.
 - **System Config** — SLA hours / default reorder level / useful-life years / max login attempts editable at runtime (admin, audited), read live by the workflow / watchers / auth.
 - **Replacement validation** — enforced in `requisitions.service.create()`.
 - **Alternate approver** — planned-absence routing at submit + SLA-breach reassignment; supervisor self-service availability; admin designation panel.
-- **Formal security e2e suite** (branch `chore/phase5-security-tests`, PR pending) — 8 ASVS scenarios end-to-end.
+- **Formal security e2e suite** (merged, PR #92) — 8 ASVS scenarios end-to-end, runs in CI's `backend-e2e`.
+- **Master Admin dashboard rebuilt on live data** + admin-hardening pass (force sign-out, unlock wired, per-account activity, audit date range, config `meta`, watcher heartbeat) — merged, PR #98.
+- **Docker/deploy pass** (merged, PR #95) + `fix/admin-shell-ui` (merged, PR #96).
 
 ### Solid, all on `main`
 - Auth: JWT + httpOnly refresh tokens, bcrypt, account lockout, RBAC guards, real login for all 7 roles — no mock accounts anywhere in the codebase anymore
@@ -140,7 +142,7 @@ Full role details and page routes: **`docs/guides/ROLES.md`**
 - Assets module: registry, lifecycle state machine, QR generation, search + status filter, asset-type scope enforcement on every write path (not just reads)
 - Requisitions module: submit → approve/reject → fulfill workflow, real end to end as of 2026-08-19 — both the API and the actual UI (Supervisor's queue, the Approving Officer's real-time queue, and IT Personnel's fulfillment page all work against real data with real actions now, not just tested at the API level)
 - Audit module: append-only log, action filter, per-record lookup — now including User Management (was the one module missing it; fixed 2026-08-19)
-- Notifications module: in-system alerts, mark read, mark all read — **now auto-created** by the `scheduler` cron watchers (merged to `develop`, see §1)
+- Notifications module: in-system alerts, mark read, mark all read — **now auto-created** by the `scheduler` cron watchers (merged, see §1)
 - Users module: CRUD, role assignment, deactivate, reset password, unlock, search
 - Reports module: real PDF (pdfkit) + Excel (exceljs), all 18 COA forms (generation mechanism is solid; several forms' *layout* diverges from the official template — see `docs/guides/COA-FORMS-AUDIT.md`)
 - **The whole redesigned layout is wired now (2026-08-27, on `main`).** All 5 porting phases: IT Asset Custodian (every screen), Approving Officer (dashboard + queues + real actions), Property Custodian & Property Officer (dashboards, asset registries, QR, fulfillment/custody/disposal), Management & Audit Viewer (dashboard KPIs, all report tabs, forms archive, audit), Master Admin (Users/Roles/Audit + 2 of 6 dashboard panels), and a shared COA-forms generator. Screen-by-screen mock inventory: `MOCK-DATA-WIRING.md`.
@@ -148,7 +150,7 @@ Full role details and page routes: **`docs/guides/ROLES.md`**
 - Report generation, asset lifecycle updates, user creation, and role assignment — all previously *wired but silently broken* by uppercase-vs-lowercase-enum mismatches — fixed on `main`.
 
 ### Known-fake despite looking real — no backend exists yet (see `FEATURE-STATUS.md` 🔴 / `MOCK-DATA-WIRING.md` for the full list)
-- Master Admin `reference-data` + governance pages (approval workflows, custodian coverage, master data, system health, org units, access reviews) — no backend at all; they honestly disclose "...in frontend mock state". (System Settings itself is now **real** — see §1 PR #87.)
+- Master Admin `reference-data` page — no backend; discloses "...in frontend mock state". (The governance/platform mock pages — approval workflows, custodian coverage, master data, system health, org units, access reviews — were **cut as out of scope** and deleted, PR #98. System Settings itself is **real** — PR #87.)
 - `physical-inventory` slugs, Property Officer corrections / reconciliation — no physical-count backend. (Replacement-validation backend now exists — PR #86 — but the standalone Property Officer `replacements` screen is still the mock list.)
 - Employee "returns & incidents" and "assigned assets" — no returns/incidents module; assigned-assets needs a custodian filter on `GET /v1/assets`
 - Two "Preview data"-labeled chart panels on the Management / Management&Audit dashboards
@@ -165,13 +167,13 @@ Don't duplicate the gap list here — **`PATH-TO-DONE.md`** (everything between 
 | ~~2~~ | ~~System-config backend~~ — **merged, PR #87** (Master Admin → System Settings) |
 | ~~3~~ | ~~Replacement requisition validation~~ — **merged, PR #86** |
 | 4 | Disposal workflow (currently just a status flag, no required fields) |
-| 5 | Fix the 18 COA form templates against their references (`docs/guides/COA-FORMS-AUDIT.md`) |
+| 5 | Fix the 18 COA form templates against their references (`docs/guides/COA-FORMS-AUDIT.md`) — incl. Move-In/Move-Out property-type bug, RSMI zeroed cost, WMR/IIRUP missing sections |
 | ~~6~~ | ~~Alternate approver designation~~ — **merged, PR #89 / #90** |
-| 7 | Master Admin governance backend (access reviews, org units, approval config, custodian coverage, master data, system events) |
-| 8 | Physical count / reconciliation workflow + 2 missing management reports |
-| 9 | Small wiring leftovers (`MOCK-DATA-WIRING.md` Parts B–C) — mostly one-liners once the backends above exist |
+| ~~7~~ | ~~Master Admin governance backend~~ — **cut as out of scope (PR #98)**; dashboard rebuilt on live data |
+| 8 | Physical count / reconciliation workflow + 2 missing management reports (Asset Utilization Summary, Audit Trail export) |
+| 9 | Small wiring leftovers (`MOCK-DATA-WIRING.md` Parts B–C) — Approving Officer `approval-history`, Property Officer `disposal`/`audit`, Employee assigned-assets filter, Returns/Incidents module, trends/utilisation endpoint, dead-mock-code deletion |
 
-Phase 5 (`docs/phases/PHASE-5-TESTING.md`): the **formal Jest security suite is done** (8 scenarios, branch `chore/phase5-security-tests`); JMeter load test, OWASP ZAP scan, and UAT with CICC are still open and are best run once the build above is functionally complete — see `PATH-TO-DONE.md` §C for the rationale. Tooling not yet added (Husky, MFA/TOTP, idle session timeout, Playwright e2e): `docs/guides/FUTURE-TOOLING.md`.
+Phase 5 (`docs/phases/PHASE-5-TESTING.md`): the **formal Jest security suite is merged (PR #92)** and gates CI; JMeter load test, OWASP ZAP scan, and UAT with CICC are still open and are best run once the build above is functionally complete — see `PATH-TO-DONE.md` §C for the rationale. Still open beyond the table: a `Frontend/` coverage gate, plus production readiness (§D), data onboarding (§E), and compliance/handover (§F) in `PATH-TO-DONE.md`. Tooling not yet added (Husky, MFA/TOTP, idle session timeout, Playwright e2e): `docs/guides/FUTURE-TOOLING.md`.
 
 ---
 

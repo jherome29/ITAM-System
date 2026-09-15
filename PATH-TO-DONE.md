@@ -6,6 +6,18 @@ Each line links the doc that has the detail.
 
 Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 
+> **2026-09-10 — tracker sync.** Everything that was "PR pending" across the status
+> docs is now **merged to `origin/main`**: notifications/SLA (#84), replacement
+> validation (#86), system config (#87), alternate approver (#89/#90), the formal
+> Jest security suite (#92), asset-registry card layout (#94), the Docker/deploy
+> pass (#95), `fix/admin-shell-ui` (#96), and the Master Admin dashboard rebuild +
+> admin-hardening pass (#98); develop→main via #97/#99. `origin/develop` and
+> `origin/main` are byte-identical. Only unmerged branch: `docs/admin-dashboard-plan`
+> (2 superseded doc commits). Health on that tree (2026-09-10): backend `tsc` clean +
+> 303/303 unit tests; frontend `tsc` clean + 40/40 tests + production build clean.
+> Not re-run this pass: ESLint (both), backend webpack build, coverage %,
+> `audit:check` (both), `secretlint`, backend e2e (Docker), Docker image builds.
+
 ---
 
 ## A. Finish the build  → `FEATURE-STATUS.md` (🔴 + ⬜)
@@ -42,8 +54,8 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 > *accumulate*, they don't expire when features are added — so its skeleton is being
 > built **now** as a permanent CI gate.
 
-- [~] **Formal Jest security suite** — all 8 Step-5.1 scenarios written in
-      `Backend/test/security.e2e-spec.ts` (branch `chore/phase5-security-tests`, PR pending):
+- [x] **Formal Jest security suite** — all 8 Step-5.1 scenarios in
+      `Backend/test/security.e2e-spec.ts` — **merged to `main` via PR #92**:
       no-token 401, privilege escalation 403 (+ forged-role JWT still 403), tampered JWT 401,
       lockout 403 with no timing leak, `@Throttle` limit asserted, audit-log immutability,
       unknown-field 400 + SQLi bound safely, no `passwordHash`/`refreshTokenHash` in responses.
@@ -74,7 +86,8 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
       IPs are the real client. CICC IT's proxy must forward `X-Forwarded-For`.
 - [ ] Docker: `docker compose -f docker-compose.prod.yml` — external managed Postgres via
       `DATABASE_URL`, external TLS/reverse-proxy (CICC IT). Both Dockerfiles + compose
-      verified building/running (`chore/docker-compose-fix`).
+      verified building/running (merged, PR #95) — the prod-compose shakeout against a
+      real managed PG is still open.
 - [ ] `prod-server` GitHub Environment + manual approval gate; `docker-compose.prod.yml` shakeout.
 - [ ] Environment config (`.env`) for prod — JWT secret, DB URL, etc., via secrets not files.
 - [ ] Backup / restore procedure + a tested restore.
