@@ -15,6 +15,8 @@ import {
   UserRole,
   AssetClass,
   AssetStatus,
+  AssetRequestStatus,
+  AssetRequestType,
 } from '../../../packages/shared/src/enums';
 
 // Form generators
@@ -36,6 +38,7 @@ import { generateRPCI } from './forms/rpci.generator';
 import { generateRPCPPE } from './forms/rpcppe.generator';
 import { generateWMR } from './forms/wmr.generator';
 import { generateAnnexA4 } from './forms/annex-a4.generator';
+import { AssetRequestEntity } from '../asset-requests/entities/asset-request.entity';
 
 // SVC: Improve — PDF management reports and COA official form generation
 
@@ -52,6 +55,9 @@ export interface GenerateFormInput {
   receiverId?: string;
   dateFrom?: string;
   dateTo?: string;
+  // Internal only (not on the HTTP DTO): links the stored form to the
+  // Returns & Incidents request that produced it.
+  assetRequestId?: string;
 }
 
 @Injectable()
@@ -67,6 +73,8 @@ export class ReportsService {
     private readonly reqRepo: Repository<RequisitionEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
+    @InjectRepository(AssetRequestEntity)
+    private readonly assetRequestRepo: Repository<AssetRequestEntity>,
     private readonly auditService: AuditService,
   ) {}
 
@@ -566,6 +574,25 @@ export class ReportsService {
     userRole: UserRole,
     ipAddress: string,
   ): Promise<Buffer> {
+    const { buffer } = await this.generateFormRecord(
+      input,
+      generatedById,
+      userRole,
+      ipAddress,
+    );
+    return buffer;
+  }
+
+  /**
+   * Same as generateForm() but also returns the stored record — used where the
+   * caller must link to the saved form (Returns & Incidents documents).
+   */
+  async generateFormRecord(
+    input: GenerateFormInput,
+    generatedById: string,
+    userRole: UserRole,
+    ipAddress: string,
+  ): Promise<{ form: GeneratedFormEntity; buffer: Buffer }> {
     const { formType } = input;
     let buffer: Buffer;
 
@@ -594,6 +621,35 @@ export class ReportsService {
       if (!user)
         throw new NotFoundException(`Custodian ${asset.custodianId} not found`);
       return user;
+    };
+
+    // ── Helper: who returned the asset ──────────────────────────────────────
+    // A completed return clears the custodian, so by the time the receipt is
+    // generated there is none. Fall back to the requester of the most recent
+    // completed return request (Returns & Incidents) for that asset.
+    const getReturnee = async (asset: AssetEntity): Promise<UserEntity> => {
+      if (input.returneeId) {
+        const u = await getUser(input.returneeId);
+        if (!u)
+          throw new NotFoundException(`User ${input.returneeId} not found`);
+        return u;
+      }
+      if (asset.custodianId) return getCustodian(asset);
+      const lastReturn = await this.assetRequestRepo.findOne({
+        where: {
+          assetId: asset.id,
+          type: AssetRequestType.RETURN,
+          status: AssetRequestStatus.COMPLETED,
+        },
+        order: { completedAt: 'DESC' },
+      });
+      const u = lastReturn ? await getUser(lastReturn.requestedById) : null;
+      if (!u) {
+        throw new NotFoundException(
+          `Asset ${asset.id} has no current custodian or completed return request — specify the returnee.`,
+        );
+      }
+      return u;
     };
 
     // ── Helper: load the generating user ────────────────────────────────────
@@ -668,13 +724,11 @@ export class ReportsService {
 
       case OfficialFormType.RECEIPT_RETURNED_PROPERTY: {
         const asset = await getAsset(input.assetId);
-        const returnee = input.returneeId
-          ? await getUser(input.returneeId)
-          : await getCustodian(asset);
+        const returnee = await getReturnee(asset);
         const receiver = await getIssuer();
         buffer = await generateReceiptReturnedProperty(
           asset,
-          returnee!,
+          returnee,
           receiver,
         );
         break;
@@ -682,11 +736,9 @@ export class ReportsService {
 
       case OfficialFormType.RECEIPT_RETURNED_SEP: {
         const asset = await getAsset(input.assetId);
-        const returnee = input.returneeId
-          ? await getUser(input.returneeId)
-          : await getCustodian(asset);
+        const returnee = await getReturnee(asset);
         const receiver = await getIssuer();
-        buffer = await generateReceiptReturnedSEP(asset, returnee!, receiver);
+        buffer = await generateReceiptReturnedSEP(asset, returnee, receiver);
         break;
       }
 
@@ -851,6 +903,7 @@ export class ReportsService {
       formType,
       relatedAssetId: input.assetId ?? null,
       relatedRequisitionId: input.requisitionId ?? null,
+      relatedAssetRequestId: input.assetRequestId ?? null,
       filePath: 'stored',
       generatedById,
       pdfContent: buffer,
@@ -868,10 +921,11 @@ export class ReportsService {
         formType,
         assetId: input.assetId,
         requisitionId: input.requisitionId,
+        assetRequestId: input.assetRequestId,
       },
     });
 
-    return buffer;
+    return { form: saved, buffer };
   }
 
   /**

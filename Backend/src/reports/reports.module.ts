@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AssetRequestEntity } from '../asset-requests/entities/asset-request.entity';
 import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
 import { GeneratedReportEntity } from './entities/generated-report.entity';
@@ -19,6 +20,7 @@ import { AuditModule } from '../audit/audit.module';
       AssetEntity,
       RequisitionEntity,
       UserEntity, // For loading custodians, requesters, and signatories in form generators
+      AssetRequestEntity, // Returnee for receipts after a completed return request
     ]),
     AuditModule,
   ],

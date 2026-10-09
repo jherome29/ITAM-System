@@ -7,6 +7,7 @@ import { GeneratedFormEntity } from './entities/generated-form.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
 import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { UserEntity } from '../users/entities/user.entity';
+import { AssetRequestEntity } from '../asset-requests/entities/asset-request.entity';
 import { AuditService } from '../audit/audit.service';
 import {
   AuditAction,
@@ -75,6 +76,10 @@ describe('ReportsService', () => {
     findOne: jest.fn(),
   };
 
+  const mockAssetRequestRepo = {
+    findOne: jest.fn(),
+  };
+
   const mockAuditService = {
     log: jest.fn().mockResolvedValue(undefined),
   };
@@ -97,6 +102,10 @@ describe('ReportsService', () => {
           useValue: mockReqRepo,
         },
         { provide: getRepositoryToken(UserEntity), useValue: mockUserRepo },
+        {
+          provide: getRepositoryToken(AssetRequestEntity),
+          useValue: mockAssetRequestRepo,
+        },
         { provide: AuditService, useValue: mockAuditService },
       ],
     }).compile();

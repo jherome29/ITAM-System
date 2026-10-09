@@ -1,3 +1,4 @@
+import { AssetRequestQueue } from '@/components/asset-requests/AssetRequestQueue';
 import { AssetDetailManager } from '@/components/assets/AssetDetailManager';
 import { AssetRegistryList } from '@/components/assets/AssetRegistryList';
 import { QrLookup } from '@/components/assets/QrLookup';
@@ -8,8 +9,12 @@ import { FormsWorkspaceContent } from '@/components/shared/FormsWorkspaceContent
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
 
-export default async function PropertyCustodianPage({ params }: Readonly<{ params: Promise<{ slug?: string[] }> }>) {
+export default async function PropertyCustodianPage({
+  params,
+  searchParams,
+}: Readonly<{ params: Promise<{ slug?: string[] }>; searchParams: Promise<{ open?: string | string[] }> }>) {
   const { slug } = await params;
+  const { open } = await searchParams;
   const segment = slug?.[0] ?? 'dashboard';
   const child = slug?.[1];
   if (segment === 'dashboard') return <PropertyCustodianDashboard />;
@@ -23,5 +28,6 @@ export default async function PropertyCustodianPage({ params }: Readonly<{ param
   if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/assets" formsPath="/property-custodian/reports" />;
   if (segment === 'qr-scanner') return <QrLookup detailBasePath="/property-custodian/assets" />;
   if (segment === 'reports') return <FormsWorkspaceContent />;
-  return <WorkflowPage role={ProposedUserRole.PROPERTY_CUSTODIAN} slug={segment} />;
+  if (segment === 'returns-incidents') return <AssetRequestQueue eyebrow="Property Custodian" openId={typeof open === 'string' ? open : undefined} />;
+  return <WorkflowPage role={ProposedUserRole.PROPERTY_CUSTODIAN} slug={segment} openId={typeof open === 'string' ? open : undefined} />;
 }
