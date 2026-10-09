@@ -322,6 +322,31 @@ Auto-triggered alerts (in-system + email optional):
 | Pending approval | Requisition awaiting action > 12 hours | Supervisor |
 | SLA breach | Approval not completed within 24 hours | System Admin, Management |
 | Alternate approver | Primary supervisor unavailable | System-designated backup approver |
+| Return / incident request (`asset_request`) | Holder files or cancels a return/repair/damage/loss/theft request | IT Personnel (ICT) or Property Custodian (Fixed/Supplies) |
+| Return / incident update (`asset_request_update`) | Custodian approves, rejects, or completes it | The requester |
+
+Notifications carry `relatedRecordType` + `relatedRecordId`; clicking one (bell popup or inbox) deep-links via `Frontend/lib/notifications/notification-target.ts` to the right queue with `?open=<id>`, which opens that record's drawer.
+
+### Module 6: Returns & Incidents (`Backend/src/asset-requests`, schema `010`)
+
+The holder of an **issued** asset files a return, repair, damage, loss or theft request (`POST /api/v1/asset-requests`, multipart: up to 3 JPG/PNG/WEBP/PDF attachments × 5 MB, type checked by magic bytes, stored as `bytea` with `select: false` like COA PDFs).
+
+- **Two-step:** `submitted` → custodian **approves** (optional hand-over date) → `approved` → custodian **marks received** → `completed`. `rejected` (reason required; **only before approval** — approve and reject are the two alternatives at step one) and `cancelled` (requester only, any open state) are terminal.
+- **Routing:** ICT → IT Personnel, Fixed/Supplies → Property Custodian (`resolveAssetTypeScope`); Property Officer / Admin / Management read-only. A custodian can never act on their own request.
+- **One open request per asset** (409), except a loss/theft may still be reported while a return/repair/damage is pending. No supervisor step.
+- **Completion drives the lifecycle and auto-generates the COA documents** (`requiredDocuments()` in the service — §7.2 trigger events). Forms are stored in `generated_forms` with `related_asset_request_id` (schema `012`) and downloadable by the requester via `GET …/:id/documents/:formId`; failures don't undo completion and can be retried (`POST …/:id/documents`).
+
+  | Request → outcome | Asset | Holder's accountability | Documents |
+  |---|---|---|---|
+  | Return | `returned` | cleared | Receipt of Returned Property (PPE) / SEP (SEP, IES) |
+  | Repair | `under_repair` | kept | none (no COA form applies) |
+  | Damage → repair | `under_repair` | kept | RLSDDP (Damaged) |
+  | Damage → disposal | `flagged_for_disposal` | **cleared** (item surrendered) | Receipt + RLSDDP (Damaged) + IIRUP |
+  | Loss / Theft | `flagged_for_disposal` | **kept until COA relief** | RLSDDP (Lost / Stolen) — no IIRUP (nothing to inspect) |
+
+  On approval the requester is told what to bring (the item + the asset's `components`) or, for loss/theft, which supporting documents to prepare. Receipt forms resolve the returnee from the last completed return when the asset has no custodian.
+- **Condition-on-receipt photos:** `PATCH …/:id/complete` also accepts multipart `attachments` (same limits). Attachments carry `stage` — `request` (holder's evidence) or `receipt` (custodian's photos) — plus `uploadedById` (schema `011`); the UI shows them as separate galleries.
+- `GET /api/v1/assets/mine` backs the employee "My Assigned Assets" page.
 
 ---
 
