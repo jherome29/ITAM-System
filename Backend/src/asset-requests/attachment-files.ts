@@ -66,6 +66,10 @@ export function sanitizeFileName(name: string): string {
 export function checkAttachments(
   files: UploadedAttachment[] | undefined,
 ): CheckedAttachment[] {
+  if (files !== undefined && !Array.isArray(files)) {
+    throw new BadRequestException('Invalid attachments payload.');
+  }
+
   const list = files ?? [];
   if (list.length > MAX_ATTACHMENTS) {
     throw new BadRequestException(
@@ -73,6 +77,16 @@ export function checkAttachments(
     );
   }
   return list.map((file) => {
+    if (
+      !file ||
+      typeof file.originalname !== 'string' ||
+      typeof file.size !== 'number' ||
+      !Number.isFinite(file.size) ||
+      !Buffer.isBuffer(file.buffer)
+    ) {
+      throw new BadRequestException('Invalid attachment data.');
+    }
+
     if (file.size <= 0 || file.size > MAX_ATTACHMENT_BYTES) {
       throw new BadRequestException(
         `"${sanitizeFileName(file.originalname)}" must be between 1 byte and 5 MB.`,
