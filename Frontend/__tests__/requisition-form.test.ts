@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCreateRequisitionDto,
   type RequisitionFormValues,
-} from '@/components/employee/EmployeeWorkspace';
+} from '@/components/requisitions/RequisitionForm';
 
 const base: RequisitionFormValues = {
   requisitionType: 'new',

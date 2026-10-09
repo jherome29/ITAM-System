@@ -203,7 +203,10 @@ describe('AssetsService', () => {
 
       const result = await service.updateLifecycle(
         asset.id,
-        { status: to },
+        // Disposal flags require a justification (CLAUDE.md §6 Module 1).
+        to === AssetStatus.FLAGGED_FOR_DISPOSAL
+          ? { status: to, notes: 'Beyond economical repair' }
+          : { status: to },
         'user-1',
         UserRole.IT_PERSONNEL,
         '127.0.0.1',
@@ -409,6 +412,31 @@ describe('AssetsService', () => {
       ),
     ).rejects.toThrow(BadRequestException);
   });
+
+  // ── Business rule: a disposal flag requires documented justification ───────
+  // CLAUDE.md §6 Module 1. The UI enforces this, but the API must too — a
+  // direct PATCH with no notes would otherwise flag an asset with no record of
+  // why, which is exactly what the COA disposal trail needs.
+  test.each([undefined, '', '   '])(
+    'throws 400 when flagging for disposal with notes=%p',
+    async (notes) => {
+      const asset = makeAsset({ status: AssetStatus.AVAILABLE });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+
+      await expect(
+        service.updateLifecycle(
+          asset.id,
+          { status: AssetStatus.FLAGGED_FOR_DISPOSAL, notes },
+          'user-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockAssetRepo.save).not.toHaveBeenCalled();
+      expect(mockAuditService.log).not.toHaveBeenCalled();
+    },
+  );
 
   // ── Section 12.3 — Audit log on every state change ───────────────────────
   it('always creates exactly one audit log entry per lifecycle change', async () => {
@@ -749,6 +777,183 @@ describe('AssetsService', () => {
   });
 
   // ── findCatalogue() — available-only list ─────────────────────────────────
+  // ── Requisition item picker — grouped, requestable inventory ──────────────
+  describe('findCatalogueItems()', () => {
+    // Chainable QueryBuilder stub: every builder method returns the stub so
+    // the service's call chain runs; the terminal getRawMany yields `rows`.
+    const makeQb = (rows: unknown[]) => {
+      const qb: Record<string, jest.Mock> = {};
+      for (const m of [
+        'select',
+        'addSelect',
+        'where',
+        'andWhere',
+        'groupBy',
+        'addGroupBy',
+        'orderBy',
+        'limit',
+      ]) {
+        qb[m] = jest.fn(() => qb);
+      }
+      qb.getRawMany = jest.fn().mockResolvedValue(rows);
+      return qb;
+    };
+
+    it('counts units for PPE/SEP and sums quantity on hand for IES supplies', async () => {
+      mockAssetRepo.createQueryBuilder.mockReturnValue(
+        makeQb([
+          {
+            itemDescription: 'Dell Latitude 5420',
+            brand: 'Dell',
+            itemCode: 'ICT-LT-01',
+            assetType: 'ICT',
+            assetClass: 'SEP',
+            units: '3',
+            quantity: '3',
+            conditions: 'serviceable',
+            locations: 'IT Storage',
+          },
+          // Real locations contain commas ("CICC Main Building, 3rd Floor"), so the
+          // aggregate is joined with an ASCII unit separator, not ", ".
+          {
+            itemDescription: 'Bond Paper A4',
+            brand: null,
+            itemCode: null,
+            assetType: 'Supplies',
+            assetClass: 'IES',
+            units: '2',
+            quantity: '450',
+            conditions: 'serviceable',
+            locations: 'CICC Main Building, 3rd Floor\u001fAnnex',
+          },
+        ]),
+      );
+
+      const items = await service.findCatalogueItems({});
+
+      expect(items[0]).toMatchObject({
+        itemDescription: 'Dell Latitude 5420',
+        assetType: 'ICT',
+        assetClass: 'SEP',
+        available: 3,
+        isSupply: false,
+        locations: ['IT Storage'],
+      });
+      expect(items[1]).toMatchObject({
+        itemDescription: 'Bond Paper A4',
+        available: 450,
+        isSupply: true,
+        locations: ['CICC Main Building, 3rd Floor', 'Annex'],
+      });
+    });
+
+    // Data minimisation (CLAUDE.md §8.4): requesters see what is available,
+    // not per-unit identifiers or acquisition cost.
+    it('never exposes cost, serial number, or property number', async () => {
+      const qb = makeQb([]);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findCatalogueItems({});
+
+      const selected = [...qb.select.mock.calls, ...qb.addSelect.mock.calls]
+        .map((c: unknown[]) => String(c[0]))
+        .join(' ');
+      expect(selected).not.toMatch(
+        /acquisitionCost|serialNumber|propertyNumber/,
+      );
+    });
+
+    it('only offers available stock (IES lines need quantity > 0)', async () => {
+      const qb = makeQb([]);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findCatalogueItems({});
+
+      expect(qb.where).toHaveBeenCalledWith('a.status = :status', {
+        status: AssetStatus.AVAILABLE,
+      });
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('a.quantity > 0'),
+        expect.objectContaining({ ies: AssetClass.IES }),
+      );
+    });
+
+    it('applies type, class and search filters server-side', async () => {
+      const qb = makeQb([]);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findCatalogueItems({
+        assetType: 'Supplies',
+        assetClass: 'IES',
+        search: 'paper',
+      });
+
+      expect(qb.andWhere).toHaveBeenCalledWith('a.assetType = :assetType', {
+        assetType: 'Supplies',
+      });
+      expect(qb.andWhere).toHaveBeenCalledWith('a.assetClass = :assetClass', {
+        assetClass: 'IES',
+      });
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('LIKE'),
+        { q: '%paper%' },
+      );
+    });
+
+    it('rejects an unknown assetType or assetClass filter with 400', async () => {
+      mockAssetRepo.createQueryBuilder.mockReturnValue(makeQb([]));
+      await expect(
+        service.findCatalogueItems({ assetType: 'Weapons' }),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.findCatalogueItems({ assetClass: 'XYZ' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('caps the result size at 100', async () => {
+      const qb = makeQb([]);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findCatalogueItems({ limit: 5000 });
+
+      expect(qb.limit).toHaveBeenCalledWith(100);
+    });
+  });
+
+  describe('isInCatalogue()', () => {
+    const makeCountQb = (count: number) => {
+      const qb: Record<string, jest.Mock> = {};
+      for (const m of ['where', 'andWhere']) qb[m] = jest.fn(() => qb);
+      qb.getCount = jest.fn().mockResolvedValue(count);
+      return qb;
+    };
+
+    it('is true when an available asset matches description, type and class', async () => {
+      const qb = makeCountQb(2);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await expect(
+        service.isInCatalogue(
+          '  Dell Latitude 5420 ',
+          AssetType.ICT,
+          AssetClass.SEP,
+        ),
+      ).resolves.toBe(true);
+      // Case/whitespace-insensitive match on the description
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('LOWER'),
+        expect.objectContaining({ desc: 'dell latitude 5420' }),
+      );
+    });
+
+    it('is false when nothing available matches', async () => {
+      mockAssetRepo.createQueryBuilder.mockReturnValue(makeCountQb(0));
+      await expect(
+        service.isInCatalogue('Quantum laptop', AssetType.ICT, AssetClass.SEP),
+      ).resolves.toBe(false);
+    });
+  });
+
   describe('findCatalogue()', () => {
     it('returns only available assets with pagination', async () => {
       mockAssetRepo.findAndCount.mockResolvedValue([[], 0]);

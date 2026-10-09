@@ -86,6 +86,7 @@ describe('RequisitionsService', () => {
   const mockAssetsService = {
     notifyLowStockIfBelowThreshold: jest.fn().mockResolvedValue(false),
     findOne: jest.fn(),
+    isInCatalogue: jest.fn().mockResolvedValue(true),
   };
 
   const mockReqRepo = {
@@ -287,6 +288,64 @@ describe('RequisitionsService', () => {
         expect.any(String),
         expect.any(String),
         'requisition',
+      );
+    });
+
+    // The custodian needs to know which lines were picked from live inventory
+    // and which were typed in for something CICC may not hold. The server
+    // decides this at submission (not the client) so the flag can't be forged.
+    it('flags each line item inInventory from the live catalogue match', async () => {
+      mockReqRepo.count.mockResolvedValue(0);
+      const saved = makeReq();
+      mockReqRepo.create.mockReturnValue(saved);
+      mockReqRepo.save.mockResolvedValue(saved);
+      mockItemRepo.create.mockImplementation((x: unknown) => x);
+      mockItemRepo.save.mockImplementation((x: unknown) => Promise.resolve(x));
+      mockAssetsService.isInCatalogue
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
+
+      await service.create(
+        {
+          requisitionType: RequisitionType.NEW,
+          justification: 'Need equipment',
+          requiredDate: '2026-07-01',
+          items: [
+            {
+              assetType: AssetType.ICT,
+              assetClass: AssetClass.SEP,
+              itemDescription: 'Dell Latitude 5420',
+              quantity: 1,
+            },
+            {
+              assetType: AssetType.ICT,
+              assetClass: AssetClass.SEP,
+              itemDescription: 'Quantum laptop',
+              quantity: 1,
+            },
+          ],
+        },
+        'emp-uuid-1',
+        UserRole.EMPLOYEE,
+        '127.0.0.1',
+      );
+
+      expect(mockAssetsService.isInCatalogue).toHaveBeenCalledWith(
+        'Dell Latitude 5420',
+        AssetType.ICT,
+        AssetClass.SEP,
+      );
+      expect(mockItemRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          itemDescription: 'Dell Latitude 5420',
+          inInventory: true,
+        }),
+      );
+      expect(mockItemRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          itemDescription: 'Quantum laptop',
+          inInventory: false,
+        }),
       );
     });
 
@@ -734,7 +793,10 @@ describe('RequisitionsService', () => {
 
   describe('approve() — supervisor approval flow', () => {
     it('transitions status to PENDING_FULFILLMENT and notifies IT + requester', async () => {
-      const req = makeReq({ status: RequisitionStatus.PENDING_SUPERVISOR });
+      const req = makeReq({
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        items: [{ assetType: AssetType.ICT } as RequisitionItemEntity],
+      });
       mockReqRepo.findOne.mockResolvedValue(req);
       mockApprovalRepo.find.mockResolvedValue([]);
       mockApprovalRepo.create.mockReturnValue({});
@@ -781,6 +843,48 @@ describe('RequisitionsService', () => {
         req.id,
         'requisition',
       );
+    });
+
+    // The fulfillment notice must reach whoever can actually fulfil the items:
+    // findAll()/assertItemsInScope() route Fixed/Supplies to the Property
+    // Custodian, so notifying IT Personnel instead leaves the real fulfiller
+    // with no alert and IT with one they cannot act on.
+    it('notifies Property Custodians (not IT) when the items are Fixed/Supplies', async () => {
+      const req = makeReq({
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        items: [{ assetType: AssetType.SUPPLIES } as RequisitionItemEntity],
+      });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+      mockApprovalRepo.create.mockReturnValue({});
+      mockApprovalRepo.save.mockResolvedValue({});
+      mockReqRepo.save.mockResolvedValue({
+        ...req,
+        status: RequisitionStatus.PENDING_FULFILLMENT,
+      });
+      mockUsersService.findByRole.mockImplementation((r: UserRole) =>
+        Promise.resolve(
+          r === UserRole.PROPERTY_CUSTODIAN
+            ? [{ id: 'pc-user-1' }]
+            : r === UserRole.IT_PERSONNEL
+              ? [{ id: 'it-user-1' }]
+              : [],
+        ),
+      );
+
+      await service.approve(
+        req.id,
+        'sup-uuid-1',
+        UserRole.SUPERVISOR,
+        {},
+        '127.0.0.1',
+      );
+
+      const notified = mockNotifService.notify.mock.calls.map(
+        (c: unknown[]) => c[0],
+      );
+      expect(notified).toContain('pc-user-1');
+      expect(notified).not.toContain('it-user-1');
     });
 
     it('throws 400 if requisition is not in PENDING_SUPERVISOR state', async () => {
@@ -1308,7 +1412,9 @@ describe('RequisitionsService', () => {
     });
 
     it('attaches approval history to the result', async () => {
-      const req = makeReq();
+      const req = makeReq({
+        items: [{ assetType: AssetType.ICT } as RequisitionItemEntity],
+      });
       const approvals = [{ id: 'ap-1', action: 'approved' }];
       mockReqRepo.findOne.mockResolvedValue(req);
       mockApprovalRepo.find.mockResolvedValue(approvals);
@@ -1338,6 +1444,70 @@ describe('RequisitionsService', () => {
       await expect(
         service.findOne(req.id, 'emp-different', UserRole.EMPLOYEE),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    describe('custodial asset-type scope', () => {
+      const ictReq = () =>
+        makeReq({
+          requestedById: 'emp-owner',
+          items: [{ assetType: AssetType.ICT } as RequisitionItemEntity],
+        });
+      const supplyReq = () =>
+        makeReq({
+          requestedById: 'emp-owner',
+          items: [{ assetType: AssetType.SUPPLIES } as RequisitionItemEntity],
+        });
+
+      beforeEach(() => mockApprovalRepo.find.mockResolvedValue([]));
+
+      it.each([UserRole.PROPERTY_CUSTODIAN, UserRole.PROPERTY_OFFICER])(
+        'forbids %s from reading an ICT requisition by id',
+        async (role) => {
+          mockReqRepo.findOne.mockResolvedValue(ictReq());
+          await expect(
+            service.findOne('req-uuid-1', 'pc-1', role),
+          ).rejects.toThrow(ForbiddenException);
+        },
+      );
+
+      it('forbids IT Personnel from reading a supply requisition by id', async () => {
+        mockReqRepo.findOne.mockResolvedValue(supplyReq());
+        await expect(
+          service.findOne('req-uuid-1', 'it-1', UserRole.IT_PERSONNEL),
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('lets Property roles read supply requisitions', async () => {
+        mockReqRepo.findOne.mockResolvedValue(supplyReq());
+        await expect(
+          service.findOne('req-uuid-1', 'po-1', UserRole.PROPERTY_OFFICER),
+        ).resolves.toBeDefined();
+      });
+
+      it('always lets the requester read their own requisition', async () => {
+        mockReqRepo.findOne.mockResolvedValue(
+          makeReq({
+            requestedById: 'it-1',
+            items: [{ assetType: AssetType.SUPPLIES } as RequisitionItemEntity],
+          }),
+        );
+        await expect(
+          service.findOne('req-uuid-1', 'it-1', UserRole.IT_PERSONNEL),
+        ).resolves.toBeDefined();
+      });
+
+      it('leaves unscoped roles (Supervisor, Admin, Management) alone', async () => {
+        mockReqRepo.findOne.mockResolvedValue(ictReq());
+        for (const role of [
+          UserRole.SUPERVISOR,
+          UserRole.SYSTEM_ADMIN,
+          UserRole.MANAGEMENT,
+        ]) {
+          await expect(
+            service.findOne('req-uuid-1', 'x', role),
+          ).resolves.toBeDefined();
+        }
+      });
     });
   });
 
@@ -1441,6 +1611,128 @@ describe('RequisitionsService', () => {
   });
 
   // ── findAll() ─────────────────────────────────────────────────────────────
+  // ── Requester summary — approvers/custodians identify WHO asked ──────────
+  // Supervisors can't call GET /users, so the requisition payload itself must
+  // carry a minimal requester summary (CLAUDE.md §8.4: name, employee ID,
+  // section — never email, role, or credential hashes).
+  describe('requester summary', () => {
+    const requester = {
+      id: 'emp-uuid-1',
+      firstName: 'Juan',
+      lastName: 'Dela Cruz',
+      employeeId: 'CICC-EMP-001',
+      officeOrSection: 'Cybercrime Operations',
+      email: 'juan@cicc.gov.ph',
+      passwordHash: '$2b$12$secret',
+      refreshTokenHash: 'rt-secret',
+      role: UserRole.EMPLOYEE,
+    };
+    const expectedSummary = {
+      id: 'emp-uuid-1',
+      name: 'Juan Dela Cruz',
+      employeeId: 'CICC-EMP-001',
+      officeOrSection: 'Cybercrime Operations',
+    };
+    // The requester sees who is approving, not a raw supervisorId UUID.
+    const approver = {
+      id: 'sup-uuid-1',
+      firstName: 'Maria',
+      lastName: 'Santos',
+      employeeId: 'CICC-SUP-001',
+      officeOrSection: 'Cybercrime Operations',
+      email: 'maria@cicc.gov.ph',
+      passwordHash: '$2b$12$other',
+    };
+    const expectedApprover = {
+      id: 'sup-uuid-1',
+      name: 'Maria Santos',
+      employeeId: 'CICC-SUP-001',
+    };
+    const expectMinimal = (row: object) => {
+      expect(row).not.toHaveProperty('requestedBy');
+      expect(row).not.toHaveProperty('supervisor');
+      expect(JSON.stringify(row)).not.toMatch(/maria@cicc/);
+      const json = JSON.stringify(row);
+      expect(json).not.toMatch(
+        /passwordHash|refreshTokenHash|juan@cicc|\$2b\$/,
+      );
+    };
+
+    it('findAll() joins the requester and returns only the summary', async () => {
+      const qb = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest
+          .fn()
+          .mockResolvedValue([
+            [makeReq({ requestedBy: requester, supervisor: approver } as any)],
+            1,
+          ]),
+      };
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.findAll('sup-1', UserRole.SUPERVISOR);
+
+      expect(qb.leftJoinAndSelect).toHaveBeenCalledWith(
+        'r.requestedBy',
+        'requestedBy',
+      );
+      expect(qb.leftJoinAndSelect).toHaveBeenCalledWith(
+        'r.supervisor',
+        'supervisor',
+      );
+      expect(result.data[0].requester).toEqual(expectedSummary);
+      expect(result.data[0].approver).toEqual(expectedApprover);
+      expectMinimal(result.data[0]);
+    });
+
+    it('findMine() returns the requester summary too', async () => {
+      mockReqRepo.findAndCount.mockResolvedValue([
+        [makeReq({ requestedBy: requester, supervisor: approver } as any)],
+        1,
+      ]);
+
+      const result = await service.findMine('emp-uuid-1');
+
+      expect(mockReqRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          relations: expect.objectContaining({
+            requestedBy: true,
+            supervisor: true,
+          }),
+        }),
+      );
+      expect(result.data[0].requester).toEqual(expectedSummary);
+      expect(result.data[0].approver).toEqual(expectedApprover);
+      expectMinimal(result.data[0]);
+    });
+
+    it('findOneForView() adds the summary and keeps the employee IDOR guard', async () => {
+      mockReqRepo.findOne.mockResolvedValue(makeReq());
+      mockApprovalRepo.find.mockResolvedValue([]);
+      mockUsersService.findOne.mockImplementation((id: string) =>
+        Promise.resolve(id === 'sup-uuid-1' ? approver : requester),
+      );
+
+      const view = await service.findOneForView(
+        'req-uuid-1',
+        'sup-1',
+        UserRole.SUPERVISOR,
+      );
+      expect(view.requester).toEqual(expectedSummary);
+      expect(view.approver).toEqual(expectedApprover);
+      expectMinimal(view);
+
+      await expect(
+        service.findOneForView('req-uuid-1', 'someone-else', UserRole.EMPLOYEE),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
   describe('findAll()', () => {
     const makeListQb = () => ({
       where: jest.fn().mockReturnThis(),

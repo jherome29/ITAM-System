@@ -128,7 +128,11 @@ export class RequisitionsController {
     UserRole.PROPERTY_OFFICER,
   )
   async findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthReq) {
-    const result = await this.svc.findOne(id, req.user.id, req.user.role);
+    const result = await this.svc.findOneForView(
+      id,
+      req.user.id,
+      req.user.role,
+    );
     return { message: 'Requisition retrieved', data: result };
   }
 

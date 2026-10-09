@@ -21,6 +21,9 @@ export interface Requisition {
   submittedAt: string;
   createdAt: string;
   updatedAt: string;
+  /** Minimal summaries from the API — name/employee ID/section only. */
+  requester?: { id: string; name: string; employeeId: string; officeOrSection: string } | null;
+  approver?: { id: string; name: string; employeeId: string } | null;
 }
 
 export interface RequisitionItem {
@@ -31,6 +34,8 @@ export interface RequisitionItem {
   quantity: number;
   justification: string;
   fulfilledAssetId: string | null;
+  /** Server-computed at submission: matched an available inventory item. */
+  inInventory?: boolean;
 }
 
 export interface RequisitionStats {
