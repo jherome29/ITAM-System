@@ -246,6 +246,18 @@ describe('attachment checks', () => {
     ).toThrow(BadRequestException);
   });
 
+  it('rejects tampered shapes instead of trusting the type (CodeQL)', () => {
+    expect(() => checkAttachments('attachments')).toThrow(BadRequestException);
+    expect(() => checkAttachments({ length: 1 })).toThrow(BadRequestException);
+    expect(() =>
+      checkAttachments([
+        { originalname: 'x.png', size: 4, buffer: 'not-a-buffer' },
+      ]),
+    ).toThrow(BadRequestException);
+    expect(checkAttachments(undefined)).toEqual([]);
+    expect(checkAttachments(null)).toEqual([]);
+  });
+
   it('strips paths and unsafe characters from file names', () => {
     expect(sanitizeFileName('..\\..\\etc/pa"ss;wd.png')).toBe('pa_ss_wd.png');
     expect(sanitizeFileName('')).toBe('attachment');
@@ -441,6 +453,114 @@ describe('AssetRequestsService', () => {
         ),
       ).rejects.toThrow(BadRequestException);
       expect(mockRepo.manager.transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('queues, downloads and document retry', () => {
+    const fileQb = (result: unknown) => ({
+      addSelect: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(result),
+    });
+
+    it('scopes the custodian queue by asset type and the "open" filter', async () => {
+      await service.findQueue(PC, 'open');
+      expect(qb.where).toHaveBeenCalledWith('asset.assetType IN (:...scope)', {
+        scope: [AssetType.FIXED, AssetType.SUPPLIES],
+      });
+      expect(qb.andWhere).toHaveBeenCalledWith('r.status IN (:...open)', {
+        open: [AssetRequestStatus.SUBMITTED, AssetRequestStatus.APPROVED],
+      });
+    });
+
+    it('lets Admin/Management see every request, filtered by one status', async () => {
+      const admin = user('ad-1', UserRole.SYSTEM_ADMIN);
+      await service.findQueue(admin, 'completed');
+      expect(qb.where).not.toHaveBeenCalledWith(
+        'asset.assetType IN (:...scope)',
+        expect.anything(),
+      );
+      expect(qb.andWhere).toHaveBeenCalledWith('r.status = :status', {
+        status: 'completed',
+      });
+    });
+
+    it("lists the requester's own requests with resolved names", async () => {
+      current = makeReq({
+        status: AssetRequestStatus.APPROVED,
+        decidedById: IT.id,
+      });
+      const [row] = await service.findMine(EMP.id);
+      expect(qb.where).toHaveBeenCalledWith('r.requestedById = :userId', {
+        userId: EMP.id,
+      });
+      expect(row.decidedBy?.name).toBe('Test it-1');
+    });
+
+    it('serves an attachment only to someone who can read the request', async () => {
+      const file = { id: 'att-1', content: PNG };
+      (mockAttachmentRepo as Record<string, unknown>).createQueryBuilder =
+        jest.fn(() => fileQb(file));
+      await expect(service.getAttachment('ar-1', 'att-1', EMP)).resolves.toBe(
+        file,
+      );
+      await expect(
+        service.getAttachment('ar-1', 'att-1', OTHER_EMP),
+      ).rejects.toThrow(ForbiddenException);
+      (mockAttachmentRepo as Record<string, unknown>).createQueryBuilder =
+        jest.fn(() => fileQb(null));
+      await expect(service.getAttachment('ar-1', 'att-x', EMP)).rejects.toThrow(
+        'Attachment not found',
+      );
+    });
+
+    it('serves a linked document to the requester, never to others', async () => {
+      const form = {
+        id: 'f-1',
+        formType: 'RLSDDP',
+        pdfContent: Buffer.from('%PDF-'),
+      };
+      (mockFormRepo as Record<string, unknown>).createQueryBuilder = jest.fn(
+        () => fileQb(form),
+      );
+      await expect(
+        service.getDocument('ar-1', 'f-1', EMP),
+      ).resolves.toMatchObject({
+        form,
+      });
+      await expect(
+        service.getDocument('ar-1', 'f-1', OTHER_EMP),
+      ).rejects.toThrow(ForbiddenException);
+      (mockFormRepo as Record<string, unknown>).createQueryBuilder = jest.fn(
+        () => fileQb(null),
+      );
+      await expect(service.getDocument('ar-1', 'f-x', EMP)).rejects.toThrow(
+        'Document not found',
+      );
+    });
+
+    it('regenerates only missing documents, and only once completed', async () => {
+      await expect(
+        service.regenerateDocuments('ar-1', IT, 'ip'),
+      ).rejects.toThrow(BadRequestException);
+      current = makeReq({
+        status: AssetRequestStatus.COMPLETED,
+        type: AssetRequestType.DAMAGE,
+        resultingStatus: AssetStatus.FLAGGED_FOR_DISPOSAL,
+      });
+      mockFormRepo.find.mockResolvedValue([
+        { id: 'f-1', formType: OfficialFormType.RLSDDP },
+      ]);
+      await service.regenerateDocuments('ar-1', IT, 'ip');
+      expect(
+        mockReports.generateFormRecord.mock.calls.map(
+          (c: [{ formType: string }]) => c[0].formType,
+        ),
+      ).toEqual([
+        OfficialFormType.RECEIPT_RETURNED_PROPERTY,
+        OfficialFormType.IIRUP,
+      ]);
     });
   });
 

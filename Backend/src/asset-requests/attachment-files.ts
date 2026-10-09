@@ -63,30 +63,35 @@ export function sanitizeFileName(name: string): string {
   return (cleaned || 'attachment').slice(0, 120);
 }
 
-export function checkAttachments(
-  files: UploadedAttachment[] | undefined,
-): CheckedAttachment[] {
-  if (files !== undefined && !Array.isArray(files)) {
-    throw new BadRequestException('Invalid attachments payload.');
-  }
+function isUploadedAttachment(value: unknown): value is UploadedAttachment {
+  const f = value as Partial<UploadedAttachment> | null;
+  return (
+    typeof f === 'object' &&
+    f !== null &&
+    typeof f.originalname === 'string' &&
+    typeof f.size === 'number' &&
+    Number.isFinite(f.size) &&
+    Buffer.isBuffer(f.buffer)
+  );
+}
 
-  const list = files ?? [];
-  if (list.length > MAX_ATTACHMENTS) {
+/**
+ * Validates multipart uploads. The value comes from the request, so its shape
+ * is checked explicitly — it must be an array of multer file objects — rather
+ * than trusted from the TypeScript type (CodeQL: type confusion through
+ * parameter tampering).
+ */
+export function checkAttachments(files: unknown): CheckedAttachment[] {
+  if (files === undefined || files === null) return [];
+  if (!Array.isArray(files) || !files.every(isUploadedAttachment)) {
+    throw new BadRequestException('Attachments must be uploaded as files.');
+  }
+  if (files.length > MAX_ATTACHMENTS) {
     throw new BadRequestException(
       `At most ${MAX_ATTACHMENTS} attachments are allowed.`,
     );
   }
-  return list.map((file) => {
-    if (
-      !file ||
-      typeof file.originalname !== 'string' ||
-      typeof file.size !== 'number' ||
-      !Number.isFinite(file.size) ||
-      !Buffer.isBuffer(file.buffer)
-    ) {
-      throw new BadRequestException('Invalid attachment data.');
-    }
-
+  return files.map((file) => {
     if (file.size <= 0 || file.size > MAX_ATTACHMENT_BYTES) {
       throw new BadRequestException(
         `"${sanitizeFileName(file.originalname)}" must be between 1 byte and 5 MB.`,
