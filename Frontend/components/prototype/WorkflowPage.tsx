@@ -976,7 +976,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
             </>)}
             {selectedIsSelfApproval && (
               <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
-                Self-approval is disabled in this frontend prototype.
+                This is your own request, so you can&apos;t approve or reject it. It is routed to another approver.
               </p>
             )}
             {!readOnly && !selectedIsSelfApproval && (

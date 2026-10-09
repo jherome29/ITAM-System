@@ -397,6 +397,7 @@ describe('RequisitionsService', () => {
       expect(mockUsersService.findSupervisorForSection).toHaveBeenCalledWith(
         requester.officeOrSection,
         requester.division,
+        'emp-uuid-1', // the requester is excluded from the lookup
       );
       expect(mockReqRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ supervisorId: resolvedSupervisor.id }),
@@ -789,6 +790,129 @@ describe('RequisitionsService', () => {
         expect.objectContaining({ action: AuditAction.REQUISITION_REASSIGNED }),
       );
     });
+  });
+
+  // ── Segregation of duties: a requester never approves their own request ──
+  describe('segregation of duties — supervisor requesters', () => {
+    const supA = {
+      id: 'sup-A',
+      role: UserRole.SUPERVISOR,
+      isActive: true,
+      officeOrSection: 'Cybercrime Operations',
+      division: 'Operations Division',
+      alternateApproverId: null as string | null,
+    };
+    const supB = { ...supA, id: 'sup-B', alternateApproverId: null };
+    const dto = {
+      requisitionType: RequisitionType.NEW,
+      justification: 'Need a monitor',
+      requiredDate: '2026-11-01',
+      items: [{}],
+    } as any;
+    const users =
+      (...list: Array<typeof supA>) =>
+      (id: string) =>
+        Promise.resolve(list.find((u) => u.id === id) ?? null);
+
+    beforeEach(() => {
+      const saved = makeReq({ requestedById: 'sup-A' });
+      mockReqRepo.count.mockResolvedValue(0);
+      mockReqRepo.create.mockImplementation((x: object) => x);
+      mockReqRepo.save.mockResolvedValue(saved);
+      mockItemRepo.create.mockReturnValue({});
+      mockItemRepo.save.mockResolvedValue([]);
+      mockUsersService.isUnavailable.mockReturnValue(false);
+    });
+
+    it("routes a supervisor's request to their own designated alternate first", async () => {
+      const requester = { ...supA, alternateApproverId: 'sup-B' };
+      mockUsersService.findOne.mockImplementation(users(requester, supB));
+
+      await service.create(dto, 'sup-A', UserRole.SUPERVISOR, 'ip');
+
+      expect(mockReqRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ supervisorId: 'sup-B' }),
+      );
+      expect(mockUsersService.findSupervisorForSection).not.toHaveBeenCalled();
+    });
+
+    it('otherwise picks another supervisor in the section/division, excluding the requester', async () => {
+      mockUsersService.findOne.mockImplementation(users(supA, supB));
+      mockUsersService.findSupervisorForSection.mockResolvedValue(supB);
+
+      await service.create(dto, 'sup-A', UserRole.SUPERVISOR, 'ip');
+
+      expect(mockUsersService.findSupervisorForSection).toHaveBeenCalledWith(
+        supA.officeOrSection,
+        supA.division,
+        'sup-A',
+      );
+      expect(mockReqRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ supervisorId: 'sup-B' }),
+      );
+    });
+
+    it('skips an unavailable own-alternate and falls back to the section lookup', async () => {
+      const requester = { ...supA, alternateApproverId: 'sup-B' };
+      const supC = { ...supA, id: 'sup-C' };
+      mockUsersService.findOne.mockImplementation(users(requester, supB, supC));
+      mockUsersService.isUnavailable.mockImplementation(
+        (u: { id: string }) => u.id === 'sup-B',
+      );
+      mockUsersService.findSupervisorForSection.mockResolvedValue(supC);
+
+      await service.create(dto, 'sup-A', UserRole.SUPERVISOR, 'ip');
+
+      expect(mockReqRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ supervisorId: 'sup-C' }),
+      );
+    });
+
+    it('refuses when nobody but the requester could approve it', async () => {
+      mockUsersService.findOne.mockImplementation(users(supA));
+      mockUsersService.findSupervisorForSection.mockResolvedValue(null);
+
+      await expect(
+        service.create(dto, 'sup-A', UserRole.SUPERVISOR, 'ip'),
+      ).rejects.toThrow('No other approver is available');
+      expect(mockReqRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('never routes to an unavailable primary whose alternate is the requester', async () => {
+      const primary = { ...supB, alternateApproverId: 'sup-A' };
+      mockUsersService.findOne.mockImplementation(users(supA, primary));
+      mockUsersService.findSupervisorForSection.mockResolvedValue(primary);
+      mockUsersService.isUnavailable.mockImplementation(
+        (u: { id: string }) => u.id === 'sup-B',
+      );
+
+      await service.create(dto, 'sup-A', UserRole.SUPERVISOR, 'ip');
+
+      expect(mockReqRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ supervisorId: 'sup-B' }), // stays with B, not back to A
+      );
+    });
+
+    it.each([UserRole.SUPERVISOR, UserRole.SYSTEM_ADMIN])(
+      '%s cannot approve or reject their own requisition',
+      async (role) => {
+        const own = makeReq({
+          status: RequisitionStatus.PENDING_SUPERVISOR,
+          requestedById: 'sup-A',
+          supervisorId: 'sup-A',
+        });
+        mockReqRepo.findOne.mockResolvedValue(own);
+        mockApprovalRepo.find.mockResolvedValue([]);
+
+        await expect(
+          service.approve(own.id, 'sup-A', role, {}, 'ip'),
+        ).rejects.toThrow('your own requisition');
+        await expect(
+          service.reject(own.id, 'sup-A', role, { comments: 'no' }, 'ip'),
+        ).rejects.toThrow('your own requisition');
+        expect(mockApprovalRepo.save).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('approve() — supervisor approval flow', () => {
@@ -2107,6 +2231,45 @@ describe('RequisitionsService', () => {
       expect(mockReqRepo.update).not.toHaveBeenCalledWith(
         'r11',
         expect.objectContaining({ supervisorId: expect.anything() }),
+      );
+    });
+
+    it("never reassigns a breached request to its own requester (the approver's alternate)", async () => {
+      // Supervisor A filed it; it sits with B; B's designated alternate is A.
+      const breached = makeReq({
+        id: 'r12',
+        requestNumber: 'REQ-12',
+        supervisorId: 'sup-b',
+        requestedById: 'sup-a',
+        status: RequisitionStatus.PENDING_SUPERVISOR,
+        slaDeadline: new Date(Date.now() - 60_000),
+        slaBreachNotifiedAt: null,
+        alternateRoutedAt: null,
+      });
+      mockReqRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([breached]),
+      });
+      mockUsersService.findByRole.mockResolvedValue([]);
+      mockUsersService.isUnavailable.mockReturnValue(false);
+      mockUsersService.findOne.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'sup-b'
+            ? { id: 'sup-b', alternateApproverId: 'sup-a' }
+            : { id: 'sup-a', isActive: true, role: UserRole.SUPERVISOR },
+        ),
+      );
+      mockReqRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.checkSlaBreaches();
+
+      expect(mockReqRepo.update).toHaveBeenCalledWith('r12', {
+        slaBreachNotifiedAt: expect.any(Date),
+      });
+      expect(mockReqRepo.update).not.toHaveBeenCalledWith(
+        'r12',
+        expect.objectContaining({ supervisorId: 'sup-a' }),
       );
     });
   });

@@ -383,6 +383,72 @@ export class RequisitionsService {
     );
   }
 
+  /**
+   * Segregation of duties — nobody decides on their own requisition, whatever
+   * their role (System Admin included). Enforced here, not only in the UI.
+   */
+  private assertNotOwnRequisition(req: RequisitionEntity, deciderId: string) {
+    if (req.requestedById === deciderId) {
+      throw new ForbiddenException(
+        'You cannot approve or reject your own requisition.',
+      );
+    }
+  }
+
+  /** An approver who can take a request: active, a Supervisor, available, and not the requester. */
+  private isUsableApprover(
+    candidate: UserEntity | null | undefined,
+    requesterId: string,
+  ): candidate is UserEntity {
+    return (
+      !!candidate &&
+      candidate.id !== requesterId &&
+      candidate.isActive &&
+      candidate.role === UserRole.SUPERVISOR &&
+      !this.usersService.isUnavailable(candidate)
+    );
+  }
+
+  /**
+   * Who approves this requester's requisition — never the requester
+   * (segregation of duties, CLAUDE.md §8.2). Without this, a Supervisor's own
+   * request resolved to themselves and sat unapprovable in their own queue.
+   *
+   *   1. A Supervisor requester's own designated alternate approver, if usable —
+   *      the backup they nominated is the natural next approver.
+   *   2. Another Supervisor in the requester's section, then division.
+   *   3. Otherwise refuse, rather than create a request nobody can approve.
+   */
+  private async resolvePrimaryApprover(
+    requester: UserEntity,
+  ): Promise<UserEntity> {
+    if (
+      requester.role === UserRole.SUPERVISOR &&
+      requester.alternateApproverId
+    ) {
+      const ownAlternate = await this.usersService
+        .findOne(requester.alternateApproverId)
+        .catch(() => null);
+      if (this.isUsableApprover(ownAlternate, requester.id)) {
+        return ownAlternate;
+      }
+    }
+
+    const supervisor = await this.usersService.findSupervisorForSection(
+      requester.officeOrSection,
+      requester.division,
+      requester.id,
+    );
+    if (!supervisor) {
+      throw new BadRequestException(
+        requester.role === UserRole.SUPERVISOR
+          ? 'No other approver is available for your requisition. Ask the System Administrator to designate an alternate approver for you, or to assign another supervisor to your division.'
+          : 'No supervisor is configured for your section — contact your System Administrator.',
+      );
+    }
+    return supervisor;
+  }
+
   async create(
     dto: CreateRequisitionDto,
     requestedById: string,
@@ -402,20 +468,13 @@ export class RequisitionsService {
     // forever and the Supervisor's pending-approvals queue is always empty
     // (findAll() filters on r.supervisorId = :id).
     const requester = await this.usersService.findOne(requestedById);
-    const supervisor = await this.usersService.findSupervisorForSection(
-      requester.officeOrSection,
-      requester.division,
-    );
-    if (!supervisor) {
-      throw new BadRequestException(
-        'No supervisor is configured for your section — contact your System Administrator.',
-      );
-    }
+    const supervisor = await this.resolvePrimaryApprover(requester);
 
     // Alternate Approver (CLAUDE.md §5, §17) — if the resolved primary is
     // currently unavailable and has a usable designated backup, route to them.
     // One hop only: an unusable alternate falls back to the primary (the SLA
-    // watcher is the backstop). "Usable" = active SUPERVISOR, not itself away.
+    // watcher is the backstop). "Usable" = active SUPERVISOR, not itself away,
+    // and never the requester.
     let approverId = supervisor.id;
     let routedToAlternate = false;
     if (
@@ -425,12 +484,7 @@ export class RequisitionsService {
       const alt = await this.usersService
         .findOne(supervisor.alternateApproverId)
         .catch(() => null);
-      if (
-        alt &&
-        alt.isActive &&
-        alt.role === UserRole.SUPERVISOR &&
-        !this.usersService.isUnavailable(alt)
-      ) {
+      if (this.isUsableApprover(alt, requestedById)) {
         approverId = alt.id;
         routedToAlternate = true;
       }
@@ -559,6 +613,8 @@ export class RequisitionsService {
       );
     }
 
+    this.assertNotOwnRequisition(req, supervisorId);
+
     // SYSTEM_ADMIN is permitted by the controller's @Roles guard to approve
     // on any supervisor's behalf — skip the ownership check for that role.
     if (
@@ -659,6 +715,8 @@ export class RequisitionsService {
         `Cannot reject requisition with status "${req.status}".`,
       );
     }
+
+    this.assertNotOwnRequisition(req, supervisorId);
 
     // Same ownership guard as approve() — a Supervisor may only reject the
     // requisitions nominated to them; SYSTEM_ADMIN bypasses per the
@@ -998,12 +1056,9 @@ export class RequisitionsService {
             const candidate = await this.usersService
               .findOne(altId)
               .catch(() => null);
-            if (
-              candidate &&
-              candidate.isActive &&
-              candidate.role === UserRole.SUPERVISOR &&
-              !this.usersService.isUnavailable(candidate)
-            ) {
+            // Never hand a request to its own requester (e.g. supervisor A's
+            // request sits with B, and B's designated alternate is A).
+            if (this.isUsableApprover(candidate, req.requestedById)) {
               alt = candidate;
             }
           }

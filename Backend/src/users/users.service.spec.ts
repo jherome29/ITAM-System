@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { Not } from 'typeorm';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UserEntity } from './entities/user.entity';
@@ -197,6 +198,23 @@ describe('UsersService', () => {
           isActive: true,
         },
       });
+    });
+
+    it('excludes the requester from both lookups when asked', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+
+      await service.findSupervisorForSection(
+        'Digital Forensics',
+        'Operations',
+        'sup-self',
+      );
+
+      for (const [arg] of mockRepo.findOne.mock.calls as [
+        { where: { id?: unknown } },
+      ][]) {
+        expect(arg.where.id).toEqual(Not('sup-self'));
+      }
+      expect(mockRepo.findOne).toHaveBeenCalledTimes(2);
     });
 
     it('returns null when no supervisor matches either the section or division', async () => {
