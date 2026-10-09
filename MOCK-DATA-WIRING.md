@@ -90,8 +90,8 @@ Legend: **LIVE** already real · **MOCK** still mock · **PARTIAL** mixed
 |---|---|---|---|
 | Catalogue · My Requisitions · New Requisition · Requisition detail · Notifications | — | `assetsApi.catalogue()`, `requisitionsApi.*`, `NotificationsContent` | none — LIVE |
 | Dashboard (`EmployeeDashboard.tsx`) — "my assigned assets" slice only | `assetMockRows` (labeled "Preview data") | `assetsApi` filtered to current user as custodian | **add a `custodianId` / `assignedToMe` filter to `GET /v1/assets`** (see Part D #1) |
-| Assigned Assets tab | `assetMockRows.filter(assignedEmployeeId)` | same | same filter |
-| Returns & Incidents tab | `assetMockRows` (asset picker) + in-memory list, nothing persists | new `returnsApi` / `incidentsApi` | **new backend module** (Part D #3) — return request, repair request, damage/loss/theft report; entity + endpoints + audit log |
+| Assigned Assets tab | **LIVE** (2026-10-09) | `assetsApi.mine()` + `assetRequestsApi.mine()` | done — `GET /v1/assets/mine`; request buttons follow the one-open-request rule |
+| Returns & Incidents tab | **LIVE** (2026-10-09) | `assetRequestsApi` | done — `Backend/src/asset-requests` (Part D #3), real attachments; custodians get their own Returns & Incidents queue |
 
 ### Supervisor — `app/supervisor/*` — LIVE
 Dashboard, approvals list/detail, history, notifications all real. Nothing.
@@ -180,9 +180,9 @@ Dashboard KPIs (`reportsApi.kpi()`), all 4 report tabs (`ReportsContent`), `form
 
 ## Part D — Backend work that does not exist yet
 
-1. **`assets` — custodian/assignee filter.** `GET /v1/assets` has `page,limit,search,status,assetType`. Add `custodianId` (or `assignedToMe`) so Employee "assigned assets" / dashboard can be real.
+1. ~~**`assets` — custodian/assignee filter.**~~ Done 2026-10-09 as `GET /v1/assets/mine`. `GET /v1/assets` has `page,limit,search,status,assetType`. Add `custodianId` (or `assignedToMe`) so Employee "assigned assets" / dashboard can be real.
 2. ~~**System Config module.**~~ **Done — merged to `main` via PR #87.** Key-value `system_config` table + `GET`/`PATCH /api/v1/system-config` (admin-only, audited); SLA hours / default reorder level / useful-life years / max login attempts, read live by `requisitions.service`, the low-stock watcher, and `auth.service`. UI = **Master Admin → System Settings** (`SystemSettingsPage`); old `/admin/config` deleted. Still open: `SystemSettingsPage`'s other tabs + `reference-data` on this module; approval routes + session policy deferred.
-3. **Returns / Incidents module.** Entity + endpoints for return request, repair request, damage/loss/theft report + audit logging. Consumed by Employee "Returns & Incidents".
+3. ~~**Returns / Incidents module.**~~ Done 2026-10-09 — see CLAUDE.md §6 Module 6. Entity + endpoints for return request, repair request, damage/loss/theft report + audit logging. Consumed by Employee "Returns & Incidents".
 4. **Physical count / reconciliation.** Consumed by `physical-inventory` slugs (IT Asset Custodian, Property Custodian) and Property Officer `reconciliation`; also fixes the known RPCI / RPCPPE / Physical Count Summary report gap.
 5. ~~**Replacement-validation rules.**~~ **Backend done — merged to `main` via PR #86.** `validateReplacement()` runs inside `requisitions.service.create()` (useful-life / condition checks, requester-must-be-custodian; useful-life read live from System Config). The Property Officer `replacements` screen is still `WorkflowPage` mock — wiring it to a standalone view of this is the remaining FE task.
 6. ~~**Master-Admin governance domains.**~~ **Cut as out of scope (2026-09-09).** Access-review workflow, org-unit registry, approval-route config, custodian-coverage report, reference/master-data CRUD, system-events feed, and scheduled-jobs status were never in the capstone scope; the mock pages, their nav entries, and `admin.mock.ts` were deleted. The Master Admin dashboard was rebuilt on live data (`GET /api/v1/admin/dashboard-stats`, `Backend/src/admin/`). A follow-up admin-hardening pass on the same branch added `PATCH /v1/users/:id/revoke-sessions`, `GET /v1/notifications/watcher-status`, `startDate`/`endDate` on `GET /v1/audit`, and a `meta` block on `GET /v1/system-config` — a *narrow* slice of the cut "system health & jobs" console (just the last-sweep heartbeat), not a re-opening of it.

@@ -29,6 +29,11 @@ services:
       - ./Database/schemas/005_replacement_validation.sql:/docker-entrypoint-initdb.d/05_replacement.sql:ro
       - ./Database/schemas/006_system_config.sql:/docker-entrypoint-initdb.d/06_system_config.sql:ro
       - ./Database/schemas/007_alternate_approver.sql:/docker-entrypoint-initdb.d/07_alternate_approver.sql:ro
+      - ./Database/schemas/008_schema_drift_sync.sql:/docker-entrypoint-initdb.d/08_drift_sync.sql:ro
+      - ./Database/schemas/009_requisition_item_in_inventory.sql:/docker-entrypoint-initdb.d/09_requisition_item_in_inventory.sql:ro
+      - ./Database/schemas/010_asset_requests.sql:/docker-entrypoint-initdb.d/10_asset_requests.sql:ro
+      - ./Database/schemas/011_asset_request_attachment_stage.sql:/docker-entrypoint-initdb.d/11_asset_request_attachment_stage.sql:ro
+      - ./Database/schemas/012_generated_form_asset_request.sql:/docker-entrypoint-initdb.d/12_generated_form_asset_request.sql:ro
       - ./Database/seeds/001_dev_seed.sql:/docker-entrypoint-initdb.d/99_seed.sql:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U aimrs_user -d aimrs_dev']

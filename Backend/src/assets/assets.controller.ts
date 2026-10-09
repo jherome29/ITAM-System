@@ -86,6 +86,30 @@ export class AssetsController {
   }
 
   /**
+   * GET /api/v1/assets/catalogue/items?search=&assetType=&assetClass=&limit=
+   * Grouped requestable inventory for the requisition item picker — one row
+   * per item with an availability count. No cost / serial / property numbers.
+   * Roles: every role that can submit a requisition (matches POST /requisitions).
+   * SVC: Engage
+   */
+  @Get('catalogue/items')
+  @Roles(UserRole.EMPLOYEE, UserRole.SUPERVISOR, UserRole.IT_PERSONNEL)
+  async findCatalogueItems(
+    @Query('search') search?: string,
+    @Query('assetType') assetType?: string,
+    @Query('assetClass') assetClass?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const items = await this.assetsService.findCatalogueItems({
+      search,
+      assetType,
+      assetClass,
+      limit: limit ? +limit : undefined,
+    });
+    return { message: 'Catalogue items retrieved', data: items };
+  }
+
+  /**
    * GET /api/v1/assets/stats
    * Grouped asset counts by status, class, and type.
    * Powers the IT Personnel and Management dashboards.
@@ -103,6 +127,27 @@ export class AssetsController {
     const assetTypeScope = resolveAssetTypeScope(req.user.role);
     const result = await this.assetsService.getStats(assetTypeScope);
     return { message: 'Asset statistics retrieved', data: result };
+  }
+
+  /**
+   * GET /api/v1/assets/mine
+   * Assets currently assigned to the caller (custodianId = me) — backs the
+   * employee "My Assigned Assets" view. Any role can hold an asset, and the
+   * filter is the caller's own id, so no asset-type scope applies.
+   */
+  @Get('mine')
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+  )
+  async findMine(@Req() req: AuthenticatedRequest) {
+    const data = await this.assetsService.findMine(req.user.id);
+    return { message: 'Assigned assets retrieved', data };
   }
 
   /**

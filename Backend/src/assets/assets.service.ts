@@ -57,6 +57,34 @@ const VALID_TRANSITIONS: Record<string, AssetStatus[]> = {
   [AssetStatus.DISPOSED]: [], // Terminal state — no further transitions
 };
 
+const CATALOGUE_ITEMS_MAX = 100;
+
+/** One requestable line in the requisition item picker. */
+export interface CatalogueItem {
+  itemDescription: string;
+  brand: string | null;
+  itemCode: string | null;
+  assetType: AssetType;
+  assetClass: AssetClass;
+  isSupply: boolean;
+  /** Units available (PPE/SEP) or quantity on hand (IES). */
+  available: number;
+  conditions: string[];
+  locations: string[];
+}
+
+interface RawCatalogueRow {
+  itemDescription: string;
+  brand: string | null;
+  itemCode: string | null;
+  assetType: AssetType;
+  assetClass: AssetClass;
+  units: string;
+  quantity: string;
+  conditions: string | null;
+  locations: string | null;
+}
+
 // Map each transition to its corresponding audit action
 const TRANSITION_AUDIT_ACTION: Record<string, AuditAction> = {
   [AssetStatus.AVAILABLE]: AuditAction.ASSET_UPDATED,
@@ -161,6 +189,121 @@ export class AssetsService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
+  // ── Catalogue items — grouped requestable inventory for the requisition picker
+  // SVC: Engage — requesters choose from what CICC actually holds. Identical
+  // units collapse into one row with an availability count (IES supplies sum
+  // their quantity on hand). Per-unit identifiers and acquisition cost are
+  // deliberately not selected (CLAUDE.md §8.4 data minimisation).
+  async findCatalogueItems(opts: {
+    search?: string;
+    assetType?: string;
+    assetClass?: string;
+    limit?: number;
+  }): Promise<CatalogueItem[]> {
+    const { search, assetType, assetClass } = opts;
+    if (
+      assetType &&
+      !Object.values(AssetType).includes(assetType as AssetType)
+    ) {
+      throw new BadRequestException('Invalid assetType filter.');
+    }
+    if (
+      assetClass &&
+      !Object.values(AssetClass).includes(assetClass as AssetClass)
+    ) {
+      throw new BadRequestException('Invalid assetClass filter.');
+    }
+    const limit = Math.min(
+      Math.max(Number(opts.limit) || 50, 1),
+      CATALOGUE_ITEMS_MAX,
+    );
+
+    const qb = this.assetRepo
+      .createQueryBuilder('a')
+      .select('a.itemDescription', 'itemDescription')
+      .addSelect('a.brand', 'brand')
+      .addSelect('MIN(a.itemCode)', 'itemCode')
+      .addSelect('a.assetType', 'assetType')
+      .addSelect('a.assetClass', 'assetClass')
+      .addSelect('COUNT(*)', 'units')
+      .addSelect('COALESCE(SUM(a.quantity), 0)', 'quantity')
+      // chr(31) (ASCII unit separator) — location text itself contains commas.
+      .addSelect(
+        'STRING_AGG(DISTINCT a.condition::text, chr(31))',
+        'conditions',
+      )
+      .addSelect(
+        'STRING_AGG(DISTINCT COALESCE(a.officeLocation, a.officeOrSection), chr(31))',
+        'locations',
+      )
+      .where('a.status = :status', { status: AssetStatus.AVAILABLE })
+      .andWhere('(a.assetClass <> :ies OR a.quantity > 0)', {
+        ies: AssetClass.IES,
+      });
+
+    if (assetType) qb.andWhere('a.assetType = :assetType', { assetType });
+    if (assetClass) qb.andWhere('a.assetClass = :assetClass', { assetClass });
+    if (search?.trim()) {
+      qb.andWhere(
+        '(LOWER(a.itemDescription) LIKE LOWER(:q) OR LOWER(a.brand) LIKE LOWER(:q) OR LOWER(a.itemCode) LIKE LOWER(:q))',
+        { q: `%${search.trim()}%` },
+      );
+    }
+
+    const rows = await qb
+      .groupBy('a.itemDescription')
+      .addGroupBy('a.brand')
+      .addGroupBy('a.assetType')
+      .addGroupBy('a.assetClass')
+      .orderBy('a.itemDescription', 'ASC')
+      .limit(limit)
+      .getRawMany<RawCatalogueRow>();
+
+    const split = (s: string | null) =>
+      (s ?? '')
+        .split('\u001f')
+        .map((x) => x.trim())
+        .filter(Boolean);
+
+    return rows.map((r) => {
+      const isSupply = r.assetClass === AssetClass.IES;
+      return {
+        itemDescription: r.itemDescription,
+        brand: r.brand ?? null,
+        itemCode: r.itemCode ?? null,
+        assetType: r.assetType,
+        assetClass: r.assetClass,
+        isSupply,
+        available: Number(isSupply ? r.quantity : r.units),
+        conditions: split(r.conditions),
+        locations: split(r.locations),
+      };
+    });
+  }
+
+  // ── Does live inventory hold this item right now? ─────────────────────────
+  // Used at requisition submission to tag each line inInventory, so the
+  // custodian can tell picked-from-stock lines from typed-in ones.
+  async isInCatalogue(
+    itemDescription: string,
+    assetType: AssetType,
+    assetClass: AssetClass,
+  ): Promise<boolean> {
+    const count = await this.assetRepo
+      .createQueryBuilder('a')
+      .where('a.status = :status', { status: AssetStatus.AVAILABLE })
+      .andWhere('LOWER(TRIM(a.itemDescription)) = :desc', {
+        desc: itemDescription.trim().toLowerCase(),
+      })
+      .andWhere('a.assetType = :assetType', { assetType })
+      .andWhere('a.assetClass = :assetClass', { assetClass })
+      .andWhere('(a.assetClass <> :ies OR a.quantity > 0)', {
+        ies: AssetClass.IES,
+      })
+      .getCount();
+    return count > 0;
+  }
+
   // ── Asset stats — IT Personnel & Management dashboard counts ──────────────
   // SVC: Improve — inventory overview KPIs
   async getStats(assetTypeScope?: AssetType[]): Promise<{
@@ -261,6 +404,15 @@ export class AssetsService {
   // may read/act on (mirrors findAll()'s scoping — see asset-type-scope.util).
   // Every write-side method below routes through here first, so an
   // out-of-scope asset is rejected before any mutation is attempted.
+  // ── Assets assigned to one user ────────────────────────────────────────────
+  // SVC: Engage — the holder's own accountability view.
+  async findMine(userId: string): Promise<AssetEntity[]> {
+    return this.assetRepo.find({
+      where: { custodianId: userId },
+      order: { updatedAt: 'DESC' },
+    });
+  }
+
   async findOne(
     id: string,
     assetTypeScope?: AssetType[],
@@ -407,6 +559,17 @@ export class AssetsService {
       throw new BadRequestException(
         `Asset cannot be issued. Current status is "${asset.status}". ` +
           `Asset must be "available" before it can be issued.`,
+      );
+    }
+
+    // ── Business rule: a disposal flag requires documented justification ──
+    // (CLAUDE.md §6 Module 1) — enforced here, not just in the UI.
+    if (
+      targetStatus === AssetStatus.FLAGGED_FOR_DISPOSAL &&
+      !dto.notes?.trim()
+    ) {
+      throw new BadRequestException(
+        'A justification (notes) is required to flag an asset for disposal.',
       );
     }
 

@@ -7,6 +7,7 @@ import { GeneratedFormEntity } from './entities/generated-form.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
 import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { UserEntity } from '../users/entities/user.entity';
+import { AssetRequestEntity } from '../asset-requests/entities/asset-request.entity';
 import { AuditService } from '../audit/audit.service';
 import {
   AuditAction,
@@ -75,6 +76,10 @@ describe('ReportsService', () => {
     findOne: jest.fn(),
   };
 
+  const mockAssetRequestRepo = {
+    findOne: jest.fn(),
+  };
+
   const mockAuditService = {
     log: jest.fn().mockResolvedValue(undefined),
   };
@@ -97,6 +102,10 @@ describe('ReportsService', () => {
           useValue: mockReqRepo,
         },
         { provide: getRepositoryToken(UserEntity), useValue: mockUserRepo },
+        {
+          provide: getRepositoryToken(AssetRequestEntity),
+          useValue: mockAssetRequestRepo,
+        },
         { provide: AuditService, useValue: mockAuditService },
       ],
     }).compile();
@@ -478,6 +487,130 @@ describe('ReportsService', () => {
         service.generateForm(
           { formType: 'UNSUPPORTED_TYPE' as OfficialFormType },
           'u-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ── Receipt of Returned Property — returnee resolution ───────────────────
+  // After a completed return the asset has no custodian, so the returnee comes
+  // from returneeId or the last completed Returns & Incidents return request.
+  describe('generateFormRecord() — receipt returnee', () => {
+    const employee = {
+      id: 'emp-1',
+      firstName: 'Ana',
+      lastName: 'Reyes',
+      employeeId: 'CICC-EMP-001',
+      division: 'Operations',
+      officeOrSection: 'Cybercrime Operations',
+    };
+    const issuer = {
+      ...employee,
+      id: 'it-1',
+      firstName: 'Ian',
+      lastName: 'Cruz',
+    };
+
+    beforeEach(() => {
+      mockFormRepo.create.mockImplementation((x: object) => x);
+      mockFormRepo.save.mockImplementation((x: object) =>
+        Promise.resolve({ id: 'form-1', ...x }),
+      );
+      mockUserRepo.findOne.mockImplementation(
+        ({ where: { id } }: { where: { id: string } }) =>
+          Promise.resolve([employee, issuer].find((u) => u.id === id) ?? null),
+      );
+    });
+
+    it('uses the explicit returneeId and links the stored form to the request', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(makeAsset({ custodianId: null }));
+      const { form, buffer } = await service.generateFormRecord(
+        {
+          formType: OfficialFormType.RECEIPT_RETURNED_PROPERTY,
+          assetId: 'a-1',
+          returneeId: 'emp-1',
+          assetRequestId: 'ar-1',
+        },
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+      expect(buffer.subarray(0, 4).toString()).toBe('%PDF');
+      expect(form).toMatchObject({
+        id: 'form-1',
+        relatedAssetRequestId: 'ar-1',
+        formType: OfficialFormType.RECEIPT_RETURNED_PROPERTY,
+      });
+      expect(mockAssetRequestRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the requester of the last completed return when the asset has no custodian', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(makeAsset({ custodianId: null }));
+      mockAssetRequestRepo.findOne.mockResolvedValue({
+        requestedById: 'emp-1',
+      });
+      const { form } = await service.generateFormRecord(
+        { formType: OfficialFormType.RECEIPT_RETURNED_SEP, assetId: 'a-1' },
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+      expect(form.relatedAssetRequestId).toBeNull();
+      expect(mockAssetRequestRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            assetId: 'a-1',
+            type: 'return',
+            status: 'completed',
+          }),
+        }),
+      );
+    });
+
+    it('still uses the current custodian when there is one', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(
+        makeAsset({ custodianId: 'emp-1' }),
+      );
+      await service.generateFormRecord(
+        {
+          formType: OfficialFormType.RECEIPT_RETURNED_PROPERTY,
+          assetId: 'a-1',
+        },
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+      expect(mockAssetRequestRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('404s when no returnee can be determined', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(makeAsset({ custodianId: null }));
+      mockAssetRequestRepo.findOne.mockResolvedValue(null);
+      await expect(
+        service.generateFormRecord(
+          {
+            formType: OfficialFormType.RECEIPT_RETURNED_PROPERTY,
+            assetId: 'a-1',
+          },
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('404s when the given returneeId does not exist', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(makeAsset({ custodianId: null }));
+      await expect(
+        service.generateFormRecord(
+          {
+            formType: OfficialFormType.RECEIPT_RETURNED_PROPERTY,
+            assetId: 'a-1',
+            returneeId: 'nobody',
+          },
+          'it-1',
           UserRole.IT_PERSONNEL,
           '127.0.0.1',
         ),

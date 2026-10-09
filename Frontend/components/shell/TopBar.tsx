@@ -8,6 +8,7 @@ import { Breadcrumbs } from './Breadcrumbs';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
 import { roleNavigation } from '@/lib/roles/role-navigation';
 import { notificationsApi, type Notification } from '@/lib/api/notifications';
+import { notificationTarget, workspaceBasePath } from '@/lib/notifications/notification-target';
 
 // Turns a backend notification into the "ASSETS - TODAY" caption the dropdown shows.
 // Prefer the related record type; fall back to the alert type (e.g. "LOW STOCK").
@@ -61,6 +62,16 @@ export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole;
   }, [loadNotifications]);
 
   const importantNotifications = notifications.filter((item) => !item.isRead).slice(0, 3);
+  const basePath = workspaceBasePath(roleNavigation[role][0].href);
+
+  // Clicking an alert opens the record it is about, so it counts as read. The
+  // PATCH is fire-and-forget — navigation must not wait on it.
+  const openNotification = (item: Notification) => {
+    setNotificationsOpen(false);
+    setNotifications((current) => current.map((n) => (n.id === item.id ? { ...n, isRead: true } : n)));
+    setUnreadCount((count) => Math.max(0, count - 1));
+    notificationsApi.markRead(item.id).catch(() => {});
+  };
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200/80 bg-white/95 px-4 backdrop-blur md:px-7">
@@ -123,8 +134,8 @@ export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole;
                   importantNotifications.map((item) => (
                     <Link
                       key={item.id}
-                      href={notificationHref}
-                      onClick={() => setNotificationsOpen(false)}
+                      href={notificationTarget(basePath, item) ?? notificationHref}
+                      onClick={() => openNotification(item)}
                       className="block border-b border-slate-100 px-4 py-3 hover:bg-slate-50"
                     >
                       <div className="flex items-start gap-3">

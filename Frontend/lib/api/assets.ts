@@ -31,6 +31,20 @@ export interface Asset {
   updatedAt: string;
 }
 
+/** One grouped, requestable line from GET /v1/assets/catalogue/items. */
+export interface CatalogueItem {
+  itemDescription: string;
+  brand: string | null;
+  itemCode: string | null;
+  assetType: string;
+  assetClass: string;
+  isSupply: boolean;
+  /** Units available (PPE/SEP) or quantity on hand (IES). */
+  available: number;
+  conditions: string[];
+  locations: string[];
+}
+
 export interface AssetStats {
   total: number;
   available: number;
@@ -119,6 +133,21 @@ export const assetsApi = {
     client
       .get<ApiResponse<PaginatedResponse<Asset>>>("/v1/assets/catalogue")
       .then((r) => r.data),
+
+  catalogueItems: (params: { search?: string; assetType?: string; assetClass?: string; limit?: number } = {}) => {
+    const query: Record<string, string | number> = {};
+    if (params.search) query.search = params.search;
+    if (params.assetType) query.assetType = params.assetType;
+    if (params.assetClass) query.assetClass = params.assetClass;
+    if (params.limit) query.limit = params.limit;
+    return client
+      .get<ApiResponse<CatalogueItem[]>>("/v1/assets/catalogue/items", { params: query })
+      .then((r) => r.data);
+  },
+
+  /** Assets currently assigned to the logged-in user (custodianId = me). */
+  mine: () =>
+    client.get<ApiResponse<Asset[]>>('/v1/assets/mine').then((r) => r.data),
 
   getOne: (id: string) =>
     client.get<ApiResponse<Asset>>(`/v1/assets/${id}`).then((r) => r.data),

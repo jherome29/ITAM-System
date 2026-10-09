@@ -66,6 +66,28 @@ export enum NotificationAlertType {
   REQUISITION_APPROVED  = 'requisition_approved',
   REQUISITION_REJECTED  = 'requisition_rejected',
   REQUISITION_FULFILLED = 'requisition_fulfilled',
+  ASSET_REQUEST         = 'asset_request',         // to custodians: new / cancelled return or incident
+  ASSET_REQUEST_UPDATE  = 'asset_request_update',  // to the requester: approved / rejected / completed
+}
+
+// Return / incident requests filed by the holder of an issued asset.
+export enum AssetRequestType {
+  RETURN = 'return',
+  REPAIR = 'repair',
+  DAMAGE = 'damage',
+  LOSS   = 'loss',
+  THEFT  = 'theft',
+}
+
+// submitted → approved (hand-over scheduled) → completed (item received / processed)
+// rejected (custodian, only before approval) and cancelled (requester, any open
+// state) are terminal.
+export enum AssetRequestStatus {
+  SUBMITTED = 'submitted',
+  APPROVED  = 'approved',
+  COMPLETED = 'completed',
+  REJECTED  = 'rejected',
+  CANCELLED = 'cancelled',
 }
 
 export enum AuditAction {
@@ -102,6 +124,12 @@ export enum AuditAction {
 
   SYSTEM_CONFIG_UPDATED = 'system_config_updated',
   REQUISITION_REASSIGNED = 'requisition_reassigned',
+  // Return / incident request actions
+  ASSET_REQUEST_SUBMITTED = 'asset_request_submitted',
+  ASSET_REQUEST_APPROVED  = 'asset_request_approved',
+  ASSET_REQUEST_REJECTED  = 'asset_request_rejected',
+  ASSET_REQUEST_COMPLETED = 'asset_request_completed',
+  ASSET_REQUEST_CANCELLED = 'asset_request_cancelled',
 }
 
 export enum OfficialFormType {

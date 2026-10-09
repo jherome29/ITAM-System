@@ -45,6 +45,65 @@ import { SystemConfigService } from '../system-config/system-config.service';
 //   IT fulfills → fulfilled + update asset to 'issued'
 //   SLA: >24h pending → SLA breach notification
 
+/** How each fulfilling role is named in requester-facing notifications. */
+const FULFILLER_LABEL: Partial<Record<UserRole, string>> = {
+  [UserRole.IT_PERSONNEL]: 'IT Asset Custodian',
+  [UserRole.PROPERTY_CUSTODIAN]: 'Property Custodian',
+};
+
+/** Who submitted a requisition — just enough for an approver or custodian to
+ *  identify them (CLAUDE.md §8.4). Never email, role, or credential hashes. */
+export interface RequesterSummary {
+  id: string;
+  name: string;
+  employeeId: string;
+  officeOrSection: string;
+}
+
+function toRequesterSummary(user?: UserEntity | null): RequesterSummary | null {
+  if (!user) return null;
+  return {
+    id: user.id,
+    name: `${user.firstName} ${user.lastName}`.trim(),
+    employeeId: user.employeeId,
+    officeOrSection: user.officeOrSection,
+  };
+}
+
+/** The assigned approving officer, as shown to the requester. */
+export interface ApproverSummary {
+  id: string;
+  name: string;
+  employeeId: string;
+}
+
+function toApproverSummary(user?: UserEntity | null): ApproverSummary | null {
+  if (!user) return null;
+  return {
+    id: user.id,
+    name: `${user.firstName} ${user.lastName}`.trim(),
+    employeeId: user.employeeId,
+  };
+}
+
+/** Swap the joined user entities for minimal summaries before they leave the service. */
+function withRequester<T extends RequisitionEntity>(
+  req: T,
+  requester: UserEntity | null | undefined = req.requestedBy,
+  approver: UserEntity | null | undefined = req.supervisor,
+): Omit<T, 'requestedBy' | 'supervisor'> & {
+  requester: RequesterSummary | null;
+  approver: ApproverSummary | null;
+} {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { requestedBy, supervisor, ...rest } = req;
+  return {
+    ...rest,
+    requester: toRequesterSummary(requester),
+    approver: toApproverSummary(approver),
+  };
+}
+
 @Injectable()
 export class RequisitionsService {
   private readonly logger = new Logger(RequisitionsService.name);
@@ -77,6 +136,8 @@ export class RequisitionsService {
     const qb = this.reqRepo
       .createQueryBuilder('r')
       .leftJoinAndSelect('r.items', 'items')
+      .leftJoinAndSelect('r.requestedBy', 'requestedBy')
+      .leftJoinAndSelect('r.supervisor', 'supervisor')
       .orderBy('r.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit);
@@ -133,20 +194,40 @@ export class RequisitionsService {
       qb.andWhere('r.status = :sf', { sf: statusFilter.toLowerCase() });
     }
 
-    const [data, total] = await qb.getManyAndCount();
+    const [rows, total] = await qb.getManyAndCount();
+    const data = rows.map((r) => withRequester(r));
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   // ── My requisitions (any authenticated role) ───────────────────────────────
   async findMine(userId: string, page = 1, limit = 20) {
-    const [data, total] = await this.reqRepo.findAndCount({
+    const [rows, total] = await this.reqRepo.findAndCount({
       where: { requestedById: userId },
-      relations: { items: true },
+      relations: { items: true, requestedBy: true, supervisor: true },
       order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
     });
+    const data = rows.map((r) => withRequester(r));
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  // ── Detail for display — findOne() plus the requester summary ─────────────
+  // Kept separate from findOne(), which approve/reject/fulfill load and then
+  // save: the view shape (requester, no requestedBy) must never be persisted.
+  async findOneForView(
+    id: string,
+    requestingUserId: string,
+    requestingRole: UserRole,
+  ) {
+    const req = await this.findOne(id, requestingUserId, requestingRole);
+    const lookup = (userId: string | null) =>
+      userId ? this.usersService.findOne(userId).catch(() => null) : null;
+    const [requester, approver] = await Promise.all([
+      lookup(req.requestedById),
+      lookup(req.supervisorId),
+    ]);
+    return withRequester(req, requester, approver);
   }
 
   // ── Requisition stats — dashboard counts in flat shape matching frontend ────
@@ -230,6 +311,23 @@ export class RequisitionsService {
       );
     }
 
+    // Custodial scope guard — the same "ANY item in scope" rule findAll() uses,
+    // so a direct GET by id can't reach what the role's queue would never list
+    // (ICT requests for Property roles, supply requests for IT Personnel).
+    // A requester can always read their own requisition, whatever it contains.
+    const scope = requestingRole
+      ? resolveAssetTypeScope(requestingRole)
+      : undefined;
+    if (
+      scope &&
+      req.requestedById !== requestingUserId &&
+      !req.items.some((item) => scope.includes(item.assetType))
+    ) {
+      throw new ForbiddenException(
+        'This requisition is outside your asset-type scope',
+      );
+    }
+
     const approvals = await this.approvalRepo.find({
       where: { requisitionId: id },
       order: { actionedAt: 'ASC' },
@@ -285,6 +383,72 @@ export class RequisitionsService {
     );
   }
 
+  /**
+   * Segregation of duties — nobody decides on their own requisition, whatever
+   * their role (System Admin included). Enforced here, not only in the UI.
+   */
+  private assertNotOwnRequisition(req: RequisitionEntity, deciderId: string) {
+    if (req.requestedById === deciderId) {
+      throw new ForbiddenException(
+        'You cannot approve or reject your own requisition.',
+      );
+    }
+  }
+
+  /** An approver who can take a request: active, a Supervisor, available, and not the requester. */
+  private isUsableApprover(
+    candidate: UserEntity | null | undefined,
+    requesterId: string,
+  ): candidate is UserEntity {
+    return (
+      !!candidate &&
+      candidate.id !== requesterId &&
+      candidate.isActive &&
+      candidate.role === UserRole.SUPERVISOR &&
+      !this.usersService.isUnavailable(candidate)
+    );
+  }
+
+  /**
+   * Who approves this requester's requisition — never the requester
+   * (segregation of duties, CLAUDE.md §8.2). Without this, a Supervisor's own
+   * request resolved to themselves and sat unapprovable in their own queue.
+   *
+   *   1. A Supervisor requester's own designated alternate approver, if usable —
+   *      the backup they nominated is the natural next approver.
+   *   2. Another Supervisor in the requester's section, then division.
+   *   3. Otherwise refuse, rather than create a request nobody can approve.
+   */
+  private async resolvePrimaryApprover(
+    requester: UserEntity,
+  ): Promise<UserEntity> {
+    if (
+      requester.role === UserRole.SUPERVISOR &&
+      requester.alternateApproverId
+    ) {
+      const ownAlternate = await this.usersService
+        .findOne(requester.alternateApproverId)
+        .catch(() => null);
+      if (this.isUsableApprover(ownAlternate, requester.id)) {
+        return ownAlternate;
+      }
+    }
+
+    const supervisor = await this.usersService.findSupervisorForSection(
+      requester.officeOrSection,
+      requester.division,
+      requester.id,
+    );
+    if (!supervisor) {
+      throw new BadRequestException(
+        requester.role === UserRole.SUPERVISOR
+          ? 'No other approver is available for your requisition. Ask the System Administrator to designate an alternate approver for you, or to assign another supervisor to your division.'
+          : 'No supervisor is configured for your section — contact your System Administrator.',
+      );
+    }
+    return supervisor;
+  }
+
   async create(
     dto: CreateRequisitionDto,
     requestedById: string,
@@ -304,20 +468,13 @@ export class RequisitionsService {
     // forever and the Supervisor's pending-approvals queue is always empty
     // (findAll() filters on r.supervisorId = :id).
     const requester = await this.usersService.findOne(requestedById);
-    const supervisor = await this.usersService.findSupervisorForSection(
-      requester.officeOrSection,
-      requester.division,
-    );
-    if (!supervisor) {
-      throw new BadRequestException(
-        'No supervisor is configured for your section — contact your System Administrator.',
-      );
-    }
+    const supervisor = await this.resolvePrimaryApprover(requester);
 
     // Alternate Approver (CLAUDE.md §5, §17) — if the resolved primary is
     // currently unavailable and has a usable designated backup, route to them.
     // One hop only: an unusable alternate falls back to the primary (the SLA
-    // watcher is the backstop). "Usable" = active SUPERVISOR, not itself away.
+    // watcher is the backstop). "Usable" = active SUPERVISOR, not itself away,
+    // and never the requester.
     let approverId = supervisor.id;
     let routedToAlternate = false;
     if (
@@ -327,12 +484,7 @@ export class RequisitionsService {
       const alt = await this.usersService
         .findOne(supervisor.alternateApproverId)
         .catch(() => null);
-      if (
-        alt &&
-        alt.isActive &&
-        alt.role === UserRole.SUPERVISOR &&
-        !this.usersService.isUnavailable(alt)
-      ) {
+      if (this.isUsableApprover(alt, requestedById)) {
         approverId = alt.id;
         routedToAlternate = true;
       }
@@ -365,9 +517,21 @@ export class RequisitionsService {
     });
     const saved = await this.reqRepo.save(req);
 
-    // Save line items
-    const items = dto.items.map((item) =>
-      this.itemRepo.create({ ...item, requisitionId: saved.id }),
+    // Save line items. inInventory is decided here against live stock, never
+    // taken from the client, so the custodian's "not in inventory" badge can't
+    // be forged.
+    const items = await Promise.all(
+      dto.items.map(async (item) =>
+        this.itemRepo.create({
+          ...item,
+          requisitionId: saved.id,
+          inInventory: await this.assetsService.isInCatalogue(
+            item.itemDescription,
+            item.assetType,
+            item.assetClass,
+          ),
+        }),
+      ),
     );
     saved.items = await this.itemRepo.save(items);
     // Return shape must match findOne/findMine (both hydrate `items`) — callers
@@ -449,6 +613,8 @@ export class RequisitionsService {
       );
     }
 
+    this.assertNotOwnRequisition(req, supervisorId);
+
     // SYSTEM_ADMIN is permitted by the controller's @Roles guard to approve
     // on any supervisor's behalf — skip the ownership check for that role.
     if (
@@ -477,20 +643,37 @@ export class RequisitionsService {
     req.supervisorDecidedAt = new Date();
     const saved = await this.reqRepo.save(req);
 
-    // Notify requester
+    // Whoever can fulfil these items — the same custodial split that
+    // findAll() and assertItemsInScope() use: ICT → IT Personnel,
+    // Fixed/Supplies → Property Custodian.
+    const fulfillerRoles = new Set<UserRole>(
+      req.items.map((item) =>
+        item.assetType === AssetType.ICT
+          ? UserRole.IT_PERSONNEL
+          : UserRole.PROPERTY_CUSTODIAN,
+      ),
+    );
+
+    // Notify requester — naming the custodian who will actually act on it, so a
+    // supply request isn't described as waiting on IT.
+    const fulfillerLabel = [...fulfillerRoles]
+      .map((role) => FULFILLER_LABEL[role])
+      .join(' / ');
     await this.notificationsService.notify(
       req.requestedById,
       NotificationAlertType.REQUISITION_APPROVED,
       'Requisition Approved',
-      `Your requisition ${req.requestNumber} has been approved and is now pending fulfillment by IT Personnel.`,
+      `Your requisition ${req.requestNumber} has been approved and is now pending fulfillment by the ${fulfillerLabel}.`,
       id,
       'requisition',
     );
-
-    // Notify all IT Personnel
-    const itUsers = await this.usersService.findByRole(UserRole.IT_PERSONNEL);
+    const fulfillers = (
+      await Promise.all(
+        [...fulfillerRoles].map((role) => this.usersService.findByRole(role)),
+      )
+    ).flat();
     await Promise.all(
-      itUsers.map((u) =>
+      fulfillers.map((u) =>
         this.notificationsService.notify(
           u.id,
           NotificationAlertType.PENDING_APPROVAL,
@@ -532,6 +715,8 @@ export class RequisitionsService {
         `Cannot reject requisition with status "${req.status}".`,
       );
     }
+
+    this.assertNotOwnRequisition(req, supervisorId);
 
     // Same ownership guard as approve() — a Supervisor may only reject the
     // requisitions nominated to them; SYSTEM_ADMIN bypasses per the
@@ -785,7 +970,7 @@ export class RequisitionsService {
       req.requestedById,
       NotificationAlertType.REQUISITION_FULFILLED,
       'Requisition Fulfilled',
-      `Your requisition ${req.requestNumber} has been fulfilled by IT Personnel. Please collect your item(s).`,
+      `Your requisition ${req.requestNumber} has been fulfilled by the ${FULFILLER_LABEL[userRole] ?? 'custodian'}. Please collect your item(s).`,
       id,
       'requisition',
     );
@@ -871,12 +1056,9 @@ export class RequisitionsService {
             const candidate = await this.usersService
               .findOne(altId)
               .catch(() => null);
-            if (
-              candidate &&
-              candidate.isActive &&
-              candidate.role === UserRole.SUPERVISOR &&
-              !this.usersService.isUnavailable(candidate)
-            ) {
+            // Never hand a request to its own requester (e.g. supervisor A's
+            // request sits with B, and B's designated alternate is A).
+            if (this.isUsableApprover(candidate, req.requestedById)) {
               alt = candidate;
             }
           }

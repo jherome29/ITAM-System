@@ -60,6 +60,15 @@ export class RequisitionEntity {
   @Column({ nullable: true, type: 'uuid' })
   supervisorId!: string | null;
 
+  // Read-only join over the existing supervisor_id column (no schema change) —
+  // lets list queries show the approver's name instead of a raw UUID.
+  @ManyToOne(() => UserEntity, {
+    eager: false,
+    createForeignKeyConstraints: false,
+  })
+  @JoinColumn({ name: 'supervisor_id' })
+  supervisor!: UserEntity | null;
+
   @Column({ type: 'varchar', nullable: true })
   supervisorDecision!: 'approved' | 'rejected' | null;
 
