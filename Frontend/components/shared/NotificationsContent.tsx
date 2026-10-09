@@ -1,8 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bell, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Bell, CheckCircle, XCircle, AlertCircle, ChevronRight } from 'lucide-react';
 import { notificationsApi, type Notification } from '@/lib/api/notifications';
+import { notificationTarget, workspaceBasePath } from '@/lib/notifications/notification-target';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
@@ -11,7 +14,7 @@ function NotifIcon({ type }: Readonly<{ type: string }>) {
     return <CheckCircle className="w-5 h-5 text-green-600" />;
   if (type === 'requisition_rejected')
     return <XCircle className="w-5 h-5 text-red-500" />;
-  if (type === 'sla_breach' || type === 'low_stock' || type === 'overdue_return' || type === 'alternate_approver')
+  if (type === 'sla_breach' || type === 'low_stock' || type === 'overdue_return' || type === 'alternate_approver' || type === 'asset_request')
     return <AlertCircle className="w-5 h-5 text-amber-500" />;
   return <AlertCircle className="w-5 h-5 text-blue-500" />;
 }
@@ -20,6 +23,7 @@ export function NotificationsContent() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const basePath = workspaceBasePath(usePathname() ?? '');
 
   useEffect(() => {
     notificationsApi
@@ -52,8 +56,9 @@ export function NotificationsContent() {
         </div>
       ) : (
         <div className="space-y-2">
-          {notifications.map((n) => (
-            <div key={n.id} className={`bg-white rounded-lg shadow-sm border p-4 ${n.isRead ? 'border-gray-200' : 'border-blue-300 bg-blue-50'}`}>
+          {notifications.map((n) => {
+            const target = notificationTarget(basePath, n);
+            const body = (
               <div className="flex gap-4">
                 <div className="shrink-0 mt-0.5"><NotifIcon type={n.alertType} /></div>
                 <div className="flex-1 min-w-0">
@@ -63,9 +68,23 @@ export function NotificationsContent() {
                   </div>
                   <p className="text-sm text-gray-600 mt-1">{n.message}</p>
                 </div>
+                {target && <ChevronRight className="w-4 h-4 text-gray-400 shrink-0 self-center" />}
               </div>
-            </div>
-          ))}
+            );
+            const cardClass = `block bg-white rounded-lg shadow-sm border p-4 ${n.isRead ? 'border-gray-200' : 'border-blue-300 bg-blue-50'}`;
+            return target ? (
+              <Link
+                key={n.id}
+                href={target}
+                onClick={() => { if (!n.isRead) notificationsApi.markRead(n.id).catch(() => {}); }}
+                className={`${cardClass} hover:border-blue-400`}
+              >
+                {body}
+              </Link>
+            ) : (
+              <div key={n.id} className={cardClass}>{body}</div>
+            );
+          })}
         </div>
       )}
     </div>
