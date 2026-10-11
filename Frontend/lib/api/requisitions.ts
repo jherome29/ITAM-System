@@ -26,6 +26,20 @@ export interface Requisition {
   approver?: { id: string; name: string; employeeId: string } | null;
   /** Replacement requisitions only — the unit being replaced. */
   replacedAsset?: ReplacedAsset | null;
+  /** COA documents generated for it (detail endpoint only). */
+  documents?: RequisitionDocument[];
+}
+
+export interface RequisitionDocument {
+  id: string;
+  formType: string;
+  generatedAt: string;
+}
+
+/** fulfilledItems links a line to the unit handed out — for a replacement, that unit is issued to the requester. */
+export interface FulfillRequisitionDto {
+  notes?: string;
+  fulfilledItems?: Array<{ requisitionItemId: string; assetId: string }>;
 }
 
 export interface ReplacedAsset {
@@ -139,6 +153,12 @@ export const requisitionsApi = {
   hold: (id: string, reason: string) =>
     client.post<ApiResponse<Requisition>>(`/v1/requisitions/${id}/hold`, { reason }).then((r) => r.data),
 
-  fulfill: (id: string) =>
-    client.post<ApiResponse<Requisition>>(`/v1/requisitions/${id}/fulfill`).then((r) => r.data),
+  fulfill: (id: string, dto: FulfillRequisitionDto = {}) =>
+    client.post<ApiResponse<Requisition>>(`/v1/requisitions/${id}/fulfill`, dto).then((r) => r.data),
+
+  /** A COA document generated for this requisition (e.g. the replacement's return receipt). */
+  document: (id: string, formId: string): Promise<Blob> =>
+    client
+      .get(`/v1/requisitions/${id}/documents/${formId}`, { responseType: 'blob' })
+      .then((r) => r.data as Blob),
 };

@@ -406,6 +406,10 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   const [issueEmployeeId, setIssueEmployeeId] = useState('');
   const [issueExpectedReturnDate, setIssueExpectedReturnDate] = useState('');
   const [transferToLocation, setTransferToLocation] = useState('');
+  // Replacement fulfilment: the available unit handed to the requester in the
+  // same step (fulfil returns the old unit and issues this one).
+  const [replacementUnits, setReplacementUnits] = useState<Asset[] | null>(null);
+  const [replacementUnitId, setReplacementUnitId] = useState('');
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [form, setForm] = useState({ item: '', quantity: '1', requiredDate: '', justification: '', reason: '', attachment: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -511,6 +515,22 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     }
   };
 
+  const selectedRequisition = selected ? requisitionById[String(selected.id)] : undefined;
+  const replacementLine = selectedRequisition?.requisitionType === 'replacement' ? selectedRequisition.items[0] : undefined;
+  const pickingReplacementUnit = confirmAction === 'Fulfill' && (isItAssetCustodianLiveFulfillment || isPropertyCustodianLiveFulfillment) && Boolean(replacementLine);
+
+  useEffect(() => {
+    if (!pickingReplacementUnit || !replacementLine) return;
+    let live = true;
+    setReplacementUnits(null);
+    setReplacementUnitId('');
+    assetsApi
+      .list(1, 100, undefined, 'available', replacementLine.assetType)
+      .then((res) => { if (live) setReplacementUnits(res.data.data.filter((a) => a.assetClass !== 'IES' && a.id !== selectedRequisition?.replacedAsset?.id)); })
+      .catch(() => { if (live) setReplacementUnits([]); });
+    return () => { live = false; };
+  }, [pickingReplacementUnit, replacementLine, selectedRequisition?.replacedAsset?.id]);
+
   // Real, persisted counterpart to runAction for IT Asset Custodian's live fulfillment
   // queue — see isItAssetCustodianLiveFulfillment above. Calls the actual requisitions
   // API instead of mutating local mock state.
@@ -525,7 +545,8 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     try {
       const id = String(selected.id);
       if (action === 'Fulfill') {
-        await requisitionsApi.fulfill(id);
+        const line = requisitionById[id]?.requisitionType === 'replacement' ? requisitionById[id]?.items[0] : undefined;
+        await requisitionsApi.fulfill(id, line && replacementUnitId ? { fulfilledItems: [{ requisitionItemId: line.id, assetId: replacementUnitId }] } : {});
       } else {
         await requisitionsApi.hold(id, trimmedRemarks);
       }
@@ -533,10 +554,12 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       setSelected(null);
       setRemarks('');
       setErrors({});
-      notify(action === 'Fulfill' ? 'Requisition fulfilled.' : 'Requisition placed on hold.');
+      notify(action === 'Fulfill' ? (replacementUnitId ? 'Requisition fulfilled — replacement unit issued.' : 'Requisition fulfilled.') : 'Requisition placed on hold.');
+      setReplacementUnitId('');
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
-    } catch {
-      notify(`Failed to ${action === 'Fulfill' ? 'fulfill' : 'place on hold'} the requisition. Please try again.`);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
+      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? `Failed to ${action === 'Fulfill' ? 'fulfill' : 'place on hold'} the requisition. Please try again.`));
     } finally {
       setActionSubmitting(false);
     }
@@ -1052,8 +1075,24 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
           }
           runAction(confirmAction);
         }}
-        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setIssueExpectedReturnDate(''); setTransferToLocation(''); }}
+        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setIssueExpectedReturnDate(''); setTransferToLocation(''); setReplacementUnitId(''); }}
       >
+        {pickingReplacementUnit && (
+          <label className="block text-sm font-semibold text-slate-700">
+            <span>Replacement unit to issue</span>
+            <select value={replacementUnitId} onChange={(event) => setReplacementUnitId(event.target.value)} disabled={replacementUnits === null} className="mt-2 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
+              <option value="">{replacementUnits === null ? 'Loading available units…' : 'Issue later from Custody & Issuance'}</option>
+              {(replacementUnits ?? []).map((unit) => (
+                <option key={unit.id} value={unit.id}>{[unit.itemDescription, unit.propertyNumber, unit.serialNumber && `S/N ${unit.serialNumber}`].filter(Boolean).join(' · ')}</option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs font-normal text-slate-500">
+              {replacementUnits && replacementUnits.length === 0
+                ? `No available ${replacementLine?.assetType ?? ''} unit — fulfil now and issue one later, or put the request on hold.`
+                : 'The old unit is taken back and this one is issued to the requester in the same step.'}
+            </span>
+          </label>
+        )}
         {(['Reject', 'Return for Revision'].includes(confirmAction ?? '') ||
           (isItAssetCustodianLiveFulfillment && confirmAction === 'On Hold') ||
           (isItAssetCustodianLiveMaintenance && confirmAction === 'Recommend Disposal') ||

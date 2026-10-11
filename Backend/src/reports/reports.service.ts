@@ -979,6 +979,33 @@ export class ReportsService {
     return { form: saved, buffer };
   }
 
+  /** Forms generated for a requisition (no PDF blob), oldest first. */
+  formsForRequisition(requisitionId: string) {
+    return this.formRepo.find({
+      where: { relatedRequisitionId: requisitionId },
+      select: { id: true, formType: true, generatedAt: true },
+      order: { generatedAt: 'ASC' },
+    });
+  }
+
+  /**
+   * A form's PDF, only if it was generated for this requisition — the link is
+   * what lets the requester read it (generated forms are otherwise
+   * custodian / admin only).
+   */
+  async requisitionFormPdf(requisitionId: string, formId: string) {
+    const form = await this.formRepo
+      .createQueryBuilder('f')
+      .select(['f.id', 'f.formType', 'f.pdfContent'])
+      .where('f.id = :formId AND f.relatedRequisitionId = :requisitionId', {
+        formId,
+        requisitionId,
+      })
+      .getOne();
+    if (!form?.pdfContent) throw new NotFoundException('Document not found');
+    return { formType: form.formType, buffer: form.pdfContent };
+  }
+
   /**
    * downloadForm — Retrieves the stored PDF buffer for a previously generated form.
    * SVC: Improve — audit-reference retrieval of generated COA documents.

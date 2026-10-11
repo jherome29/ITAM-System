@@ -113,6 +113,8 @@ describe('RequisitionsService', () => {
 
   const mockReportsService = {
     generateFormRecord: jest.fn().mockResolvedValue({}),
+    formsForRequisition: jest.fn().mockResolvedValue([]),
+    requisitionFormPdf: jest.fn(),
   };
 
   const mockReqRepo = {
@@ -1423,6 +1425,198 @@ describe('RequisitionsService', () => {
 
       await expect(fulfill(req.id)).rejects.toThrow(BadRequestException);
       expect(mockReqRepo.manager.transaction).not.toHaveBeenCalled();
+    });
+
+    describe('with a replacement unit picked', () => {
+      const item = {
+        id: 'item-1',
+        assetType: AssetType.ICT,
+        assetClass: AssetClass.PPE,
+        quantity: 1,
+        fulfilledAssetId: null,
+      };
+      const armWithItem = () => {
+        const req = armReplacement();
+        req.items = [item] as unknown as RequisitionEntity['items'];
+        return req;
+      };
+      const fulfillWith = (id: string, assetId: string) =>
+        service.fulfill(
+          id,
+          'it-uuid-1',
+          UserRole.IT_PERSONNEL,
+          { fulfilledItems: [{ requisitionItemId: 'item-1', assetId }] },
+          '127.0.0.1',
+        );
+      const old = makeAsset({ condition: AssetCondition.UNSERVICEABLE });
+      const fresh = makeAsset({
+        id: 'asset-new',
+        status: AssetStatus.AVAILABLE,
+        custodianId: null,
+        itemDescription: 'Dell Latitude 7450',
+      });
+
+      it('takes the old unit back and issues the new one to the requester', async () => {
+        const req = armWithItem();
+        mockAssetsService.findOne.mockImplementation((id: string) =>
+          Promise.resolve(id === 'asset-new' ? fresh : old),
+        );
+
+        await fulfillWith(req.id, 'asset-new');
+
+        expect(mockAssetsService.updateLifecycle).toHaveBeenCalledWith(
+          'asset-uuid-1',
+          expect.objectContaining({ status: AssetStatus.RETURNED }),
+          'it-uuid-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+          [AssetType.ICT],
+        );
+        expect(mockAssetsService.updateLifecycle).toHaveBeenCalledWith(
+          'asset-new',
+          expect.objectContaining({
+            status: AssetStatus.ISSUED,
+            custodianId: req.requestedById,
+          }),
+          'it-uuid-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+          [AssetType.ICT],
+        );
+        expect(mockNotifService.notify).toHaveBeenCalledWith(
+          req.requestedById,
+          NotificationAlertType.REQUISITION_FULFILLED,
+          expect.any(String),
+          expect.stringContaining('"Dell Latitude 7450" is now issued to you'),
+          req.id,
+          'requisition',
+        );
+        expect(mockAuditService.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: AuditAction.REQUISITION_FULFILLED,
+            metadata: expect.objectContaining({
+              issuedAssetId: 'asset-new',
+              issued: true,
+            }),
+          }),
+        );
+      });
+
+      it('refuses a unit that is not available, before touching the old one', async () => {
+        const req = armWithItem();
+        mockAssetsService.findOne.mockImplementation((id: string) =>
+          Promise.resolve(
+            id === 'asset-new' ? { ...fresh, status: AssetStatus.ISSUED } : old,
+          ),
+        );
+
+        await expect(fulfillWith(req.id, 'asset-new')).rejects.toThrow(
+          /not available/,
+        );
+        expect(mockAssetsService.updateLifecycle).not.toHaveBeenCalled();
+        expect(mockReqRepo.manager.transaction).not.toHaveBeenCalled();
+      });
+
+      it('refuses a unit of another asset type', async () => {
+        const req = armWithItem();
+        mockAssetsService.findOne.mockResolvedValue({
+          ...fresh,
+          assetType: AssetType.FIXED,
+        });
+
+        await expect(fulfillWith(req.id, 'asset-new')).rejects.toThrow(
+          BadRequestException,
+        );
+        expect(mockAssetsService.updateLifecycle).not.toHaveBeenCalled();
+      });
+
+      it('refuses the old unit as its own replacement', async () => {
+        const req = armWithItem();
+        await expect(fulfillWith(req.id, 'asset-uuid-1')).rejects.toThrow(
+          /different unit/,
+        );
+      });
+
+      it('still fulfills, and says so in the audit, when issuing the new unit fails', async () => {
+        const req = armWithItem();
+        mockAssetsService.findOne.mockImplementation((id: string) =>
+          Promise.resolve(id === 'asset-new' ? fresh : old),
+        );
+        mockAssetsService.updateLifecycle
+          .mockResolvedValueOnce(undefined) // old unit returned
+          .mockRejectedValueOnce(new Error('db hiccup')); // new unit issue
+
+        const result = await fulfillWith(req.id, 'asset-new');
+
+        expect(result.status).toBe(RequisitionStatus.FULFILLED);
+        expect(mockAuditService.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({ issued: false }),
+          }),
+        );
+      });
+    });
+  });
+
+  describe('requisition documents', () => {
+    it('findOneForView() lists the documents generated for the request', async () => {
+      mockReqRepo.findOne.mockResolvedValue(makeReq());
+      mockApprovalRepo.find.mockResolvedValue([]);
+      mockReportsService.formsForRequisition.mockResolvedValueOnce([
+        {
+          id: 'form-1',
+          formType: OfficialFormType.RECEIPT_RETURNED_PROPERTY,
+          generatedAt: new Date('2026-10-01'),
+        },
+      ]);
+
+      const view = await service.findOneForView(
+        'req-uuid-1',
+        'emp-uuid-1',
+        UserRole.EMPLOYEE,
+      );
+
+      expect(view.documents).toEqual([
+        expect.objectContaining({
+          id: 'form-1',
+          formType: OfficialFormType.RECEIPT_RETURNED_PROPERTY,
+        }),
+      ]);
+    });
+
+    it('getDocument() lets the requester download a form of their own request', async () => {
+      mockReqRepo.findOne.mockResolvedValue(makeReq());
+      mockApprovalRepo.find.mockResolvedValue([]);
+      mockReportsService.requisitionFormPdf.mockResolvedValueOnce({
+        formType: OfficialFormType.RECEIPT_RETURNED_PROPERTY,
+        buffer: Buffer.from('%PDF'),
+      });
+
+      const doc = await service.getDocument(
+        'req-uuid-1',
+        'form-1',
+        'emp-uuid-1',
+        UserRole.EMPLOYEE,
+      );
+
+      expect(mockReportsService.requisitionFormPdf).toHaveBeenCalledWith(
+        'req-uuid-1',
+        'form-1',
+      );
+      expect(doc.requestNumber).toBe('REQ-2026-0001');
+    });
+
+    it('getDocument() keeps the IDOR guard for another employee', async () => {
+      mockReqRepo.findOne.mockResolvedValue(makeReq());
+      await expect(
+        service.getDocument(
+          'req-uuid-1',
+          'form-1',
+          'someone-else',
+          UserRole.EMPLOYEE,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockReportsService.requisitionFormPdf).not.toHaveBeenCalled();
     });
   });
 
