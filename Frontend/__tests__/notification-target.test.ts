@@ -44,6 +44,15 @@ describe('notificationTarget', () => {
     expect(notificationTarget('/supervisor', ar('asset_request_update'))).toBeNull();
   });
 
+  it('routes repair alerts: overdue to the maintenance queue, outcomes to the holder', () => {
+    const rep = (alertType: string) => ({ alertType, relatedRecordId: REQ, relatedRecordType: 'asset_repair' });
+    expect(notificationTarget('/it-asset-custodian', rep('repair_overdue'))).toBe(`/it-asset-custodian/maintenance?open=${REQ}`);
+    expect(notificationTarget('/property-custodian', rep('repair_overdue'))).toBe(`/property-custodian/maintenance?open=${REQ}`);
+    expect(notificationTarget('/employee', rep('repair_update'))).toBe('/employee/assigned-assets');
+    expect(notificationTarget('/approving-officer', rep('repair_update'))).toBe('/approving-officer/assigned-assets');
+    expect(notificationTarget('/employee', rep('repair_overdue'))).toBeNull();
+  });
+
   it('returns null when there is nothing to open', () => {
     expect(notificationTarget('/approving-officer', { ...req('pending_approval'), relatedRecordId: null })).toBeNull();
     expect(notificationTarget('/management-audit', req('sla_breach'))).toBeNull();

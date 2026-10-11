@@ -41,7 +41,11 @@ export interface ReplacementEligibility {
 }
 
 /** An asset from GET /v1/assets/mine — the holder's view. */
-export type MyAsset = Asset & { replacement: ReplacementEligibility };
+export type MyAsset = Asset & {
+  replacement: ReplacementEligibility;
+  /** While under repair: where it is and when it is due back. */
+  repair: { serviceType: 'in_house' | 'external'; serviceProvider: string | null; openedAt: string; dueDate: string } | null;
+};
 
 /** One grouped, requestable line from GET /v1/assets/catalogue/items. */
 export interface CatalogueItem {

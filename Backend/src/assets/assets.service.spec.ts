@@ -5,7 +5,8 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { AssetsService } from './assets.service';
+import { AssetsService, conditionAfter } from './assets.service';
+import { AssetRepairsService } from './asset-repairs.service';
 import { AssetEntity } from './entities/asset.entity';
 import { AssetTransactionEntity } from './entities/asset-transaction.entity';
 import { AuditService } from '../audit/audit.service';
@@ -20,6 +21,7 @@ import {
   UserRole,
   AuditAction,
   NotificationAlertType,
+  RepairOutcome,
 } from '../../../packages/shared/src/enums';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -80,6 +82,17 @@ describe('AssetsService', () => {
     getUsefulLifeYears: jest.fn(() => ({ PPE: 5, SEP: 3, IES: 1 })),
   };
 
+  // Repair-record bookkeeping has its own spec; here we only check that
+  // AssetsService calls it at the right transitions.
+  const mockRepairs = {
+    open: jest.fn().mockResolvedValue({}),
+    close: jest.fn().mockResolvedValue(null),
+    openForAssets: jest.fn().mockResolvedValue(new Map()),
+    load: jest.fn(),
+    assertCanAct: jest.fn(),
+    findOneForUser: jest.fn().mockResolvedValue({ id: 'rep-1' }),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -93,6 +106,7 @@ describe('AssetsService', () => {
         { provide: UsersService, useValue: mockUsersService },
         { provide: NotificationsService, useValue: mockNotifService },
         { provide: SystemConfigService, useValue: mockSystemConfig },
+        { provide: AssetRepairsService, useValue: mockRepairs },
       ],
     }).compile();
 
@@ -499,14 +513,16 @@ describe('AssetsService', () => {
         status: AssetStatus.ISSUED,
         custodianId: 'holder-1',
         expectedReturnDate: new Date('2026-12-01'),
+        condition: AssetCondition.SERVICEABLE,
       });
-      expect(mockNotifService.notify).toHaveBeenCalledWith(
-        'holder-1',
-        NotificationAlertType.ASSET_REQUEST_UPDATE,
-        'Repair Completed',
-        expect.stringContaining('repaired'),
-        'asset-uuid-1',
-        'asset',
+      // Closing the repair record is what tells the holder.
+      expect(mockRepairs.close).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'asset-uuid-1' }),
+        AssetStatus.ISSUED,
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+        expect.any(Object),
       );
     });
 
@@ -543,7 +559,198 @@ describe('AssetsService', () => {
       );
       expect(saved.custodianId).toBeNull();
       expect(saved.expectedReturnDate).toBeNull();
-      expect(mockNotifService.notify).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('repair records and condition', () => {
+    const arm = (over: Partial<AssetEntity> = {}) => {
+      const asset = makeAsset({
+        status: AssetStatus.ISSUED,
+        custodianId: 'holder-1',
+        ...over,
+      });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+      mockTxRepo.create.mockReturnValue({});
+      mockTxRepo.save.mockResolvedValue({});
+      return asset;
+    };
+
+    it('opens a repair record for the holder when an asset goes under repair', async () => {
+      arm();
+      const saved = await service.updateLifecycle(
+        'asset-uuid-1',
+        { status: AssetStatus.UNDER_REPAIR },
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        'ip',
+        undefined,
+        { assetRequestId: 'ar-1', problem: 'Does not charge' },
+      );
+      expect(saved.condition).toBe(AssetCondition.FOR_REPAIR);
+      expect(mockRepairs.open).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'asset-uuid-1' }),
+        'holder-1',
+        'it-1',
+        expect.objectContaining({
+          assetRequestId: 'ar-1',
+          problem: 'Does not charge',
+        }),
+      );
+      expect(mockRepairs.close).not.toHaveBeenCalled();
+    });
+
+    it('applies a condition override (a damaged item written off)', async () => {
+      arm();
+      const saved = await service.updateLifecycle(
+        'asset-uuid-1',
+        { status: AssetStatus.FLAGGED_FOR_DISPOSAL, notes: 'Shattered' },
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        'ip',
+        undefined,
+        { condition: AssetCondition.UNSERVICEABLE },
+      );
+      expect(saved.condition).toBe(AssetCondition.UNSERVICEABLE);
+    });
+
+    it('conditionAfter: for_repair going in, serviceable when fixed, unserviceable when written off', () => {
+      const S = AssetStatus;
+      const C = AssetCondition;
+      expect(conditionAfter(S.ISSUED, S.UNDER_REPAIR, C.SERVICEABLE)).toBe(
+        C.FOR_REPAIR,
+      );
+      expect(conditionAfter(S.ISSUED, S.UNDER_REPAIR, C.UNSERVICEABLE)).toBe(
+        C.UNSERVICEABLE,
+      );
+      expect(conditionAfter(S.UNDER_REPAIR, S.ISSUED, C.FOR_REPAIR)).toBe(
+        C.SERVICEABLE,
+      );
+      expect(conditionAfter(S.UNDER_REPAIR, S.AVAILABLE, C.FOR_REPAIR)).toBe(
+        C.SERVICEABLE,
+      );
+      expect(
+        conditionAfter(S.UNDER_REPAIR, S.FLAGGED_FOR_DISPOSAL, C.FOR_REPAIR),
+      ).toBe(C.UNSERVICEABLE);
+      expect(conditionAfter(S.ISSUED, S.RETURNED, C.FOR_REPAIR)).toBe(
+        C.FOR_REPAIR,
+      );
+    });
+  });
+
+  describe('completeRepair()', () => {
+    const IT = { id: 'it-1', role: UserRole.IT_PERSONNEL } as never;
+    const armRepair = (asset: Partial<AssetEntity> = {}) => {
+      const a = makeAsset({
+        status: AssetStatus.UNDER_REPAIR,
+        custodianId: 'holder-1',
+        condition: AssetCondition.FOR_REPAIR,
+        ...asset,
+      });
+      mockRepairs.load.mockResolvedValue({
+        id: 'rep-1',
+        assetId: a.id,
+        asset: a,
+      });
+      mockAssetRepo.findOne.mockResolvedValue(a);
+      mockAssetRepo.save.mockImplementation((x: AssetEntity) =>
+        Promise.resolve(x),
+      );
+      mockTxRepo.create.mockReturnValue({});
+      mockTxRepo.save.mockResolvedValue({});
+      return a;
+    };
+
+    it('repaired: hands it back to the holder and records the work', async () => {
+      armRepair();
+      await service.completeRepair(
+        'rep-1',
+        { outcome: RepairOutcome.REPAIRED, actionTaken: 'Replaced DC jack' },
+        IT,
+        'ip',
+      );
+      expect(mockAssetRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: AssetStatus.ISSUED,
+          custodianId: 'holder-1',
+          condition: AssetCondition.SERVICEABLE,
+        }),
+      );
+      expect(mockRepairs.close).toHaveBeenCalledWith(
+        expect.anything(),
+        AssetStatus.ISSUED,
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        'ip',
+        expect.objectContaining({ actionTaken: 'Replaced DC jack' }),
+      );
+    });
+
+    it('repaired with returnToStock: makes it available and ends the holding', async () => {
+      armRepair();
+      await service.completeRepair(
+        'rep-1',
+        {
+          outcome: RepairOutcome.REPAIRED,
+          actionTaken: 'Reflashed BIOS',
+          returnToStock: true,
+        },
+        IT,
+        'ip',
+      );
+      expect(mockAssetRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: AssetStatus.AVAILABLE,
+          custodianId: null,
+        }),
+      );
+    });
+
+    it('unrepairable: needs findings, then flags for disposal and keeps the holder', async () => {
+      armRepair();
+      await expect(
+        service.completeRepair(
+          'rep-1',
+          {
+            outcome: RepairOutcome.UNREPAIRABLE,
+            actionTaken: 'Tried a new board',
+          },
+          IT,
+          'ip',
+        ),
+      ).rejects.toThrow(/findings/);
+
+      await service.completeRepair(
+        'rep-1',
+        {
+          outcome: RepairOutcome.UNREPAIRABLE,
+          findings: 'Motherboard burnt',
+          actionTaken: 'Tried a new board',
+        },
+        IT,
+        'ip',
+      );
+      expect(mockAssetRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: AssetStatus.FLAGGED_FOR_DISPOSAL,
+          custodianId: 'holder-1',
+          condition: AssetCondition.UNSERVICEABLE,
+        }),
+      );
+    });
+
+    it('refuses when the asset is no longer under repair', async () => {
+      armRepair({ status: AssetStatus.ISSUED });
+      await expect(
+        service.completeRepair(
+          'rep-1',
+          { outcome: RepairOutcome.REPAIRED, actionTaken: 'Replaced DC jack' },
+          IT,
+          'ip',
+        ),
+      ).rejects.toThrow(/not under repair/);
     });
   });
 

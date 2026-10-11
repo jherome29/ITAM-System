@@ -42,7 +42,7 @@ export function replacementEligibility(
     return {
       eligible: true,
       basis: 'loss_or_damage',
-      reason: 'Reported lost, stolen or damaged beyond repair.',
+      reason: 'Written off — lost, stolen, or not repairable.',
     };
   }
   if (asset.status === AssetStatus.UNDER_REPAIR) {

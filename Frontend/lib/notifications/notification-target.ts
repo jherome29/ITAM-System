@@ -62,12 +62,24 @@ const assetRequestTarget: Target = (basePath, id, alertType) => {
   return HOLDER_BASES.has(basePath) ? `${basePath}/assigned-assets${openParam(id)}` : null;
 };
 
+// Repairs: an overdue alert opens the custodian's Maintenance & Repair queue;
+// the holder's "repaired / not repairable" notice opens their own assets.
+const repairTarget: Target = (basePath, id, alertType) => {
+  if (alertType === 'repair_overdue') {
+    if (CUSTODIAN_BASES.has(basePath)) return `${basePath}/maintenance${openParam(id)}`;
+    return basePath === '/master-admin' ? `/master-admin/repairs${openParam(id)}` : null;
+  }
+  if (basePath === '/employee') return '/employee/assigned-assets';
+  return HOLDER_BASES.has(basePath) ? `${basePath}/assigned-assets` : null;
+};
+
 const assetTarget: Target = (basePath, id) =>
   CUSTODIAN_BASES.has(basePath) ? `${basePath}/assets/${encodeURIComponent(id)}` : null;
 
 const TARGETS: Record<string, Target> = {
   requisition: requisitionTarget,
   asset_request: assetRequestTarget,
+  asset_repair: repairTarget,
   asset: assetTarget,
 };
 

@@ -784,6 +784,7 @@ describe('AssetRequestsService', () => {
         UserRole.IT_PERSONNEL,
         'ip',
         [AssetType.ICT],
+        expect.objectContaining({ assetRequestId: 'ar-1' }),
       );
       expect(mockRepo.update).toHaveBeenCalledWith(
         'ar-1',
@@ -845,6 +846,7 @@ describe('AssetRequestsService', () => {
         UserRole.IT_PERSONNEL,
         'ip',
         [AssetType.ICT],
+        expect.objectContaining({ assetRequestId: 'ar-1' }),
       );
       expect(mockAssetUpdate).not.toHaveBeenCalled();
       expect(mockNotify.notify).toHaveBeenCalledWith(

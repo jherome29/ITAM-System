@@ -4,6 +4,9 @@ import { AssetsController } from './assets.controller';
 import { AssetsService } from './assets.service';
 import { AssetEntity } from './entities/asset.entity';
 import { AssetTransactionEntity } from './entities/asset-transaction.entity';
+import { AssetRepairEntity } from './entities/asset-repair.entity';
+import { AssetRepairsService } from './asset-repairs.service';
+import { RepairsController } from './repairs.controller';
 import { AuditModule } from '../audit/audit.module';
 import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -13,14 +16,18 @@ import { SystemConfigModule } from '../system-config/system-config.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([AssetEntity, AssetTransactionEntity]),
+    TypeOrmModule.forFeature([
+      AssetEntity,
+      AssetTransactionEntity,
+      AssetRepairEntity, // repair records — opened/closed by updateLifecycle
+    ]),
     AuditModule,
     UsersModule, // Required — employeeId lookup for ISSUED transitions
     NotificationsModule, // Required — overdue-return watcher fires alerts
     SystemConfigModule, // Required — default reorder level for low-stock checks
   ],
-  controllers: [AssetsController],
-  providers: [AssetsService],
-  exports: [AssetsService],
+  controllers: [AssetsController, RepairsController],
+  providers: [AssetsService, AssetRepairsService],
+  exports: [AssetsService, AssetRepairsService],
 })
 export class AssetsModule {}

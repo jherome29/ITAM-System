@@ -16,10 +16,12 @@ import { UpdateAssetDto } from './dto/update-asset.dto';
 import { UpdateLifecycleDto } from './dto/update-lifecycle.dto';
 import {
   AssetClass,
+  AssetCondition,
   AssetStatus,
   AssetType,
   AuditAction,
   NotificationAlertType,
+  RepairOutcome,
   RequisitionStatus,
   UserRole,
 } from '../../../packages/shared/src/enums';
@@ -28,6 +30,43 @@ import {
   ReplacementEligibility,
   replacementEligibility,
 } from './replacement-eligibility';
+import {
+  AssetRepairsService,
+  RepairContext,
+  repairDueDate,
+} from './asset-repairs.service';
+import { CompleteRepairDto } from './dto/repair.dto';
+import { UserEntity } from '../users/entities/user.entity';
+import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
+
+/**
+ * The asset's condition after a lifecycle move. Before this, nothing updated
+ * it: an item under repair still read "serviceable", and a fixed one could
+ * still read "for repair" — which also fed replacement eligibility.
+ *   → under_repair                     serviceable becomes for_repair
+ *   under_repair → issued / available  serviceable (it was repaired)
+ *   under_repair → flagged for disposal unserviceable
+ * An explicit override (e.g. a damaged item written off) wins.
+ */
+export function conditionAfter(
+  from: AssetStatus,
+  to: AssetStatus,
+  current: AssetCondition,
+  override?: AssetCondition,
+): AssetCondition {
+  if (override) return override;
+  if (to === AssetStatus.UNDER_REPAIR) {
+    return current === AssetCondition.SERVICEABLE
+      ? AssetCondition.FOR_REPAIR
+      : current;
+  }
+  if (from === AssetStatus.UNDER_REPAIR) {
+    return to === AssetStatus.FLAGGED_FOR_DISPOSAL
+      ? AssetCondition.UNSERVICEABLE
+      : AssetCondition.SERVICEABLE;
+  }
+  return current;
+}
 
 /** Requisition states in which a replacement is still in flight. */
 export const OPEN_REQUISITION_STATUSES = [
@@ -124,6 +163,7 @@ export class AssetsService {
     private readonly usersService: UsersService,
     private readonly notificationsService: NotificationsService,
     private readonly systemConfig: SystemConfigService,
+    private readonly repairs: AssetRepairsService,
   ) {}
 
   // ── List all assets (paginated, optional search + status filter) ──────────
@@ -432,6 +472,13 @@ export class AssetsService {
         replacement: ReplacementEligibility & {
           openRequestNumber: string | null;
         };
+        /** While under repair: where it is and when it is due back. */
+        repair: {
+          serviceType: string;
+          serviceProvider: string | null;
+          openedAt: Date;
+          dueDate: string;
+        } | null;
       }
     >
   > {
@@ -458,15 +505,29 @@ export class AssetsService {
         .getRawMany();
 
     const usefulLife = this.systemConfig.getUsefulLifeYears();
-    return assets.map((asset) =>
-      Object.assign(asset, {
+    const repairs = await this.repairs.openForAssets(
+      assets
+        .filter((a) => a.status === AssetStatus.UNDER_REPAIR)
+        .map((a) => a.id),
+    );
+    return assets.map((asset) => {
+      const repair = repairs.get(asset.id);
+      return Object.assign(asset, {
         replacement: {
           ...replacementEligibility(asset, usefulLife),
           openRequestNumber:
             open.find((r) => r.assetId === asset.id)?.requestNumber ?? null,
         },
-      }),
-    );
+        repair: repair
+          ? {
+              serviceType: repair.serviceType,
+              serviceProvider: repair.serviceProvider,
+              openedAt: repair.openedAt,
+              dueDate: repairDueDate(repair),
+            }
+          : null,
+      });
+    });
   }
 
   async findOne(
@@ -593,6 +654,9 @@ export class AssetsService {
     userRole: UserRole,
     ipAddress: string,
     assetTypeScope?: AssetType[],
+    // Internal callers only (never from the HTTP DTO): who/what sent it to
+    // repair, the repair's findings on the way out, and a condition override.
+    context: RepairContext & { condition?: AssetCondition } = {},
   ): Promise<AssetEntity> {
     const asset = await this.findOne(id, assetTypeScope);
     const targetStatus = dto.status;
@@ -623,11 +687,38 @@ export class AssetsService {
 
     // ── Apply the transition ───────────────────────────────────────────────
     const previousStatus = asset.status;
+    const previousHolder = asset.custodianId;
     asset.status = targetStatus;
+    asset.condition = conditionAfter(
+      previousStatus,
+      targetStatus,
+      asset.condition,
+      context.condition,
+    );
 
     this.applyCustody(asset, dto, targetStatus, backToHolder);
 
     const saved = await this.assetRepo.save(asset);
+
+    // Repair record: one per stay in under_repair, whichever screen moved it.
+    if (targetStatus === AssetStatus.UNDER_REPAIR) {
+      await this.repairs.open(saved, previousHolder, performedById, {
+        ...context,
+        problem: context.problem ?? dto.notes,
+      });
+    } else if (previousStatus === AssetStatus.UNDER_REPAIR) {
+      await this.repairs.close(
+        saved,
+        targetStatus,
+        performedById,
+        userRole,
+        ipAddress,
+        {
+          ...context,
+          actionTaken: context.actionTaken ?? dto.notes,
+        },
+      );
+    }
 
     // ── Record transaction in asset history ────────────────────────────────
     const tx = this.txRepo.create({
@@ -658,19 +749,68 @@ export class AssetsService {
       },
     });
 
-    // A repaired item handed back: tell the holder it is ready to collect.
-    if (backToHolder && saved.custodianId) {
-      await this.notificationsService.notify(
-        saved.custodianId,
-        NotificationAlertType.ASSET_REQUEST_UPDATE,
-        'Repair Completed',
-        `"${saved.itemDescription}" has been repaired and is back under your custody. Collect it from the ${saved.assetType === AssetType.ICT ? 'IT Asset Custodian' : 'Property Custodian'}.`,
-        saved.id,
-        'asset',
+    return saved;
+  }
+
+  /**
+   * Record a repair's outcome and move the asset accordingly:
+   *   repaired     → back to its holder (issued), or into stock (available)
+   *                  when it has none or `returnToStock` is set
+   *   unrepairable → flagged for disposal, findings as the justification;
+   *                  the holder keeps accountability (and can request a
+   *                  replacement) until COA relief
+   * The repair record itself is closed inside updateLifecycle.
+   * SVC: Deliver & Support — maintenance and repair.
+   */
+  async completeRepair(
+    repairId: string,
+    dto: CompleteRepairDto,
+    user: UserEntity,
+    ipAddress: string,
+  ) {
+    const repair = await this.repairs.load(repairId);
+    this.repairs.assertCanAct(repair, user);
+    if (repair.asset.status !== AssetStatus.UNDER_REPAIR) {
+      throw new BadRequestException(
+        `The asset is "${repair.asset.status.replaceAll('_', ' ')}", not under repair.`,
+      );
+    }
+    // Re-checked here, not only in the DTO: the closing record must say what was done.
+    if ((dto.actionTaken ?? '').trim().length < 5) {
+      throw new BadRequestException(
+        'Describe the work done in at least 5 characters.',
+      );
+    }
+    const unrepairable = dto.outcome === RepairOutcome.UNREPAIRABLE;
+    if (unrepairable && !dto.findings?.trim()) {
+      throw new BadRequestException(
+        'Record the findings — they are the justification for the disposal flag.',
       );
     }
 
-    return saved;
+    let target = AssetStatus.FLAGGED_FOR_DISPOSAL;
+    if (!unrepairable) {
+      target =
+        repair.asset.custodianId && !dto.returnToStock
+          ? AssetStatus.ISSUED
+          : AssetStatus.AVAILABLE;
+    }
+    await this.updateLifecycle(
+      repair.assetId,
+      {
+        status: target,
+        notes: unrepairable
+          ? `Unrepairable: ${dto.findings!.trim()}`
+          : `Repaired: ${dto.actionTaken.trim()}`,
+      },
+      user.id,
+      user.role,
+      ipAddress,
+      // Admin (fallback decider) is unscoped; custodians stay in their scope.
+      resolveAssetTypeScope(user.role),
+      { findings: dto.findings, actionTaken: dto.actionTaken },
+    );
+    return this.repairs.findOneForUser(repairId, user);
   }
 
   /**

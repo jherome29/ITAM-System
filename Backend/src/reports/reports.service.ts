@@ -17,6 +17,7 @@ import {
   AssetStatus,
   AssetRequestStatus,
   AssetRequestType,
+  RepairServiceType,
 } from '../../../packages/shared/src/enums';
 
 // Form generators
@@ -39,6 +40,7 @@ import { generateRPCPPE } from './forms/rpcppe.generator';
 import { generateWMR } from './forms/wmr.generator';
 import { generateAnnexA4 } from './forms/annex-a4.generator';
 import { AssetRequestEntity } from '../asset-requests/entities/asset-request.entity';
+import { AssetRepairEntity } from '../assets/entities/asset-repair.entity';
 
 // SVC: Improve — PDF management reports and COA official form generation
 
@@ -75,6 +77,8 @@ export class ReportsService {
     private readonly userRepo: Repository<UserEntity>,
     @InjectRepository(AssetRequestEntity)
     private readonly assetRequestRepo: Repository<AssetRequestEntity>,
+    @InjectRepository(AssetRepairEntity)
+    private readonly repairRepo: Repository<AssetRepairEntity>,
     private readonly auditService: AuditService,
   ) {}
 
@@ -508,6 +512,53 @@ export class ReportsService {
             (a.condition ?? '—').replaceAll('_', ' '),
             a.status.replaceAll('_', ' '),
             a.officeLocation ?? '—',
+          ]),
+        };
+      }
+
+      // SVC: Improve — repair history: turnaround, outcomes, repeat repairs.
+      case 'REPAIR_HISTORY': {
+        const repairs = await this.repairRepo
+          .createQueryBuilder('r')
+          .leftJoinAndSelect('r.asset', 'asset')
+          .leftJoinAndSelect('r.holder', 'holder')
+          .orderBy('r.openedAt', 'DESC')
+          .getMany();
+        const day = (d: Date | string | null) =>
+          d ? new Date(d).toISOString().slice(0, 10) : '—';
+        const turnaround = (r: AssetRepairEntity) =>
+          r.completedAt
+            ? `${Math.max(0, Math.round((new Date(r.completedAt).getTime() - new Date(r.openedAt).getTime()) / 86_400_000))} d`
+            : 'open';
+        return {
+          title: 'Repair History',
+          headers: [
+            'Property #',
+            'Description',
+            'Holder',
+            'Opened',
+            'Service',
+            'Problem / Findings',
+            'Action Taken',
+            'Outcome',
+            'Closed',
+            'Turnaround',
+          ],
+          rows: repairs.map((r) => [
+            r.asset?.propertyNumber ?? '—',
+            r.asset?.itemDescription ?? '—',
+            r.holder
+              ? `${r.holder.firstName} ${r.holder.lastName}`
+              : 'In stock',
+            day(r.openedAt),
+            r.serviceType === RepairServiceType.EXTERNAL
+              ? `External${r.serviceProvider ? ` — ${r.serviceProvider}` : ''}`
+              : 'In-house',
+            [r.reportedProblem, r.findings].filter(Boolean).join(' / ') || '—',
+            r.actionTaken ?? '—',
+            (r.outcome ?? 'in progress').replaceAll('_', ' '),
+            day(r.completedAt),
+            turnaround(r),
           ]),
         };
       }

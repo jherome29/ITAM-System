@@ -68,6 +68,19 @@ export enum NotificationAlertType {
   REQUISITION_FULFILLED = 'requisition_fulfilled',
   ASSET_REQUEST         = 'asset_request',         // to custodians: new / cancelled return or incident
   ASSET_REQUEST_UPDATE  = 'asset_request_update',  // to the requester: approved / rejected / completed
+  REPAIR_UPDATE         = 'repair_update',         // to the holder: repaired / not repairable
+  REPAIR_OVERDUE        = 'repair_overdue',        // to custodians: repair past its expected completion
+}
+
+// Where a repair is done, and how it ended (asset_repairs).
+export enum RepairServiceType {
+  IN_HOUSE = 'in_house',
+  EXTERNAL = 'external',
+}
+
+export enum RepairOutcome {
+  REPAIRED = 'repaired',
+  UNREPAIRABLE = 'unrepairable',
 }
 
 // Return / incident requests filed by the holder of an issued asset.
@@ -130,6 +143,8 @@ export enum AuditAction {
   ASSET_REQUEST_REJECTED  = 'asset_request_rejected',
   ASSET_REQUEST_COMPLETED = 'asset_request_completed',
   ASSET_REQUEST_CANCELLED = 'asset_request_cancelled',
+  REPAIR_UPDATED = 'repair_updated',     // custodian logged progress on an open repair
+  REPAIR_COMPLETED = 'repair_completed', // repaired or found unrepairable
 }
 
 export enum OfficialFormType {

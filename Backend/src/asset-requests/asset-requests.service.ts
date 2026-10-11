@@ -27,6 +27,7 @@ import {
 import { checkAttachments, UploadedAttachment } from './attachment-files';
 import {
   AssetClass,
+  AssetCondition,
   AssetRequestStatus,
   AssetRequestType,
   AssetStatus,
@@ -903,6 +904,16 @@ export class AssetRequestsService {
       user.role,
       ipAddress,
       resolveAssetTypeScope(user.role),
+      {
+        // Opens the repair record with the holder's description, or marks a
+        // damaged item written off as unserviceable.
+        assetRequestId: req.id,
+        problem: req.details,
+        ...(target === AssetStatus.FLAGGED_FOR_DISPOSAL &&
+        req.type === AssetRequestType.DAMAGE
+          ? { condition: AssetCondition.UNSERVICEABLE }
+          : {}),
+      },
     );
 
     if (receiptPhotos.length) {

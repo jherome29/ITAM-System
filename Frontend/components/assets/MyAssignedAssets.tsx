@@ -19,8 +19,17 @@ import { formatDate, formatDateTime } from '@/lib/requisitions/requisition-view'
 // Why a non-issued asset is still on the holder's list.
 const HOLDING_NOTE: Record<string, string> = {
   under_repair: 'Under repair — it will be returned to you and stays under your accountability.',
-  flagged_for_disposal: 'Reported lost, stolen or damaged — it stays on your accountability record until COA grants relief.',
+  flagged_for_disposal: 'Written off — lost, stolen, or not repairable. It stays on your accountability record until COA grants relief.',
 };
+
+/** Where a repair is happening and when it is due back, for the holder. */
+function repairNote(asset: MyAsset): string | null {
+  if (asset.status !== 'under_repair' || !asset.repair) return null;
+  const where = asset.repair.serviceType === 'external'
+    ? `at ${asset.repair.serviceProvider || 'an external service center'}`
+    : `with the ${asset.assetType === 'ICT' ? 'IT Asset Custodian' : 'Property Custodian'}`;
+  return `Under repair ${where} since ${formatDate(asset.repair.openedAt)} — expected back ${formatDate(asset.repair.dueDate)}. It stays under your accountability; you are notified when it is ready.`;
+}
 
 const REQUEST_BUTTONS: Array<{ type: AssetRequestType; label: string }> = [
   { type: 'return', label: 'Request return' },
@@ -182,7 +191,7 @@ function AssetCard({
       <span className="flex gap-2"><button type="button" onClick={() => onView(r)} className="text-xs font-bold text-blue-700 hover:underline">View</button><button type="button" onClick={() => onCancel(r)} className="text-xs font-bold text-red-700 hover:underline">Cancel request</button></span>
     </div>)}
     {replacement.openRequestNumber && <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900"><span className="font-bold">Replacement requested</span> · {replacement.openRequestNumber} — track it in My Requisitions.</div>}
-    {!issued && <p className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">{HOLDING_NOTE[asset.status] ?? 'Requests can be filed only while the asset is issued to you.'}</p>}
+    {!issued && <p className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">{repairNote(asset) ?? HOLDING_NOTE[asset.status] ?? 'Requests can be filed only while the asset is issued to you.'}</p>}
     <div className="mt-4 flex flex-wrap gap-2">
       {REQUEST_BUTTONS.map(({ type, label }) => {
         const blocker = blockingRequest(type, requests);

@@ -8,6 +8,7 @@ import { AssetEntity } from '../assets/entities/asset.entity';
 import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { AssetRequestEntity } from '../asset-requests/entities/asset-request.entity';
+import { AssetRepairEntity } from '../assets/entities/asset-repair.entity';
 import { AuditService } from '../audit/audit.service';
 import {
   AuditAction,
@@ -80,6 +81,10 @@ describe('ReportsService', () => {
     findOne: jest.fn(),
   };
 
+  const mockRepairRepo = {
+    createQueryBuilder: jest.fn(),
+  };
+
   const mockAuditService = {
     log: jest.fn().mockResolvedValue(undefined),
   };
@@ -105,6 +110,10 @@ describe('ReportsService', () => {
         {
           provide: getRepositoryToken(AssetRequestEntity),
           useValue: mockAssetRequestRepo,
+        },
+        {
+          provide: getRepositoryToken(AssetRepairEntity),
+          useValue: mockRepairRepo,
         },
         { provide: AuditService, useValue: mockAuditService },
       ],
@@ -404,6 +413,56 @@ describe('ReportsService', () => {
       expect(r.title).toBe('Disposal Documentation Report');
       expect(r.rows[0][7]).toBe('—'); // null cost
       expect(r.rows[1][7]).toContain('₱'); // formatted cost
+    });
+
+    it('REPAIR_HISTORY lists each repair with service, outcome and turnaround', async () => {
+      const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([
+          {
+            asset: makeAsset(),
+            holder: { firstName: 'Ana', lastName: 'Cruz' },
+            openedAt: new Date('2026-10-01T00:00:00Z'),
+            serviceType: 'external',
+            serviceProvider: 'Dell Service Center',
+            reportedProblem: 'Does not charge',
+            findings: 'Faulty DC jack',
+            actionTaken: 'Replaced DC jack',
+            outcome: 'repaired',
+            completedAt: new Date('2026-10-05T00:00:00Z'),
+          },
+          {
+            asset: makeAsset(),
+            holder: null,
+            openedAt: new Date('2026-10-08T00:00:00Z'),
+            serviceType: 'in_house',
+            serviceProvider: null,
+            reportedProblem: null,
+            findings: null,
+            actionTaken: null,
+            outcome: null,
+            completedAt: null,
+          },
+        ]),
+      };
+      mockRepairRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const r = await fetch('REPAIR_HISTORY');
+
+      expect(r.title).toBe('Repair History');
+      expect(r.rows[0]).toEqual(
+        expect.arrayContaining([
+          'Ana Cruz',
+          'External — Dell Service Center',
+          'Does not charge / Faulty DC jack',
+          'repaired',
+          '4 d',
+        ]),
+      );
+      expect(r.rows[1]).toEqual(
+        expect.arrayContaining(['In stock', 'In-house', 'in progress', 'open']),
+      );
     });
 
     it('default case returns generic headers and uses replaceAll on title', async () => {

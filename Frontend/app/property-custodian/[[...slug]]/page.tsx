@@ -1,4 +1,5 @@
 import { MyAssignedAssets } from '@/components/assets/MyAssignedAssets';
+import { RepairQueue } from '@/components/repairs/RepairQueue';
 import { AssetRequestQueue } from '@/components/asset-requests/AssetRequestQueue';
 import { AssetDetailManager } from '@/components/assets/AssetDetailManager';
 import { AssetRegistryList } from '@/components/assets/AssetRegistryList';
@@ -30,6 +31,7 @@ export default async function PropertyCustodianPage({
   if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/assets" formsPath="/property-custodian/reports" />;
   if (segment === 'qr-scanner') return <QrLookup detailBasePath="/property-custodian/assets" />;
   if (segment === 'reports') return <FormsWorkspaceContent />;
+  if (segment === 'maintenance') return <RepairQueue eyebrow="Property Custodian" assetBasePath="/property-custodian/assets" openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'returns-incidents') return <AssetRequestQueue eyebrow="Property Custodian" openId={typeof open === 'string' ? open : undefined} />;
   return <WorkflowPage role={ProposedUserRole.PROPERTY_CUSTODIAN} slug={segment} openId={typeof open === 'string' ? open : undefined} />;
 }
