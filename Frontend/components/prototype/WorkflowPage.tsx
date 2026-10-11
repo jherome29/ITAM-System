@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ActivityTimeline } from '@/components/ui/ActivityTimeline';
 import { CenteredModal } from '@/components/ui/CenteredModal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -272,6 +273,7 @@ function actionPermissionFor(role: ProposedUserRole): UiPermission {
 // `?open=` param), used when a notification deep-links into a queue.
 export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUserRole; slug: string; openId?: string }>) {
   const { user: currentUser } = useAuth();
+  const router = useRouter();
   const normalizedSlug = normalizeSlug(slug);
   const content = pageCopy[normalizedSlug] ?? { title: 'Workspace', detail: 'Frontend-only operational prototype.', action: 'Run Action' };
   const readOnly = role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER;
@@ -679,7 +681,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
             type="button"
             onClick={() => {
               if (normalizedSlug === 'assets' && role === ProposedUserRole.IT_ASSET_CUSTODIAN) {
-                window.location.href = '/it-asset-custodian/assets/new';
+                router.push('/it-asset-custodian/assets/new');
                 return;
               }
               if (isLiveMyRequisitions) {
