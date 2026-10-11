@@ -475,7 +475,7 @@ export class AssetRepairsService {
       : null;
     if (!current || current > today) {
       await this.repo.manager.update(AssetEntity, loaner.id, {
-        expectedReturnDate: today as unknown as Date,
+        expectedReturnDate: today,
         overdueNotifiedAt: null,
       });
       return today;

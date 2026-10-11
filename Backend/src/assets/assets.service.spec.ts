@@ -256,7 +256,11 @@ describe('AssetsService', () => {
     it('refuses when a loaner is already out for this repair', async () => {
       mockRepairs.load.mockResolvedValue(
         openRepair({
-          loaner: { ...spare, status: AssetStatus.ISSUED, custodianId: 'emp-1' },
+          loaner: {
+            ...spare,
+            status: AssetStatus.ISSUED,
+            custodianId: 'emp-1',
+          },
         }),
       );
       await expect(
@@ -275,7 +279,7 @@ describe('AssetsService', () => {
       mockRepairs.load.mockResolvedValue(openRepair());
       jest
         .spyOn(service, 'findOne')
-        .mockResolvedValue({ ...spare, status: AssetStatus.ISSUED } as never);
+        .mockResolvedValue({ ...spare, status: AssetStatus.ISSUED });
       await expect(
         service.issueLoaner('rep-1', { assetId: 'a-spare' }, IT_USER, 'ip'),
       ).rejects.toThrow(/not available/);

@@ -261,7 +261,10 @@ describe('RequisitionsService', () => {
   // ── Replacement review ──────────────────────────────────────────────────
   describe('replacementReview()', () => {
     it('attaches the submission-time basis and recent repairs, and scopes Property roles away from ICT', async () => {
-      const qb = mockReqRepo.createQueryBuilder();
+      const qb = mockReqRepo.createQueryBuilder() as unknown as Record<
+        'where' | 'getMany',
+        jest.Mock
+      >;
       qb.getMany.mockResolvedValue([
         {
           id: 'req-1',
@@ -284,9 +287,7 @@ describe('RequisitionsService', () => {
         { id: 'asset-uuid-2' },
       ]);
 
-      const result = await service.replacementReview(
-        UserRole.PROPERTY_OFFICER,
-      );
+      const result = await service.replacementReview(UserRole.PROPERTY_OFFICER);
 
       expect(qb.where).toHaveBeenCalledWith(
         'replacedAsset.assetType IN (:...scope)',
@@ -305,7 +306,10 @@ describe('RequisitionsService', () => {
     });
 
     it('leaves System Administrator unscoped', async () => {
-      const qb = mockReqRepo.createQueryBuilder();
+      const qb = mockReqRepo.createQueryBuilder() as unknown as Record<
+        'where' | 'getMany',
+        jest.Mock
+      >;
       await service.replacementReview(UserRole.SYSTEM_ADMIN);
       expect(qb.where).not.toHaveBeenCalled();
       expect(mockAssetsService.replacementCandidates).toHaveBeenCalledWith(
