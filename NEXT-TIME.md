@@ -9,12 +9,12 @@ Where the `feature/returns-incidents-and-workflow-fixes` branch stands after the
 
 ## 1. Ship what is already built (do first)
 
-- [ ] **Open the PR `feature/returns-incidents-and-workflow-fixes` → `develop`.**
-      `gh` failed with *Bad credentials*: run `gh auth login`, then open it. All
-      CHECKS.md items, 460 backend unit, 99 frontend and 57 e2e tests pass on
-      the last commit.
-- [ ] **Teammates: apply migration `Database/schemas/013_asset_repairs.sql`** to
-      every database that existed before it (shared Supabase and each local
+- [x] **Open the PR `feature/returns-incidents-and-workflow-fixes` → `develop`.**
+      Open as **#102**, every CI check green; needs 1 review. (`gh`'s active
+      account token is still invalid — the `dreiiiiim` account works.)
+- [ ] **Apply migrations `008`–`013` to shared Supabase** (local Docker Postgres
+      already has them; Supabase was never touched — its MCP is `read_only=true`).
+      Teammates: same for every database that existed before them (each local
       Docker Postgres). Run it statement by statement in the Supabase SQL editor,
       because `ALTER TYPE … ADD VALUE` cannot run inside a transaction. Locally:
       ```powershell
@@ -23,7 +23,7 @@ Where the `feature/returns-incidents-and-workflow-fixes` branch stands after the
       ```
       It is safe to re-run. Without it, the backend fails on any `asset_repairs`
       query and on the new notification and audit enum values.
-- [ ] **Sync the status docs** with what this branch added: `FEATURE-STATUS.md`,
+- [x] **Sync the status docs** (done, commit `87db318`) with what this branch added: `FEATURE-STATUS.md`,
       `PATH-TO-DONE.md`, `TEAM-HANDOFF.md` §4–5. CLAUDE.md is already updated
       (Module 2 request types + replacement flow, Module 6 one-case-per-item,
       Module 7 Maintenance & Repair).
