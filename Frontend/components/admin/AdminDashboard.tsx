@@ -8,7 +8,7 @@ import { healthApi, type HealthStatus } from '@/lib/api/health';
 import { systemConfigApi, type SystemConfig } from '@/lib/api/systemConfig';
 import { reportsApi, type KpiData } from '@/lib/api/reports';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
-import { schedulerApi, type WatcherSweep } from '@/lib/api/scheduler';
+import { schedulerApi, type WatcherName, type WatcherStatus, type WatcherSweep } from '@/lib/api/scheduler';
 import { AdminPageHeader, MetricCard, Panel, StatusChip, type AdminTone } from './AdminUi';
 
 // Backend UserRole enum value -> the label already used on the Users & Roles
@@ -48,6 +48,38 @@ const SWEEP_TRIGGER_LABEL: Record<WatcherSweep['trigger'], string> = {
 function formatSweep(sweep: WatcherSweep | null): string {
   if (!sweep) return 'No sweep recorded yet';
   return `${new Date(sweep.at).toLocaleString()} · ${SWEEP_TRIGGER_LABEL[sweep.trigger]}`;
+}
+
+// Every watcher, in run order, with what its count means.
+const WATCHERS: Array<{ name: WatcherName; label: string; unit: string; cadence: string }> = [
+  { name: 'slaBreaches', label: 'SLA breaches', unit: 'requisition', cadence: 'hourly' },
+  { name: 'pendingNudges', label: 'Pending-approval nudges', unit: 'requisition', cadence: 'hourly' },
+  { name: 'overdueReturns', label: 'Overdue returns', unit: 'asset', cadence: 'daily 7:00' },
+  { name: 'lowStock', label: 'Low stock', unit: 'supply line', cadence: 'daily 7:00' },
+  { name: 'overdueRepairs', label: 'Overdue repairs', unit: 'repair', cadence: 'daily 7:00' },
+];
+
+function WatcherRows({ status }: Readonly<{ status: WatcherStatus | null }>) {
+  return (
+    <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
+      {WATCHERS.map((w) => {
+        const run = status?.watchers?.[w.name];
+        let value = 'Not run yet';
+        let tone = 'text-slate-400';
+        if (run && run.count < 0) { value = 'Failed — see server log'; tone = 'text-red-700'; }
+        else if (run) { value = run.count === 0 ? 'Nothing to alert' : `${run.count} ${w.unit}${plural(run.count)} alerted`; tone = run.count > 0 ? 'text-amber-700' : 'text-slate-700'; }
+        return (
+          <li key={w.name} className="flex items-start justify-between gap-3 px-3 py-2 text-xs">
+            <span>
+              <span className="font-semibold text-slate-800">{w.label}</span>
+              <span className="block text-slate-500">{run ? `${new Date(run.at).toLocaleString()} · ${SWEEP_TRIGGER_LABEL[run.trigger]}` : w.cadence}</span>
+            </span>
+            <span className={`text-right font-semibold ${tone}`}>{value}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 // Most recent updatedAt across every runtime-config key, or a "still on
@@ -101,8 +133,26 @@ export function AdminDashboard() {
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [kpi, setKpi] = useState<KpiData | null>(null);
   const [recentLogs, setRecentLogs] = useState<AuditLog[]>([]);
-  const [sweep, setSweep] = useState<WatcherSweep | null>(null);
+  const [watcherStatus, setWatcherStatus] = useState<WatcherStatus | null>(null);
+  const [runningChecks, setRunningChecks] = useState(false);
+  const [checksError, setChecksError] = useState('');
   const [loading, setLoading] = useState(true);
+  const sweep = watcherStatus?.lastSweep ?? null;
+
+  // Runs every watcher now (alerts go out as they would on schedule), then
+  // re-reads the status so each row shows this run.
+  const runChecks = async () => {
+    setRunningChecks(true);
+    setChecksError('');
+    try {
+      await schedulerApi.runChecks();
+      setWatcherStatus((await schedulerApi.watcherStatus()).data);
+    } catch {
+      setChecksError('The checks could not be run. Please try again.');
+    } finally {
+      setRunningChecks(false);
+    }
+  };
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -122,7 +172,7 @@ export function AdminDashboard() {
       if (c.status === 'fulfilled') setConfig(c.value.data);
       if (k.status === 'fulfilled') setKpi(k.value.data);
       if (a.status === 'fulfilled') setRecentLogs(a.value.data.data);
-      if (w.status === 'fulfilled') setSweep(w.value.data.lastSweep);
+      if (w.status === 'fulfilled') setWatcherStatus(w.value.data);
       setLoading(false);
     });
     return () => { cancelled = true; };
@@ -265,9 +315,19 @@ export function AdminDashboard() {
               <span className="text-sm text-slate-600">Backend uptime</span>
               <span className="text-sm font-bold text-slate-900">{health ? formatUptime(health.uptime) : '—'}</span>
             </div>
-            <div className="flex items-center justify-between gap-3 py-3">
-              <span className="text-sm text-slate-600">Background watchers</span>
-              <span className="text-right text-sm font-semibold text-slate-900">{formatSweep(sweep)}</span>
+            <div className="space-y-2 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-slate-600">Background watchers</span>
+                <span className="text-right text-sm font-semibold text-slate-900">{formatSweep(sweep)}</span>
+              </div>
+              <WatcherRows status={watcherStatus} />
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-slate-500">Each row is that watcher&apos;s last run since the backend started.</span>
+                <button type="button" onClick={() => void runChecks()} disabled={runningChecks} className="shrink-0 rounded-md border border-slate-200 px-2.5 py-1 text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+                  {runningChecks ? 'Running…' : 'Run checks now'}
+                </button>
+              </div>
+              {checksError && <p className="text-xs font-semibold text-red-700">{checksError}</p>}
             </div>
             {config && (
               <>
@@ -276,6 +336,7 @@ export function AdminDashboard() {
                   <div className="flex justify-between gap-2"><span>Default reorder level</span><span className="font-semibold text-slate-800">{config.defaultReorderLevel}</span></div>
                   <div className="flex justify-between gap-2"><span>Max login attempts</span><span className="font-semibold text-slate-800">{config.maxLoginAttempts}</span></div>
                   <div className="flex justify-between gap-2"><span>Useful life P/S/I</span><span className="font-semibold text-slate-800">{config.usefulLifeYears.PPE}/{config.usefulLifeYears.SEP}/{config.usefulLifeYears.IES} yr</span></div>
+                  <div className="flex justify-between gap-2"><span>Repeat-repair limit</span><span className="font-semibold text-slate-800">{config.repeatRepairLimit} / 12 mo</span></div>
                 </div>
                 <p className="pb-3 text-xs text-slate-500">Runtime config last changed {latestConfigChange(config.meta)}</p>
               </>

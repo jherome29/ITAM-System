@@ -20,10 +20,26 @@ export interface CheckSummary {
   overdueRepairs: number;
 }
 
+export type WatcherName = keyof CheckSummary;
+export type SweepTrigger = 'hourly-cron' | 'daily-cron' | 'manual';
+
 export interface WatcherSweep {
   at: string; // ISO timestamp the sweep finished
-  trigger: 'hourly-cron' | 'daily-cron' | 'manual';
+  trigger: SweepTrigger;
   summary: Partial<CheckSummary>; // only the watchers that sweep touched
+}
+
+/** One watcher's most recent run — survives later sweeps that skip it. */
+export interface WatcherRun {
+  at: string;
+  trigger: SweepTrigger;
+  count: number; // -1 = it threw (see CheckSummary)
+}
+
+export interface WatcherStatus {
+  lastSweep: WatcherSweep | null;
+  // Per watcher, so an hourly sweep no longer hides the daily counts.
+  watchers: Partial<Record<WatcherName, WatcherRun>>;
 }
 
 // SVC: Engage — automated alert scheduling
@@ -35,6 +51,7 @@ export class SchedulerService {
   // the background watchers are actually firing. In-memory and per-instance;
   // resets on restart (acceptable — it answers "are they running right now?").
   private lastSweep: WatcherSweep | null = null;
+  private watchers: Partial<Record<WatcherName, WatcherRun>> = {};
 
   constructor(
     private readonly requisitions: RequisitionsService,
@@ -42,8 +59,19 @@ export class SchedulerService {
     private readonly repairs: AssetRepairsService,
   ) {}
 
-  getWatcherStatus(): { lastSweep: WatcherSweep | null } {
-    return { lastSweep: this.lastSweep };
+  getWatcherStatus(): WatcherStatus {
+    return { lastSweep: this.lastSweep, watchers: { ...this.watchers } };
+  }
+
+  private record(trigger: SweepTrigger, summary: Partial<CheckSummary>) {
+    const at = new Date().toISOString();
+    this.lastSweep = { at, trigger, summary };
+    for (const [name, count] of Object.entries(summary) as [
+      WatcherName,
+      number,
+    ][]) {
+      this.watchers[name] = { at, trigger, count };
+    }
   }
 
   /**
@@ -81,11 +109,7 @@ export class SchedulerService {
     this.logger.log(
       `hourly: slaBreaches=${slaBreaches} pendingNudges=${pendingNudges}`,
     );
-    this.lastSweep = {
-      at: new Date().toISOString(),
-      trigger: 'hourly-cron',
-      summary: { slaBreaches, pendingNudges },
-    };
+    this.record('hourly-cron', { slaBreaches, pendingNudges });
   }
 
   @Cron(CronExpression.EVERY_DAY_AT_7AM)
@@ -102,11 +126,7 @@ export class SchedulerService {
     this.logger.log(
       `daily: overdueReturns=${overdueReturns} lowStock=${lowStock} overdueRepairs=${overdueRepairs}`,
     );
-    this.lastSweep = {
-      at: new Date().toISOString(),
-      trigger: 'daily-cron',
-      summary: { overdueReturns, lowStock, overdueRepairs },
-    };
+    this.record('daily-cron', { overdueReturns, lowStock, overdueRepairs });
   }
 
   async runAllChecks(): Promise<CheckSummary> {
@@ -127,11 +147,7 @@ export class SchedulerService {
         this.repairs.checkOverdue(),
       ),
     };
-    this.lastSweep = {
-      at: new Date().toISOString(),
-      trigger: 'manual',
-      summary,
-    };
+    this.record('manual', summary);
     return summary;
   }
 }

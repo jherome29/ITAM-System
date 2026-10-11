@@ -311,7 +311,7 @@ Key screens:
 
 **System configuration provenance:** `GET /api/v1/system-config` responses carry a `meta` map — `{ updatedAt, updatedBy }` per config key, `null`/`null` while the compiled-in default is in effect. Surfaced as "Last changed … by …" on Master Admin → System Settings and a "Runtime config last changed …" line on the admin dashboard.
 
-**Watcher status (no side effects):** `GET /api/v1/notifications/watcher-status` (System Admin only) returns the last completed scheduler sweep — `{ lastSweep: { at, trigger, summary } | null }`, in-memory per instance. Rendered as "Background watchers — <time> · <trigger>" on the admin dashboard's Platform-health panel; the manual `POST /api/v1/notifications/run-checks` trigger is unchanged.
+**Watcher status (no side effects):** `GET /api/v1/notifications/watcher-status` (System Admin only) returns the last completed scheduler sweep plus each watcher's own last run — `{ lastSweep: { at, trigger, summary } | null, watchers: { slaBreaches, pendingNudges, overdueReturns, lowStock, overdueRepairs: { at, trigger, count } } }` (`count: -1` = it threw), in-memory per instance — so an hourly sweep no longer hides the daily counts. The admin dashboard's Platform-health panel lists all five with their counts and has a **Run checks now** button (`POST /api/v1/notifications/run-checks`, unchanged).
 
 **Health endpoint (no auth):** `GET /api/health` — runs `SELECT 1`, returns `{ status, db, uptime }`, `503` when the DB is unreachable. Consumed by the `docker-compose*.yml` healthchecks and CICC IT's reverse proxy.
 

@@ -13,10 +13,10 @@ import { UserRole } from '../../../packages/shared/src/enums';
 import {
   SchedulerService,
   CheckSummary,
-  WatcherSweep,
+  WatcherStatus,
 } from './scheduler.service';
 
-// SVC: Engage — on-demand trigger for the four automated notification watchers.
+// SVC: Engage — on-demand trigger for the five automated notification watchers.
 // Demo / testing hook: lets a System Administrator run all watchers immediately
 // instead of waiting for the hourly / daily @Cron cadence.
 
@@ -37,10 +37,7 @@ export class SchedulerController {
   // the System Administrator dashboard. Read-only, no audit entry.
   @Get('watcher-status')
   @Roles(UserRole.SYSTEM_ADMIN)
-  watcherStatus(): {
-    data: { lastSweep: WatcherSweep | null };
-    message: string;
-  } {
+  watcherStatus(): { data: WatcherStatus; message: string } {
     return {
       data: this.scheduler.getWatcherStatus(),
       message: 'Watcher status retrieved',
