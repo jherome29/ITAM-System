@@ -27,7 +27,6 @@ import type { MockAsset } from '@/lib/mock/assets.mock';
 import { auditMockRows } from '@/lib/mock/audit.mock';
 import { disposalMockRows } from '@/lib/mock/disposal.mock';
 import { inventoryMockRows } from '@/lib/mock/inventory.mock';
-import { maintenanceMockRows } from '@/lib/mock/maintenance.mock';
 import { notificationMockRows } from '@/lib/mock/notifications.mock';
 import { reportMockRows } from '@/lib/mock/reports.mock';
 import { requisitionMockRows } from '@/lib/mock/requisitions.mock';
@@ -54,7 +53,6 @@ const pageCopy: Record<string, { title: string; detail: string; action?: string 
   fulfillment: { title: 'Requisition Fulfillment', detail: 'Reserve, hold, and fulfill approved requests with frontend validation.', action: 'Fulfill Request' },
   custody: { title: 'Custody & Issuance', detail: 'Issue, collect, acknowledge, return, transfer, and print mock accountability forms.', action: 'Issue Asset' },
   'qr-scanner': { title: 'QR Scanner', detail: 'Scan or manually enter a mock QR code and run permitted role-specific actions.', action: 'Scan QR' },
-  maintenance: { title: 'Maintenance & Repair', detail: 'Record inspection, repair, vendor, cost, completion, replacement, and disposal recommendations.', action: 'Add Maintenance Record' },
   'physical-inventory': { title: 'Physical Inventory', detail: 'Create scan sessions and track found, missing, wrong-location, duplicate, and unregistered items.', action: 'Start Physical Count' },
   disposal: { title: 'Disposal Recommendations', detail: 'Recommend or review disposal with assessments and deferred-backend warnings.', action: 'Recommend Disposal' },
   reports: { title: 'Reports & Forms', detail: 'Search, filter, export, and print mock reports and forms.', action: 'Export Report' },
@@ -62,7 +60,6 @@ const pageCopy: Record<string, { title: string; detail: string; action?: string 
   supplies: { title: 'Supply Inventory', detail: 'Track stock, reorder levels, issuances, receipts, and stock-card previews.', action: 'Record Stock Movement' },
   corrections: { title: 'Inventory Corrections', detail: 'Review proposed corrections and approve, reject, or return for clarification.', action: 'Approve Correction' },
   reconciliation: { title: 'Reconciliation', detail: 'Compare system count against physical count and resolve discrepancies.', action: 'Generate Reconciliation Report' },
-  replacements: { title: 'Replacement Validation', detail: 'Validate replacements against useful life, age, condition, and repair history.', action: 'Validate Replacement' },
   users: { title: 'User Management', detail: 'Create users, edit profiles, activate, deactivate, unlock, and reset mock passwords.', action: 'Create User' },
   roles: { title: 'Role Assignment', detail: 'Preview role assignments without changing backend RBAC.', action: 'Assign Role' },
   'organizational-units': { title: 'Organizational Units', detail: 'Manage offices, divisions, sections, regions, and reporting relationships.', action: 'Add Unit' },
@@ -88,7 +85,6 @@ function normalizeSlug(slug: string) {
     inventory: 'physical-inventory',
     'reports-forms': 'reports',
     'registry-overview': 'assets',
-    'replacement-validation': 'replacements',
     'disposal-review': 'disposal',
     'audit-history': 'audit',
     'audit-log': 'audit',
@@ -108,11 +104,9 @@ const SIMPLE_SLUG_HANDLERS: Record<string, () => Row[]> = {
   notifications: () => notificationMockRows.map((item) => ({ ...item, status: item.unread ? 'Unread' : 'Read' })),
   audit: () => auditMockRows.map((item) => ({ ...item, status: item.severity })),
   'technical-logs': () => auditMockRows.map((item) => ({ ...item, status: item.severity })),
-  maintenance: () => maintenanceMockRows.map((item) => ({ ...item, status: item.status })),
   'physical-inventory': () => inventoryMockRows.map((item) => ({ ...item, status: item.status })),
   reconciliation: () => inventoryMockRows.map((item) => ({ ...item, status: item.status })),
   disposal: () => disposalMockRows.map((item) => ({ ...item, status: item.status })),
-  replacements: () => disposalMockRows.map((item) => ({ ...item, status: item.status })),
   users: () => mockUsers.map((item) => ({ ...item, status: 'Active', role: item.role })),
   roles: () => mockUsers.map((item) => ({ ...item, status: 'Active', role: item.role })),
   catalogue: () => assetMockRows.filter((asset) => asset.status === 'Available' || asset.scope === 'SUPPLY').map(assetToRow),
@@ -285,7 +279,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   const isLiveFetchPage =
     (role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')) ||
     (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') ||
-    (role === ProposedUserRole.IT_ASSET_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody' || normalizedSlug === 'maintenance' || normalizedSlug === 'disposal' || normalizedSlug === 'requisitions')) ||
+    (role === ProposedUserRole.IT_ASSET_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody' || normalizedSlug === 'disposal' || normalizedSlug === 'requisitions')) ||
     (role === ProposedUserRole.PROPERTY_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody' || normalizedSlug === 'disposal'));
   // The Approving Officer's own approvals queue is the one confirm-action flow in this
   // shared component that must persist for real — see submitApprovalDecision below.
@@ -297,8 +291,6 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'fulfillment';
   const isItAssetCustodianLiveCustody =
     isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'custody';
-  const isItAssetCustodianLiveMaintenance =
-    isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'maintenance';
   const isItAssetCustodianLiveDisposal =
     isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'disposal';
   const isPropertyCustodianLiveFulfillment =
@@ -337,12 +329,6 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     }
     if ((role === ProposedUserRole.IT_ASSET_CUSTODIAN || role === ProposedUserRole.PROPERTY_CUSTODIAN) && normalizedSlug === 'custody') {
       return assetsApi.list(1, LIVE_FETCH_LIMIT).then((res) => {
-        setRows(res.data.data.map(assetApiToRow));
-        setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
-      });
-    }
-    if (role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'maintenance') {
-      return assetsApi.list(1, LIVE_FETCH_LIMIT, undefined, 'under_repair').then((res) => {
         setRows(res.data.data.map(assetApiToRow));
         setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
       });
@@ -471,7 +457,6 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       Issue: 'Issued',
       Transfer: 'Transferred',
       Return: 'Returned',
-      'Mark Complete': 'Completed',
       'Recommend Disposal': 'For Disposal Review',
       'Approve Correction': 'Approved',
       'Mark Read': 'Read',
@@ -606,36 +591,26 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     }
   };
 
-  // Real, persisted counterpart to runAction for IT Asset Custodian's live maintenance
-  // page — see isItAssetCustodianLiveMaintenance above. Reuses the existing remarks
-  // state/textarea (required only for the disposal path, matching CLAUDE.md's
-  // documented-justification rule for any disposal flag).
-  const submitMaintenanceDecision = async (action: 'Mark Complete' | 'Recommend Disposal') => {
+  // Real, persisted counterpart to runAction for the custodians' live disposal
+  // pages (isItAssetCustodianLiveDisposal / isPropertyCustodianLiveDisposal).
+  // Reuses the remarks textarea — a disposal flag needs a documented
+  // justification (CLAUDE.md §6 Module 1). Repairs are closed from the
+  // Maintenance & Repair queue (RepairQueue), not here.
+  const submitDisposalRecommendation = async () => {
     if (!selected || actionSubmitting) return;
     const trimmedRemarks = remarks.trim();
-    if (action === 'Recommend Disposal' && !trimmedRemarks) {
+    if (!trimmedRemarks) {
       setErrors({ remarks: 'A justification is required to recommend disposal.' });
       return;
     }
     setActionSubmitting(true);
     try {
-      const id = String(selected.id);
-      // A repaired item someone still holds goes back to them; an unheld one
-      // returns to stock.
-      const holder = String(selected.custodianId ?? 'Unassigned');
-      const backToHolder = action === 'Mark Complete' && holder !== 'Unassigned';
-      if (action === 'Mark Complete') {
-        await assetsApi.updateLifecycle(id, { status: backToHolder ? 'issued' : 'available' });
-      } else {
-        await assetsApi.updateLifecycle(id, { status: 'flagged_for_disposal', notes: trimmedRemarks });
-      }
+      await assetsApi.updateLifecycle(String(selected.id), { status: 'flagged_for_disposal', notes: trimmedRemarks });
       setConfirmAction(null);
       setSelected(null);
       setRemarks('');
       setErrors({});
-      let done = 'Disposal recommended.';
-      if (action === 'Mark Complete') done = backToHolder ? 'Repair complete — returned to its holder, who has been notified.' : 'Repair complete — asset is available.';
-      notify(done);
+      notify('Disposal recommended.');
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
@@ -682,12 +657,12 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     notify(`${content.action ?? 'Action'} saved. Dashboard counts and notifications updated in mock state.`);
   };
 
-  // Fulfillment/custody/maintenance/disposal have no real "create new" backend action —
+  // Fulfillment/custody/disposal have no real "create new" backend action —
   // once live, the header button only ever opened the mock FormDialog and injected a
-  // synthetic row into real data. Hide it on these four pages; the other live pages
+  // synthetic row into real data. Hide it on these three pages; the other live pages
   // (approvals, audit) never had a header action to begin with.
   const canPrimaryAct = !readOnly && content.action &&
-    !(isItAssetCustodianLiveFulfillment || isItAssetCustodianLiveCustody || isItAssetCustodianLiveMaintenance || isItAssetCustodianLiveDisposal || isPropertyCustodianLiveFulfillment || isPropertyCustodianLiveCustody || isPropertyCustodianLiveDisposal);
+    !(isItAssetCustodianLiveFulfillment || isItAssetCustodianLiveCustody || isItAssetCustodianLiveDisposal || isPropertyCustodianLiveFulfillment || isPropertyCustodianLiveCustody || isPropertyCustodianLiveDisposal);
   const primaryPermission = actionPermissionFor(role);
   // Live-fetched rows carry a real requester UUID, not the mock 'EMP-003' id — compare
   // against the actual logged-in user's id on the live approvals page.
@@ -1030,7 +1005,6 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
           (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) ||
           (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) ||
           (isItAssetCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) ||
-          (isItAssetCustodianLiveMaintenance && (confirmAction === 'Mark Complete' || confirmAction === 'Recommend Disposal')) ||
           (isItAssetCustodianLiveDisposal && confirmAction === 'Recommend Disposal') ||
           (isPropertyCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) ||
           (isPropertyCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) ||
@@ -1053,12 +1027,8 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
             void submitCustodyDecision(confirmAction);
             return;
           }
-          if (isItAssetCustodianLiveMaintenance && (confirmAction === 'Mark Complete' || confirmAction === 'Recommend Disposal')) {
-            void submitMaintenanceDecision(confirmAction);
-            return;
-          }
           if (isItAssetCustodianLiveDisposal && confirmAction === 'Recommend Disposal') {
-            void submitMaintenanceDecision(confirmAction);
+            void submitDisposalRecommendation();
             return;
           }
           if (isPropertyCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) {
@@ -1070,7 +1040,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
             return;
           }
           if (isPropertyCustodianLiveDisposal && confirmAction === 'Recommend Disposal') {
-            void submitMaintenanceDecision(confirmAction);
+            void submitDisposalRecommendation();
             return;
           }
           runAction(confirmAction);
@@ -1095,7 +1065,6 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
         )}
         {(['Reject', 'Return for Revision'].includes(confirmAction ?? '') ||
           (isItAssetCustodianLiveFulfillment && confirmAction === 'On Hold') ||
-          (isItAssetCustodianLiveMaintenance && confirmAction === 'Recommend Disposal') ||
           (isItAssetCustodianLiveDisposal && confirmAction === 'Recommend Disposal') ||
           (isPropertyCustodianLiveFulfillment && confirmAction === 'On Hold') ||
           (isPropertyCustodianLiveDisposal && confirmAction === 'Recommend Disposal')) && (
@@ -1194,7 +1163,6 @@ function actionLabel(slug: string, role: ProposedUserRole) {
   if (slug === 'approvals') return 'Review';
   if (slug === 'fulfillment') return 'Fulfill';
   if (slug === 'custody') return 'Issue';
-  if (slug === 'maintenance') return 'Mark Complete';
   if (slug === 'physical-inventory') return 'Verify';
   if (slug === 'disposal') return role === ProposedUserRole.PROPERTY_OFFICER ? 'Approve' : 'Recommend Disposal';
   if (slug === 'corrections') return 'Approve Correction';
@@ -1232,7 +1200,6 @@ function detailActions(slug: string, role: ProposedUserRole, isLive: boolean, se
     }
     return ['Issue', 'Transfer', 'Return'];
   }
-  if (slug === 'maintenance') return ['Mark Complete', 'Recommend Disposal'];
   if (slug === 'physical-inventory') return ['Verify', 'Mark Reconciled'];
   if (slug === 'disposal') return role === ProposedUserRole.PROPERTY_OFFICER ? ['Approve', 'Reject', 'Return for Revision'] : ['Recommend Disposal'];
   if (slug === 'users') return ['Unlock', 'Reset Password', 'Deactivate'];
