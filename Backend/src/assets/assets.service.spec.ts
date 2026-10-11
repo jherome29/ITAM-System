@@ -94,6 +94,7 @@ describe('AssetsService', () => {
     load: jest.fn(),
     assertCanAct: jest.fn(),
     findOneForUser: jest.fn().mockResolvedValue({ id: 'rep-1' }),
+    attachLoaner: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -193,6 +194,103 @@ describe('AssetsService', () => {
       const months =
         (Date.now() - since.getTime()) / (30.44 * 24 * 60 * 60 * 1_000);
       expect(Math.round(months)).toBe(12);
+    });
+  });
+
+  describe('issueLoaner()', () => {
+    const IT_USER = { id: 'it-1', role: UserRole.IT_PERSONNEL } as never;
+    const openRepair = (over: Record<string, unknown> = {}) => ({
+      id: 'rep-1',
+      assetId: 'a-broken',
+      asset: makeAsset({
+        id: 'a-broken',
+        assetType: AssetType.ICT,
+        itemDescription: 'Dell Latitude',
+      }),
+      holderId: 'emp-1',
+      loaner: null,
+      expectedCompletionDate: '2099-03-01',
+      openedAt: new Date(),
+      ...over,
+    });
+    const spare = makeAsset({
+      id: 'a-spare',
+      assetType: AssetType.ICT,
+      assetClass: AssetClass.PPE,
+      status: AssetStatus.AVAILABLE,
+      custodianId: null,
+    });
+
+    it("issues an available unit to the holder until the repair's due date and links it", async () => {
+      const repair = openRepair();
+      mockRepairs.load.mockResolvedValue(repair);
+      jest.spyOn(service, 'findOne').mockResolvedValue(spare);
+      const lifecycle = jest
+        .spyOn(service, 'updateLifecycle')
+        .mockResolvedValue(spare);
+
+      await service.issueLoaner('rep-1', { assetId: 'a-spare' }, IT_USER, 'ip');
+
+      expect(mockRepairs.assertCanAct).toHaveBeenCalledWith(repair, IT_USER);
+      expect(lifecycle).toHaveBeenCalledWith(
+        'a-spare',
+        expect.objectContaining({
+          status: AssetStatus.ISSUED,
+          custodianId: 'emp-1',
+          expectedReturnDate: '2099-03-01',
+        }),
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        'ip',
+        [AssetType.ICT],
+      );
+      expect(mockRepairs.attachLoaner).toHaveBeenCalledWith(
+        repair,
+        spare,
+        '2099-03-01',
+        IT_USER,
+        'ip',
+      );
+    });
+
+    it('refuses when a loaner is already out for this repair', async () => {
+      mockRepairs.load.mockResolvedValue(
+        openRepair({
+          loaner: { ...spare, status: AssetStatus.ISSUED, custodianId: 'emp-1' },
+        }),
+      );
+      await expect(
+        service.issueLoaner('rep-1', { assetId: 'a-spare' }, IT_USER, 'ip'),
+      ).rejects.toThrow(/already out on loan/);
+    });
+
+    it('refuses a stock item (no holder), an unavailable unit and a past date', async () => {
+      const lifecycle = jest.spyOn(service, 'updateLifecycle');
+
+      mockRepairs.load.mockResolvedValue(openRepair({ holderId: null }));
+      await expect(
+        service.issueLoaner('rep-1', { assetId: 'a-spare' }, IT_USER, 'ip'),
+      ).rejects.toThrow(/no holder/);
+
+      mockRepairs.load.mockResolvedValue(openRepair());
+      jest
+        .spyOn(service, 'findOne')
+        .mockResolvedValue({ ...spare, status: AssetStatus.ISSUED } as never);
+      await expect(
+        service.issueLoaner('rep-1', { assetId: 'a-spare' }, IT_USER, 'ip'),
+      ).rejects.toThrow(/not available/);
+
+      jest.spyOn(service, 'findOne').mockResolvedValue(spare);
+      await expect(
+        service.issueLoaner(
+          'rep-1',
+          { assetId: 'a-spare', expectedReturnDate: '2020-01-01' },
+          IT_USER,
+          'ip',
+        ),
+      ).rejects.toThrow(/past/);
+
+      expect(lifecycle).not.toHaveBeenCalled();
     });
   });
 

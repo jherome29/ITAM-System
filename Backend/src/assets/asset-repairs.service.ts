@@ -150,6 +150,21 @@ export class AssetRepairsService {
           }
         : null,
       custodianLabel: r.asset ? custodianLabelFor(r.asset.assetType) : null,
+      loaner: r.loaner
+        ? {
+            id: r.loaner.id,
+            itemDescription: r.loaner.itemDescription,
+            propertyNumber: r.loaner.propertyNumber ?? null,
+            serialNumber: r.loaner.serialNumber ?? null,
+            status: r.loaner.status,
+            expectedReturnDate: r.loaner.expectedReturnDate ?? null,
+            // Still out with the person it was lent to.
+            withHolder:
+              r.loaner.status === AssetStatus.ISSUED &&
+              !!r.holderId &&
+              r.loaner.custodianId === r.holderId,
+          }
+        : null,
       canAct: viewer ? this.canAct(r, viewer) : false,
     };
   }
@@ -171,7 +186,8 @@ export class AssetRepairsService {
     return this.repo
       .createQueryBuilder('r')
       .leftJoinAndSelect('r.asset', 'asset')
-      .leftJoinAndSelect('r.holder', 'holder');
+      .leftJoinAndSelect('r.holder', 'holder')
+      .leftJoinAndSelect('r.loaner', 'loaner');
   }
 
   async load(id: string): Promise<AssetRepairEntity> {
@@ -322,6 +338,45 @@ export class AssetRepairsService {
     return this.findOneForUser(id, user);
   }
 
+  /**
+   * Record the loaner AssetsService.issueLoaner just issued, and tell the
+   * holder what they have and when it is due back.
+   */
+  async attachLoaner(
+    r: AssetRepairEntity,
+    loaner: AssetEntity,
+    returnBy: string,
+    user: UserEntity,
+    ipAddress: string,
+  ) {
+    await this.repo.update(r.id, { loanerAssetId: loaner.id });
+    await this.auditService.log({
+      userId: user.id,
+      userRole: user.role,
+      action: AuditAction.REPAIR_UPDATED,
+      affectedRecordId: r.id,
+      affectedRecordType: 'asset_repair',
+      ipAddress,
+      metadata: {
+        assetId: r.assetId,
+        loanerAssetId: loaner.id,
+        loanerReturnBy: returnBy,
+      },
+    });
+    if (r.holderId) {
+      await this.notificationsService.notify(
+        r.holderId,
+        NotificationAlertType.REPAIR_UPDATE,
+        'Loaner Issued',
+        `While "${r.asset.itemDescription}" is being repaired, "${loaner.itemDescription}"` +
+          `${loaner.propertyNumber ? ` (${loaner.propertyNumber})` : ''} is issued to you as a loaner. ` +
+          `Collect it from the ${custodianLabelFor(r.asset.assetType)} and return it by ${returnBy}, or when your item is back.`,
+        r.id,
+        'asset_repair',
+      );
+    }
+  }
+
   // ── Lifecycle hooks (called by AssetsService.updateLifecycle) ────────────
   /** The asset just entered under_repair: start its repair record. */
   async open(
@@ -360,8 +415,10 @@ export class AssetRepairsService {
   ) {
     const r = await this.repo.findOne({
       where: { assetId: asset.id, completedAt: IsNull() },
+      relations: { loaner: true },
     });
     if (!r) return null;
+    const loanerDueBy = await this.recallLoaner(r);
     const outcome =
       target === AssetStatus.FLAGGED_FOR_DISPOSAL
         ? RepairOutcome.UNREPAIRABLE
@@ -385,16 +442,52 @@ export class AssetRepairsService {
       affectedRecordId: r.id,
       affectedRecordType: 'asset_repair',
       ipAddress,
-      metadata: { assetId: asset.id, outcome, resultingStatus: target },
+      metadata: {
+        assetId: asset.id,
+        outcome,
+        resultingStatus: target,
+        ...(loanerDueBy ? { loanerAssetId: r.loanerAssetId, loanerDueBy } : {}),
+      },
     });
-    await this.notifyHolder(r, asset, target);
+    await this.notifyHolder(r, asset, target, !!loanerDueBy);
     return r;
+  }
+
+  /**
+   * The repair is closing: a loaner still out with the holder is now due —
+   * its expected return date moves up to today (re-arming the overdue-return
+   * watcher) unless it was already earlier. Returns the due date, or null
+   * when there is nothing to bring back.
+   */
+  private async recallLoaner(r: AssetRepairEntity): Promise<string | null> {
+    const loaner = r.loaner;
+    if (
+      !loaner ||
+      !r.holderId ||
+      loaner.status !== AssetStatus.ISSUED ||
+      loaner.custodianId !== r.holderId
+    ) {
+      return null;
+    }
+    const today = isoDay(new Date());
+    const current = loaner.expectedReturnDate
+      ? String(loaner.expectedReturnDate).slice(0, 10)
+      : null;
+    if (!current || current > today) {
+      await this.repo.manager.update(AssetEntity, loaner.id, {
+        expectedReturnDate: today as unknown as Date,
+        overdueNotifiedAt: null,
+      });
+      return today;
+    }
+    return current;
   }
 
   private async notifyHolder(
     r: AssetRepairEntity,
     asset: AssetEntity,
     target: AssetStatus,
+    loanerDue = false,
   ) {
     if (!r.holderId) return;
     const label = custodianLabelFor(asset.assetType);
@@ -419,6 +512,9 @@ export class AssetRepairsService {
     }
     if (r.outcome === RepairOutcome.REPAIRED && r.actionTaken) {
       message += ` Work done: ${r.actionTaken}`;
+    }
+    if (loanerDue && r.loaner) {
+      message += ` Please return the loaner "${r.loaner.itemDescription}" to the ${label}.`;
     }
     await this.notificationsService.notify(
       r.holderId,

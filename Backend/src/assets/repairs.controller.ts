@@ -14,7 +14,11 @@ import {
 } from '@nestjs/common';
 import { AssetsService } from './assets.service';
 import { AssetRepairsService } from './asset-repairs.service';
-import { CompleteRepairDto, UpdateRepairDto } from './dto/repair.dto';
+import {
+  CompleteRepairDto,
+  IssueLoanerDto,
+  UpdateRepairDto,
+} from './dto/repair.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -99,6 +103,25 @@ export class RepairsController {
     return {
       message: 'Repair updated',
       data: await this.repairs.update(id, dto, req.user, req.ip),
+    };
+  }
+
+  /** POST /api/v1/repairs/:id/loaner — lend the holder a unit meanwhile. */
+  @Post(':id/loaner')
+  @HttpCode(HttpStatus.OK)
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.SYSTEM_ADMIN,
+  )
+  async issueLoaner(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: IssueLoanerDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return {
+      message: 'Loaner issued',
+      data: await this.assets.issueLoaner(id, dto, req.user, req.ip),
     };
   }
 

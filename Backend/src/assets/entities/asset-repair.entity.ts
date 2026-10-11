@@ -84,6 +84,14 @@ export class AssetRepairEntity {
   @Column({ type: 'timestamptz', nullable: true })
   overdueNotifiedAt!: Date | null;
 
+  /** Unit lent to the holder while this one is repaired (schema 014). */
+  @Column({ type: 'uuid', nullable: true })
+  loanerAssetId!: string | null;
+
+  @ManyToOne(() => AssetEntity, { eager: false, nullable: true })
+  @JoinColumn({ name: 'loaner_asset_id' })
+  loaner!: AssetEntity | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 

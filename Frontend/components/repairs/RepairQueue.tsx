@@ -8,6 +8,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
+import { assetsApi, type Asset } from '@/lib/api/assets';
 import { OUTCOME_LABEL, SERVICE_TYPE_LABEL, repairsApi, type Repair, type RepairOutcome, type RepairServiceType } from '@/lib/api/repairs';
 import { localToday } from '@/lib/dates';
 import { formatDate, formatDateTime } from '@/lib/requisitions/requisition-view';
@@ -27,6 +28,100 @@ function errorMessage(err: unknown, fallback: string): string {
 function statusOf(r: Repair): { label: string; tone: 'amber' | 'red' | 'green' | 'slate' } {
   if (r.outcome) return { label: OUTCOME_LABEL[r.outcome], tone: r.outcome === 'repaired' ? 'green' : 'slate' };
   return r.overdue ? { label: 'Overdue', tone: 'red' } : { label: 'Under repair', tone: 'amber' };
+}
+
+/**
+ * Loaner while the item is repaired: lend the holder an available unit of the
+ * same type (issued with a return date, so the overdue-return watcher covers
+ * it), and once the repair closes, collect it back. `canReturn` is the
+ * custodian's queue — the System Admin's escalation view only reads.
+ */
+function LoanerSection({ repair, canReturn, onChanged, onError }: Readonly<{
+  repair: Repair;
+  canReturn: boolean;
+  onChanged: (message: string) => Promise<void>;
+  onError: (message: string) => void;
+}>) {
+  const [units, setUnits] = useState<Asset[] | null>(null);
+  const [unitId, setUnitId] = useState('');
+  const [returnBy, setReturnBy] = useState(repair.dueDate.slice(0, 10));
+  const [busy, setBusy] = useState(false);
+  const loaner = repair.loaner;
+  const canIssue = !repair.completedAt && repair.canAct && Boolean(repair.holder) && !loaner?.withHolder;
+
+  useEffect(() => {
+    if (!canIssue || !repair.asset) return;
+    let live = true;
+    assetsApi
+      .list(1, 100, undefined, 'available', repair.asset.assetType)
+      .then((res) => { if (live) setUnits(res.data.data.filter((a) => a.assetClass !== 'IES' && a.id !== repair.asset?.id)); })
+      .catch(() => { if (live) setUnits([]); });
+    return () => { live = false; };
+  }, [canIssue, repair.asset]);
+
+  const issue = async () => {
+    if (!unitId || busy) return;
+    setBusy(true);
+    try {
+      await repairsApi.issueLoaner(repair.id, { assetId: unitId, expectedReturnDate: returnBy || undefined });
+      await onChanged('Loaner issued — the holder has been notified.');
+    } catch (err) {
+      onError(errorMessage(err, 'Could not issue the loaner.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const markReturned = async () => {
+    if (!loaner || busy) return;
+    setBusy(true);
+    try {
+      await assetsApi.updateLifecycle(loaner.id, { status: 'returned', notes: `Loaner returned after repair of "${repair.asset?.itemDescription ?? 'item'}"` });
+      await onChanged('Loaner marked returned.');
+    } catch (err) {
+      onError(errorMessage(err, 'Could not mark the loaner returned.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!loaner && !canIssue) return null;
+
+  return (
+    <section className="space-y-3 rounded-lg border border-slate-200 p-4 text-sm">
+      <h3 className="text-sm font-bold text-slate-950">Loaner unit</h3>
+      {loaner && (
+        <div className={`rounded-md px-3 py-2 ${loaner.withHolder && repair.completedAt ? 'border border-amber-200 bg-amber-50 text-amber-900' : 'bg-slate-50 text-slate-700'}`}>
+          <p className="font-semibold text-slate-900">{loaner.itemDescription}{loaner.propertyNumber ? ` · ${loaner.propertyNumber}` : ''}</p>
+          <p className="mt-0.5 text-xs">
+            {loaner.withHolder
+              ? `With ${repair.holder?.name ?? 'the holder'}${loaner.expectedReturnDate ? ` — due back ${formatDate(loaner.expectedReturnDate)}` : ''}.${repair.completedAt ? ' The repair is closed, so collect it now.' : ''}`
+              : `Back from loan (now ${loaner.status.replaceAll('_', ' ')}).`}
+          </p>
+          {loaner.withHolder && repair.completedAt && canReturn && (
+            <SecondaryButton disabled={busy} onClick={() => void markReturned()}>{busy ? 'Saving…' : 'Mark loaner returned'}</SecondaryButton>
+          )}
+        </div>
+      )}
+      {canIssue && (
+        <>
+          <p className="text-xs text-slate-500">Lend {repair.holder?.name ?? 'the holder'} an available {repair.asset?.assetType ?? ''} unit while this one is repaired. It is issued to them with a return date; closing the repair asks for it back.</p>
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+            <Field label="Unit to lend">
+              <select className={inputClass} value={unitId} disabled={units === null} onChange={(e) => setUnitId(e.target.value)}>
+                <option value="">{units === null ? 'Loading available units…' : units.length === 0 ? 'No available unit of this type' : 'Choose a unit'}</option>
+                {(units ?? []).map((u) => <option key={u.id} value={u.id}>{[u.itemDescription, u.propertyNumber, u.serialNumber && `S/N ${u.serialNumber}`].filter(Boolean).join(' · ')}</option>)}
+              </select>
+            </Field>
+            <Field label="Return by">
+              <input type="date" className={inputClass} value={returnBy} min={localToday()} onChange={(e) => setReturnBy(e.target.value)} />
+            </Field>
+          </div>
+          <SecondaryButton disabled={busy || !unitId} onClick={() => void issue()}>{busy ? 'Issuing…' : 'Issue loaner'}</SecondaryButton>
+        </>
+      )}
+    </section>
+  );
 }
 
 interface Draft {
@@ -280,6 +375,19 @@ export function RepairQueue({
                 </section>
               </>
             )}
+            <LoanerSection
+              key={selected.id}
+              repair={selected}
+              canReturn={!adminFallback}
+              onChanged={async (message) => {
+                setActionError('');
+                const res = await repairsApi.getOne(selected.id);
+                setSelected(res.data);
+                notify(message);
+                await load().catch(() => {});
+              }}
+              onError={setActionError}
+            />
             {actionError && <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{actionError}</p>}
           </div>
         )}

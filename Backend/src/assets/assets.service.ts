@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -36,7 +37,7 @@ import {
   RepairContext,
   repairDueDate,
 } from './asset-repairs.service';
-import { CompleteRepairDto } from './dto/repair.dto';
+import { CompleteRepairDto, IssueLoanerDto } from './dto/repair.dto';
 import { UserEntity } from '../users/entities/user.entity';
 import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 
@@ -910,6 +911,86 @@ export class AssetsService {
       resolveAssetTypeScope(user.role),
       { findings: dto.findings, actionTaken: dto.actionTaken },
     );
+    return this.repairs.findOneForUser(repairId, user);
+  }
+
+  /**
+   * Lend the holder of an item under repair an available unit of the same
+   * asset type. Issued to them with an expected return date (the repair's due
+   * date unless one is given), so the overdue-return watcher covers it; the
+   * repair closing brings that date forward (AssetRepairsService.recallLoaner).
+   * Same permission as acting on the repair.
+   * SVC: Deliver & Support — continuity of service during repair.
+   */
+  async issueLoaner(
+    repairId: string,
+    dto: IssueLoanerDto,
+    user: UserEntity,
+    ipAddress: string,
+  ) {
+    const repair = await this.repairs.load(repairId);
+    this.repairs.assertCanAct(repair, user);
+    if (!repair.holderId) {
+      throw new BadRequestException(
+        'This item was in stock when it went in — there is no holder to lend a unit to.',
+      );
+    }
+    if (
+      repair.loaner &&
+      repair.loaner.status === AssetStatus.ISSUED &&
+      repair.loaner.custodianId === repair.holderId
+    ) {
+      throw new ConflictException(
+        `"${repair.loaner.itemDescription}" is already out on loan for this repair.`,
+      );
+    }
+    if (dto.assetId === repair.assetId) {
+      throw new BadRequestException('An item cannot be its own loaner.');
+    }
+
+    const scope = resolveAssetTypeScope(user.role);
+    const loaner = await this.findOne(dto.assetId, scope);
+    if (loaner.assetType !== repair.asset.assetType) {
+      throw new BadRequestException(
+        `A loaner for an ${repair.asset.assetType} item must be ${repair.asset.assetType} too.`,
+      );
+    }
+    if (loaner.assetClass === AssetClass.IES) {
+      throw new BadRequestException(
+        'A loaner is a unit asset, not a supply item.',
+      );
+    }
+    if (loaner.status !== AssetStatus.AVAILABLE) {
+      throw new BadRequestException(
+        `"${loaner.itemDescription}" is ${loaner.status.replaceAll('_', ' ')}, not available.`,
+      );
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const returnBy = (dto.expectedReturnDate ?? repairDueDate(repair)).slice(
+      0,
+      10,
+    );
+    if (returnBy < today) {
+      throw new BadRequestException(
+        'The loaner return date cannot be in the past.',
+      );
+    }
+
+    await this.updateLifecycle(
+      loaner.id,
+      {
+        status: AssetStatus.ISSUED,
+        custodianId: repair.holderId,
+        expectedReturnDate: returnBy,
+        notes: `Loaner while "${repair.asset.itemDescription}" is under repair`,
+      },
+      user.id,
+      user.role,
+      ipAddress,
+      scope,
+    );
+    await this.repairs.attachLoaner(repair, loaner, returnBy, user, ipAddress);
     return this.repairs.findOneForUser(repairId, user);
   }
 
