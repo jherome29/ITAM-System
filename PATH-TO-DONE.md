@@ -17,6 +17,13 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 > 303/303 unit tests; frontend `tsc` clean + 40/40 tests + production build clean.
 > Not re-run this pass: ESLint (both), backend webpack build, coverage %,
 > `audit:check` (both), `secretlint`, backend e2e (Docker), Docker image builds.
+>
+> **2026-10-11 — PR #102 open** (`feature/returns-incidents-and-workflow-fixes` → `develop`,
+> all CI checks green): Returns & Incidents (schemas 010–012), Maintenance & Repair
+> (schema 013), derived request types + replacement flow, self-approval routing fix,
+> notification deep-links, catalogue item picker (008–009). Health on that branch: every
+> CHECKS.md item, 460 backend unit, 99 frontend and 57 e2e tests pass. Follow-ups:
+> `NEXT-TIME.md` §3–4.
 
 ---
 
@@ -36,7 +43,12 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
       audit `startDate`/`endDate`, `system-config` `meta`, `GET /v1/notifications/watcher-status`.
       Test-first, +~40 tests. `SYSTEM-STATUS.md` 2026-09-09 follow-up note.
 - [ ] **Trends / utilisation endpoint** — for the Management dashboard chart panels. `MOCK-DATA-WIRING.md` Part D #7.
-- [ ] Small wiring leftovers — employee "assigned assets" filter, Returns/Incidents module. `MOCK-DATA-WIRING.md` Part B.
+- [x] ~~Small wiring leftovers — employee "assigned assets" filter, Returns/Incidents module~~ —
+      **done, PR #102**: `GET /assets/mine` + My Assigned Assets for every role; Returns &
+      Incidents module with COA documents; Maintenance & Repair on top. `MOCK-DATA-WIRING.md` Part B/D.
+- [ ] Replacement / repair follow-ups — repeat repairs as a replacement reason, loaner unit
+      during repair, issue the new unit on replacement fulfilment, requester download of the
+      replacement receipt, per-watcher counts on the admin dashboard. `NEXT-TIME.md` §3.
 
 ## B. COA form correctness  → `docs/guides/COA-FORMS-AUDIT.md`
 
@@ -91,7 +103,11 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 - [ ] `prod-server` GitHub Environment + manual approval gate; `docker-compose.prod.yml` shakeout.
 - [ ] Environment config (`.env`) for prod — JWT secret, DB URL, etc., via secrets not files.
 - [ ] Backup / restore procedure + a tested restore.
-- [ ] Run the full migration set (`Database/schemas/001..007`) against the prod DB, in order.
+- [ ] Run the full migration set (`Database/schemas/001..013`) against the prod DB, in order.
+      `008`, `010` and `013` use `ALTER TYPE … ADD VALUE`, which cannot run inside a transaction —
+      run them statement by statement (or with plain `psql -f`, no `--single-transaction`).
+- [ ] Bring the shared dev Supabase up to `013` (schemas 008–013 were applied to local
+      Docker Postgres only during the PR #102 work).
 
 ## E. Data onboarding  (not tracked elsewhere)
 

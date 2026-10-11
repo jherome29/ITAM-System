@@ -13,6 +13,13 @@ yet · 🚫 out of scope.
 > (#98), system config (#87), `fix/admin-shell-ui` activate + TRUST_PROXY (#96),
 > the Docker/deploy pass (#95), and the formal Jest security suite (#92).
 > `origin/develop` and `origin/main` are byte-identical.
+>
+> **2026-10-11:** items tagged *(PR #102)* are on
+> `feature/returns-incidents-and-workflow-fixes`, open against `develop` with
+> every CI check green — Returns & Incidents, Maintenance & Repair (schema 013),
+> derived request types + the replacement flow, self-approval routing fix,
+> notification deep-links. Schemas 008–013 must be applied to any database that
+> predates them (see `NEXT-TIME.md` §1).
 
 ---
 
@@ -26,8 +33,17 @@ yet · 🚫 out of scope.
 **Requisitions**
 - Full workflow end to end: employee submits → supervisor approves/rejects →
   IT/Property fulfils → asset issued. PAR/ICS generated on issuance.
+- **Request type is derived, never picked** — `supply` for an IES item, `new`
+  otherwise, `replacement` only when started from My Assigned Assets; a `repair`
+  requisition is refused (repairs are Returns & Incidents). Items are picked from
+  live inventory; "Not in inventory" lines are flagged. *(PR #102)*
 - **Replacement validation** — a replacement requisition is only accepted if the
-  requester holds the asset *and* it is unserviceable or past its useful life.
+  requester holds the asset *and* it is unserviceable, past its useful life, or
+  held while flagged for disposal; one open replacement per asset. Fulfilling it
+  takes the old unit back (`returned`) and generates its Receipt. *(flow: PR #102)*
+- **Segregation of duties** — a requisition is never routed to, or decided by,
+  its own requester (a Supervisor's own request goes to their alternate or
+  another Supervisor of the section/division). *(PR #102)*
 - **Alternate approver** — when a supervisor is marked unavailable, new
   requisitions route to a designated backup at submit time; a requisition that
   blows its 24h SLA with no decision is reassigned to the backup by the watcher.
@@ -38,11 +54,30 @@ yet · 🚫 out of scope.
   dispose-flag), QR + barcode generate and scan, per-asset transaction history.
 - Supply stock: quantity + reorder level, stock drawn down transactionally on
   fulfilment.
+- **My Assigned Assets** for every role (`GET /assets/mine`), with replacement
+  eligibility per item. *(PR #102)*
+
+**Returns & Incidents** *(PR #102, schemas 010–012)*
+- Holder files return / repair / damage / loss / theft with up to 3 attachments;
+  custodian approves → marks received. One open case per item (a loss/theft
+  supersedes a pending hand-over). System Admin decides a custodian's own request.
+- Completion drives the lifecycle and auto-generates the COA documents (Receipt,
+  RLSDDP, IIRUP), downloadable by the requester.
+
+**Maintenance & Repair** *(PR #102, schema 013)*
+- One `asset_repairs` record per stay `under_repair`, whichever screen sent it.
+  Queue for IT Asset Custodian + Property Custodian (and Master Admin →
+  Escalations); outcome repaired (back to holder or stock) / not repairable
+  (flagged for disposal, holder becomes replacement-eligible). Condition follows
+  the lifecycle. Repair History on the asset page + as a PDF/Excel report.
 
 **Notifications & SLA** *(automated)*
 - Cron watchers: SLA breach, 12h pending-approval nudge, overdue return, low
-  stock — each fires once (dedup), in-system delivery to every relevant role,
-  live TopBar bell. Manual `POST /notifications/run-checks` trigger for testing.
+  stock, **overdue repair** *(PR #102)* — each fires once (dedup), in-system
+  delivery to every relevant role, live TopBar bell. Manual
+  `POST /notifications/run-checks` trigger for testing.
+- Clicking a notification deep-links to the record's drawer (`?open=<id>`).
+  *(PR #102)*
 - `GET /notifications/watcher-status` reports the last completed sweep (time,
   trigger, per-watcher counts); shown on the admin dashboard's Platform-health
   panel. *(merged, PR #98)*
@@ -94,8 +129,8 @@ on System Settings and the dashboard. *(merged, PR #87; `meta` via PR #98)*
 
 - **Management dashboards** — trend / utilisation / KPI chart panels show
   "Preview data" (no trends endpoint).
-- **Employee** — "my assigned assets" panel (preview data); Returns & Incidents
-  tab (in-memory only, nothing persists).
+- **Employee** — dashboard tiles marked "PREVIEW DATA". (My Assigned Assets and
+  Returns & Incidents are live since PR #102.)
 - **Approving Officer** — `approval-history` list (backend exists — needs wiring).
 - **Property Officer** — `disposal`, `audit` (backend exists — needs wiring);
   `corrections`, `reconciliation`, `replacements` (no backend).
@@ -111,8 +146,6 @@ on System Settings and the dashboard. *(merged, PR #87; `meta` via PR #98)*
 
 - **Disposal workflow** — turn the dispose-flag into a documented flow with the
   COA-required fields (justification, condition assessment, recommended action).
-- **Returns / Incidents module** — employee return request, repair request,
-  damage/loss/theft report + audit.
 - **Physical count / reconciliation** — blocks the RPCI / RPCPPE / Physical Count
   Summary reports and the physical-inventory screens.
 - **Trends / utilisation endpoint** — for the 🔴 Management chart panels.
