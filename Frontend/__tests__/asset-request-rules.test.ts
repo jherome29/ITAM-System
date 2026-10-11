@@ -6,6 +6,7 @@ import {
   fileProblem,
   nextSteps,
   outcomeSummary,
+  supersededRequests,
 } from '@/lib/asset-requests/asset-request-rules';
 import type { AssetRequestStatus, AssetRequestType } from '@/lib/api/asset-requests';
 
@@ -23,6 +24,12 @@ describe('asset request button rules (mirror the backend)', () => {
 
   it('an open loss/theft report blocks everything', () => {
     expect(allowedTypes([req('theft')])).toEqual([]);
+  });
+
+  it('a loss/theft closes the open hand-over requests it supersedes', () => {
+    const open = [req('return', 'approved'), req('repair', 'completed')];
+    expect(supersededRequests('loss', open)).toEqual([req('return', 'approved')]);
+    expect(supersededRequests('repair', open)).toEqual([]);
   });
 
   it('closed requests never block', () => {

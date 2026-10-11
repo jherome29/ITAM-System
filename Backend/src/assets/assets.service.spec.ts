@@ -50,7 +50,9 @@ describe('AssetsService', () => {
     save: jest.fn(),
     update: jest.fn(),
     count: jest.fn(),
+    find: jest.fn(),
     createQueryBuilder: jest.fn(),
+    manager: { createQueryBuilder: jest.fn() },
   };
 
   const mockTxRepo = {
@@ -75,6 +77,7 @@ describe('AssetsService', () => {
   // unchanged; one test overrides it to prove the value is read from config.
   const mockSystemConfig = {
     getDefaultReorderLevel: jest.fn(() => 10),
+    getUsefulLifeYears: jest.fn(() => ({ PPE: 5, SEP: 3, IES: 1 })),
   };
 
   beforeEach(async () => {
@@ -99,6 +102,54 @@ describe('AssetsService', () => {
     // clearAllMocks() clears call history but not implementations; re-assert
     // the default so a per-test mockReturnValue override never leaks.
     mockSystemConfig.getDefaultReorderLevel.mockReturnValue(10);
+  });
+
+  describe('findMine()', () => {
+    const openQb = (rows: unknown[]) => ({
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue(rows),
+    });
+
+    it('returns [] without querying requisitions when nothing is assigned', async () => {
+      mockAssetRepo.find.mockResolvedValue([]);
+      await expect(service.findMine('emp-1')).resolves.toEqual([]);
+      expect(mockAssetRepo.manager.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it("attaches each asset's replacement eligibility and any open replacement requisition", async () => {
+      mockAssetRepo.find.mockResolvedValue([
+        makeAsset({
+          id: 'a-broken',
+          status: AssetStatus.ISSUED,
+          condition: AssetCondition.UNSERVICEABLE,
+        }),
+        makeAsset({
+          id: 'a-fine',
+          status: AssetStatus.ISSUED,
+          condition: AssetCondition.SERVICEABLE,
+          acquisitionDate: new Date(),
+        }),
+      ]);
+      mockAssetRepo.manager.createQueryBuilder.mockReturnValue(
+        openQb([{ assetId: 'a-broken', requestNumber: 'REQ-2026-0007' }]),
+      );
+
+      const [broken, fine] = await service.findMine('emp-1');
+
+      expect(broken.replacement).toMatchObject({
+        eligible: true,
+        basis: 'condition',
+        openRequestNumber: 'REQ-2026-0007',
+      });
+      expect(fine.replacement).toMatchObject({
+        eligible: false,
+        openRequestNumber: null,
+      });
+    });
   });
 
   // ── Section 12.1 — Asset registration ────────────────────────────────────
@@ -192,6 +243,8 @@ describe('AssetsService', () => {
       [AssetStatus.UNDER_REPAIR, AssetStatus.AVAILABLE],
       [AssetStatus.FLAGGED_FOR_DISPOSAL, AssetStatus.DISPOSED],
     ];
+    // UNDER_REPAIR → ISSUED is valid only as a hand-back to the holder —
+    // covered by its own describe below.
 
     test.each(validPairs)('%s → %s should succeed', async (from, to) => {
       const asset = makeAsset({ status: from });
@@ -411,6 +464,87 @@ describe('AssetsService', () => {
         '127.0.0.1',
       ),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  // ── Repaired item goes back to its holder ──────────────────────────────────
+  describe('updateLifecycle() — UNDER_REPAIR hand-back', () => {
+    const arm = (over: Partial<AssetEntity> = {}) => {
+      const asset = makeAsset({
+        status: AssetStatus.UNDER_REPAIR,
+        custodianId: 'holder-1',
+        expectedReturnDate: new Date('2026-12-01'),
+        ...over,
+      });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+      mockTxRepo.create.mockReturnValue({});
+      mockTxRepo.save.mockResolvedValue({});
+      return asset;
+    };
+    const issue = (dto: Record<string, unknown> = {}) =>
+      service.updateLifecycle(
+        'asset-uuid-1',
+        { status: AssetStatus.ISSUED, ...dto },
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+    it('re-issues to the same holder, keeps the loan date and tells them', async () => {
+      arm();
+      const saved = await issue();
+      expect(saved).toMatchObject({
+        status: AssetStatus.ISSUED,
+        custodianId: 'holder-1',
+        expectedReturnDate: new Date('2026-12-01'),
+      });
+      expect(mockNotifService.notify).toHaveBeenCalledWith(
+        'holder-1',
+        NotificationAlertType.ASSET_REQUEST_UPDATE,
+        'Repair Completed',
+        expect.stringContaining('repaired'),
+        'asset-uuid-1',
+        'asset',
+      );
+    });
+
+    it('accepts the holder named by employee ID', async () => {
+      arm();
+      mockUsersService.findByEmployeeId.mockResolvedValue({ id: 'holder-1' });
+      await expect(issue({ employeeId: 'CICC-0001' })).resolves.toMatchObject({
+        custodianId: 'holder-1',
+      });
+    });
+
+    it('refuses to hand a repaired item to someone other than its holder', async () => {
+      arm();
+      mockUsersService.findByEmployeeId.mockResolvedValue({ id: 'other-1' });
+      await expect(issue({ employeeId: 'CICC-0002' })).rejects.toThrow(
+        /goes back to its holder/,
+      );
+      expect(mockAssetRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('refuses to "issue" a repaired item nobody holds', async () => {
+      arm({ custodianId: null });
+      await expect(issue()).rejects.toThrow(/make it "available" first/);
+    });
+
+    it('clears the holder when a repaired item goes back into stock', async () => {
+      arm();
+      const saved = await service.updateLifecycle(
+        'asset-uuid-1',
+        { status: AssetStatus.AVAILABLE },
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+      expect(saved.custodianId).toBeNull();
+      expect(saved.expectedReturnDate).toBeNull();
+      expect(mockNotifService.notify).not.toHaveBeenCalled();
+    });
   });
 
   // ── Business rule: a disposal flag requires documented justification ───────

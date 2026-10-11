@@ -141,7 +141,13 @@ export class AssetRequestsController {
 
   @Patch(':id/approve')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
+  // System Admin: fallback decider for a custodian's own request only —
+  // AssetRequestsService.canAct enforces that.
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.SYSTEM_ADMIN,
+  )
   async approve(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ApproveAssetRequestDto,
@@ -153,7 +159,13 @@ export class AssetRequestsController {
 
   @Patch(':id/reject')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
+  // System Admin: fallback decider for a custodian's own request only —
+  // AssetRequestsService.canAct enforces that.
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.SYSTEM_ADMIN,
+  )
   async reject(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RejectAssetRequestDto,
@@ -170,7 +182,13 @@ export class AssetRequestsController {
    */
   @Patch(':id/complete')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
+  // System Admin: fallback decider for a custodian's own request only —
+  // AssetRequestsService.canAct enforces that.
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.SYSTEM_ADMIN,
+  )
   @UseInterceptors(
     FilesInterceptor('attachments', MAX_ATTACHMENTS, {
       limits: { fileSize: MAX_ATTACHMENT_BYTES, files: MAX_ATTACHMENTS },
@@ -217,7 +235,13 @@ export class AssetRequestsController {
   /** Custodian retry for documents that failed to generate on completion. */
   @Post(':id/documents')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
+  // System Admin: fallback decider for a custodian's own request only —
+  // AssetRequestsService.canAct enforces that.
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.SYSTEM_ADMIN,
+  )
   async regenerateDocuments(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: AuthReq,

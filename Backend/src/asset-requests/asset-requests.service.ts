@@ -87,6 +87,22 @@ export function blockingRequest<T extends { type: AssetRequestType }>(
     : open[0];
 }
 
+/**
+ * Open requests a new filing closes. A loss or theft means the item can no
+ * longer be handed over, so it supersedes any open return / repair / damage
+ * request on the asset — otherwise both would stay open and whichever was
+ * completed second would hit an impossible lifecycle transition (a lost item
+ * cannot be "returned"; a returned item cannot be "lost" by its old holder).
+ */
+export function supersededRequests<T extends { type: AssetRequestType }>(
+  type: AssetRequestType,
+  open: T[],
+): T[] {
+  return INCIDENT_TYPES.has(type)
+    ? open.filter((r) => !INCIDENT_TYPES.has(r.type))
+    : [];
+}
+
 /** Asset status a completed request moves the asset to. */
 export function completionTargetStatus(
   type: AssetRequestType,
@@ -256,6 +272,7 @@ export class AssetRequestsService {
     req: AssetRequestEntity,
     people: Record<string, UserEntity | null | undefined> = {},
     forms: GeneratedFormEntity[] = [],
+    viewer?: UserEntity,
   ) {
     const asset = req.asset;
     const required = asset ? requiredDocuments(req, asset.assetClass) : [];
@@ -337,6 +354,9 @@ export class AssetRequestsService {
       accountabilityCleared:
         req.status === AssetRequestStatus.COMPLETED &&
         clearsAccountability(req.type, req.resultingStatus),
+      // Whether the viewer may approve / reject / complete it — the UI shows
+      // decision controls only when this is true (the API re-checks).
+      canAct: viewer ? this.canAct(req, viewer) : false,
     };
   }
 
@@ -345,7 +365,7 @@ export class AssetRequestsService {
    * and the linked COA documents in two batched lookups, so list rows carry the
    * same detail as a single fetch (no "Approved by custodian" placeholder).
    */
-  private async hydrate(reqs: AssetRequestEntity[]) {
+  private async hydrate(reqs: AssetRequestEntity[], viewer?: UserEntity) {
     const userIds = [
       ...new Set(
         reqs.flatMap((r) =>
@@ -374,6 +394,7 @@ export class AssetRequestsService {
         r,
         people,
         forms.filter((f) => f.relatedAssetRequestId === r.id),
+        viewer,
       ),
     );
   }
@@ -400,19 +421,36 @@ export class AssetRequestsService {
     return !!scope && scope.includes(req.asset.assetType);
   }
 
-  /** Only the custodian role for this asset type may decide — never the requester. */
-  private assertCanAct(req: AssetRequestEntity, user: UserEntity): void {
+  /**
+   * A request filed by a custodian about an asset of their own custodial type
+   * (e.g. the IT Asset Custodian's own laptop). Segregation of duties bars
+   * them from deciding it, and there may be no second custodian of that type,
+   * so the System Administrator is the fallback decider for exactly these.
+   */
+  private isCustodianOwnRequest(req: AssetRequestEntity): boolean {
+    return req.requestedBy?.role === custodianRoleFor(req.asset.assetType);
+  }
+
+  /** Never the requester. Otherwise the custodian role for this asset type,
+   *  or the System Administrator for a custodian's own request. */
+  private canAct(req: AssetRequestEntity, user: UserEntity): boolean {
+    if (req.requestedById === user.id) return false;
+    if (user.role === UserRole.SYSTEM_ADMIN) {
+      return this.isCustodianOwnRequest(req);
+    }
     const scope = resolveAssetTypeScope(user.role);
-    if (!ACTING_ROLES.has(user.role) || !scope?.includes(req.asset.assetType)) {
-      throw new ForbiddenException(
-        `This request is handled by the ${custodianLabelFor(req.asset.assetType)}.`,
-      );
-    }
-    if (req.requestedById === user.id) {
-      throw new ForbiddenException(
-        'You cannot act on a request you filed yourself.',
-      );
-    }
+    return (
+      ACTING_ROLES.has(user.role) && !!scope?.includes(req.asset.assetType)
+    );
+  }
+
+  private assertCanAct(req: AssetRequestEntity, user: UserEntity): void {
+    if (this.canAct(req, user)) return;
+    throw new ForbiddenException(
+      req.requestedById === user.id
+        ? 'You cannot act on a request you filed yourself.'
+        : `This request is handled by the ${custodianLabelFor(req.asset.assetType)}.`,
+    );
   }
 
   // update(), not save(): the loaded entity carries joined relations
@@ -440,8 +478,8 @@ export class AssetRequestsService {
     Object.assign(req, changes);
   }
 
-  private async view(id: string) {
-    const [one] = await this.hydrate([await this.load(id)]);
+  private async view(id: string, viewer?: UserEntity) {
+    const [one] = await this.hydrate([await this.load(id)], viewer);
     return one;
   }
 
@@ -504,8 +542,16 @@ export class AssetRequestsService {
     const custodians = await this.usersService.findByRole(
       custodianRoleFor(req.asset.assetType),
     );
+    // A custodian's own request is decided by another custodian of that type
+    // or, failing one, by the System Administrator — tell both.
+    const deciders = this.isCustodianOwnRequest(req)
+      ? [
+          ...custodians,
+          ...(await this.usersService.findByRole(UserRole.SYSTEM_ADMIN)),
+        ]
+      : custodians;
     await Promise.all(
-      custodians
+      deciders
         .filter((u) => u.id !== req.requestedById)
         .map((u) =>
           this.notificationsService.notify(
@@ -567,7 +613,7 @@ export class AssetRequestsService {
   ) {
     const attachments = checkAttachments(files);
 
-    const saved = await this.repo.manager.transaction(async (em) => {
+    const created = await this.repo.manager.transaction(async (em) => {
       // Lock the asset row so two submissions for the same asset serialise and
       // the one-open-request rule below can't be raced past.
       const asset = await em.getRepository(AssetEntity).findOne({
@@ -611,6 +657,7 @@ export class AssetRequestsService {
         .getCount();
       const requestNumber = `AR-${year}-${String(count + 1).padStart(4, '0')}`;
 
+      const superseded = supersededRequests(dto.type, open);
       const req = await em.getRepository(AssetRequestEntity).save(
         em.getRepository(AssetRequestEntity).create({
           requestNumber,
@@ -634,15 +681,37 @@ export class AssetRequestsService {
           ),
         );
       }
+      if (superseded.length) {
+        await em.getRepository(AssetRequestEntity).update(
+          superseded.map((r) => r.id),
+          {
+            status: AssetRequestStatus.CANCELLED,
+            cancelledAt: new Date(),
+            decisionNotes: `Superseded by ${requestNumber} (${TYPE_LABEL[dto.type].toLowerCase()}) — the item can no longer be handed over.`,
+          },
+        );
+      }
       req.asset = asset;
-      return req;
+      req.requestedBy = user;
+      return { req, superseded };
     });
+    const { req: saved, superseded } = created;
 
     await this.notifyCustodians(
       saved,
       `New ${TYPE_TITLE[saved.type]}`,
       `${saved.requestNumber}: ${fullName(user)} (${user.employeeId}) filed a ${TYPE_LABEL[saved.type].toLowerCase()} for ` +
-        `"${saved.asset.itemDescription}". Review it in Returns & Incidents.`,
+        `"${saved.asset.itemDescription}". Review it in Returns & Incidents.` +
+        (superseded.length
+          ? ` It closes ${superseded.map((r) => r.requestNumber).join(', ')}, which can no longer be handed over.`
+          : ''),
+    );
+    await Promise.all(
+      superseded.map((old) =>
+        this.audit(AuditAction.ASSET_REQUEST_CANCELLED, old, user, ipAddress, {
+          supersededBy: saved.requestNumber,
+        }),
+      ),
     );
     await this.audit(
       AuditAction.ASSET_REQUEST_SUBMITTED,
@@ -653,7 +722,7 @@ export class AssetRequestsService {
         attachmentCount: attachments.length,
       },
     );
-    return this.view(saved.id);
+    return this.view(saved.id, user);
   }
 
   // ── Reads ──────────────────────────────────────────────────────────────────
@@ -676,7 +745,7 @@ export class AssetRequestsService {
       qb.andWhere('r.status = :status', { status });
     }
     const rows = await qb.getMany();
-    return this.hydrate(rows);
+    return this.hydrate(rows, user);
   }
 
   async findOneForUser(id: string, user: UserEntity) {
@@ -684,7 +753,7 @@ export class AssetRequestsService {
     if (!this.canRead(req, user)) {
       throw new ForbiddenException('You do not have access to this request.');
     }
-    return this.view(id);
+    return this.view(id, user);
   }
 
   async getAttachment(id: string, attachmentId: string, user: UserEntity) {
@@ -745,7 +814,7 @@ export class AssetRequestsService {
     await this.audit(AuditAction.ASSET_REQUEST_APPROVED, req, user, ipAddress, {
       handoverDate: req.handoverDate,
     });
-    return this.view(id);
+    return this.view(id, user);
   }
 
   async reject(
@@ -780,7 +849,7 @@ export class AssetRequestsService {
     await this.audit(AuditAction.ASSET_REQUEST_REJECTED, req, user, ipAddress, {
       reason: req.decisionNotes,
     });
-    return this.view(id);
+    return this.view(id, user);
   }
 
   /** Item received (or incident processed) — drives the asset lifecycle. */
@@ -802,6 +871,23 @@ export class AssetRequestsService {
     }
     const target = completionTargetStatus(req.type, dto.outcome);
     const notes = dto.notes?.trim() || null;
+
+    // Pairs filed before loss/theft superseded on submission can both be open.
+    // The incident decides the item's fate: a hand-over cannot complete ahead
+    // of it, and completing it closes what it supersedes.
+    const openOnAsset = await this.repo.find({
+      where: { assetId: req.assetId, status: In(OPEN_STATUSES) },
+    });
+    const pendingIncident = INCIDENT_TYPES.has(req.type)
+      ? undefined
+      : openOnAsset.find((r) => INCIDENT_TYPES.has(r.type));
+    if (pendingIncident) {
+      throw new ConflictException(
+        `${pendingIncident.requestNumber} (${TYPE_LABEL[pendingIncident.type].toLowerCase()}) is open for this asset. ` +
+          'Process it first — it closes this request.',
+      );
+    }
+    const superseded = supersededRequests(req.type, openOnAsset);
     // Condition-on-receipt photos — validated before anything is written.
     const receiptPhotos = checkAttachments(files);
 
@@ -850,6 +936,27 @@ export class AssetRequestsService {
       completionNotes: notes,
       resultingStatus: target,
     });
+    if (superseded.length) {
+      await this.repo.update(
+        superseded.map((r) => r.id),
+        {
+          status: AssetRequestStatus.CANCELLED,
+          cancelledAt: new Date(),
+          decisionNotes: `Superseded by ${req.requestNumber} (${TYPE_LABEL[req.type].toLowerCase()}) — the item can no longer be handed over.`,
+        },
+      );
+      await Promise.all(
+        superseded.map((old) =>
+          this.audit(
+            AuditAction.ASSET_REQUEST_CANCELLED,
+            old,
+            user,
+            ipAddress,
+            { supersededBy: req.requestNumber },
+          ),
+        ),
+      );
+    }
 
     // Official documents for the outcome (CLAUDE.md §7.2) — generated now,
     // linked to the request, downloadable by the requester as their proof.
@@ -884,7 +991,7 @@ export class AssetRequestsService {
         missingDocuments: missing,
       },
     );
-    return this.view(id);
+    return this.view(id, user);
   }
 
   /** Custodian retry for documents that failed to generate on completion. */
@@ -897,7 +1004,7 @@ export class AssetRequestsService {
       );
     }
     await this.ensureDocuments(req, user, ipAddress);
-    return this.view(id);
+    return this.view(id, user);
   }
 
   /**
@@ -941,6 +1048,6 @@ export class AssetRequestsService {
       `${req.requestNumber} for "${req.asset.itemDescription}" was cancelled by ${fullName(user)}.`,
     );
     await this.audit(AuditAction.ASSET_REQUEST_CANCELLED, req, user, ipAddress);
-    return this.view(id);
+    return this.view(id, user);
   }
 }

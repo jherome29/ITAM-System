@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -23,9 +24,12 @@ import {
   AssetType,
   AssetClass,
   AssetCondition,
+  AssetStatus,
+  OfficialFormType,
 } from '../../../packages/shared/src/enums';
 import { SLA_APPROVAL_HOURS } from '../../../packages/shared/src/constants';
 import { SystemConfigService } from '../system-config/system-config.service';
+import { ReportsService } from '../reports/reports.service';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const makeReq = (
@@ -61,6 +65,8 @@ const makeAsset = (overrides: Partial<AssetEntity> = {}): AssetEntity =>
   ({
     id: 'asset-uuid-1',
     custodianId: 'emp-uuid-1',
+    status: AssetStatus.ISSUED,
+    assetType: AssetType.ICT,
     condition: AssetCondition.SERVICEABLE,
     acquisitionDate: new Date(), // brand new → within useful life
     assetClass: AssetClass.PPE,
@@ -87,6 +93,11 @@ describe('RequisitionsService', () => {
     notifyLowStockIfBelowThreshold: jest.fn().mockResolvedValue(false),
     findOne: jest.fn(),
     isInCatalogue: jest.fn().mockResolvedValue(true),
+    updateLifecycle: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const mockReportsService = {
+    generateFormRecord: jest.fn().mockResolvedValue({}),
   };
 
   const mockReqRepo = {
@@ -188,6 +199,7 @@ describe('RequisitionsService', () => {
         { provide: NotificationsService, useValue: mockNotifService },
         { provide: UsersService, useValue: mockUsersService },
         { provide: SystemConfigService, useValue: mockSystemConfig },
+        { provide: ReportsService, useValue: mockReportsService },
       ],
     }).compile();
 
@@ -469,6 +481,7 @@ describe('RequisitionsService', () => {
       mockReqRepo.save.mockResolvedValue(saved);
       mockItemRepo.create.mockReturnValue({});
       mockItemRepo.save.mockResolvedValue([]);
+      mockReqRepo.findOne.mockResolvedValue(null); // no open replacement
     });
 
     it('rejects a replacement requisition with no replacedAssetId', async () => {
@@ -560,6 +573,69 @@ describe('RequisitionsService', () => {
           }),
         }),
       );
+    });
+
+    it('allows a replacement for a held asset reported lost/stolen/damaged, on basis "loss_or_damage"', async () => {
+      mockAssetsService.findOne.mockResolvedValue(
+        makeAsset({ status: AssetStatus.FLAGGED_FOR_DISPOSAL }),
+      );
+
+      await submit(replacementDto());
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            replacementBasis: 'loss_or_damage',
+          }),
+        }),
+      );
+    });
+
+    it('rejects a replacement while the asset is under repair', async () => {
+      mockAssetsService.findOne.mockResolvedValue(
+        makeAsset({
+          status: AssetStatus.UNDER_REPAIR,
+          condition: AssetCondition.FOR_REPAIR,
+        }),
+      );
+      await expect(submit(replacementDto())).rejects.toThrow(/under repair/i);
+      expect(mockReqRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a replacement for more than one unit', async () => {
+      mockAssetsService.findOne.mockResolvedValue(
+        makeAsset({ condition: AssetCondition.UNSERVICEABLE }),
+      );
+      const dto = replacementDto();
+      dto.items[0].quantity = 2;
+      await expect(submit(dto)).rejects.toThrow(/exactly one unit/i);
+    });
+
+    it('rejects a replacement item of a different asset type than the old unit', async () => {
+      mockAssetsService.findOne.mockResolvedValue(
+        makeAsset({ condition: AssetCondition.UNSERVICEABLE }),
+      );
+      const dto = replacementDto();
+      dto.items[0].assetType = 'Fixed';
+      await expect(submit(dto)).rejects.toThrow(/must be an ICT item/i);
+    });
+
+    it('rejects a second replacement while one is still open for the same asset', async () => {
+      mockAssetsService.findOne.mockResolvedValue(
+        makeAsset({ condition: AssetCondition.UNSERVICEABLE }),
+      );
+      mockReqRepo.findOne.mockResolvedValue(
+        makeReq({ requestNumber: 'REQ-2026-0009' }),
+      );
+      await expect(submit(replacementDto())).rejects.toThrow(ConflictException);
+      expect(mockReqRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a REPAIR requisition, since repairs go through Returns & Incidents', async () => {
+      await expect(
+        submit(replacementDto({ requisitionType: RequisitionType.REPAIR })),
+      ).rejects.toThrow(/My Assigned Assets/);
+      expect(mockReqRepo.create).not.toHaveBeenCalled();
     });
 
     it('does not run replacement validation for a NEW requisition carrying a stray replacedAssetId', async () => {
@@ -1171,6 +1247,108 @@ describe('RequisitionsService', () => {
           '127.0.0.1',
         ),
       ).resolves.toMatchObject({ status: RequisitionStatus.REJECTED });
+    });
+  });
+
+  describe('fulfill() — replacement surrenders the old unit', () => {
+    const armReplacement = () => {
+      const req = makeReq({
+        status: RequisitionStatus.PENDING_FULFILLMENT,
+        requisitionType: RequisitionType.REPLACEMENT,
+        replacedAssetId: 'asset-uuid-1',
+      });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+      mockReqRepo.save.mockResolvedValue({
+        ...req,
+        status: RequisitionStatus.FULFILLED,
+      });
+      return req;
+    };
+    const fulfill = (id: string) =>
+      service.fulfill(id, 'it-uuid-1', UserRole.IT_PERSONNEL, {}, '127.0.0.1');
+
+    it('returns the issued old unit, generates its receipt and records it in the audit', async () => {
+      const req = armReplacement();
+      mockAssetsService.findOne.mockResolvedValue(
+        makeAsset({ condition: AssetCondition.UNSERVICEABLE }),
+      );
+
+      await fulfill(req.id);
+
+      expect(mockAssetsService.updateLifecycle).toHaveBeenCalledWith(
+        'asset-uuid-1',
+        expect.objectContaining({ status: AssetStatus.RETURNED }),
+        'it-uuid-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+        [AssetType.ICT],
+      );
+      expect(mockReportsService.generateFormRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          formType: OfficialFormType.RECEIPT_RETURNED_PROPERTY,
+          assetId: 'asset-uuid-1',
+          requisitionId: req.id,
+          returneeId: req.requestedById,
+        }),
+        'it-uuid-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.REQUISITION_FULFILLED,
+          metadata: expect.objectContaining({
+            replacedAsset: expect.objectContaining({ outcome: 'returned' }),
+          }),
+        }),
+      );
+    });
+
+    it('still fulfills when the receipt fails to generate', async () => {
+      const req = armReplacement();
+      mockAssetsService.findOne.mockResolvedValue(
+        makeAsset({ condition: AssetCondition.UNSERVICEABLE }),
+      );
+      mockReportsService.generateFormRecord.mockRejectedValueOnce(
+        new Error('pdf down'),
+      );
+
+      const result = await fulfill(req.id);
+
+      expect(result.status).toBe(RequisitionStatus.FULFILLED);
+    });
+
+    it('leaves a lost or stolen old unit on the holder, since there is nothing to hand back', async () => {
+      const req = armReplacement();
+      mockAssetsService.findOne.mockResolvedValue(
+        makeAsset({ status: AssetStatus.FLAGGED_FOR_DISPOSAL }),
+      );
+
+      await fulfill(req.id);
+
+      expect(mockAssetsService.updateLifecycle).not.toHaveBeenCalled();
+      expect(mockReportsService.generateFormRecord).not.toHaveBeenCalled();
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            replacedAsset: expect.objectContaining({ outcome: 'kept' }),
+          }),
+        }),
+      );
+    });
+
+    it('does not fulfill when the old unit cannot be returned', async () => {
+      const req = armReplacement();
+      mockAssetsService.findOne.mockResolvedValue(
+        makeAsset({ condition: AssetCondition.UNSERVICEABLE }),
+      );
+      mockAssetsService.updateLifecycle.mockRejectedValueOnce(
+        new BadRequestException('Invalid lifecycle transition'),
+      );
+
+      await expect(fulfill(req.id)).rejects.toThrow(BadRequestException);
+      expect(mockReqRepo.manager.transaction).not.toHaveBeenCalled();
     });
   });
 

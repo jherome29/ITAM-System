@@ -31,6 +31,18 @@ export interface Asset {
   updatedAt: string;
 }
 
+/** Server-computed replacement rule (CLAUDE.md §17) for one of my assets. */
+export interface ReplacementEligibility {
+  eligible: boolean;
+  basis: 'condition' | 'useful_life' | 'loss_or_damage' | null;
+  reason: string;
+  /** An open replacement requisition for this asset, if one exists. */
+  openRequestNumber: string | null;
+}
+
+/** An asset from GET /v1/assets/mine — the holder's view. */
+export type MyAsset = Asset & { replacement: ReplacementEligibility };
+
 /** One grouped, requestable line from GET /v1/assets/catalogue/items. */
 export interface CatalogueItem {
   itemDescription: string;
@@ -147,7 +159,7 @@ export const assetsApi = {
 
   /** Assets currently assigned to the logged-in user (custodianId = me). */
   mine: () =>
-    client.get<ApiResponse<Asset[]>>('/v1/assets/mine').then((r) => r.data),
+    client.get<ApiResponse<MyAsset[]>>('/v1/assets/mine').then((r) => r.data),
 
   getOne: (id: string) =>
     client.get<ApiResponse<Asset>>(`/v1/assets/${id}`).then((r) => r.data),

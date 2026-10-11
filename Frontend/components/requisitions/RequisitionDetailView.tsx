@@ -26,6 +26,29 @@ export function SlaBadge({ request }: Readonly<{ request: Pick<Requisition, 'sta
 }
 
 /**
+ * The unit a replacement requisition replaces — what the approver weighs and
+ * what the custodian collects. Fulfilling the requisition returns it to
+ * custody (unless it was reported lost/stolen, when there is nothing to collect).
+ */
+function ReplacedAssetPanel({ request }: Readonly<{ request: Requisition }>) {
+  const old = request.replacedAsset!;
+  const lostOrWrittenOff = old.status === 'flagged_for_disposal';
+  const done = request.status === 'fulfilled';
+  let handover = 'The requester hands this unit back when the replacement is issued; fulfilling marks it Returned and generates its receipt.';
+  if (lostOrWrittenOff) handover = 'Reported lost, stolen or written off — there is no unit to collect.';
+  else if (done) handover = old.status === 'returned' ? 'Returned to custody when the replacement was issued.' : `Now ${old.status.replaceAll('_', ' ')}.`;
+  return <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm">
+    <p className="text-xs font-bold text-blue-900">Replaces</p>
+    <p className="mt-1 font-semibold text-slate-900">{old.itemDescription}</p>
+    <p className="mt-0.5 text-xs text-slate-600">
+      {[old.propertyNumber, old.serialNumber && `Serial ${old.serialNumber}`, `${old.assetType} · ${old.assetClass}`, `Condition: ${old.condition.replaceAll('_', ' ')}`, old.acquisitionDate && `Acquired ${formatDate(old.acquisitionDate)}`].filter(Boolean).join(' · ')}
+    </p>
+    {old.components && !lostOrWrittenOff && <p className="mt-0.5 text-xs text-slate-600">Components to collect: {old.components}</p>}
+    <p className="mt-2 text-xs text-blue-900">{handover}</p>
+  </div>;
+}
+
+/**
  * Real-data requisition detail, shared by every role's requisition views
  * (Employee drawer + detail page, Approval Queue, fulfilment queues, My
  * Requisitions). Identifies people by name/employee ID — never by UUID — and
@@ -58,6 +81,8 @@ export function RequisitionDetailView({ request }: Readonly<{ request: Requisiti
     <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {facts.map(([label, value]) => <div key={label} className="rounded-lg border border-slate-200 p-3"><dt className="text-xs font-bold text-slate-500">{label}</dt><dd className="mt-1 text-sm font-semibold text-slate-900">{value}</dd></div>)}
     </dl>
+
+    {request.replacedAsset && <ReplacedAssetPanel request={request} />}
 
     <div>
       <p className="text-xs font-bold text-slate-500">Items requested</p>

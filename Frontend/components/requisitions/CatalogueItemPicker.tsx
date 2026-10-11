@@ -28,8 +28,17 @@ export function catalogueItemKey(item: CatalogueItem): string {
 export function CatalogueItemPicker({
   selected,
   onSelect,
-}: Readonly<{ selected: CatalogueItem | null; onSelect: (item: CatalogueItem | null) => void }>) {
-  const [assetType, setAssetType] = useState<(typeof TYPE_TABS)[number]>('All');
+  lockedAssetType,
+  unitsOnly = false,
+}: Readonly<{
+  selected: CatalogueItem | null;
+  onSelect: (item: CatalogueItem | null) => void;
+  /** Restrict to one asset type and hide the type tabs (replacements). */
+  lockedAssetType?: string;
+  /** Hide consumable supplies — only individually tracked units (replacements). */
+  unitsOnly?: boolean;
+}>) {
+  const [assetType, setAssetType] = useState<string>(lockedAssetType ?? 'All');
   const [assetClass, setAssetClass] = useState<(typeof CLASS_OPTIONS)[number]>('All');
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<CatalogueItem[]>([]);
@@ -50,7 +59,7 @@ export function CatalogueItemPicker({
         })
         .then((res) => {
           if (cancelled) return;
-          setItems(res.data);
+          setItems(unitsOnly ? res.data.filter((i) => !i.isSupply) : res.data);
           setError('');
         })
         .catch(() => !cancelled && setError('Could not load inventory. Please try again.'))
@@ -60,7 +69,7 @@ export function CatalogueItemPicker({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [search, assetType, assetClass, selected]);
+  }, [search, assetType, assetClass, selected, unitsOnly]);
 
   if (selected) {
     return (
@@ -84,7 +93,7 @@ export function CatalogueItemPicker({
   return (
     <div className="space-y-2 rounded-lg border border-slate-200 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <div role="tablist" aria-label="Asset type" className="flex rounded-md border border-slate-200 p-0.5">
+        {!lockedAssetType && <div role="tablist" aria-label="Asset type" className="flex rounded-md border border-slate-200 p-0.5">
           {TYPE_TABS.map((tab) => (
             <button
               key={tab}
@@ -97,9 +106,10 @@ export function CatalogueItemPicker({
               {tab}
             </button>
           ))}
-        </div>
+        </div>}
+        {lockedAssetType && <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">{lockedAssetType} items only</span>}
         <select aria-label="Asset class" value={assetClass} onChange={(e) => setAssetClass(e.target.value as (typeof CLASS_OPTIONS)[number])} className={classSelectClass}>
-          {CLASS_OPTIONS.map((c) => (
+          {CLASS_OPTIONS.filter((c) => !(unitsOnly && c === 'IES')).map((c) => (
             <option key={c} value={c}>{c === 'All' ? 'All classes' : c}</option>
           ))}
         </select>

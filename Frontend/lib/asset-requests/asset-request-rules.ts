@@ -46,6 +46,18 @@ export function blockingRequest<T extends Pick<AssetRequest, 'type' | 'status'>>
   return INCIDENT_TYPES.has(type) ? open.find((r) => INCIDENT_TYPES.has(r.type)) : open[0];
 }
 
+/**
+ * Mirrors AssetRequestsService.supersededRequests: filing a loss/theft closes
+ * any open return / repair / damage request on the asset — the item can no
+ * longer be handed over. Returns the requests that filing `type` would close.
+ */
+export function supersededRequests<T extends Pick<AssetRequest, 'type' | 'status'>>(
+  type: AssetRequestType,
+  requestsForAsset: T[],
+): T[] {
+  return INCIDENT_TYPES.has(type) ? requestsForAsset.filter((r) => isOpen(r) && !INCIDENT_TYPES.has(r.type)) : [];
+}
+
 export function allowedTypes(requestsForAsset: Pick<AssetRequest, 'type' | 'status'>[]): AssetRequestType[] {
   return ALL_REQUEST_TYPES.filter((type) => !blockingRequest(type, requestsForAsset));
 }

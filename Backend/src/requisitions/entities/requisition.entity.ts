@@ -13,6 +13,7 @@ import {
   RequisitionType,
 } from '../../../../packages/shared/src/enums';
 import { UserEntity } from '../../users/entities/user.entity';
+import { AssetEntity } from '../../assets/entities/asset.entity';
 import { RequisitionItemEntity } from './requisition-item.entity';
 
 @Entity('requisitions')
@@ -56,6 +57,15 @@ export class RequisitionEntity {
   // Populated + validated in RequisitionsService.create() (CLAUDE.md §17).
   @Column({ nullable: true, type: 'uuid' })
   replacedAssetId!: string | null;
+
+  // Read-only join over replaced_asset_id (no schema change) — lets approvers
+  // and custodians see which asset the replacement is for.
+  @ManyToOne(() => AssetEntity, {
+    eager: false,
+    createForeignKeyConstraints: false,
+  })
+  @JoinColumn({ name: 'replaced_asset_id' })
+  replacedAsset!: AssetEntity | null;
 
   @Column({ nullable: true, type: 'uuid' })
   supervisorId!: string | null;

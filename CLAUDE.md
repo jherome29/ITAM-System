@@ -278,6 +278,10 @@ Key screens (matching Figma mockup):
 
 **SLA Target:** 24-hour requisition approval turnaround
 
+**Request type is derived, never picked:** `supply` for an IES item, `new` otherwise, `replacement` only when started from My Assigned Assets. A `repair` requisition is refused (400) — repairs go through Returns & Incidents (Module 6); the enum value stays for historical rows.
+
+**Replacement flow (§17):** holder clicks "Request replacement" on an asset that qualifies — `GET /api/v1/assets/mine` returns `replacement: { eligible, basis, reason, openRequestNumber }` per asset (`Backend/src/assets/replacement-eligibility.ts`: not serviceable → `condition`, past useful life → `useful_life`, held while flagged for disposal → `loss_or_damage`). The server re-checks: requester must hold it, one unit of the same `assetType`, one open replacement per asset (409). Approver and custodian see `replacedAsset` on the requisition. **Fulfilling takes the old unit back** — an issued old unit becomes `returned` (custodian cleared) and its Receipt of Returned Property/SEP is generated, linked via `related_requisition_id`; a lost/stolen unit has nothing to collect and stays on the holder.
+
 ### Module 3: Dashboard & Reporting
 
 **Primary users:** IT Personnel, System Admin, Management
@@ -332,8 +336,9 @@ Notifications carry `relatedRecordType` + `relatedRecordId`; clicking one (bell 
 The holder of an **issued** asset files a return, repair, damage, loss or theft request (`POST /api/v1/asset-requests`, multipart: up to 3 JPG/PNG/WEBP/PDF attachments × 5 MB, type checked by magic bytes, stored as `bytea` with `select: false` like COA PDFs).
 
 - **Two-step:** `submitted` → custodian **approves** (optional hand-over date) → `approved` → custodian **marks received** → `completed`. `rejected` (reason required; **only before approval** — approve and reject are the two alternatives at step one) and `cancelled` (requester only, any open state) are terminal.
-- **Routing:** ICT → IT Personnel, Fixed/Supplies → Property Custodian (`resolveAssetTypeScope`); Property Officer / Admin / Management read-only. A custodian can never act on their own request.
-- **One open request per asset** (409), except a loss/theft may still be reported while a return/repair/damage is pending. No supervisor step.
+- **Routing:** ICT → IT Personnel, Fixed/Supplies → Property Custodian (`resolveAssetTypeScope`); Property Officer / Admin / Management read-only. A custodian can never act on their own request — the **System Administrator is the fallback decider for exactly those** (Master Admin → Returns & Incidents). Views carry a server-computed `canAct`; the queue shows decision controls only when it is true.
+- **One open case per asset** (409), except a loss/theft may still be reported while a return/repair/damage is pending — and filing it **supersedes** that request (auto-`cancelled`, `decisionNotes` = "Superseded by AR-…", audited), because the item can no longer be handed over. Older pairs that are both open: a hand-over cannot be completed while the incident is open (409), and completing the incident closes it. No supervisor step. Closed requests never block — the holder can file again once a request is completed, rejected or cancelled and the asset is issued to them again.
+- **Repair loop:** a repaired item goes back to its holder via `under_repair → issued` (allowed only to the current holder, no employee ID needed; the holder is notified). `→ available` now always clears the holder — before, a repaired item sat in stock *and* on the old holder's list at once. Maintenance "Mark Complete" picks the right one.
 - **Completion drives the lifecycle and auto-generates the COA documents** (`requiredDocuments()` in the service — §7.2 trigger events). Forms are stored in `generated_forms` with `related_asset_request_id` (schema `012`) and downloadable by the requester via `GET …/:id/documents/:formId`; failures don't undo completion and can be retried (`POST …/:id/documents`).
 
   | Request → outcome | Asset | Holder's accountability | Documents |
@@ -346,7 +351,7 @@ The holder of an **issued** asset files a return, repair, damage, loss or theft 
 
   On approval the requester is told what to bring (the item + the asset's `components`) or, for loss/theft, which supporting documents to prepare. Receipt forms resolve the returnee from the last completed return when the asset has no custodian.
 - **Condition-on-receipt photos:** `PATCH …/:id/complete` also accepts multipart `attachments` (same limits). Attachments carry `stage` — `request` (holder's evidence) or `receipt` (custodian's photos) — plus `uploadedById` (schema `011`); the UI shows them as separate galleries.
-- `GET /api/v1/assets/mine` backs the employee "My Assigned Assets" page.
+- `GET /api/v1/assets/mine` backs "My Assigned Assets" (`components/assets/MyAssignedAssets.tsx`), which **every role** has — anyone can hold property. Only Employee / Approving Officer / IT Asset Custodian get "Request replacement" (requisition RBAC).
 
 ---
 

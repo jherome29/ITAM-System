@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCreateRequisitionDto,
+  deriveRequisitionType,
   type RequisitionFormValues,
 } from '@/components/requisitions/RequisitionForm';
 
@@ -56,5 +57,22 @@ describe('buildCreateRequisitionDto', () => {
       replacedAssetId: '   ',
     });
     expect(dto).not.toHaveProperty('replacedAssetId');
+  });
+});
+
+describe('deriveRequisitionType', () => {
+  it('is always replacement when started from an assigned asset', () => {
+    expect(deriveRequisitionType(true, { isSupply: false, assetClass: 'PPE' })).toBe('replacement');
+    expect(deriveRequisitionType(true, null)).toBe('replacement');
+  });
+
+  it('is supply for a consumable (IES) item, picked or described', () => {
+    expect(deriveRequisitionType(false, { isSupply: true, assetClass: 'IES' })).toBe('supply');
+    expect(deriveRequisitionType(false, { isSupply: false, assetClass: 'IES' })).toBe('supply');
+  });
+
+  it('is new for a unit asset, or before anything is picked, and never repair', () => {
+    expect(deriveRequisitionType(false, { isSupply: false, assetClass: 'SEP' })).toBe('new');
+    expect(deriveRequisitionType(false, null)).toBe('new');
   });
 });

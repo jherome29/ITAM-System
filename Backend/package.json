@@ -94,6 +94,7 @@
       "auth/auth.service.ts",
       "auth/guards/roles.guard.ts",
       "assets/assets.service.ts",
+      "assets/replacement-eligibility.ts",
       "requisitions/requisitions.service.ts",
       "notifications/notifications.service.ts",
       "audit/audit.service.ts",

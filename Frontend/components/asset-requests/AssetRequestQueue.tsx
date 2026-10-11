@@ -43,9 +43,14 @@ function attachmentCount(n: number): string {
  * Custodian view of Returns & Incidents (IT Asset Custodian for ICT, Property
  * Custodian for Fixed/Supplies — the backend scopes the list). Two steps:
  * Approve (schedule hand-over) → Mark received, which updates the asset and
- * offers the matching COA form.
+ * offers the matching COA form. Decision controls follow the server's
+ * per-request `canAct` — a custodian never decides their own request.
+ *
+ * `adminFallback` is the System Administrator's view: every request is
+ * listed, and only custodians' own requests (which no custodian may decide)
+ * are actionable.
  */
-export function AssetRequestQueue({ eyebrow, openId }: Readonly<{ eyebrow: string; openId?: string }>) {
+export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Readonly<{ eyebrow: string; openId?: string; adminFallback?: boolean }>) {
   const [rows, setRows] = useState<AssetRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -135,14 +140,17 @@ export function AssetRequestQueue({ eyebrow, openId }: Readonly<{ eyebrow: strin
 
   if (loading) return <LoadingSkeleton rows={8} />;
 
-  const actions = selected ? custodianActions(selected.status) : [];
+  const actions = selected?.canAct ? custodianActions(selected.status) : [];
+  const awaitingCount = rows.filter((r) => isOpen(r) && r.canAct).length;
 
   return (
     <div className="space-y-4">
       <AdminPageHeader
         eyebrow={eyebrow}
         title="Returns & Incidents"
-        detail="Return, repair, damage, loss and theft requests from asset holders. Approve to schedule the hand-over, then mark the item received."
+        detail={adminFallback
+          ? `Custodians cannot decide their own return, repair or incident requests, so those escalate here. ${awaitingCount} awaiting your decision; the rest are read-only.`
+          : 'Return, repair, damage, loss and theft requests from asset holders. Approve to schedule the hand-over, then mark the item received.'}
       />
       {loadError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{loadError}</div>}
       <SearchToolbar value={search} onChange={setSearch} filterValue={filter} filterOptions={FILTERS} onFilterChange={setFilter} />
@@ -174,7 +182,7 @@ export function AssetRequestQueue({ eyebrow, openId }: Readonly<{ eyebrow: strin
                   <td className={tdClass}>{formatDateTime(r.createdAt)}</td>
                   <td className={tdClass}><StatusChip status={REQUEST_STATUS_LABEL[r.status]} tone={REQUEST_STATUS_TONE[r.status]} /></td>
                   <td className={`${tdClass} text-right`}>
-                    <SecondaryButton onClick={() => open(r)}>{isOpen(r) ? 'Review' : 'View'}</SecondaryButton>
+                    <SecondaryButton onClick={() => open(r)}>{isOpen(r) && r.canAct ? 'Review' : 'View'}</SecondaryButton>
                   </td>
                 </tr>
               ))}
@@ -260,6 +268,13 @@ export function AssetRequestQueue({ eyebrow, openId }: Readonly<{ eyebrow: strin
               </section>
             )}
 
+            {isOpen(selected) && !selected.canAct && (
+              <p className="rounded-md bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                {adminFallback
+                  ? `Handled by the ${selected.custodianLabel ?? 'custodian'} — only a custodian's own request escalates to you.`
+                  : 'You filed this request yourself, so another custodian or the System Administrator decides it.'}
+              </p>
+            )}
             {selected.status === 'approved' && selected.handoverDate && (
               <p className="text-xs text-slate-500">Hand-over scheduled for {formatDate(selected.handoverDate)}.</p>
             )}

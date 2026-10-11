@@ -38,14 +38,28 @@ const requisitionTarget: Target = (basePath, id, alertType) => {
   }
 };
 
+// Workspaces with a "My Assigned Assets" page that lists the holder's own
+// return / incident requests (the employee has a dedicated page instead).
+const HOLDER_BASES = new Set([
+  '/approving-officer',
+  '/it-asset-custodian',
+  '/property-custodian',
+  '/property-officer',
+  '/master-admin',
+  '/management-audit',
+]);
+// Who decides requests: the custodians, plus the System Administrator as the
+// fallback for a custodian's own request.
+const DECIDER_BASES = new Set([...CUSTODIAN_BASES, '/master-admin']);
+
 // Returns & Incidents: the holder's alerts (approved / rejected / completed)
-// open their own list; custodians' alerts (new / cancelled) open the queue.
+// open their own list; deciders' alerts (new / cancelled) open the queue.
 const assetRequestTarget: Target = (basePath, id, alertType) => {
   if (basePath === '/employee') return `/employee/returns-incidents${openParam(id)}`;
-  if (CUSTODIAN_BASES.has(basePath) && alertType === 'asset_request') {
-    return `${basePath}/returns-incidents${openParam(id)}`;
+  if (alertType === 'asset_request') {
+    return DECIDER_BASES.has(basePath) ? `${basePath}/returns-incidents${openParam(id)}` : null;
   }
-  return null;
+  return HOLDER_BASES.has(basePath) ? `${basePath}/assigned-assets${openParam(id)}` : null;
 };
 
 const assetTarget: Target = (basePath, id) =>

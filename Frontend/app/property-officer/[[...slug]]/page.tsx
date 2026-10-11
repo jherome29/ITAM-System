@@ -1,3 +1,4 @@
+import { MyAssignedAssets } from '@/components/assets/MyAssignedAssets';
 import { AssetDetailManager } from '@/components/assets/AssetDetailManager';
 import { AssetRegistryList } from '@/components/assets/AssetRegistryList';
 import { RegisterAssetForm } from '@/components/assets/RegisterAssetForm';
@@ -7,12 +8,17 @@ import { FormsArchiveContent } from '@/components/shared/FormsArchiveContent';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
 
-export default async function PropertyOfficerPage({ params }: Readonly<{ params: Promise<{ slug?: string[] }> }>) {
+export default async function PropertyOfficerPage({
+  params,
+  searchParams,
+}: Readonly<{ params: Promise<{ slug?: string[] }>; searchParams: Promise<{ open?: string | string[] }> }>) {
   const { slug } = await params;
+  const { open } = await searchParams;
   const segment = slug?.[0] ?? 'dashboard';
   const child = slug?.[1];
   if (segment === 'dashboard') return <PropertyOfficerDashboard />;
   if (segment === 'notifications') return <NotificationsContent />;
+  if (segment === 'assigned-assets') return <MyAssignedAssets eyebrow="Property Officer" canRequestReplacement={false} showRequestHistory openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'assets' && child === 'new') return <RegisterAssetForm basePath="/property-officer/assets" />;
   if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/property-officer/assets" formsPath="/it-personnel/forms" />;
   if (segment === 'assets') return <AssetRegistryList basePath="/property-officer/assets" />;

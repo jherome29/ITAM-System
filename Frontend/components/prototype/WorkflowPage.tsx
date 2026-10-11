@@ -597,8 +597,12 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     setActionSubmitting(true);
     try {
       const id = String(selected.id);
+      // A repaired item someone still holds goes back to them; an unheld one
+      // returns to stock.
+      const holder = String(selected.custodianId ?? 'Unassigned');
+      const backToHolder = action === 'Mark Complete' && holder !== 'Unassigned';
       if (action === 'Mark Complete') {
-        await assetsApi.updateLifecycle(id, { status: 'available' });
+        await assetsApi.updateLifecycle(id, { status: backToHolder ? 'issued' : 'available' });
       } else {
         await assetsApi.updateLifecycle(id, { status: 'flagged_for_disposal', notes: trimmedRemarks });
       }
@@ -606,7 +610,9 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       setSelected(null);
       setRemarks('');
       setErrors({});
-      notify(action === 'Mark Complete' ? 'Asset marked available.' : 'Disposal recommended.');
+      let done = 'Disposal recommended.';
+      if (action === 'Mark Complete') done = backToHolder ? 'Repair complete — returned to its holder, who has been notified.' : 'Repair complete — asset is available.';
+      notify(done);
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;

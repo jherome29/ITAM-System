@@ -56,6 +56,8 @@ export interface AssetRequest {
   missingDocuments: string[];
   /** True once the holder is no longer accountable for the item. */
   accountabilityCleared: boolean;
+  /** Whether the viewer may approve / reject / complete it (server-decided). */
+  canAct: boolean;
 }
 
 export interface AssetRequestDocument {

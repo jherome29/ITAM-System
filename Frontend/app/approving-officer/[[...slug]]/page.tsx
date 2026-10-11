@@ -1,3 +1,4 @@
+import { MyAssignedAssets } from '@/components/assets/MyAssignedAssets';
 import { ApprovingOfficerDashboard } from '@/components/approving-officer/ApprovingOfficerDashboard';
 import { WorkflowPage } from '@/components/prototype/WorkflowPage';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
@@ -12,6 +13,7 @@ export default async function ApprovingOfficerPage({
   const segment = slug?.[0] ?? 'dashboard';
   if (segment === 'dashboard') return <ApprovingOfficerDashboard />;
   if (segment === 'notifications') return <NotificationsContent />;
+  if (segment === 'assigned-assets') return <MyAssignedAssets eyebrow="Approving Officer" canRequestReplacement showRequestHistory openId={typeof open === 'string' ? open : undefined} />;
   return <WorkflowPage role={ProposedUserRole.APPROVING_OFFICER} slug={segment} openId={typeof open === 'string' ? open : undefined} />;
 }
 

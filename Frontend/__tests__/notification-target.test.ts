@@ -32,7 +32,16 @@ describe('notificationTarget', () => {
     expect(notificationTarget('/employee', ar('asset_request_update'))).toBe(`/employee/returns-incidents?open=${REQ}`);
     expect(notificationTarget('/it-asset-custodian', ar('asset_request'))).toBe(`/it-asset-custodian/returns-incidents?open=${REQ}`);
     expect(notificationTarget('/property-custodian', ar('asset_request'))).toBe(`/property-custodian/returns-incidents?open=${REQ}`);
-    expect(notificationTarget('/approving-officer', ar('asset_request_update'))).toBeNull();
+    expect(notificationTarget('/master-admin', ar('asset_request'))).toBe(`/master-admin/returns-incidents?open=${REQ}`);
+    expect(notificationTarget('/approving-officer', ar('asset_request'))).toBeNull();
+  });
+
+  it("sends a non-employee holder's request outcomes to their My Assigned Assets", () => {
+    const ar = (alertType: string) => ({ alertType, relatedRecordId: REQ, relatedRecordType: 'asset_request' });
+    expect(notificationTarget('/approving-officer', ar('asset_request_update'))).toBe(`/approving-officer/assigned-assets?open=${REQ}`);
+    expect(notificationTarget('/it-asset-custodian', ar('asset_request_update'))).toBe(`/it-asset-custodian/assigned-assets?open=${REQ}`);
+    expect(notificationTarget('/master-admin', ar('asset_request_update'))).toBe(`/master-admin/assigned-assets?open=${REQ}`);
+    expect(notificationTarget('/supervisor', ar('asset_request_update'))).toBeNull();
   });
 
   it('returns null when there is nothing to open', () => {

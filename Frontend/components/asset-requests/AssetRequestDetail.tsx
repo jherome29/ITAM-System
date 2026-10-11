@@ -36,7 +36,9 @@ function timeline(r: AssetRequest): Step[] {
     const result = r.resultingStatus ? ` · asset now ${r.resultingStatus.replaceAll('_', ' ')}` : '';
     steps.push({ label: `Completed by ${r.completedBy?.name ?? 'custodian'}${result}`, at: r.completedAt, note: r.completionNotes });
   }
-  if (r.status === 'cancelled') steps.push({ label: 'Cancelled by requester', at: r.cancelledAt });
+  // A cancelled request with a note was closed by the system (superseded by a
+  // loss/theft report), not by the requester.
+  if (r.status === 'cancelled') steps.push({ label: r.decisionNotes ? 'Closed — superseded' : 'Cancelled by requester', at: r.cancelledAt, note: r.decisionNotes });
   return steps;
 }
 

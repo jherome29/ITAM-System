@@ -2,13 +2,19 @@ import { AdminDashboard } from './AdminDashboard';
 import { AdminIdentityPages } from './AdminIdentityPages';
 import { AdminPlatformPages } from './AdminPlatformPages';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
+import { AssetRequestQueue } from '@/components/asset-requests/AssetRequestQueue';
+import { MyAssignedAssets } from '@/components/assets/MyAssignedAssets';
 
 const identitySlugs = ['users', 'roles'] as const;
 const platformSlugs = ['configuration', 'audit'] as const;
 
-export function AdminWorkspace({ slug }: Readonly<{ slug: string }>) {
+export function AdminWorkspace({ slug, openId }: Readonly<{ slug: string; openId?: string }>) {
   if (slug === 'dashboard') return <AdminDashboard />;
   if (slug === 'notifications') return <NotificationsContent />;
+  if (slug === 'assigned-assets') return <MyAssignedAssets eyebrow="Master Administrator" canRequestReplacement={false} showRequestHistory openId={openId} />;
+  // Fallback decider for custodians' own returns / incidents (segregation of
+  // duties): every request is visible, only those are actionable.
+  if (slug === 'returns-incidents') return <AssetRequestQueue eyebrow="Master Administrator" adminFallback openId={openId} />;
   if (identitySlugs.includes(slug as (typeof identitySlugs)[number])) {
     return <AdminIdentityPages slug={slug as (typeof identitySlugs)[number]} />;
   }

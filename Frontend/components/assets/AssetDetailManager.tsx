@@ -209,7 +209,11 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
   if (loading) return <div className="p-6"><LoadingSkeleton rows={10} /></div>;
   if (!asset) return <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">Asset not found.</div>;
 
-  const nextStates = NEXT_TRANSITIONS[asset.status] ?? [];
+  // From under repair, 'issued' only hands the item back to its holder — it is
+  // offered only when there is one, and needs no recipient ID.
+  const handBack = asset.status === 'under_repair' && Boolean(asset.custodianId);
+  const nextStates = (NEXT_TRANSITIONS[asset.status] ?? []).filter((s) => s !== 'issued' || asset.status !== 'under_repair' || handBack);
+  const stateLabel = (s: string) => (handBack && s === 'issued' ? 'Repaired — return to holder' : optionLabel(s));
 
   return (
     <div className="space-y-5 max-w-4xl">
@@ -417,13 +421,17 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                 >
                   <option value="">— select status —</option>
                   {nextStates.map((s) => (
-                    <option key={s} value={s}>{optionLabel(s)}</option>
+                    <option key={s} value={s}>{stateLabel(s)}</option>
                   ))}
                 </select>
               </div>
 
+              {targetStatus === 'issued' && handBack && (
+                <p className="rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-900">The repaired item goes back to its current holder, who is notified to collect it. To give it to someone else, make it Available first.</p>
+              )}
+
               {/* ISSUED: Employee ID input */}
-              {targetStatus === 'issued' && (
+              {targetStatus === 'issued' && !handBack && (
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                     Recipient Employee ID <span className="text-red-500">*</span>
@@ -501,7 +509,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                 disabled={
                   updating ||
                   !targetStatus ||
-                  (targetStatus === 'issued' && !lifecycleEmployeeId.trim()) ||
+                  (targetStatus === 'issued' && !handBack && !lifecycleEmployeeId.trim()) ||
                   (targetStatus === 'transferred' && !lifecycleToLocation.trim()) ||
                   (targetStatus === 'flagged_for_disposal' && !lifecycleNotes.trim())
                 }

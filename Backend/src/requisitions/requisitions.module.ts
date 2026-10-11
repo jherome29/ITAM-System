@@ -10,6 +10,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { AssetsModule } from '../assets/assets.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
+import { ReportsModule } from '../reports/reports.module';
 
 // SVC: Engage & Design and Transition — multi-level approval workflow
 
@@ -31,6 +32,7 @@ import { SystemConfigModule } from '../system-config/system-config.module';
     // needs the matching forwardRef.
     forwardRef(() => AssetsModule),
     SystemConfigModule,
+    ReportsModule, // a fulfilled replacement generates the old unit's return receipt
   ],
   controllers: [RequisitionsController],
   providers: [RequisitionsService],

@@ -5,16 +5,25 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { RequisitionEntity } from './entities/requisition.entity';
 import { RequisitionItemEntity } from './entities/requisition-item.entity';
 import { RequisitionApprovalEntity } from './entities/requisition-approval.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
 import { UserEntity } from '../users/entities/user.entity';
-import { AssetsService } from '../assets/assets.service';
+import {
+  AssetsService,
+  OPEN_REQUISITION_STATUSES,
+} from '../assets/assets.service';
+import {
+  ReplacementBasis,
+  replacementEligibility,
+} from '../assets/replacement-eligibility';
+import { ReportsService } from '../reports/reports.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
@@ -32,7 +41,8 @@ import {
   NotificationAlertType,
   AssetType,
   AssetClass,
-  AssetCondition,
+  AssetStatus,
+  OfficialFormType,
 } from '../../../packages/shared/src/enums';
 import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 import { SystemConfigService } from '../system-config/system-config.service';
@@ -86,21 +96,57 @@ function toApproverSummary(user?: UserEntity | null): ApproverSummary | null {
   };
 }
 
-/** Swap the joined user entities for minimal summaries before they leave the service. */
+/** The asset a replacement requisition replaces — enough for the approver to
+ *  judge the request and the custodian to know what to collect. */
+export interface ReplacedAssetSummary {
+  id: string;
+  itemDescription: string;
+  propertyNumber: string | null;
+  serialNumber: string | null;
+  assetType: AssetType;
+  assetClass: AssetClass;
+  condition: string;
+  status: string;
+  acquisitionDate: Date | null;
+  components: string | null;
+}
+
+function toReplacedAssetSummary(
+  asset?: AssetEntity | null,
+): ReplacedAssetSummary | null {
+  if (!asset) return null;
+  return {
+    id: asset.id,
+    itemDescription: asset.itemDescription,
+    propertyNumber: asset.propertyNumber ?? null,
+    serialNumber: asset.serialNumber ?? null,
+    assetType: asset.assetType,
+    assetClass: asset.assetClass,
+    condition: asset.condition,
+    status: asset.status,
+    acquisitionDate: asset.acquisitionDate ?? null,
+    components: asset.components ?? null,
+  };
+}
+
+/** Swap the joined entities for minimal summaries before they leave the service. */
 function withRequester<T extends RequisitionEntity>(
   req: T,
   requester: UserEntity | null | undefined = req.requestedBy,
   approver: UserEntity | null | undefined = req.supervisor,
-): Omit<T, 'requestedBy' | 'supervisor'> & {
+  replaced: AssetEntity | null | undefined = req.replacedAsset,
+): Omit<T, 'requestedBy' | 'supervisor' | 'replacedAsset'> & {
   requester: RequesterSummary | null;
   approver: ApproverSummary | null;
+  replacedAsset: ReplacedAssetSummary | null;
 } {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { requestedBy, supervisor, ...rest } = req;
+  const { requestedBy, supervisor, replacedAsset, ...rest } = req;
   return {
     ...rest,
     requester: toRequesterSummary(requester),
     approver: toApproverSummary(approver),
+    replacedAsset: toReplacedAssetSummary(replaced),
   };
 }
 
@@ -121,6 +167,7 @@ export class RequisitionsService {
     private readonly notificationsService: NotificationsService,
     private readonly usersService: UsersService,
     private readonly systemConfig: SystemConfigService,
+    private readonly reportsService: ReportsService,
   ) {}
 
   // ── Role-filtered list ─────────────────────────────────────────────────────
@@ -138,6 +185,7 @@ export class RequisitionsService {
       .leftJoinAndSelect('r.items', 'items')
       .leftJoinAndSelect('r.requestedBy', 'requestedBy')
       .leftJoinAndSelect('r.supervisor', 'supervisor')
+      .leftJoinAndSelect('r.replacedAsset', 'replacedAsset')
       .orderBy('r.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit);
@@ -203,7 +251,12 @@ export class RequisitionsService {
   async findMine(userId: string, page = 1, limit = 20) {
     const [rows, total] = await this.reqRepo.findAndCount({
       where: { requestedById: userId },
-      relations: { items: true, requestedBy: true, supervisor: true },
+      relations: {
+        items: true,
+        requestedBy: true,
+        supervisor: true,
+        replacedAsset: true,
+      },
       order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -223,11 +276,14 @@ export class RequisitionsService {
     const req = await this.findOne(id, requestingUserId, requestingRole);
     const lookup = (userId: string | null) =>
       userId ? this.usersService.findOne(userId).catch(() => null) : null;
-    const [requester, approver] = await Promise.all([
+    const [requester, approver, replaced] = await Promise.all([
       lookup(req.requestedById),
       lookup(req.supervisorId),
+      req.replacedAssetId
+        ? this.assetsService.findOne(req.replacedAssetId).catch(() => null)
+        : null,
     ]);
-    return withRequester(req, requester, approver);
+    return withRequester(req, requester, approver, replaced);
   }
 
   // ── Requisition stats — dashboard counts in flat shape matching frontend ────
@@ -341,21 +397,24 @@ export class RequisitionsService {
   /**
    * Replacement requisitions must be justified before they enter the approval
    * queue (CLAUDE.md §17). The requester must be the current custodian of the
-   * named asset, and the asset must meet at least one criterion: its condition
-   * is no longer serviceable, or it has passed the useful-life age for its
-   * class. Returns which criterion was met, for the audit trail.
+   * named asset and the asset must meet a criterion — no longer serviceable,
+   * past its class's useful life, or reported lost/stolen/damaged (see
+   * replacementEligibility). The request is for exactly one unit of the same
+   * asset type (so it reaches the custodian of the old item), and only one
+   * replacement may be open per asset. Returns the criterion met, for the
+   * audit trail.
    */
   private async validateReplacement(
-    replacedAssetId: string | undefined,
+    dto: CreateRequisitionDto,
     requestedById: string,
-  ): Promise<'condition' | 'useful_life'> {
-    if (!replacedAssetId) {
+  ): Promise<ReplacementBasis> {
+    if (!dto.replacedAssetId) {
       throw new BadRequestException(
         'A replacement requisition must identify the asset being replaced.',
       );
     }
 
-    const asset = await this.assetsService.findOne(replacedAssetId);
+    const asset = await this.assetsService.findOne(dto.replacedAssetId);
 
     if (asset.custodianId !== requestedById) {
       throw new ForbiddenException(
@@ -363,24 +422,41 @@ export class RequisitionsService {
       );
     }
 
-    if (asset.condition !== AssetCondition.SERVICEABLE) {
-      return 'condition';
-    }
-
-    const usefulLife = this.systemConfig.getUsefulLifeYears()[asset.assetClass];
-    const ageYears =
-      (Date.now() - new Date(asset.acquisitionDate).getTime()) /
-      (365.25 * 24 * 60 * 60 * 1_000);
-    if (ageYears >= usefulLife) {
-      return 'useful_life';
-    }
-
-    const acquired = new Date(asset.acquisitionDate).toISOString().slice(0, 10);
-    throw new BadRequestException(
-      `Replacement not justified: "${asset.itemDescription}" is serviceable and ` +
-        `within its useful life (acquired ${acquired}; ` +
-        `${usefulLife}-year threshold for ${asset.assetClass}).`,
+    const eligibility = replacementEligibility(
+      asset,
+      this.systemConfig.getUsefulLifeYears(),
     );
+    if (!eligibility.eligible || !eligibility.basis) {
+      throw new BadRequestException(
+        `Replacement not justified for "${asset.itemDescription}": ${eligibility.reason}`,
+      );
+    }
+
+    const [item, ...extra] = dto.items;
+    if (extra.length > 0 || item.quantity !== 1) {
+      throw new BadRequestException(
+        'A replacement requisition is for exactly one unit.',
+      );
+    }
+    if (item.assetType !== asset.assetType) {
+      throw new BadRequestException(
+        `"${asset.itemDescription}" is ${asset.assetType} — its replacement must be an ${asset.assetType} item too.`,
+      );
+    }
+
+    const open = await this.reqRepo.findOne({
+      where: {
+        replacedAssetId: asset.id,
+        status: In(OPEN_REQUISITION_STATUSES),
+      },
+    });
+    if (open) {
+      throw new ConflictException(
+        `${open.requestNumber} already requests a replacement for "${asset.itemDescription}".`,
+      );
+    }
+
+    return eligibility.basis;
   }
 
   /**
@@ -455,11 +531,21 @@ export class RequisitionsService {
     userRole: UserRole,
     ipAddress: string,
   ): Promise<RequisitionEntity> {
+    // Repairs of an asset you hold are not requisitions — they go through
+    // Returns & Incidents (asset-requests), which hands the item to its
+    // custodian and moves it to under_repair. The enum value stays for
+    // historical rows.
+    if (dto.requisitionType === RequisitionType.REPAIR) {
+      throw new BadRequestException(
+        'Repairs are requested from My Assigned Assets → Request repair, not as a requisition.',
+      );
+    }
+
     // A replacement requisition must name an asset the requester holds that has
     // actually met a replacement criterion, before anything else runs (§17).
     const replacementBasis =
       dto.requisitionType === RequisitionType.REPLACEMENT
-        ? await this.validateReplacement(dto.replacedAssetId, requestedById)
+        ? await this.validateReplacement(dto, requestedById)
         : null;
 
     // Resolve the requester's own Supervisor server-side — per CLAUDE.md §6
@@ -553,7 +639,7 @@ export class RequisitionsService {
         approverId,
         NotificationAlertType.PENDING_APPROVAL,
         'New Requisition Awaiting Approval',
-        `Requisition ${requestNumber} requires your approval. Required by: ${dto.requiredDate}.`,
+        `${replacementBasis ? 'Replacement requisition' : 'Requisition'} ${requestNumber} requires your approval. Required by: ${dto.requiredDate}.`,
         saved.id,
         'requisition',
       );
@@ -663,7 +749,8 @@ export class RequisitionsService {
       req.requestedById,
       NotificationAlertType.REQUISITION_APPROVED,
       'Requisition Approved',
-      `Your requisition ${req.requestNumber} has been approved and is now pending fulfillment by the ${fulfillerLabel}.`,
+      `Your requisition ${req.requestNumber} has been approved and is now pending fulfillment by the ${fulfillerLabel}.` +
+        (await this.replacementHandoverNote(req)),
       id,
       'requisition',
     );
@@ -678,7 +765,9 @@ export class RequisitionsService {
           u.id,
           NotificationAlertType.PENDING_APPROVAL,
           'Requisition Ready for Fulfillment',
-          `Requisition ${req.requestNumber} has been approved and is awaiting fulfillment.`,
+          req.requisitionType === RequisitionType.REPLACEMENT
+            ? `Replacement requisition ${req.requestNumber} has been approved and is awaiting fulfillment. Collect the old unit from the requester when you hand over the replacement.`
+            : `Requisition ${req.requestNumber} has been approved and is awaiting fulfillment.`,
           id,
           'requisition',
         ),
@@ -875,6 +964,19 @@ export class RequisitionsService {
       );
     }
 
+    // Replacement: the old unit comes back as the new one goes out. Runs
+    // before the fulfillment write so a refused lifecycle transition leaves
+    // the requisition untouched and the custodian sees why.
+    const surrender =
+      req.requisitionType === RequisitionType.REPLACEMENT
+        ? await this.surrenderReplacedAsset(
+            req,
+            itPersonnelId,
+            userRole,
+            ipAddress,
+          )
+        : null;
+
     // Item-linking + supply decrement + status flip run in one transaction:
     // an insufficient-stock throw on any IES line rolls the whole fulfillment
     // back (no partial link, no status change). stockDecrements is declared
@@ -970,7 +1072,10 @@ export class RequisitionsService {
       req.requestedById,
       NotificationAlertType.REQUISITION_FULFILLED,
       'Requisition Fulfilled',
-      `Your requisition ${req.requestNumber} has been fulfilled by the ${FULFILLER_LABEL[userRole] ?? 'custodian'}. Please collect your item(s).`,
+      `Your requisition ${req.requestNumber} has been fulfilled by the ${FULFILLER_LABEL[userRole] ?? 'custodian'}. Please collect your item(s).` +
+        (surrender?.outcome === 'returned'
+          ? ` "${surrender.itemDescription}" has been received back and is no longer assigned to you.`
+          : ''),
       id,
       'requisition',
     );
@@ -988,10 +1093,104 @@ export class RequisitionsService {
         notes: dto.notes,
         fulfilledItems: dto.fulfilledItems,
         stockDecrements,
+        ...(surrender ? { replacedAsset: surrender } : {}),
       },
     });
 
     return saved;
+  }
+
+  /** Requester-facing hand-over instructions for an approved replacement. */
+  private async replacementHandoverNote(req: RequisitionEntity) {
+    if (
+      req.requisitionType !== RequisitionType.REPLACEMENT ||
+      !req.replacedAssetId
+    ) {
+      return '';
+    }
+    const old = await this.assetsService
+      .findOne(req.replacedAssetId)
+      .catch(() => null);
+    if (!old || old.status === AssetStatus.FLAGGED_FOR_DISPOSAL) return '';
+    const parts = old.components
+      ? ` with its components (${old.components})`
+      : '';
+    return ` Bring your current "${old.itemDescription}"${parts} when you collect the replacement — it will be returned to custody.`;
+  }
+
+  /**
+   * On fulfilling a replacement, take the old unit back: an issued asset still
+   * held by the requester becomes `returned` (custodian cleared) and its COA
+   * receipt is generated, linked to this requisition. A lost/stolen or
+   * disposal-flagged unit has nothing to hand back and stays on the holder's
+   * record until COA relief. A receipt failure is logged, never thrown — the
+   * custodian can generate it from Reports & Forms.
+   */
+  private async surrenderReplacedAsset(
+    req: RequisitionEntity,
+    userId: string,
+    userRole: UserRole,
+    ipAddress: string,
+  ): Promise<{
+    assetId: string;
+    itemDescription: string;
+    outcome: 'returned' | 'kept' | 'unchanged';
+  } | null> {
+    if (!req.replacedAssetId) return null;
+    const old = await this.assetsService
+      .findOne(req.replacedAssetId)
+      .catch(() => null);
+    if (!old) return null;
+    const summary = { assetId: old.id, itemDescription: old.itemDescription };
+
+    if (
+      old.custodianId !== req.requestedById ||
+      old.status !== AssetStatus.ISSUED
+    ) {
+      return {
+        ...summary,
+        outcome:
+          old.status === AssetStatus.FLAGGED_FOR_DISPOSAL
+            ? 'kept'
+            : 'unchanged',
+      };
+    }
+
+    await this.assetsService.updateLifecycle(
+      old.id,
+      {
+        status: AssetStatus.RETURNED,
+        notes: `${req.requestNumber}: surrendered on replacement`,
+      },
+      userId,
+      userRole,
+      ipAddress,
+      resolveAssetTypeScope(userRole),
+    );
+
+    await this.reportsService
+      .generateFormRecord(
+        {
+          formType:
+            old.assetClass === AssetClass.PPE
+              ? OfficialFormType.RECEIPT_RETURNED_PROPERTY
+              : OfficialFormType.RECEIPT_RETURNED_SEP,
+          assetId: old.id,
+          requisitionId: req.id,
+          returneeId: req.requestedById,
+        },
+        userId,
+        userRole,
+        ipAddress,
+      )
+      .catch((e: unknown) =>
+        this.logger.error(
+          `${req.requestNumber}: could not generate the return receipt for ${old.id}`,
+          e instanceof Error ? e.stack : String(e),
+        ),
+      );
+
+    return { ...summary, outcome: 'returned' };
   }
 
   // ── SLA breach check — called by a scheduled job (SchedulerService) ───────

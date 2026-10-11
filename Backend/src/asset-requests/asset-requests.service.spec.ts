@@ -11,6 +11,7 @@ import {
   completionTargetStatus,
   requiredDocuments,
   clearsAccountability,
+  supersededRequests,
 } from './asset-requests.service';
 import { AssetRequestEntity } from './entities/asset-request.entity';
 import { AssetRequestAttachmentEntity } from './entities/asset-request-attachment.entity';
@@ -91,6 +92,17 @@ describe('asset request rules', () => {
       blockingRequest(AssetRequestType.REPAIR, [open(AssetRequestType.RETURN)]),
     ).toBeDefined();
     expect(blockingRequest(AssetRequestType.RETURN, [])).toBeUndefined();
+  });
+
+  it('a loss/theft supersedes open return/repair/damage requests, nothing else does', () => {
+    const pending = [
+      open(AssetRequestType.RETURN),
+      open(AssetRequestType.LOSS),
+    ];
+    expect(supersededRequests(AssetRequestType.THEFT, pending)).toEqual([
+      open(AssetRequestType.RETURN),
+    ]);
+    expect(supersededRequests(AssetRequestType.REPAIR, pending)).toEqual([]);
   });
 
   it('still lets a loss/theft be reported while a return is open', () => {
@@ -282,6 +294,7 @@ describe('AssetRequestsService', () => {
   const txAssetRepo = { findOne: jest.fn() };
   const txReqRepo = {
     find: jest.fn(),
+    update: jest.fn(),
     create: jest.fn((x: object) => x),
     save: jest.fn((x: object) => Promise.resolve({ id: 'ar-new', ...x })),
     createQueryBuilder: jest.fn(() => ({
@@ -305,6 +318,7 @@ describe('AssetRequestsService', () => {
   const mockAssetUpdate = jest.fn();
   const mockRepo = {
     createQueryBuilder: jest.fn(() => qb),
+    find: jest.fn(),
     update: jest.fn(),
     manager: {
       transaction: jest.fn((cb: (m: typeof em) => unknown) => cb(em)),
@@ -330,6 +344,7 @@ describe('AssetRequestsService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     current = makeReq();
+    mockRepo.find.mockResolvedValue([]); // nothing else open on the asset
     mockUsers.findByRole.mockImplementation((role: UserRole) =>
       Promise.resolve(
         role === UserRole.IT_PERSONNEL
@@ -435,6 +450,55 @@ describe('AssetRequestsService', () => {
           action: AuditAction.ASSET_REQUEST_SUBMITTED,
         }),
       );
+    });
+
+    it('a loss report closes the open return it supersedes, and says so', async () => {
+      txReqRepo.find.mockResolvedValue([
+        {
+          id: 'ar-old',
+          requestNumber: 'AR-2026-0002',
+          type: AssetRequestType.RETURN,
+          assetId: 'asset-1',
+        },
+      ]);
+      current = makeReq({ type: AssetRequestType.LOSS });
+
+      await service.create(
+        { ...dto, type: AssetRequestType.LOSS },
+        [],
+        EMP,
+        'ip',
+      );
+
+      expect(txReqRepo.update).toHaveBeenCalledWith(
+        ['ar-old'],
+        expect.objectContaining({
+          status: AssetRequestStatus.CANCELLED,
+          decisionNotes: expect.stringContaining('Superseded by AR-'),
+        }),
+      );
+      expect(mockAudit.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.ASSET_REQUEST_CANCELLED,
+          affectedRecordId: 'ar-old',
+          metadata: expect.objectContaining({
+            supersededBy: expect.stringMatching(/^AR-/),
+          }),
+        }),
+      );
+      expect(mockNotify.notify).toHaveBeenCalledWith(
+        IT.id,
+        NotificationAlertType.ASSET_REQUEST,
+        expect.any(String),
+        expect.stringContaining('closes AR-2026-0002'),
+        'ar-new',
+        'asset_request',
+      );
+    });
+
+    it('a return filed with nothing open supersedes nothing', async () => {
+      await service.create(dto, [], EMP, 'ip');
+      expect(txReqRepo.update).not.toHaveBeenCalled();
     });
 
     it('rejects a disguised file before touching the database', async () => {
@@ -622,6 +686,83 @@ describe('AssetRequestsService', () => {
       await expect(service.approve('ar-1', {}, IT, 'ip')).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  describe("System Admin fallback for a custodian's own request", () => {
+    const ADMIN = user('ad-1', UserRole.SYSTEM_ADMIN);
+    // The IT Asset Custodian's own laptop — nobody else in IT may exist.
+    const custodianOwn = (extra: Partial<AssetRequestEntity> = {}) =>
+      makeReq({
+        requestedById: IT.id,
+        requestedBy: IT,
+        asset: ictAsset({ custodianId: IT.id }),
+        ...extra,
+      });
+
+    it('lets the System Admin approve it', async () => {
+      current = custodianOwn();
+      const view = await service.approve('ar-1', {}, ADMIN, 'ip');
+      expect(mockRepo.update).toHaveBeenCalledWith(
+        'ar-1',
+        expect.objectContaining({
+          status: AssetRequestStatus.APPROVED,
+          decidedById: ADMIN.id,
+        }),
+      );
+      expect(view.canAct).toBe(true);
+    });
+
+    it("never lets the System Admin act on an ordinary holder's request", async () => {
+      current = makeReq({ requestedBy: EMP });
+      await expect(service.approve('ar-1', {}, ADMIN, 'ip')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('marks canAct per viewer: custodian yes, requester and admin no on an ordinary request', async () => {
+      current = makeReq({ requestedBy: EMP });
+      expect((await service.findOneForUser('ar-1', IT)).canAct).toBe(true);
+      expect((await service.findOneForUser('ar-1', EMP)).canAct).toBe(false);
+      expect((await service.findOneForUser('ar-1', ADMIN)).canAct).toBe(false);
+    });
+
+    it('hides the decision from the custodian who filed it', async () => {
+      current = custodianOwn();
+      expect((await service.findOneForUser('ar-1', IT)).canAct).toBe(false);
+      expect((await service.findOneForUser('ar-1', ADMIN)).canAct).toBe(true);
+    });
+
+    it('notifies the System Admins as well as other custodians when a custodian files one', async () => {
+      mockUsers.findByRole.mockImplementation((role: UserRole) =>
+        Promise.resolve(
+          role === UserRole.IT_PERSONNEL
+            ? [IT]
+            : role === UserRole.SYSTEM_ADMIN
+              ? [ADMIN]
+              : [],
+        ),
+      );
+      txAssetRepo.findOne.mockResolvedValue(ictAsset({ custodianId: IT.id }));
+      txReqRepo.find.mockResolvedValue([]);
+      current = custodianOwn();
+
+      await service.create(
+        {
+          assetId: 'asset-1',
+          type: AssetRequestType.REPAIR,
+          preferredDate: '2026-10-20',
+          details: 'Keyboard keys stopped responding',
+        },
+        [],
+        IT,
+        'ip',
+      );
+
+      const recipients = mockNotify.notify.mock.calls.map(
+        (c: unknown[]) => c[0],
+      );
+      expect(recipients).toEqual([ADMIN.id]); // never the filer themself
     });
   });
 
@@ -813,6 +954,50 @@ describe('AssetRequestsService', () => {
         BadRequestException,
       );
       expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('complete() — open loss/theft alongside a hand-over (legacy pairs)', () => {
+    const LOSS = {
+      id: 'ar-loss',
+      requestNumber: 'AR-2026-0017',
+      type: AssetRequestType.LOSS,
+      assetId: 'asset-1',
+    };
+    const RETURN = {
+      id: 'ar-1',
+      requestNumber: 'AR-2026-0001',
+      type: AssetRequestType.RETURN,
+      assetId: 'asset-1',
+    };
+
+    it('refuses to receive a return while a loss report is open on the item', async () => {
+      current = makeReq({ status: AssetRequestStatus.APPROVED });
+      mockRepo.find.mockResolvedValue([RETURN, LOSS]);
+      await expect(service.complete('ar-1', {}, IT, 'ip')).rejects.toThrow(
+        /AR-2026-0017 \(loss report\) is open/,
+      );
+      expect(mockAssets.updateLifecycle).not.toHaveBeenCalled();
+    });
+
+    it('completing the loss closes the return it supersedes', async () => {
+      current = makeReq({
+        id: 'ar-loss',
+        type: AssetRequestType.LOSS,
+        status: AssetRequestStatus.APPROVED,
+      });
+      mockRepo.find.mockResolvedValue([RETURN, LOSS]);
+      await service.complete('ar-loss', {}, IT, 'ip');
+      expect(mockRepo.update).toHaveBeenCalledWith(
+        ['ar-1'],
+        expect.objectContaining({ status: AssetRequestStatus.CANCELLED }),
+      );
+      expect(mockAudit.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.ASSET_REQUEST_CANCELLED,
+          affectedRecordId: 'ar-1',
+        }),
+      );
     });
   });
 

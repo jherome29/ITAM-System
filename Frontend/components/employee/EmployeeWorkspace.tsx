@@ -16,11 +16,12 @@ import { formatAvailability } from '@/lib/requisitions/catalogue-items';
 import { formatDate, formatDateTime, requisitionStatusLabel } from '@/lib/requisitions/requisition-view';
 import { RequisitionDetailView } from '@/components/requisitions/RequisitionDetailView';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
-import { assetRequestsApi, type AssetRequest, type AssetRequestType } from '@/lib/api/asset-requests';
-import { ALL_REQUEST_TYPES, REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE, REQUEST_TYPE_LABEL, blockingRequest, isOpen } from '@/lib/asset-requests/asset-request-rules';
+import { assetRequestsApi, type AssetRequest } from '@/lib/api/asset-requests';
+import { ALL_REQUEST_TYPES, REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE, REQUEST_TYPE_LABEL, isOpen } from '@/lib/asset-requests/asset-request-rules';
 import { AssetRequestForm } from '@/components/asset-requests/AssetRequestForm';
 import { AssetRequestDetail } from '@/components/asset-requests/AssetRequestDetail';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { MyAssignedAssets } from '@/components/assets/MyAssignedAssets';
 import { EmployeeDashboard } from './EmployeeDashboard';
 
 type EmployeeSlug = 'dashboard' | 'catalogue' | 'requisitions' | 'new-requisition' | 'assigned-assets' | 'returns-incidents';
@@ -29,7 +30,7 @@ export function EmployeeWorkspace({ slug, openId }: Readonly<{ slug: EmployeeSlu
   if (slug === 'dashboard') return <EmployeeDashboard />;
   if (slug === 'catalogue') return <EmployeeCatalogue />;
   if (slug === 'requisitions' || slug === 'new-requisition') return <EmployeeRequisitions initialCreateOpen={slug === 'new-requisition'} />;
-  if (slug === 'assigned-assets') return <EmployeeAssignedAssets />;
+  if (slug === 'assigned-assets') return <MyAssignedAssets eyebrow="Employee Workspace" canRequestReplacement />;
   return <EmployeeIncidents openId={openId} />;
 }
 
@@ -112,99 +113,6 @@ function EmployeeRequisitions({ initialCreateOpen = false }: Readonly<{ initialC
     <DetailDrawer open={Boolean(selected)} title={selected?.requestNumber ?? 'Requisition details'} onClose={() => setSelected(null)}>{selected && <RequisitionDetailView request={selected} />}</DetailDrawer><Toast message={toast} /></div>;
 }
 
-
-// Why a non-issued asset is still on the holder's list.
-const HOLDING_NOTE: Record<string, string> = {
-  under_repair: 'Under repair — it will be returned to you and stays under your accountability.',
-  flagged_for_disposal: 'Reported lost, stolen or damaged — it stays on your accountability record until COA grants relief.',
-};
-
-// Live "My Assigned Assets" — the assets actually issued to the logged-in user
-// (GET /assets/mine) plus their return / incident requests. Request buttons
-// follow the same one-open-request rule the backend enforces; while a request
-// is open the card shows it with a Cancel option instead.
-function EmployeeAssignedAssets() {
-  const [assets, setAssets] = useState<Asset[]>([]);
-  const [requests, setRequests] = useState<AssetRequest[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [filing, setFiling] = useState<{ asset: Asset; type: AssetRequestType } | null>(null);
-  const [cancelling, setCancelling] = useState<AssetRequest | null>(null);
-  const [toast, setToast] = useState('');
-
-  const load = useCallback(
-    () => Promise.all([assetsApi.mine(), assetRequestsApi.mine()]).then(([a, r]) => { setAssets(a.data); setRequests(r.data); }),
-    [],
-  );
-  useEffect(() => {
-    load().catch(() => setError('Failed to load your assets. Please refresh the page.')).finally(() => setLoading(false));
-  }, [load]);
-
-  const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2600); };
-  const openFor = (assetId: string) => requests.filter((r) => r.asset?.id === assetId && isOpen(r));
-  const openTotal = requests.filter(isOpen).length;
-
-  const confirmCancel = async () => {
-    if (!cancelling) return;
-    try {
-      await assetRequestsApi.cancel(cancelling.id);
-      notify(`${cancelling.requestNumber} cancelled.`);
-      await load();
-    } catch {
-      notify('Could not cancel the request. Please try again.');
-    } finally {
-      setCancelling(null);
-    }
-  };
-
-  const buttons: Array<{ type: AssetRequestType; label: string }> = [
-    { type: 'return', label: 'Request return' },
-    { type: 'repair', label: 'Request repair' },
-    { type: 'damage', label: 'Report damage' },
-    { type: 'loss', label: 'Report loss / theft' },
-  ];
-
-  return <div className="space-y-4"><EmployeeHeader title="My Assigned Assets" detail="Property currently issued to you. Request a return or report repair, damage, loss or theft — the responsible custodian is notified." />
-    {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
-    <div className="grid gap-3 sm:grid-cols-3">
-      <MetricCard label="Assigned to me" value={String(assets.length)} detail="Current accountability" tone="blue" icon={PackageCheck} />
-      <MetricCard label="Open requests" value={String(openTotal)} detail="Returns and incidents in progress" tone="amber" icon={ClipboardList} />
-      <MetricCard label="Return due" value={String(assets.filter((a) => a.expectedReturnDate).length)} detail="Assets with an expected return date" tone="red" icon={CalendarClock} />
-    </div>
-    {loading ? <Panel title="Assigned assets" detail="Loading..."><div className="p-4"><LoadingSkeleton rows={4} /></div></Panel>
-      : assets.length === 0 ? <Panel title="Assigned assets" detail="Nothing is issued to you right now."><p className="p-4 text-sm text-slate-500">When a custodian issues an asset to you, it will appear here.</p></Panel>
-      : <div className="grid gap-4 lg:grid-cols-2">{assets.map((asset) => {
-        const forAsset = requests.filter((r) => r.asset?.id === asset.id);
-        const open = openFor(asset.id);
-        const issued = asset.status === 'issued';
-        return <article key={asset.id} className="border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-3"><div><p className="text-base font-bold text-slate-950">{asset.itemDescription}</p><p className="mt-1 text-xs text-slate-500">{[asset.propertyNumber, asset.serialNumber && `Serial ${asset.serialNumber}`].filter(Boolean).join(' · ') || asset.assetType}</p></div><StatusChip status={asset.condition.replaceAll('_', ' ')} /></div>
-          <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">{[['Status', asset.status.replaceAll('_', ' ')], ['Expected return', asset.expectedReturnDate ? formatDate(asset.expectedReturnDate) : 'No fixed date'], ['Type', `${asset.assetType} · ${asset.assetClass}`], ['Location', asset.officeLocation || asset.officeOrSection || '—']].map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 font-semibold capitalize text-slate-800">{value}</dd></div>)}</dl>
-          {open.map((r) => <div key={r.id} className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
-            <span><span className="font-bold text-amber-900">{REQUEST_TYPE_LABEL[r.type]}</span> <span className="text-amber-800">· {r.requestNumber} · {REQUEST_STATUS_LABEL[r.status]}{r.handoverDate ? ` · bring it in ${formatDate(r.handoverDate)}` : ''}</span></span>
-            <span className="flex gap-2"><Link href={`/employee/returns-incidents?open=${r.id}`} className="text-xs font-bold text-blue-700 hover:underline">View</Link><button type="button" onClick={() => setCancelling(r)} className="text-xs font-bold text-red-700 hover:underline">Cancel request</button></span>
-          </div>)}
-          {!issued && <p className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">{HOLDING_NOTE[asset.status] ?? 'Requests can be filed only while the asset is issued to you.'}</p>}
-          <div className="mt-4 flex flex-wrap gap-2">{buttons.map(({ type, label }) => {
-            const blocker = blockingRequest(type, forAsset);
-            return <span key={type} title={blocker ? `${blocker.requestNumber} is still open for this asset` : undefined}><SecondaryButton disabled={!issued || Boolean(blocker)} onClick={() => setFiling({ asset, type })}>{label}</SecondaryButton></span>;
-          })}</div>
-        </article>;
-      })}</div>}
-    <DetailDrawer open={Boolean(filing)} title={filing ? `${REQUEST_TYPE_LABEL[filing.type]} — ${filing.asset.itemDescription}` : ''} onClose={() => setFiling(null)}>
-      {filing && <AssetRequestForm
-        key={`${filing.asset.id}-${filing.type}`}
-        assets={assets}
-        myRequests={requests}
-        fixedAssetId={filing.asset.id}
-        {...(filing.type === 'loss' ? { initialType: 'loss' as const } : { fixedType: filing.type })}
-        onSubmitted={(r) => { setFiling(null); notify(`${r.requestNumber} submitted — the ${r.custodianLabel ?? 'custodian'} has been notified.`); void load(); }}
-      />}
-    </DetailDrawer>
-    <ConfirmDialog open={Boolean(cancelling)} title={`Cancel ${cancelling?.requestNumber ?? ''}?`} detail="The custodian will be notified that you no longer need this request." confirmLabel="Cancel request" onConfirm={() => void confirmCancel()} onCancel={() => setCancelling(null)} />
-    <Toast message={toast} />
-  </div>;
-}
 
 // Live "Returns & Incidents" — every return / incident request the user filed,
 // with status, attachments and the custodian's decisions. `openId` comes from a

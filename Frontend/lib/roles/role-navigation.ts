@@ -49,7 +49,8 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { section: 'Approvals', label: 'Approval Dashboard', href: '/approving-officer/dashboard', icon: LayoutDashboard },
     { label: 'Approval Queue', href: '/approving-officer/approvals', icon: ClipboardCheck },
     { label: 'Approval History', href: '/approving-officer/approval-history', icon: History },
-    { label: 'My Requisitions', href: '/approving-officer/requisitions', icon: ClipboardList },
+    { section: 'My Requests', label: 'My Requisitions', href: '/approving-officer/requisitions', icon: ClipboardList },
+    { label: 'My Assigned Assets', href: '/approving-officer/assigned-assets', icon: PackageCheck },
     { label: 'Notifications', href: '/approving-officer/notifications', icon: Bell },
   ],
   [ProposedUserRole.IT_ASSET_CUSTODIAN]: [
@@ -64,6 +65,7 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { label: 'ICT Disposal Recommendations', href: '/it-asset-custodian/disposal', icon: Archive },
     { label: 'ICT Reports & Forms', href: '/it-asset-custodian/reports', icon: FileBarChart },
     { section: 'My Requests', label: 'My Requisitions', href: '/it-asset-custodian/requisitions', icon: ClipboardList },
+    { label: 'My Assigned Assets', href: '/it-asset-custodian/assigned-assets', icon: PackageCheck },
     { label: 'Notifications', href: '/it-asset-custodian/notifications', icon: Bell },
   ],
   [ProposedUserRole.PROPERTY_CUSTODIAN]: [
@@ -77,6 +79,7 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { label: 'Physical Inventory', href: '/property-custodian/physical-inventory', icon: ScanLine },
     { label: 'Property Disposal Recommendations', href: '/property-custodian/disposal', icon: Archive },
     { label: 'Property Reports & Forms', href: '/property-custodian/reports', icon: FileBarChart },
+    { section: 'My Accountability', label: 'My Assigned Assets', href: '/property-custodian/assigned-assets', icon: PackageCheck },
     { label: 'Notifications', href: '/property-custodian/notifications', icon: Bell },
   ],
   [ProposedUserRole.PROPERTY_OFFICER]: [
@@ -88,6 +91,7 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { label: 'Disposal Review', href: '/property-officer/disposal', icon: Archive },
     { label: 'Reports & Forms', href: '/property-officer/reports', icon: FileText },
     { label: 'Audit History', href: '/property-officer/audit', icon: FileClock },
+    { section: 'My Accountability', label: 'My Assigned Assets', href: '/property-officer/assigned-assets', icon: PackageCheck },
     { label: 'Notifications', href: '/property-officer/notifications', icon: Bell },
   ],
   [ProposedUserRole.MASTER_ADMIN]: [
@@ -96,6 +100,8 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { label: 'Roles & Permissions', href: '/master-admin/roles', icon: KeyRound },
     { section: 'Platform', label: 'System Settings', href: '/master-admin/configuration', icon: Settings },
     { section: 'Security & Audit', label: 'Audit Log', href: '/master-admin/audit', icon: FileClock, readOnly: true },
+    { section: 'Escalations', label: 'Returns & Incidents', href: '/master-admin/returns-incidents', icon: RefreshCcw },
+    { section: 'My Accountability', label: 'My Assigned Assets', href: '/master-admin/assigned-assets', icon: PackageCheck },
     { section: 'Updates', label: 'Notifications', href: '/master-admin/notifications', icon: Bell },
   ],
   [ProposedUserRole.MANAGEMENT_AUDIT_VIEWER]: [
@@ -106,6 +112,7 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { label: 'Physical Count Reports', href: '/management-audit/physical-count', icon: ScanLine, readOnly: true },
     { label: 'Audit Log', href: '/management-audit/audit', icon: FileClock, readOnly: true },
     { label: 'Forms Archive', href: '/management-audit/forms', icon: Archive, readOnly: true },
+    { section: 'My Accountability', label: 'My Assigned Assets', href: '/management-audit/assigned-assets', icon: PackageCheck },
     { section: 'Updates', label: 'Notifications', href: '/management-audit/notifications', icon: Bell, readOnly: true },
   ],
 };

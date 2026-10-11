@@ -1,3 +1,4 @@
+import { MyAssignedAssets } from '@/components/assets/MyAssignedAssets';
 import { AssetRequestQueue } from '@/components/asset-requests/AssetRequestQueue';
 import { AssetDetailManager } from '@/components/assets/AssetDetailManager';
 import { AssetRegistryList } from '@/components/assets/AssetRegistryList';
@@ -19,6 +20,7 @@ export default async function ItAssetCustodianPage({
   const child = slug?.[1];
   if (segment === 'dashboard') return <ItAssetCustodianDashboard />;
   if (segment === 'notifications') return <NotificationsContent />;
+  if (segment === 'assigned-assets') return <MyAssignedAssets eyebrow="IT Asset Custodian" canRequestReplacement showRequestHistory openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'assets' && child === 'new') return <RegisterAssetForm basePath="/it-asset-custodian/assets" />;
   if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/it-asset-custodian/assets" formsPath="/it-asset-custodian/reports" />;
   if (segment === 'assets') return <AssetRegistryList basePath="/it-asset-custodian/assets" />;

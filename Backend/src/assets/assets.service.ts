@@ -20,9 +20,21 @@ import {
   AssetType,
   AuditAction,
   NotificationAlertType,
+  RequisitionStatus,
   UserRole,
 } from '../../../packages/shared/src/enums';
 import { SystemConfigService } from '../system-config/system-config.service';
+import {
+  ReplacementEligibility,
+  replacementEligibility,
+} from './replacement-eligibility';
+
+/** Requisition states in which a replacement is still in flight. */
+export const OPEN_REQUISITION_STATUSES = [
+  RequisitionStatus.PENDING_SUPERVISOR,
+  RequisitionStatus.PENDING_FULFILLMENT,
+  RequisitionStatus.ON_HOLD,
+];
 
 // ─── State Machine ─────────────────────────────────────────────────────────
 // Valid asset lifecycle transitions per CLAUDE.md section 5.4:
@@ -49,7 +61,10 @@ const VALID_TRANSITIONS: Record<string, AssetStatus[]> = {
   ],
   [AssetStatus.RETURNED]: [AssetStatus.AVAILABLE, AssetStatus.UNDER_REPAIR],
   [AssetStatus.TRANSFERRED]: [AssetStatus.AVAILABLE],
+  // ISSUED here only hands a repaired item back to the holder who still
+  // carries it (updateLifecycle enforces that); anyone else gets it via AVAILABLE.
   [AssetStatus.UNDER_REPAIR]: [
+    AssetStatus.ISSUED,
     AssetStatus.AVAILABLE,
     AssetStatus.FLAGGED_FOR_DISPOSAL,
   ],
@@ -406,11 +421,52 @@ export class AssetsService {
   // out-of-scope asset is rejected before any mutation is attempted.
   // ── Assets assigned to one user ────────────────────────────────────────────
   // SVC: Engage — the holder's own accountability view.
-  async findMine(userId: string): Promise<AssetEntity[]> {
-    return this.assetRepo.find({
+  /**
+   * The caller's assets, each with whether a replacement may be requisitioned
+   * for it (same rule RequisitionsService.create enforces) and the number of an
+   * already-open replacement requisition, so the UI never offers a second one.
+   */
+  async findMine(userId: string): Promise<
+    Array<
+      AssetEntity & {
+        replacement: ReplacementEligibility & {
+          openRequestNumber: string | null;
+        };
+      }
+    >
+  > {
+    const assets = await this.assetRepo.find({
       where: { custodianId: userId },
       order: { updatedAt: 'DESC' },
     });
+    if (assets.length === 0) return [];
+
+    // Raw table read (not RequisitionEntity) keeps AssetsService free of an
+    // import on the requisitions module, which already depends on this one.
+    const open: Array<{ assetId: string; requestNumber: string }> =
+      await this.assetRepo.manager
+        .createQueryBuilder()
+        .select('r.replaced_asset_id', 'assetId')
+        .addSelect('r.request_number', 'requestNumber')
+        .from('requisitions', 'r')
+        .where('r.replaced_asset_id IN (:...ids)', {
+          ids: assets.map((a) => a.id),
+        })
+        .andWhere('r.status IN (:...statuses)', {
+          statuses: OPEN_REQUISITION_STATUSES,
+        })
+        .getRawMany();
+
+    const usefulLife = this.systemConfig.getUsefulLifeYears();
+    return assets.map((asset) =>
+      Object.assign(asset, {
+        replacement: {
+          ...replacementEligibility(asset, usefulLife),
+          openRequestNumber:
+            open.find((r) => r.assetId === asset.id)?.requestNumber ?? null,
+        },
+      }),
+    );
   }
 
   async findOne(
@@ -550,17 +606,9 @@ export class AssetsService {
       );
     }
 
-    // ── Business rule: asset cannot be issued if status !== 'available' ───
-    // (already enforced by state machine above, but explicit guard for clarity)
-    if (
-      targetStatus === AssetStatus.ISSUED &&
-      asset.status !== AssetStatus.AVAILABLE
-    ) {
-      throw new BadRequestException(
-        `Asset cannot be issued. Current status is "${asset.status}". ` +
-          `Asset must be "available" before it can be issued.`,
-      );
-    }
+    // Who holds the asset after this transition (and the hand-back-from-repair
+    // rule) — resolved before anything is written.
+    const backToHolder = await this.resolveIssueRecipient(asset, dto);
 
     // ── Business rule: a disposal flag requires documented justification ──
     // (CLAUDE.md §6 Module 1) — enforced here, not just in the UI.
@@ -577,49 +625,7 @@ export class AssetsService {
     const previousStatus = asset.status;
     asset.status = targetStatus;
 
-    // Record the expected return date when a loaned asset is issued — this
-    // arms the overdue-return watcher (checkOverdueReturns). Omitting the
-    // date on an ISSUED transition explicitly clears any stale value.
-    // Always re-arm the overdue stamp too: an asset can reach ISSUED again
-    // via ISSUED → UNDER_REPAIR → AVAILABLE → ISSUED without ever passing
-    // through RETURNED, so a fresh issue must clear any prior notification
-    // mark or the asset would be excluded from the watcher forever.
-    if (targetStatus === AssetStatus.ISSUED) {
-      asset.expectedReturnDate = dto.expectedReturnDate
-        ? new Date(dto.expectedReturnDate)
-        : null;
-      asset.overdueNotifiedAt = null;
-    }
-
-    // Resolve employeeId → UUID if provided (IT Personnel don't know raw UUIDs)
-    if (dto.employeeId && dto.status === AssetStatus.ISSUED) {
-      const recipient = await this.usersService.findByEmployeeId(
-        dto.employeeId,
-      );
-      if (!recipient) {
-        throw new BadRequestException(
-          `No user found with employee ID "${dto.employeeId}".`,
-        );
-      }
-      asset.custodianId = recipient.id;
-    } else if (dto.custodianId !== undefined) {
-      asset.custodianId = dto.custodianId;
-    }
-
-    // Clear custodian on return/disposal
-    if (
-      targetStatus === AssetStatus.RETURNED ||
-      targetStatus === AssetStatus.DISPOSED
-    ) {
-      asset.custodianId = null;
-      // On return, re-arm the overdue-return watcher: drop the due date and
-      // the "already notified" stamp so the next loan of this asset starts
-      // from a clean slate.
-      if (targetStatus === AssetStatus.RETURNED) {
-        asset.expectedReturnDate = null;
-        asset.overdueNotifiedAt = null;
-      }
-    }
+    this.applyCustody(asset, dto, targetStatus, backToHolder);
 
     const saved = await this.assetRepo.save(asset);
 
@@ -652,7 +658,104 @@ export class AssetsService {
       },
     });
 
+    // A repaired item handed back: tell the holder it is ready to collect.
+    if (backToHolder && saved.custodianId) {
+      await this.notificationsService.notify(
+        saved.custodianId,
+        NotificationAlertType.ASSET_REQUEST_UPDATE,
+        'Repair Completed',
+        `"${saved.itemDescription}" has been repaired and is back under your custody. Collect it from the ${saved.assetType === AssetType.ICT ? 'IT Asset Custodian' : 'Property Custodian'}.`,
+        saved.id,
+        'asset',
+      );
+    }
+
     return saved;
+  }
+
+  /**
+   * ISSUED is reachable from AVAILABLE (a fresh issue) and from UNDER_REPAIR —
+   * but only to hand a repaired item back to the holder who still carries it.
+   * Giving a repaired item to someone else goes through AVAILABLE first, so
+   * the original holder's accountability is closed explicitly. Returns true
+   * for a hand-back.
+   */
+  private async resolveIssueRecipient(
+    asset: AssetEntity,
+    dto: UpdateLifecycleDto,
+  ): Promise<boolean> {
+    if (dto.status !== AssetStatus.ISSUED) return false;
+
+    const recipient = dto.employeeId
+      ? await this.usersService.findByEmployeeId(dto.employeeId)
+      : null;
+    if (dto.employeeId && !recipient) {
+      throw new BadRequestException(
+        `No user found with employee ID "${dto.employeeId}".`,
+      );
+    }
+
+    if (asset.status === AssetStatus.UNDER_REPAIR) {
+      if (!asset.custodianId) {
+        throw new BadRequestException(
+          'This repaired asset has no holder to return it to — make it "available" first, then issue it.',
+        );
+      }
+      if (recipient && recipient.id !== asset.custodianId) {
+        throw new BadRequestException(
+          'A repaired asset goes back to its holder. To give it to someone else, make it "available" first.',
+        );
+      }
+      return true;
+    }
+
+    if (asset.status !== AssetStatus.AVAILABLE) {
+      throw new BadRequestException(
+        `Asset cannot be issued. Current status is "${asset.status}". ` +
+          `Asset must be "available" before it can be issued.`,
+      );
+    }
+    if (recipient) asset.custodianId = recipient.id;
+    else if (dto.custodianId !== undefined) asset.custodianId = dto.custodianId;
+    return false;
+  }
+
+  /** Custodian and loan-date bookkeeping for the target status. */
+  private applyCustody(
+    asset: AssetEntity,
+    dto: UpdateLifecycleDto,
+    targetStatus: AssetStatus,
+    backToHolder: boolean,
+  ): void {
+    // Record the expected return date when a loaned asset is issued — this
+    // arms the overdue-return watcher (checkOverdueReturns). A fresh issue
+    // without a date clears any stale value; a hand-back from repair keeps the
+    // loan's existing date unless a new one is given. Always re-arm the
+    // overdue stamp, or the asset would be excluded from the watcher forever.
+    if (targetStatus === AssetStatus.ISSUED) {
+      if (dto.expectedReturnDate) {
+        asset.expectedReturnDate = new Date(dto.expectedReturnDate);
+      } else if (!backToHolder) {
+        asset.expectedReturnDate = null;
+      }
+      asset.overdueNotifiedAt = null;
+      return;
+    }
+
+    if (dto.custodianId !== undefined) asset.custodianId = dto.custodianId;
+
+    // Back in stock, returned or disposed: nobody holds it any more. AVAILABLE
+    // used to keep a stale holder after a repair, so the item sat in the
+    // catalogue and on the old holder's "My Assigned Assets" at once.
+    if (
+      targetStatus === AssetStatus.AVAILABLE ||
+      targetStatus === AssetStatus.RETURNED ||
+      targetStatus === AssetStatus.DISPOSED
+    ) {
+      asset.custodianId = null;
+      asset.expectedReturnDate = null;
+      asset.overdueNotifiedAt = null;
+    }
   }
 
   // ── Generate QR code identifier ───────────────────────────────────────────

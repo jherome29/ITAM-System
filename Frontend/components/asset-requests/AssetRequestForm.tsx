@@ -10,6 +10,7 @@ import {
   REQUEST_TYPE_LABEL,
   allowedTypes,
   blockingRequest,
+  supersededRequests,
   fileProblem,
 } from '@/lib/asset-requests/asset-request-rules';
 
@@ -48,6 +49,7 @@ export function AssetRequestForm({
   const [submitting, setSubmitting] = useState(false);
 
   const blocker = blockingRequest(type, forAsset);
+  const closes = supersededRequests(type, forAsset);
   const asset = issued.find((a) => a.id === assetId);
   const isReturn = type === 'return';
 
@@ -105,6 +107,12 @@ export function AssetRequestForm({
       {blocker && (
         <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
           {blocker.requestNumber} ({REQUEST_TYPE_LABEL[blocker.type].toLowerCase()}) is still open for this asset. Cancel it from Returns &amp; Incidents or wait until the custodian closes it.
+        </p>
+      )}
+
+      {closes.length > 0 && (
+        <p className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+          Filing this closes {closes.map((r) => `${r.requestNumber} (${REQUEST_TYPE_LABEL[r.type].toLowerCase()})`).join(', ')} — the item can no longer be handed over, so the custodian handles it as a {REQUEST_TYPE_LABEL[type].toLowerCase()} instead.
         </p>
       )}
 
