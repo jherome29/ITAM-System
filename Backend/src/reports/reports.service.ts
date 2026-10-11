@@ -127,7 +127,7 @@ export class ReportsService {
     const avgApprovalHours =
       decidedRows.length > 0
         ? Math.round(
-            (decidedRows.reduce((s, r) => s + parseFloat(r.hours), 0) /
+            (decidedRows.reduce((s, r) => s + Number.parseFloat(r.hours), 0) /
               decidedRows.length) *
               10,
           ) / 10

@@ -427,17 +427,17 @@ export class AssetsService {
 
     const byStatus: Record<string, number> = {};
     statusRows.forEach((r) => {
-      byStatus[r.status] = parseInt(r.count, 10);
+      byStatus[r.status] = Number.parseInt(r.count, 10);
     });
 
     const byClass: Record<string, number> = {};
     classRows.forEach((r) => {
-      byClass[r.assetClass] = parseInt(r.count, 10);
+      byClass[r.assetClass] = Number.parseInt(r.count, 10);
     });
 
     const byType: Record<string, number> = {};
     typeRows.forEach((r) => {
-      byType[r.assetType] = parseInt(r.count, 10);
+      byType[r.assetType] = Number.parseInt(r.count, 10);
     });
 
     const total = Object.values(byStatus).reduce((s, c) => s + c, 0);
@@ -1091,7 +1091,8 @@ export class AssetsService {
     const asset = await this.findOne(id, assetTypeScope);
 
     // Generate deterministic identifiers based on property number + UUID
-    const base = asset.propertyNumber || id.replace(/-/g, '').substring(0, 12);
+    const base =
+      asset.propertyNumber || id.replaceAll('-', '').substring(0, 12);
     const qrCode = `AIMRS-QR-${base.toUpperCase()}`;
     const barcodeValue = `AIMRS-BC-${base.toUpperCase()}`;
 
