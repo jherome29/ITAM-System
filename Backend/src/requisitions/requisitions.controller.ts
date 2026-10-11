@@ -114,6 +114,25 @@ export class RequisitionsController {
   }
 
   /**
+   * GET /api/v1/requisitions/replacement-review
+   * Replacement requisitions with their justification, plus held assets that
+   * already qualify for one. Read-only oversight, scoped by asset type.
+   * Declared before `:id` so the literal path is not parsed as a UUID.
+   */
+  @Get('replacement-review')
+  @Roles(
+    UserRole.PROPERTY_OFFICER,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+  )
+  async replacementReview(@Req() req: AuthReq) {
+    const result = await this.svc.replacementReview(req.user.role);
+    return { message: 'Replacement review retrieved', data: result };
+  }
+
+  /**
    * GET /api/v1/requisitions/:id
    * Full detail including approval timeline.
    */

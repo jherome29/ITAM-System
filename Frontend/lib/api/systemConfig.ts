@@ -10,9 +10,11 @@ export interface SystemConfig {
   defaultReorderLevel: number;
   usefulLifeYears: { PPE: number; SEP: number; IES: number };
   maxLoginAttempts: number;
+  // Repairs within 12 months that make a serviceable asset replaceable.
+  repeatRepairLimit: number;
   // Per-key provenance, keyed by the backend CONFIG_KEYS value
   // (sla_approval_hours, default_reorder_level, useful_life_years,
-  // max_login_attempts). Optional so older responses still type-check.
+  // max_login_attempts, repeat_repair_limit). Optional so older responses still type-check.
   meta?: Record<string, SystemConfigMeta>;
 }
 
@@ -22,6 +24,7 @@ export const CONFIG_META_KEYS = {
   reorder: 'default_reorder_level',
   usefulLife: 'useful_life_years',
   maxLogin: 'max_login_attempts',
+  repeatRepair: 'repeat_repair_limit',
 } as const;
 
 export type UpdateSystemConfigPayload = Partial<
@@ -32,6 +35,7 @@ export interface SystemConfigFormValues {
   slaApprovalHours: string;
   defaultReorderLevel: string;
   maxLoginAttempts: string;
+  repeatRepairLimit: string;
   usefulLifePPE: string;
   usefulLifeSEP: string;
   usefulLifeIES: string;
@@ -43,6 +47,7 @@ export function systemConfigToForm(c: SystemConfig): SystemConfigFormValues {
     slaApprovalHours: String(c.slaApprovalHours),
     defaultReorderLevel: String(c.defaultReorderLevel),
     maxLoginAttempts: String(c.maxLoginAttempts),
+    repeatRepairLimit: String(c.repeatRepairLimit),
     usefulLifePPE: String(c.usefulLifeYears.PPE),
     usefulLifeSEP: String(c.usefulLifeYears.SEP),
     usefulLifeIES: String(c.usefulLifeYears.IES),
@@ -56,6 +61,7 @@ export function buildUpdateSystemConfigPayload(
     slaApprovalHours: Number(v.slaApprovalHours),
     defaultReorderLevel: Number(v.defaultReorderLevel),
     maxLoginAttempts: Number(v.maxLoginAttempts),
+    repeatRepairLimit: Number(v.repeatRepairLimit),
     usefulLifeYears: {
       PPE: Number(v.usefulLifePPE),
       SEP: Number(v.usefulLifeSEP),

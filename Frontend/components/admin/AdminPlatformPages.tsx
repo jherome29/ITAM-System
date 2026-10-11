@@ -228,6 +228,25 @@ function SystemSettingsPage() {
             </div>
           </Panel>
 
+          <Panel title="Replacement — Repeat Repairs">
+            <div className="p-5">
+              <Field label="Repairs within 12 months">
+                <input
+                  type="number"
+                  min={2}
+                  max={20}
+                  value={form.repeatRepairLimit}
+                  onChange={set('repeatRepairLimit')}
+                  className={inputClass}
+                />
+              </Field>
+              <p className="mt-1 text-xs text-slate-500">
+                A serviceable asset repaired this many times in the last 12 months may be replaced.
+              </p>
+              <ProvenanceLine meta={meta} keyName={CONFIG_META_KEYS.repeatRepair} />
+            </div>
+          </Panel>
+
           <Panel title="Security">
             <div className="p-5">
               <Field label="Max Failed Login Attempts">

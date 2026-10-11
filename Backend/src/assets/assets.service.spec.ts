@@ -69,6 +69,7 @@ describe('AssetsService', () => {
   const mockUsersService = {
     findByEmployeeId: jest.fn(),
     findByRole: jest.fn(),
+    findOne: jest.fn(),
   };
 
   const mockNotifService = {
@@ -80,6 +81,7 @@ describe('AssetsService', () => {
   const mockSystemConfig = {
     getDefaultReorderLevel: jest.fn(() => 10),
     getUsefulLifeYears: jest.fn(() => ({ PPE: 5, SEP: 3, IES: 1 })),
+    getRepeatRepairLimit: jest.fn(() => 3),
   };
 
   // Repair-record bookkeeping has its own spec; here we only check that
@@ -88,6 +90,7 @@ describe('AssetsService', () => {
     open: jest.fn().mockResolvedValue({}),
     close: jest.fn().mockResolvedValue(null),
     openForAssets: jest.fn().mockResolvedValue(new Map()),
+    repairedCountsSince: jest.fn().mockResolvedValue(new Map()),
     load: jest.fn(),
     assertCanAct: jest.fn(),
     findOneForUser: jest.fn().mockResolvedValue({ id: 'rep-1' }),
@@ -162,6 +165,90 @@ describe('AssetsService', () => {
       expect(fine.replacement).toMatchObject({
         eligible: false,
         openRequestNumber: null,
+      });
+    });
+
+    it('makes a young, serviceable asset replaceable once it reaches the repeat-repair limit', async () => {
+      mockAssetRepo.find.mockResolvedValue([
+        makeAsset({
+          id: 'a-lemon',
+          status: AssetStatus.ISSUED,
+          condition: AssetCondition.SERVICEABLE,
+          acquisitionDate: new Date(),
+        }),
+      ]);
+      mockAssetRepo.manager.createQueryBuilder.mockReturnValue(openQb([]));
+      mockRepairs.repairedCountsSince.mockResolvedValueOnce(
+        new Map([['a-lemon', 3]]),
+      );
+
+      const [lemon] = await service.findMine('emp-1');
+
+      expect(lemon.replacement).toMatchObject({
+        eligible: true,
+        basis: 'repeat_repair',
+      });
+      // 12-month look-back from now.
+      const since = mockRepairs.repairedCountsSince.mock.calls[0][1] as Date;
+      const months =
+        (Date.now() - since.getTime()) / (30.44 * 24 * 60 * 60 * 1_000);
+      expect(Math.round(months)).toBe(12);
+    });
+  });
+
+  describe('replacementCandidates()', () => {
+    it('lists held assets that qualify, skips ones already requested, and names the holder', async () => {
+      const assetQb = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([
+          makeAsset({
+            id: 'a-broken',
+            custodianId: 'emp-1',
+            status: AssetStatus.ISSUED,
+            condition: AssetCondition.UNSERVICEABLE,
+          }),
+          makeAsset({
+            id: 'a-requested',
+            custodianId: 'emp-1',
+            status: AssetStatus.ISSUED,
+            condition: AssetCondition.UNSERVICEABLE,
+          }),
+          makeAsset({
+            id: 'a-fine',
+            custodianId: 'emp-1',
+            status: AssetStatus.ISSUED,
+            condition: AssetCondition.SERVICEABLE,
+            acquisitionDate: new Date(),
+          }),
+        ]),
+      };
+      mockAssetRepo.createQueryBuilder.mockReturnValue(assetQb);
+      mockAssetRepo.manager.createQueryBuilder.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([{ assetId: 'a-requested' }]),
+      });
+      mockUsersService.findOne.mockResolvedValue({
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Cruz',
+        employeeId: 'CICC-0042',
+      });
+
+      const result = await service.replacementCandidates([AssetType.ICT]);
+
+      expect(assetQb.andWhere).toHaveBeenCalledWith(
+        'a.assetType IN (:...scope)',
+        { scope: [AssetType.ICT] },
+      );
+      expect(result.map((r) => r.id)).toEqual(['a-broken']);
+      expect(result[0]).toMatchObject({
+        holder: { name: 'Ana Cruz', employeeId: 'CICC-0042' },
+        eligibility: { eligible: true, basis: 'condition' },
+        repairsInWindow: 0,
       });
     });
   });

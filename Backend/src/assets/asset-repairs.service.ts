@@ -257,6 +257,27 @@ export class AssetRepairsService {
     return new Map(rows.map((r) => [r.assetId, r]));
   }
 
+  /**
+   * Repairs closed as "repaired" since `since`, keyed by asset id — the count
+   * the repeat-repair replacement rule measures. Assets with none are absent.
+   */
+  async repairedCountsSince(
+    assetIds: string[],
+    since: Date,
+  ): Promise<Map<string, number>> {
+    if (assetIds.length === 0) return new Map();
+    const rows: Array<{ assetId: string; count: string }> = await this.repo
+      .createQueryBuilder('r')
+      .select('r.assetId', 'assetId')
+      .addSelect('COUNT(*)', 'count')
+      .where('r.assetId IN (:...assetIds)', { assetIds })
+      .andWhere('r.outcome = :outcome', { outcome: RepairOutcome.REPAIRED })
+      .andWhere('r.completedAt >= :since', { since })
+      .groupBy('r.assetId')
+      .getRawMany();
+    return new Map(rows.map((r) => [r.assetId, Number(r.count)]));
+  }
+
   /** Every repair (open and closed) for the Repair History report. */
   history() {
     return this.query().orderBy('r.openedAt', 'DESC').getMany();

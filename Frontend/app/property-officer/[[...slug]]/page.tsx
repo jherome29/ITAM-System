@@ -3,6 +3,7 @@ import { AssetDetailManager } from '@/components/assets/AssetDetailManager';
 import { AssetRegistryList } from '@/components/assets/AssetRegistryList';
 import { RegisterAssetForm } from '@/components/assets/RegisterAssetForm';
 import { PropertyOfficerDashboard } from '@/components/property-officer/PropertyOfficerDashboard';
+import { ReplacementReview } from '@/components/requisitions/ReplacementReview';
 import { WorkflowPage } from '@/components/prototype/WorkflowPage';
 import { FormsArchiveContent } from '@/components/shared/FormsArchiveContent';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
@@ -23,5 +24,6 @@ export default async function PropertyOfficerPage({
   if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/property-officer/assets" formsPath="/it-personnel/forms" />;
   if (segment === 'assets') return <AssetRegistryList basePath="/property-officer/assets" />;
   if (segment === 'reports') return <FormsArchiveContent />;
+  if (segment === 'replacements' || segment === 'replacement-validation') return <ReplacementReview eyebrow="Property Officer" assetBasePath="/property-officer/assets" />;
   return <WorkflowPage role={ProposedUserRole.PROPERTY_OFFICER} slug={segment} />;
 }

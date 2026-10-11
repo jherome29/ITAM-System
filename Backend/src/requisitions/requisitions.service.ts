@@ -19,10 +19,7 @@ import {
   AssetsService,
   OPEN_REQUISITION_STATUSES,
 } from '../assets/assets.service';
-import {
-  ReplacementBasis,
-  replacementEligibility,
-} from '../assets/replacement-eligibility';
+import { ReplacementBasis } from '../assets/replacement-eligibility';
 import { ReportsService } from '../reports/reports.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -265,6 +262,56 @@ export class RequisitionsService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
+  // ── Replacement review (Property Officer watch list) ──────────────────────
+  /**
+   * Replacement requisitions (newest 200) with the criterion they were
+   * justified on at submission — read from the immutable audit entry, since
+   * the old unit's state changes once it is collected — plus held assets that
+   * already qualify but have no open request. Scoped by the caller's asset types.
+   * SVC: Design & Transition — replacement validation (CLAUDE.md §17).
+   */
+  async replacementReview(role: UserRole) {
+    const scope = resolveAssetTypeScope(role);
+    const qb = this.reqRepo
+      .createQueryBuilder('r')
+      .leftJoinAndSelect('r.items', 'items')
+      .leftJoinAndSelect('r.requestedBy', 'requestedBy')
+      .leftJoinAndSelect('r.supervisor', 'supervisor')
+      .innerJoinAndSelect('r.replacedAsset', 'replacedAsset')
+      .orderBy('r.createdAt', 'DESC')
+      .take(200);
+    if (scope && scope.length > 0) {
+      qb.where('replacedAsset.assetType IN (:...scope)', { scope });
+    }
+    const rows = await qb.getMany();
+
+    const [submissions, repairCounts, candidates] = await Promise.all([
+      this.auditService.findByRecordsAndAction(
+        rows.map((r) => r.id),
+        AuditAction.REQUISITION_SUBMITTED,
+      ),
+      this.assetsService.recentRepairCounts(
+        rows.map((r) => r.replacedAssetId!),
+      ),
+      this.assetsService.replacementCandidates(scope),
+    ]);
+    const basisById = new Map(
+      submissions.map((a) => [
+        a.affectedRecordId,
+        (a.metadata?.replacementBasis as ReplacementBasis | undefined) ?? null,
+      ]),
+    );
+
+    return {
+      requests: rows.map((r) => ({
+        ...withRequester(r),
+        replacementBasis: basisById.get(r.id) ?? null,
+        repairsInWindow: repairCounts.get(r.replacedAssetId!) ?? 0,
+      })),
+      candidates,
+    };
+  }
+
   // ── Detail for display — findOne() plus the requester summary ─────────────
   // Kept separate from findOne(), which approve/reject/fulfill load and then
   // save: the view shape (requester, no requestedBy) must never be persisted.
@@ -422,10 +469,9 @@ export class RequisitionsService {
       );
     }
 
-    const eligibility = replacementEligibility(
-      asset,
-      this.systemConfig.getUsefulLifeYears(),
-    );
+    const eligibility = (
+      await this.assetsService.replacementEligibilityFor([asset])
+    ).get(asset.id)!;
     if (!eligibility.eligible || !eligibility.basis) {
       throw new BadRequestException(
         `Replacement not justified for "${asset.itemDescription}": ${eligibility.reason}`,

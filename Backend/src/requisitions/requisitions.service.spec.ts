@@ -30,6 +30,7 @@ import {
 import { SLA_APPROVAL_HOURS } from '../../../packages/shared/src/constants';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { ReportsService } from '../reports/reports.service';
+import { replacementEligibility } from '../assets/replacement-eligibility';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const makeReq = (
@@ -94,6 +95,20 @@ describe('RequisitionsService', () => {
     findOne: jest.fn(),
     isInCatalogue: jest.fn().mockResolvedValue(true),
     updateLifecycle: jest.fn().mockResolvedValue(undefined),
+    recentRepairCounts: jest.fn().mockResolvedValue(new Map()),
+    replacementCandidates: jest.fn().mockResolvedValue([]),
+    // The real rules over the config mock — AssetsService.replacementEligibilityFor
+    // has its own spec for the repair-count input.
+    replacementEligibilityFor: jest.fn((assets: AssetEntity[]) =>
+      Promise.resolve(
+        new Map(
+          assets.map((a) => [
+            a.id,
+            replacementEligibility(a, mockSystemConfig.getUsefulLifeYears()),
+          ]),
+        ),
+      ),
+    ),
   };
 
   const mockReportsService = {
@@ -119,6 +134,7 @@ describe('RequisitionsService', () => {
       addSelect: jest.fn().mockReturnThis(),
       groupBy: jest.fn().mockReturnThis(),
       leftJoinAndSelect: jest.fn().mockReturnThis(),
+      innerJoinAndSelect: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
@@ -154,6 +170,7 @@ describe('RequisitionsService', () => {
 
   const mockAuditService = {
     log: jest.fn().mockResolvedValue(undefined),
+    findByRecordsAndAction: jest.fn().mockResolvedValue([]),
   };
 
   const mockNotifService = {
@@ -223,6 +240,7 @@ describe('RequisitionsService', () => {
     // Reset the chainable QB mock for each test
     mockReqRepo.createQueryBuilder.mockReturnValue({
       where: jest.fn().mockReturnThis(),
+      innerJoinAndSelect: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
@@ -235,6 +253,62 @@ describe('RequisitionsService', () => {
       getRawMany: jest.fn().mockResolvedValue([]),
       getMany: jest.fn().mockResolvedValue([]),
       getCount: jest.fn().mockResolvedValue(0),
+    });
+  });
+
+  // ── Replacement review ──────────────────────────────────────────────────
+  describe('replacementReview()', () => {
+    it('attaches the submission-time basis and recent repairs, and scopes Property roles away from ICT', async () => {
+      const qb = mockReqRepo.createQueryBuilder();
+      qb.getMany.mockResolvedValue([
+        {
+          id: 'req-1',
+          requestNumber: 'REQ-2026-0009',
+          replacedAssetId: 'asset-uuid-1',
+          replacedAsset: makeAsset({ assetType: AssetType.FIXED }),
+          items: [],
+        },
+      ]);
+      mockAuditService.findByRecordsAndAction.mockResolvedValueOnce([
+        {
+          affectedRecordId: 'req-1',
+          metadata: { replacementBasis: 'repeat_repair' },
+        },
+      ]);
+      mockAssetsService.recentRepairCounts.mockResolvedValueOnce(
+        new Map([['asset-uuid-1', 4]]),
+      );
+      mockAssetsService.replacementCandidates.mockResolvedValueOnce([
+        { id: 'asset-uuid-2' },
+      ]);
+
+      const result = await service.replacementReview(
+        UserRole.PROPERTY_OFFICER,
+      );
+
+      expect(qb.where).toHaveBeenCalledWith(
+        'replacedAsset.assetType IN (:...scope)',
+        { scope: expect.not.arrayContaining([AssetType.ICT]) },
+      );
+      expect(mockAuditService.findByRecordsAndAction).toHaveBeenCalledWith(
+        ['req-1'],
+        AuditAction.REQUISITION_SUBMITTED,
+      );
+      expect(result.requests[0]).toMatchObject({
+        requestNumber: 'REQ-2026-0009',
+        replacementBasis: 'repeat_repair',
+        repairsInWindow: 4,
+      });
+      expect(result.candidates).toEqual([{ id: 'asset-uuid-2' }]);
+    });
+
+    it('leaves System Administrator unscoped', async () => {
+      const qb = mockReqRepo.createQueryBuilder();
+      await service.replacementReview(UserRole.SYSTEM_ADMIN);
+      expect(qb.where).not.toHaveBeenCalled();
+      expect(mockAssetsService.replacementCandidates).toHaveBeenCalledWith(
+        undefined,
+      );
     });
   });
 

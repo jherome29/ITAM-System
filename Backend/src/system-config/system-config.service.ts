@@ -18,7 +18,11 @@ import {
   DEFAULT_REORDER_LEVEL,
   USEFUL_LIFE_YEARS,
   MAX_LOGIN_ATTEMPTS,
+  REPEAT_REPAIR_LIMIT,
 } from '../../../packages/shared/src/constants';
+
+// One repair is routine; the rule is about an item that keeps failing.
+export const MIN_REPEAT_REPAIR_LIMIT = 2;
 
 // SVC: Plan — runtime-tunable configuration. Cached on init, refreshed on write.
 // TODO(scale-out): single-instance cache — a TTL on reload() is the cheapest multi-instance upgrade
@@ -88,6 +92,15 @@ export class SystemConfigService implements OnModuleInit {
     return this.readInt(CONFIG_KEYS.MAX_LOGIN_ATTEMPTS, 1, MAX_LOGIN_ATTEMPTS);
   }
 
+  /** Repairs within the look-back window that make an asset replaceable. */
+  getRepeatRepairLimit(): number {
+    return this.readInt(
+      CONFIG_KEYS.REPEAT_REPAIR_LIMIT,
+      MIN_REPEAT_REPAIR_LIMIT,
+      REPEAT_REPAIR_LIMIT,
+    );
+  }
+
   getUsefulLifeYears(): Record<AssetClass, number> {
     const raw = this.cache.get(CONFIG_KEYS.USEFUL_LIFE_YEARS);
     const classes = [AssetClass.PPE, AssetClass.SEP, AssetClass.IES] as const;
@@ -135,6 +148,8 @@ export class SystemConfigService implements OnModuleInit {
     [CONFIG_KEYS.DEFAULT_REORDER_LEVEL]: (v) => this.assertInt(v, 0),
     [CONFIG_KEYS.MAX_LOGIN_ATTEMPTS]: (v) => this.assertInt(v, 1),
     [CONFIG_KEYS.USEFUL_LIFE_YEARS]: (v) => this.assertUsefulLife(v),
+    [CONFIG_KEYS.REPEAT_REPAIR_LIMIT]: (v) =>
+      this.assertInt(v, MIN_REPEAT_REPAIR_LIMIT),
   };
 
   async update(key: string, value: unknown, updatedBy: string): Promise<void> {
@@ -171,6 +186,7 @@ export class SystemConfigService implements OnModuleInit {
       defaultReorderLevel: this.getDefaultReorderLevel(),
       usefulLifeYears: this.getUsefulLifeYears(),
       maxLoginAttempts: this.getMaxLoginAttempts(),
+      repeatRepairLimit: this.getRepeatRepairLimit(),
       meta: this.getMeta(),
     };
   }
