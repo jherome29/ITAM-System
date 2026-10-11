@@ -85,11 +85,11 @@ Legend: **LIVE** already real · **MOCK** still mock · **PARTIAL** mixed
 "WorkflowPage MOCK" = the slug is not special-cased in the role router and not in
 `isLiveFetchPage`, so `WorkflowPage.tsx` renders it from `lib/mock/*`.
 
-### Employee — `app/employee/*` → `components/employee/EmployeeWorkspace.tsx` — PARTIAL
+### Employee — `app/employee/*` → `components/employee/EmployeeWorkspace.tsx` — LIVE
 | Screen | Mock source | Connect to | Backend / DB work |
 |---|---|---|---|
 | Catalogue · My Requisitions · New Requisition · Requisition detail · Notifications | — | `assetsApi.catalogue()`, `requisitionsApi.*`, `NotificationsContent` | none — LIVE |
-| Dashboard (`EmployeeDashboard.tsx`) — "my assigned assets" slice only | `assetMockRows` (labeled "Preview data") | `assetsApi` filtered to current user as custodian | **add a `custodianId` / `assignedToMe` filter to `GET /v1/assets`** (see Part D #1) |
+| Dashboard (`EmployeeDashboard.tsx`) | **LIVE** (2026-10-11) | `assetsApi.mine()` | done — "My property", "Due back" (loans overdue or due within 7 days) and the replacement-eligible items under "Needs your attention" come from `GET /v1/assets/mine`. The mock "To acknowledge" tile is gone: the backend has no acknowledgment step. |
 | Assigned Assets tab | **LIVE** (2026-10-09) | `assetsApi.mine()` + `assetRequestsApi.mine()` | done — `GET /v1/assets/mine`; request buttons follow the one-open-request rule |
 | Returns & Incidents tab | **LIVE** (2026-10-09) | `assetRequestsApi` | done — `Backend/src/asset-requests` (Part D #3), real attachments; custodians get their own Returns & Incidents queue |
 

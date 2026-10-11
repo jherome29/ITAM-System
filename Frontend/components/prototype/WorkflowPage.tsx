@@ -394,7 +394,8 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   const [transferToLocation, setTransferToLocation] = useState('');
   // Replacement fulfilment: the available unit handed to the requester in the
   // same step (fulfil returns the old unit and issues this one).
-  const [replacementUnits, setReplacementUnits] = useState<Asset[] | null>(null);
+  // Keyed by requisition so a stale list from another request never shows.
+  const [replacementUnitList, setReplacementUnitList] = useState<{ requisitionId: string; units: Asset[] } | null>(null);
   const [replacementUnitId, setReplacementUnitId] = useState('');
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [form, setForm] = useState({ item: '', quantity: '1', requiredDate: '', justification: '', reason: '', attachment: '' });
@@ -504,17 +505,19 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   const replacementLine = selectedRequisition?.requisitionType === 'replacement' ? selectedRequisition.items[0] : undefined;
   const pickingReplacementUnit = confirmAction === 'Fulfill' && (isItAssetCustodianLiveFulfillment || isPropertyCustodianLiveFulfillment) && Boolean(replacementLine);
 
+  const pickingForId = pickingReplacementUnit ? selectedRequisition?.id : undefined;
+  const replacementUnits = pickingForId && replacementUnitList?.requisitionId === pickingForId ? replacementUnitList.units : null;
+
   useEffect(() => {
-    if (!pickingReplacementUnit || !replacementLine) return;
+    if (!pickingForId || !replacementLine) return;
     let live = true;
-    setReplacementUnits(null);
-    setReplacementUnitId('');
+    const replacedId = selectedRequisition?.replacedAsset?.id;
     assetsApi
       .list(1, 100, undefined, 'available', replacementLine.assetType)
-      .then((res) => { if (live) setReplacementUnits(res.data.data.filter((a) => a.assetClass !== 'IES' && a.id !== selectedRequisition?.replacedAsset?.id)); })
-      .catch(() => { if (live) setReplacementUnits([]); });
+      .then((res) => { if (live) setReplacementUnitList({ requisitionId: pickingForId, units: res.data.data.filter((a) => a.assetClass !== 'IES' && a.id !== replacedId) }); })
+      .catch(() => { if (live) setReplacementUnitList({ requisitionId: pickingForId, units: [] }); });
     return () => { live = false; };
-  }, [pickingReplacementUnit, replacementLine, selectedRequisition?.replacedAsset?.id]);
+  }, [pickingForId, replacementLine, selectedRequisition?.replacedAsset?.id]);
 
   // Real, persisted counterpart to runAction for IT Asset Custodian's live fulfillment
   // queue — see isItAssetCustodianLiveFulfillment above. Calls the actual requisitions
