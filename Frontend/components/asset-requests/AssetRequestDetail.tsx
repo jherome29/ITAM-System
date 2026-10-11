@@ -7,6 +7,7 @@ import { AttachmentGallery } from './AttachmentGallery';
 import { assetRequestsApi, type AssetRequest, type AssetRequestDocument } from '@/lib/api/asset-requests';
 import {
   FORM_LABEL,
+  REQUEST_DATE_COPY,
   REQUEST_STATUS_LABEL,
   REQUEST_STATUS_TONE,
   REQUEST_TYPE_LABEL,
@@ -125,7 +126,7 @@ export function AssetRequestDetail({
   const outcome = outcomeSummary(r);
   const facts: Array<[string, string]> = [
     ['Type', REQUEST_TYPE_LABEL[r.type]],
-    [r.type === 'return' ? 'Preferred return date' : 'Date it happened', formatDate(r.preferredDate)],
+    [REQUEST_DATE_COPY[r.type].detailLabel, formatDate(r.preferredDate)],
     ['Requested by', r.requester ? `${r.requester.name} · ${r.requester.employeeId}` : '—'],
     ['Handled by', r.custodianLabel ?? '—'],
   ];

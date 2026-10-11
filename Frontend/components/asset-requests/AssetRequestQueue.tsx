@@ -18,6 +18,7 @@ import {
   isOpen,
 } from '@/lib/asset-requests/asset-request-rules';
 import { formatDate, formatDateTime } from '@/lib/requisitions/requisition-view';
+import { localToday } from '@/lib/dates';
 
 const FILTERS = [
   { value: 'open', label: 'Open (needs action)' },
@@ -207,7 +208,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
                 <h3 className="text-sm font-bold text-slate-950">Approve</h3>
                 {selected.type === 'return' || selected.type === 'repair' || selected.type === 'damage' ? (
                   <Field label="Hand-over date (when the holder should bring it in)">
-                    <input type="date" className={inputClass} value={handoverDate} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setHandoverDate(e.target.value)} />
+                    <input type="date" className={inputClass} value={handoverDate} min={localToday()} onChange={(e) => setHandoverDate(e.target.value)} />
                   </Field>
                 ) : null}
                 <Field label="Note to the requester (optional)">

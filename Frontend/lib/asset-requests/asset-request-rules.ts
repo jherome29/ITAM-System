@@ -26,6 +26,99 @@ export const REQUEST_STATUS_TONE: Record<AssetRequestStatus, 'amber' | 'blue' | 
 
 export const ALL_REQUEST_TYPES: AssetRequestType[] = ['return', 'repair', 'damage', 'loss', 'theft'];
 
+/**
+ * What the request's one date field means for each type. It is stored as
+ * `preferredDate` either way, but a return asks when you *will* bring it in
+ * while every other type asks when something *happened* — and "the date it
+ * happened" is unclear for a repair (nothing "happened"; it stopped working).
+ */
+export const REQUEST_DATE_COPY: Record<AssetRequestType, { label: string; hint: string; missing: string; detailLabel: string; future: boolean }> = {
+  return: {
+    label: 'When would you like to return it?',
+    hint: 'Your preferred hand-over date. The custodian confirms the actual date when approving.',
+    missing: 'Choose when you would like to return it.',
+    detailLabel: 'Preferred return date',
+    future: true,
+  },
+  repair: {
+    label: 'When did the problem start?',
+    hint: 'The date you first noticed it was not working properly — an estimate is fine.',
+    missing: 'Enter the date the problem started.',
+    detailLabel: 'Problem started',
+    future: false,
+  },
+  damage: {
+    label: 'When was it damaged?',
+    hint: 'The date the damage happened, or when you first noticed it.',
+    missing: 'Enter the date it was damaged.',
+    detailLabel: 'Date damaged',
+    future: false,
+  },
+  loss: {
+    label: 'When was it lost?',
+    hint: 'When you last had it, or when you noticed it was missing.',
+    missing: 'Enter the date it was lost or last seen.',
+    detailLabel: 'Lost / last seen',
+    future: false,
+  },
+  theft: {
+    label: 'When was it stolen?',
+    hint: 'The date of the theft, or when you discovered it.',
+    missing: 'Enter the date it was stolen.',
+    detailLabel: 'Date stolen',
+    future: false,
+  },
+};
+
+export const REQUEST_DETAILS_PLACEHOLDER: Record<AssetRequestType, string> = {
+  return: 'Why you are returning it, and its current condition.',
+  repair: 'What is wrong — e.g. "Does not charge; battery light blinks orange." Include any error messages.',
+  damage: 'How it was damaged and what is affected — e.g. "Dropped it; screen cracked, still powers on."',
+  loss: 'Where and when you last had it, and where you have already searched.',
+  theft: 'What happened and where, and whether it was reported to the police (attach the report if you have it).',
+};
+
+/** Who handles a request for an asset of this type (mirrors the backend routing). */
+export function custodianLabelFor(assetType: string): string {
+  return assetType === 'ICT' ? 'IT Asset Custodian' : 'Property Custodian';
+}
+
+/**
+ * The points a holder confirms before filing — what happens next and what the
+ * request locks on the item. Mirrors the one-case-per-item rule
+ * (blockingRequest / supersededRequests): a return, repair or damage request
+ * blocks the others of that kind but never a loss/theft report, which closes
+ * it instead; an open loss/theft report blocks everything.
+ */
+export function filingConsequences(
+  type: AssetRequestType,
+  assetType: string,
+  closes: Pick<AssetRequest, 'type' | 'requestNumber'>[] = [],
+): string[] {
+  const custodian = custodianLabelFor(assetType);
+  if (INCIDENT_TYPES.has(type)) {
+    return [
+      `The ${custodian} is notified and prepares the incident report (RLSDDP). Keep ${type === 'theft' ? 'the police report' : 'an affidavit of loss'} ready.`,
+      ...closes.map((r) => `It closes ${r.requestNumber} (${REQUEST_TYPE_LABEL[r.type].toLowerCase()}) — the item can no longer be handed over.`),
+      'While it is open, no other request can be filed for this item.',
+      'The item stays on your accountability record until COA grants relief.',
+      'You can cancel it until the custodian processes it.',
+    ];
+  }
+  const outcome: Record<string, string> = {
+    return: 'Once the custodian receives it, it is no longer assigned to you.',
+    repair: 'It stays under your accountability during the repair and comes back to you afterwards.',
+    damage: 'The custodian decides whether it is repaired or written off after inspecting it.',
+  };
+  return [
+    `The ${custodian} reviews it and tells you when to bring the item in.`,
+    outcome[type],
+    'While it is open, you cannot file another return, repair or damage request for this item.',
+    'If the item is lost or stolen in the meantime, you can still report it — that closes this request.',
+    'You can cancel it until the custodian marks the item received.',
+  ];
+}
+
 const INCIDENT_TYPES = new Set<AssetRequestType>(['loss', 'theft']);
 
 export function isOpen(r: Pick<AssetRequest, 'status'>): boolean {

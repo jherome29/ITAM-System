@@ -7,6 +7,7 @@ import { CatalogueItemPicker } from '@/components/requisitions/CatalogueItemPick
 import type { CatalogueItem, MyAsset } from '@/lib/api/assets';
 import { requisitionsApi, type CreateRequisitionDto, type Requisition } from '@/lib/api/requisitions';
 import { MAX_REQUEST_QUANTITY, maxRequestQuantity } from '@/lib/requisitions/catalogue-items';
+import { localToday } from '@/lib/dates';
 
 // Shared by every role that can submit a requisition (Employee, Approving
 // Officer, IT Asset Custodian). Submits directly to POST /v1/requisitions with
@@ -176,7 +177,7 @@ export function RequisitionForm({
       {replacing
         ? <Field label="Quantity"><input value="1" readOnly className={`${inputClass} bg-slate-50`} aria-describedby="replacement-qty" /><span id="replacement-qty" className="mt-1 block text-xs text-slate-500">One-for-one replacement.</span></Field>
         : <Field label={manual || !picked ? 'Quantity' : `Quantity (max ${maxQty})`}><input key={maxQty} name="quantity" type="number" min="1" max={maxQty} defaultValue="1" required className={inputClass} /></Field>}
-      <Field label="Required date"><input name="requiredDate" required type="date" min={new Date().toISOString().slice(0, 10)} className={inputClass} /></Field>
+      <Field label="Required date"><input name="requiredDate" required type="date" min={localToday()} className={inputClass} /></Field>
     </div>
     <Field label="Business justification"><textarea name="justification" required minLength={20} className={`${inputClass} h-28 py-2`} placeholder={replacing ? 'Describe what is wrong with your current unit and how it affects your work.' : 'Explain the operational need and intended use.'} /></Field>
     <div className="border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">Submission routes to your assigned Approving Officer. Availability and issuance are confirmed by the responsible custodian after approval.</div>

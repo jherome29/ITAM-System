@@ -2,19 +2,23 @@
 
 import { useMemo, useState } from 'react';
 import { Field, inputClass, PrimaryButton } from '@/components/admin/AdminUi';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { localToday } from '@/lib/dates';
+import { formatDate } from '@/lib/requisitions/requisition-view';
 import { AttachmentPicker } from './AttachmentPicker';
 import type { Asset } from '@/lib/api/assets';
 import { assetRequestsApi, type AssetRequest, type AssetRequestType } from '@/lib/api/asset-requests';
 import {
   ALL_REQUEST_TYPES,
+  REQUEST_DATE_COPY,
+  REQUEST_DETAILS_PLACEHOLDER,
   REQUEST_TYPE_LABEL,
   allowedTypes,
+  filingConsequences,
   blockingRequest,
   supersededRequests,
   fileProblem,
 } from '@/lib/asset-requests/asset-request-rules';
-
-const today = () => new Date().toISOString().slice(0, 10);
 
 /**
  * Files a return / repair / damage / loss / theft request on an asset the user
@@ -47,20 +51,34 @@ export function AssetRequestForm({
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  // A message is about the last attempt — drop it as soon as the user edits.
+  const edit = <T,>(set: (value: T) => void) => (value: T) => { setError(''); set(value); };
 
   const blocker = blockingRequest(type, forAsset);
   const closes = supersededRequests(type, forAsset);
   const asset = issued.find((a) => a.id === assetId);
-  const isReturn = type === 'return';
+  const dateCopy = REQUEST_DATE_COPY[type];
+  const today = localToday();
 
-  const submit = async () => {
+  // Validate, then ask the holder to confirm what filing locks on the item.
+  const review = () => {
     setError('');
     if (!assetId) return setError('Choose an asset.');
     if (blocker) return setError(`${blocker.requestNumber} is still open for this asset.`);
-    if (!date) return setError(isReturn ? 'Choose a preferred return date.' : 'Enter the date it happened.');
+    if (!date) return setError(dateCopy.missing);
+    if (dateCopy.future ? date < today : date > today) {
+      return setError(dateCopy.future ? 'The return date cannot be in the past.' : 'The date cannot be in the future.');
+    }
     if (details.trim().length < 15) return setError('Details must be at least 15 characters.');
     const problem = fileProblem(files);
     if (problem) return setError(problem);
+    setConfirming(true);
+  };
+
+  const submit = async () => {
+    setConfirming(false);
     setSubmitting(true);
     try {
       const res = await assetRequestsApi.create({ assetId, type, preferredDate: date, details: details.trim(), files });
@@ -78,7 +96,7 @@ export function AssetRequestForm({
   }
 
   return (
-    <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+    <form className="space-y-4" noValidate onSubmit={(event) => { event.preventDefault(); review(); }}>
       {fixedAssetId && asset ? (
         <div className="rounded-md border border-slate-200 p-3 text-sm">
           <p className="font-bold text-slate-950">{asset.itemDescription}</p>
@@ -86,7 +104,7 @@ export function AssetRequestForm({
         </div>
       ) : (
         <Field label="Asset">
-          <select className={inputClass} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
+          <select className={inputClass} value={assetId} onChange={(e) => edit(setAssetId)(e.target.value)}>
             {issued.map((a) => <option key={a.id} value={a.id}>{a.itemDescription}{a.propertyNumber ? ` (${a.propertyNumber})` : ''}</option>)}
           </select>
         </Field>
@@ -94,7 +112,7 @@ export function AssetRequestForm({
 
       {!fixedType && (
         <Field label="Request type">
-          <select className={inputClass} value={type} onChange={(e) => setType(e.target.value as AssetRequestType)}>
+          <select className={inputClass} value={type} onChange={(e) => edit(setType)(e.target.value as AssetRequestType)}>
             {ALL_REQUEST_TYPES.map((t) => (
               <option key={t} value={t} disabled={!allowed.includes(t)}>
                 {REQUEST_TYPE_LABEL[t]}{allowed.includes(t) ? '' : ' — another request is open'}
@@ -116,32 +134,47 @@ export function AssetRequestForm({
         </p>
       )}
 
-      <Field label={isReturn ? 'Preferred return date' : 'Date it happened'}>
+      <Field label={dateCopy.label}>
         <input
           type="date"
           className={inputClass}
           value={date}
-          onChange={(e) => setDate(e.target.value)}
-          {...(isReturn ? { min: today() } : { max: today() })}
+          aria-describedby="request-date-hint"
+          onChange={(e) => edit(setDate)(e.target.value)}
+          {...(dateCopy.future ? { min: today } : { max: today })}
         />
+        <span id="request-date-hint" className="mt-1 block text-xs text-slate-500">{dateCopy.hint}</span>
       </Field>
       <Field label="Details and justification">
         <textarea
           className={`${inputClass} h-28 py-2`}
           value={details}
           maxLength={2000}
-          onChange={(e) => setDetails(e.target.value)}
-          placeholder={isReturn ? 'Why you are returning it and its current condition.' : 'Describe what happened and the current condition.'}
+          onChange={(e) => edit(setDetails)(e.target.value)}
+          placeholder={REQUEST_DETAILS_PLACEHOLDER[type]}
         />
       </Field>
       <div>
         <span className="mb-1.5 block text-xs font-bold text-slate-600">Photos or documents (optional)</span>
-        <AttachmentPicker files={files} onChange={setFiles} />
+        <AttachmentPicker files={files} onChange={edit(setFiles)} />
       </div>
       {error && <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p>}
       <PrimaryButton type="submit" disabled={submitting || Boolean(blocker)}>
-        {submitting ? 'Submitting…' : `Submit ${REQUEST_TYPE_LABEL[type].toLowerCase()}`}
+        {submitting ? 'Submitting…' : `Review and submit`}
       </PrimaryButton>
+
+      <ConfirmDialog
+        open={confirming}
+        title={`Submit this ${REQUEST_TYPE_LABEL[type].toLowerCase()}?`}
+        detail={`${asset?.itemDescription ?? 'Asset'} · ${dateCopy.detailLabel}: ${formatDate(date)}`}
+        confirmLabel={`Submit ${REQUEST_TYPE_LABEL[type].toLowerCase()}`}
+        onConfirm={() => void submit()}
+        onCancel={() => setConfirming(false)}
+      >
+        <ul className="list-disc space-y-1.5 pl-5 text-sm text-slate-700">
+          {filingConsequences(type, asset?.assetType ?? '', closes).map((line) => <li key={line}>{line}</li>)}
+        </ul>
+      </ConfirmDialog>
     </form>
   );
 }

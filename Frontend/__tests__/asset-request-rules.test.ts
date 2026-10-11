@@ -4,6 +4,7 @@ import {
   blockingRequest,
   custodianActions,
   fileProblem,
+  filingConsequences,
   nextSteps,
   outcomeSummary,
   supersededRequests,
@@ -90,5 +91,23 @@ describe('fileProblem', () => {
     expect(fileProblem([1, 2, 3, 4].map((i) => f(`${i}.png`, 'image/png')))).toMatch(/at most 3/);
     expect(fileProblem([f('virus.exe', 'application/x-msdownload')])).toMatch(/JPG, PNG, WEBP or PDF/);
     expect(fileProblem([f('huge.jpg', 'image/jpeg', 6 * 1024 * 1024)])).toMatch(/5 MB/);
+  });
+});
+
+describe('filing confirmation (what the holder agrees to)', () => {
+  it('a repair goes to the custodian for that asset type and blocks other hand-overs, not loss/theft', () => {
+    const lines = filingConsequences('repair', 'ICT');
+    expect(lines[0]).toContain('IT Asset Custodian');
+    expect(lines.join(' ')).toContain('cannot file another return, repair or damage request');
+    expect(lines.join(' ')).toContain('you can still report it');
+    expect(lines.join(' ')).toContain('comes back to you');
+  });
+
+  it('a theft report names what it closes and that it blocks everything', () => {
+    const lines = filingConsequences('theft', 'Fixed', [{ type: 'return', requestNumber: 'AR-2026-0009' }]);
+    expect(lines[0]).toContain('Property Custodian');
+    expect(lines[0]).toContain('police report');
+    expect(lines).toContain('It closes AR-2026-0009 (return request) — the item can no longer be handed over.');
+    expect(lines).toContain('While it is open, no other request can be filed for this item.');
   });
 });
