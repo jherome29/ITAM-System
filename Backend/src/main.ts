@@ -1,9 +1,7 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
-import { ResponseInterceptor } from './common/interceptors/response.interceptor';
-import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
+import { applyRequestPipeline } from './common/app-pipeline';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 
@@ -56,24 +54,9 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
   });
 
-  // 4. Global validation pipe — strips unknown fields, enforces DTOs (SECURITY.md §7)
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: { enableImplicitConversion: true },
-    }),
-  );
-
-  // 5. Global response envelope — { statusCode, message, data }
-  app.useGlobalInterceptors(new ResponseInterceptor());
-
-  // 6. Global exception filter — catches ALL errors, never leaks internals (SECURITY.md §8)
-  app.useGlobalFilters(new GlobalExceptionFilter());
-
-  // 7. Global API prefix
-  app.setGlobalPrefix('api');
+  // 4. Request pipeline — validation, response envelope, exception filter,
+  // /api prefix. Shared with the e2e suite (test/create-test-app.ts).
+  applyRequestPipeline(app);
 
   const port = process.env.PORT ?? 3001;
   await app.listen(port);
