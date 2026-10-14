@@ -728,7 +728,7 @@ cd Backend && npm run test:e2e:local # E2E suite — spins a throwaway postgres:
 | Rule | Detail |
 |---|---|
 | SLA target | 24-hour requisition approval turnaround |
-| Inventory accuracy target | 98% |
+| Inventory accuracy target | 98% — measured against a physical count (RPCI / RPCPPE reconciliation). The dashboards' "Record completeness" is a data-quality proxy (assets with property no. and serial no.), not this |
 | Replacement validation | Must confirm useful-life threshold, condition, or loss/damage criteria before processing replacement requisition |
 | Disposal | System documents and flags only; CICC executes actual disposal through COA procedure manually |
 | Alternate approver | System must support designation of backup approvers when primary supervisor is unavailable |

@@ -277,7 +277,7 @@ export function AdminDashboard() {
           <div className="divide-y divide-slate-100 px-4">
             {kpi ? (
               [
-                ['Inventory accuracy', `${kpi.inventoryAccuracy}%`],
+                ['Record completeness', `${kpi.recordCompleteness}%`],
                 ['Avg. approval time', `${kpi.avgApprovalHours} h`],
                 ['SLA compliance', `${kpi.slaComplianceRate}%`],
                 ['Fulfilled this month', String(kpi.fulfilledThisMonth)],

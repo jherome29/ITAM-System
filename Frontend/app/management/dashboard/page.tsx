@@ -51,7 +51,7 @@ export default function ManagementDashboard() {
           </div>
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 flex items-center gap-4">
             <div className="p-2 bg-purple-50 rounded-lg"><BarChart3 className="w-6 h-6 text-purple-600" /></div>
-            <div><p className="text-xs text-gray-500">Inventory Accuracy</p><p className="text-2xl font-bold text-gray-800">{kpi ? `${kpi.inventoryAccuracy}%` : '—'}</p></div>
+            <div><p className="text-xs text-gray-500">Record Completeness</p><p className="text-2xl font-bold text-gray-800">{kpi ? `${kpi.recordCompleteness}%` : '—'}</p></div>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 flex items-center gap-4">
             <div className="p-2 bg-orange-50 rounded-lg"><TrendingDown className="w-6 h-6 text-orange-500" /></div>
@@ -126,8 +126,8 @@ export default function ManagementDashboard() {
             <p className="text-sm text-gray-500 mt-1">Requisitions resolved within 24-hour SLA</p>
           </div>
           <div className="text-center">
-            <p className="text-3xl font-bold text-green-600">{kpi?.inventoryAccuracy ?? '—'}%</p>
-            <p className="text-sm text-gray-500 mt-1">Inventory accuracy vs. physical count</p>
+            <p className="text-3xl font-bold text-green-600">{kpi?.recordCompleteness ?? '—'}%</p>
+            <p className="text-sm text-gray-500 mt-1">Assets with a property no. and serial no.</p>
           </div>
           <div className="text-center">
             <p className="text-3xl font-bold text-purple-600">{kpi?.avgApprovalHours ?? '—'}h</p>

@@ -20,7 +20,9 @@ export interface FormMeta {
 }
 
 export interface KpiData {
-  inventoryAccuracy: number;
+  // Share of assets with a property no. and a serial no. — a data-quality measure,
+  // not inventory accuracy (that needs a physical count the system does not record).
+  recordCompleteness: number;
   avgApprovalHours: number;
   slaComplianceRate: number;
   totalAssets: number;
