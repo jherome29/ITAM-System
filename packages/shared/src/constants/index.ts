@@ -14,6 +14,14 @@ export const USEFUL_LIFE_YEARS: Record<AssetClass, number> = {
   [AssetClass.IES]: 1,
 };
 
+/**
+ * The clock CICC runs on. The backend defaults the process time zone to this
+ * when TZ is unset (a container's clock is UTC otherwise), and the scheduled
+ * jobs name it explicitly — so "daily 7:00" and "today" / "this month" mean
+ * Manila time wherever the app is deployed.
+ */
+export const APP_TIME_ZONE = 'Asia/Manila';
+
 /** Maximum failed login attempts before account lockout (Security by Design) */
 export const MAX_LOGIN_ATTEMPTS = 5;
 

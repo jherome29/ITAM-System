@@ -2,8 +2,13 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { applyRequestPipeline } from './common/app-pipeline';
+import { applyDefaultTimeZone } from './common/app-time-zone';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+
+// Before anything reads the clock: a container defaults to UTC, which shifts the
+// daily 7:00 jobs and the dashboards' "today" / "this month" by 8 hours.
+applyDefaultTimeZone();
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);

@@ -4,6 +4,7 @@ import { SchedulerService } from './scheduler.service';
 import { RequisitionsService } from '../requisitions/requisitions.service';
 import { AssetsService } from '../assets/assets.service';
 import { AssetRepairsService } from '../assets/asset-repairs.service';
+import { APP_TIME_ZONE } from '../../../packages/shared/src/constants';
 
 describe('SchedulerService', () => {
   let service: SchedulerService;
@@ -178,5 +179,24 @@ describe('SchedulerService', () => {
       });
       expect(watchers.pendingNudges?.count).toBe(1);
     });
+  });
+
+  // @nestjs/schedule keeps each @Cron's options under this metadata key. The
+  // daily 7:00 jobs (overdue returns, low stock, overdue repairs) read "7:00" in
+  // the server's clock, which in a default UTC container is 15:00 in Manila.
+  describe('cron schedule time zone', () => {
+    const SCHEDULE_CRON_OPTIONS = 'SCHEDULE_CRON_OPTIONS';
+
+    it.each(['hourlyChecks', 'dailyChecks'] as const)(
+      '%s runs on the CICC clock, not the server clock',
+      (method) => {
+        const options = Reflect.getMetadata(
+          SCHEDULE_CRON_OPTIONS,
+          SchedulerService.prototype[method],
+        ) as { timeZone?: string } | undefined;
+
+        expect(options?.timeZone).toBe(APP_TIME_ZONE);
+      },
+    );
   });
 });

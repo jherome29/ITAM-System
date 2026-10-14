@@ -678,6 +678,9 @@ cd ../Backend && npm install
 #   TRUST_PROXY       proxy hops to trust so audit-log IPs are the real client
 #                     (set 1 in prod behind CICC IT's proxy; unset when direct)
 #   THROTTLE_LIMIT / THROTTLE_TTL     per-IP rate limit (default 60 / 60000ms)
+#   TZ               process time zone; unset/blank defaults to Asia/Manila so the
+#                     daily 7:00 jobs and dashboard day/month boundaries are CICC time
+#                     in a UTC container (applyDefaultTimeZone in main.ts)
 #   SUPABASE_URL / SUPABASE_ANON_KEY  dev/test only
 
 # Frontend/.env.local
