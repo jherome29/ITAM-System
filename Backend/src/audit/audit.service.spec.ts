@@ -1,8 +1,15 @@
+import { ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { In } from 'typeorm';
 import { AuditService } from './audit.service';
 import { AuditLogEntity } from './entities/audit-log.entity';
-import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
+import { AssetEntity } from '../assets/entities/asset.entity';
+import {
+  AssetType,
+  AuditAction,
+  UserRole,
+} from '../../../packages/shared/src/enums';
 
 describe('AuditService', () => {
   let service: AuditService;
@@ -24,11 +31,14 @@ describe('AuditService', () => {
     createQueryBuilder: jest.fn(() => mockQb),
   };
 
+  const mockAssetRepo = { findOne: jest.fn() };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuditService,
         { provide: getRepositoryToken(AuditLogEntity), useValue: mockRepo },
+        { provide: getRepositoryToken(AssetEntity), useValue: mockAssetRepo },
       ],
     }).compile();
 
@@ -155,5 +165,70 @@ describe('AuditService', () => {
         }),
       );
     });
+  });
+
+  // GET /audit/record/:id used to hand ANY record's history (including a
+  // user's own login/IP trail, which has the user id as its record id) to every
+  // role allowed on the route, bypassing the admin-only /audit/user/:id.
+  describe('findRecordHistory() — who may read which record', () => {
+    const history = [{ id: 'a9', affectedRecordId: 'rec-1' }];
+    beforeEach(() => mockRepo.find.mockResolvedValue(history));
+
+    it.each([UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT])(
+      '%s may read any record (they already see the whole trail)',
+      async (role) => {
+        await expect(service.findRecordHistory('rec-1', role)).resolves.toBe(
+          history,
+        );
+        expect(mockAssetRepo.findOne).not.toHaveBeenCalled();
+      },
+    );
+
+    it('IT personnel may read the history of an ICT asset', async () => {
+      mockAssetRepo.findOne.mockResolvedValue({ id: 'rec-1' });
+      await expect(
+        service.findRecordHistory('rec-1', UserRole.IT_PERSONNEL),
+      ).resolves.toBe(history);
+      expect(mockAssetRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'rec-1', assetType: In([AssetType.ICT]) },
+        }),
+      );
+    });
+
+    it.each([UserRole.PROPERTY_CUSTODIAN, UserRole.PROPERTY_OFFICER])(
+      '%s is looked up against Fixed + Supplies only',
+      async (role) => {
+        mockAssetRepo.findOne.mockResolvedValue({ id: 'rec-1' });
+        await service.findRecordHistory('rec-1', role);
+        expect(mockAssetRepo.findOne).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              id: 'rec-1',
+              assetType: In([AssetType.FIXED, AssetType.SUPPLIES]),
+            },
+          }),
+        );
+      },
+    );
+
+    it('a record that is not an in-scope asset (a user id, an out-of-scope asset) is refused without reading any audit rows', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(null);
+      await expect(
+        service.findRecordHistory('some-user-id', UserRole.IT_PERSONNEL),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockRepo.find).not.toHaveBeenCalled();
+    });
+
+    it.each([UserRole.EMPLOYEE, UserRole.SUPERVISOR])(
+      'a role with no asset scope and no oversight duty (%s) is refused (default-deny)',
+      async (role) => {
+        await expect(service.findRecordHistory('rec-1', role)).rejects.toThrow(
+          ForbiddenException,
+        );
+        expect(mockAssetRepo.findOne).not.toHaveBeenCalled();
+        expect(mockRepo.find).not.toHaveBeenCalled();
+      },
+    );
   });
 });

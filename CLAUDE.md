@@ -431,7 +431,7 @@ Security controls are NOT add-ons — they are embedded from the first line of c
 - Every system transaction logged: user ID, action type, affected record ID, timestamp (UTC), IP address, user role at time of action
 - Audit logs are **append-only** — no update or delete operations on the audit table
 - Full audit log list (`GET /api/v1/audit`) is restricted to System Administrator and Management; filterable by `action` and by `startDate`/`endDate` (server-side)
-- IT Personnel can view transaction history for individual assets they manage via `GET /api/v1/audit/record/:recordId`
+- IT Personnel and the property roles can view transaction history for individual assets **inside their own asset-type scope** via `GET /api/v1/audit/record/:recordId`; any other record id (a user's login trail, an out-of-scope asset) is `403`. System Administrator and Management may read any record. Enforced in `AuditService.findRecordHistory`, so the admin-only `GET /audit/user/:userId` cannot be bypassed through this route
 - System Administrator can pull a single account's activity via `GET /api/v1/audit/user/:userId` (shown in the Master Admin user drawer)
 - Logs exportable as PDF/Excel for COA audit purposes
 
