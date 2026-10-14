@@ -135,47 +135,4 @@ export class AuthController {
       data: req.user,
     };
   }
-
-  // ─── Demo endpoints for RBAC pattern documentation ────────────────────
-
-  @Get('admin-only')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SYSTEM_ADMIN)
-  adminDemo() {
-    return {
-      message: 'Admin access confirmed',
-      data: {
-        note: 'Only SYSTEM_ADMIN reaches this endpoint. All others receive 403 Forbidden.',
-        pattern:
-          '@UseGuards(JwtAuthGuard, RolesGuard) + @Roles(UserRole.SYSTEM_ADMIN)',
-      },
-    };
-  }
-
-  @Get('it-and-admin')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN)
-  itAndAdminDemo() {
-    return {
-      message: 'IT Personnel or Admin access confirmed',
-      data: {
-        note: 'Accessible by IT_PERSONNEL and SYSTEM_ADMIN. Others receive 403.',
-        pattern: '@Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN)',
-      },
-    };
-  }
-
-  @Get('read-only-roles')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT, UserRole.IT_PERSONNEL)
-  readOnlyRolesDemo() {
-    return {
-      message: 'Read-only roles access confirmed',
-      data: {
-        note: 'Dashboard/report pattern — IT_PERSONNEL, SYSTEM_ADMIN, MANAGEMENT.',
-        pattern:
-          '@Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)',
-      },
-    };
-  }
 }
