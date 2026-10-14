@@ -37,9 +37,13 @@ interface AuthenticatedRequest {
 export class UsersController {
   constructor(private readonly svc: UsersService) {}
 
-  /** GET /api/v1/users — All users paginated, optional name/email/ID search */
+  /**
+   * GET /api/v1/users — All users paginated, optional name/email/ID search.
+   * System Administrator only: account management is theirs alone (ROLES.md),
+   * and the directory exposes every employee's name, email, ID and lock state.
+   */
   @Get()
-  @Roles(UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)
+  @Roles(UserRole.SYSTEM_ADMIN)
   async findAll(
     @Query('page') page = 1,
     @Query('limit') limit = 50,
@@ -50,9 +54,9 @@ export class UsersController {
     return { message: 'Users retrieved', data: result };
   }
 
-  /** GET /api/v1/users/:id */
+  /** GET /api/v1/users/:id — System Administrator only (see findAll). */
   @Get(':id')
-  @Roles(UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)
+  @Roles(UserRole.SYSTEM_ADMIN)
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     const user = await this.svc.findOne(id);
     return { message: 'User retrieved', data: user };
