@@ -3,8 +3,10 @@ import { ReportsContent } from '@/components/shared/ReportsContent';
 import { FormsArchiveContent } from '@/components/shared/FormsArchiveContent';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
 import { ManagementAuditDashboard } from '@/components/management-audit/ManagementAuditDashboard';
+import { notFound } from 'next/navigation';
 import { WorkflowPage } from '@/components/prototype/WorkflowPage';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
+import { isLiveWorkflowPage } from '@/lib/workflow/live-pages';
 
 export default async function ManagementAuditPage({
   params,
@@ -21,6 +23,9 @@ export default async function ManagementAuditPage({
   if (segment === 'maintenance-disposal') return <ReportsContent reportTypes={['REPAIR_HISTORY', 'DISPOSAL']} pageTitle="Maintenance & Disposal Reports" panelTitle="Repair & Disposal Reports" />;
   if (segment === 'physical-count') return <ReportsContent reportTypes={['PHYSICAL_COUNT']} pageTitle="Physical Count Reports" panelTitle="Physical Count Summary" />;
   if (segment === 'forms') return <FormsArchiveContent />;
+  // Only pages wired to real records may reach WorkflowPage; anything else is sample
+  // data, so it is not found (see lib/workflow/live-pages.ts).
+  if (!isLiveWorkflowPage(ProposedUserRole.MANAGEMENT_AUDIT_VIEWER, segment)) notFound();
   return <WorkflowPage role={ProposedUserRole.MANAGEMENT_AUDIT_VIEWER} slug={segment} />;
 }
 

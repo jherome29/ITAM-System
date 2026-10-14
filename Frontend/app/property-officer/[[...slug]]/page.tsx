@@ -5,10 +5,12 @@ import { RegisterAssetForm } from '@/components/assets/RegisterAssetForm';
 import { PropertyOfficerDashboard } from '@/components/property-officer/PropertyOfficerDashboard';
 import { ReplacementReview } from '@/components/requisitions/ReplacementReview';
 import { DisposalReview } from '@/components/assets/DisposalReview';
+import { notFound } from 'next/navigation';
 import { WorkflowPage } from '@/components/prototype/WorkflowPage';
 import { FormsArchiveContent } from '@/components/shared/FormsArchiveContent';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
+import { isLiveWorkflowPage } from '@/lib/workflow/live-pages';
 
 export default async function PropertyOfficerPage({
   params,
@@ -27,5 +29,8 @@ export default async function PropertyOfficerPage({
   if (segment === 'reports') return <FormsArchiveContent />;
   if (segment === 'replacements' || segment === 'replacement-validation') return <ReplacementReview eyebrow="Property Officer" assetBasePath="/property-officer/assets" />;
   if (segment === 'disposal' || segment === 'disposal-review') return <DisposalReview eyebrow="Property Officer" assetBasePath="/property-officer/assets" />;
+  // Only pages wired to real records may reach WorkflowPage; anything else is sample
+  // data, so it is not found (see lib/workflow/live-pages.ts).
+  if (!isLiveWorkflowPage(ProposedUserRole.PROPERTY_OFFICER, segment)) notFound();
   return <WorkflowPage role={ProposedUserRole.PROPERTY_OFFICER} slug={segment} />;
 }

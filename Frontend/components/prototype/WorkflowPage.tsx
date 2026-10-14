@@ -30,6 +30,7 @@ import { inventoryMockRows } from '@/lib/mock/inventory.mock';
 import { notificationMockRows } from '@/lib/mock/notifications.mock';
 import { reportMockRows } from '@/lib/mock/reports.mock';
 import { requisitionMockRows } from '@/lib/mock/requisitions.mock';
+import { isLiveWorkflowPage, normalizeWorkflowSlug } from '@/lib/workflow/live-pages';
 import type { MockRequisition } from '@/lib/mock/requisitions.mock';
 import { mockUsers } from '@/lib/mock/users.mock';
 import { ProposedUserRole, proposedRoleLabels } from '@/lib/roles/proposed-roles';
@@ -76,26 +77,6 @@ const pageCopy: Record<string, { title: string; detail: string; action?: string 
   audit: { title: 'Audit Log', detail: 'Read-only audit event viewer.' },
   forms: { title: 'Forms Archive', detail: 'Read-only generated-form archive with mock print/export actions.', action: 'Export Archive' },
 };
-
-function normalizeSlug(slug: string) {
-  const aliases: Record<string, string> = {
-    queue: 'approvals',
-    history: 'approval-history',
-    'custody-issuance': 'custody',
-    inventory: 'physical-inventory',
-    'reports-forms': 'reports',
-    'registry-overview': 'assets',
-    'disposal-review': 'disposal',
-    'audit-history': 'audit',
-    'audit-log': 'audit',
-    'forms-archive': 'forms',
-    'maintenance-disposal-reports': 'maintenance-disposal',
-    'physical-count-reports': 'physical-count',
-    'org-units': 'organizational-units',
-    'approval-config': 'approval-configuration',
-  };
-  return aliases[slug] ?? slug;
-}
 
 // Slugs whose rows don't depend on `role` — dispatched via lookup instead of
 // an if-chain to keep rowsFor's cognitive complexity low (typescript:S3776).
@@ -268,7 +249,7 @@ function actionPermissionFor(role: ProposedUserRole): UiPermission {
 export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUserRole; slug: string; openId?: string }>) {
   const { user: currentUser } = useAuth();
   const router = useRouter();
-  const normalizedSlug = normalizeSlug(slug);
+  const normalizedSlug = normalizeWorkflowSlug(slug);
   const content = pageCopy[normalizedSlug] ?? { title: 'Workspace', detail: 'Frontend-only operational prototype.', action: 'Run Action' };
   const readOnly = role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER;
   const isInventoryAccountabilityPage = ['assets', 'assigned-assets', 'physical-inventory', 'custody'].includes(normalizedSlug);
@@ -276,11 +257,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   // mock rows. Referenced by the rows/loading initializers and the effect guard below —
   // extending this to another role+slug pair only needs a change here, not three
   // synchronized edits.
-  const isLiveFetchPage =
-    (role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')) ||
-    (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') ||
-    (role === ProposedUserRole.IT_ASSET_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody' || normalizedSlug === 'disposal' || normalizedSlug === 'requisitions')) ||
-    (role === ProposedUserRole.PROPERTY_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody' || normalizedSlug === 'disposal'));
+  const isLiveFetchPage = isLiveWorkflowPage(role, slug);
   // The Approving Officer's own approvals queue is the one confirm-action flow in this
   // shared component that must persist for real — see submitApprovalDecision below.
   // Every other role/slug (including this same officer's 'requisitions' tab, which has
