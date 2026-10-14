@@ -677,7 +677,9 @@ cd ../Backend && npm install
 #   DATABASE_SSL      unset = verified TLS · 'disable' (local docker/CI) ·
 #                     'no-verify' (dev box behind a TLS-intercepting proxy —
 #                     set here, never in code; replaces the old app.module.ts hack)
-#   DB_POOL_MAX       pg pool ceiling (default 20)
+#   DB_POOL_MAX       pg pool ceiling (default 20). Supabase's session pooler allows only
+#                     15 connections project-wide — use 8 against the shared dev DB
+#                     (EMAXCONNSESSION otherwise); 20 is for a real Postgres
 #   JWT_SECRET / JWT_REFRESH_SECRET   >= 32 random chars (Joi-enforced at startup)
 #   ALLOWED_ORIGIN    CORS origin
 #   TRUST_PROXY       proxy hops to trust so audit-log IPs are the real client
