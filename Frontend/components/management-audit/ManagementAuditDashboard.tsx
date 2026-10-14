@@ -3,46 +3,53 @@
 import { useEffect, useState } from 'react';
 import { Activity, BarChart3, TrendingDown, TrendingUp } from 'lucide-react';
 import { reportsApi, type KpiData } from '@/lib/api/reports';
+import { requisitionsApi, type RequisitionStats } from '@/lib/api/requisitions';
+import { assetsApi, type AssetStats } from '@/lib/api/assets';
+import { statusShare } from '@/lib/reports/status-share';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
-const MONTHLY_MOCK = [
-  { month: 'Mar', req: 48, approved: 41, rejected: 7 },
-  { month: 'Apr', req: 55, approved: 47, rejected: 8 },
-  { month: 'May', req: 50, approved: 43, rejected: 7 },
-  { month: 'Jun', req: 52, approved: 44, rejected: 8 },
-];
+interface StatusRow { label: string; count: number; tone: string }
 
-const UTILIZATION_MOCK = [
-  { category: 'Laptops', total: 45, utilized: 30, pct: 67 },
-  { category: 'Desktops', total: 30, utilized: 20, pct: 67 },
-  { category: 'Monitors', total: 60, utilized: 42, pct: 70 },
-  { category: 'Printers', total: 20, utilized: 14, pct: 70 },
-];
-
-function PreviewBadge() {
-  return <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">Preview data</span>;
+function StatusBars({ rows, total, empty }: Readonly<{ rows: StatusRow[]; total: number; empty: string }>) {
+  if (total === 0) return <p className="p-4 text-sm text-slate-500">{empty}</p>;
+  return (
+    <div className="space-y-4 p-4">
+      {rows.map((row) => (
+        <div key={row.label}>
+          <div className="mb-1 flex justify-between text-sm">
+            <span className="font-semibold text-slate-700">{row.label}</span>
+            <span className="text-slate-500">{row.count} of {total}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-4 flex-1 overflow-hidden rounded-full bg-slate-200">
+              <div className={`h-4 rounded-full ${row.tone}`} style={{ width: `${statusShare(row.count, total)}%` }} />
+            </div>
+            <span className="w-10 text-right text-sm font-semibold text-slate-700">{statusShare(row.count, total)}%</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function ManagementAuditDashboard() {
   const [kpi, setKpi] = useState<KpiData | null>(null);
+  const [reqStats, setReqStats] = useState<RequisitionStats | null>(null);
+  const [assetStats, setAssetStats] = useState<AssetStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
-    reportsApi.kpi()
-      .then((res) => {
-        if (cancelled) return;
-        setKpi(res.data);
-        setError('');
-      })
-      .catch(() => {
-        if (!cancelled) setError('Failed to load KPI data. Please refresh the page.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    Promise.allSettled([reportsApi.kpi(), requisitionsApi.stats(), assetsApi.stats()]).then(([k, r, a]) => {
+      if (cancelled) return;
+      if (k.status === 'fulfilled') setKpi(k.value.data);
+      else setError('Failed to load KPI data. Please refresh the page.');
+      if (r.status === 'fulfilled') setReqStats(r.value.data);
+      if (a.status === 'fulfilled') setAssetStats(a.value.data);
+      setLoading(false);
+    });
     return () => { cancelled = true; };
   }, []);
 
@@ -79,39 +86,37 @@ export function ManagementAuditDashboard() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 px-4 py-4">
-            <h2 className="text-[15px] font-extrabold text-slate-950">Monthly Requisition Trends</h2>
-            <PreviewBadge />
+          <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-4">
+            <h2 className="text-[15px] font-extrabold text-slate-950">Requisitions by status</h2>
           </div>
-          <div className="space-y-4 p-4">
-            {MONTHLY_MOCK.map((stat) => {
-              const approvalRate = ((stat.approved / stat.req) * 100).toFixed(1);
-              return (
-                <div key={stat.month}>
-                  <div className="mb-1 flex justify-between text-sm"><span className="font-semibold text-slate-700">{stat.month}</span><span className="text-slate-500">{stat.req} requisitions</span></div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-5 flex-1 overflow-hidden rounded-full bg-slate-200"><div className="flex h-full"><div className="bg-emerald-500" style={{ width: `${(stat.approved / stat.req) * 100}%` }} /><div className="bg-red-400" style={{ width: `${(stat.rejected / stat.req) * 100}%` }} /></div></div>
-                    <span className="w-10 text-right text-sm text-slate-600">{approvalRate}%</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <StatusBars
+            total={reqStats?.total ?? 0}
+            empty="No requisitions yet."
+            rows={[
+              { label: 'Awaiting approval', count: reqStats?.pending ?? 0, tone: 'bg-amber-500' },
+              { label: 'Approved — awaiting fulfilment', count: reqStats?.approved ?? 0, tone: 'bg-blue-600' },
+              { label: 'On hold', count: reqStats?.onHold ?? 0, tone: 'bg-slate-500' },
+              { label: 'Fulfilled', count: reqStats?.fulfilled ?? 0, tone: 'bg-emerald-500' },
+              { label: 'Rejected', count: reqStats?.rejected ?? 0, tone: 'bg-red-400' },
+            ]}
+          />
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 px-4 py-4">
-            <h2 className="text-[15px] font-extrabold text-slate-950">Asset Utilization by Category</h2>
-            <PreviewBadge />
+          <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-4">
+            <h2 className="text-[15px] font-extrabold text-slate-950">Assets by status</h2>
           </div>
-          <div className="space-y-5 p-4">
-            {UTILIZATION_MOCK.map((item) => (
-              <div key={item.category}>
-                <div className="mb-1 flex justify-between text-sm"><span className="font-semibold text-slate-700">{item.category}</span><span className="text-slate-500">{item.utilized} / {item.total} units</span></div>
-                <div className="flex items-center gap-2"><div className="h-4 flex-1 rounded-full bg-slate-200"><div className="h-4 rounded-full bg-blue-700" style={{ width: `${item.pct}%` }} /></div><span className="w-10 text-right text-sm font-semibold text-slate-700">{item.pct}%</span></div>
-              </div>
-            ))}
-          </div>
+          <StatusBars
+            total={assetStats?.total ?? 0}
+            empty="No assets yet."
+            rows={[
+              { label: 'Available', count: assetStats?.available ?? 0, tone: 'bg-emerald-500' },
+              { label: 'Issued', count: assetStats?.issued ?? 0, tone: 'bg-blue-700' },
+              { label: 'Under repair', count: assetStats?.underRepair ?? 0, tone: 'bg-amber-500' },
+              { label: 'Flagged for disposal', count: assetStats?.flaggedForDisposal ?? 0, tone: 'bg-red-400' },
+              { label: 'Transferred', count: assetStats?.transferred ?? 0, tone: 'bg-slate-500' },
+            ]}
+          />
         </section>
       </div>
     </div>
