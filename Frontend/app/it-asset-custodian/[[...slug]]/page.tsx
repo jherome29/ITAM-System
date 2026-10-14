@@ -6,6 +6,7 @@ import { AssetRegistryList } from '@/components/assets/AssetRegistryList';
 import { QrLookup } from '@/components/assets/QrLookup';
 import { RegisterAssetForm } from '@/components/assets/RegisterAssetForm';
 import { ItAssetCustodianDashboard } from '@/components/it-asset-custodian/ItAssetCustodianDashboard';
+import { PhysicalInventorySheet } from '@/components/assets/PhysicalInventorySheet';
 import { WorkflowPage } from '@/components/prototype/WorkflowPage';
 import { FormsWorkspaceContent } from '@/components/shared/FormsWorkspaceContent';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
@@ -29,5 +30,6 @@ export default async function ItAssetCustodianPage({
   if (segment === 'reports') return <FormsWorkspaceContent />;
   if (segment === 'maintenance') return <RepairQueue eyebrow="IT Asset Custodian" assetBasePath="/it-asset-custodian/assets" openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'returns-incidents') return <AssetRequestQueue eyebrow="IT Asset Custodian" openId={typeof open === 'string' ? open : undefined} />;
+  if (segment === 'physical-inventory') return <PhysicalInventorySheet eyebrow="IT Asset Custodian" formsPath="/it-asset-custodian/reports" />;
   return <WorkflowPage role={ProposedUserRole.IT_ASSET_CUSTODIAN} slug={segment} openId={typeof open === 'string' ? open : undefined} />;
 }
