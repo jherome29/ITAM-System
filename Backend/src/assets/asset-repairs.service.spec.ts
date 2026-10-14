@@ -99,6 +99,7 @@ describe('AssetRepairsService', () => {
     create: jest.fn((x: object) => x),
     save: jest.fn((x: object) => Promise.resolve({ id: 'rep-new', ...x })),
     update: jest.fn(),
+    manager: { update: jest.fn() },
   };
   const mockAudit = { log: jest.fn() };
   const mockNotify = { notify: jest.fn() };
@@ -310,6 +311,114 @@ describe('AssetRepairsService', () => {
         'ip',
       );
       expect(mockNotify.notify).not.toHaveBeenCalled();
+    });
+
+    describe('with a loaner out', () => {
+      const loaner = (over: Partial<AssetEntity> = {}) =>
+        laptop({
+          id: 'loan-1',
+          itemDescription: 'HP ProBook',
+          status: AssetStatus.ISSUED,
+          custodianId: EMP.id,
+          expectedReturnDate: '2099-01-01' as unknown as Date,
+          ...over,
+        });
+
+      it('brings its return date forward to today and asks the holder to bring it back', async () => {
+        mockRepo.findOne.mockResolvedValue(
+          repair({ loanerAssetId: 'loan-1', loaner: loaner() }),
+        );
+        await service.close(
+          laptop({ status: AssetStatus.ISSUED }),
+          AssetStatus.ISSUED,
+          IT.id,
+          UserRole.IT_PERSONNEL,
+          'ip',
+          { actionTaken: 'Replaced fan' },
+        );
+        const today = new Date().toISOString().slice(0, 10);
+        expect(mockRepo.manager.update).toHaveBeenCalledWith(
+          AssetEntity,
+          'loan-1',
+          { expectedReturnDate: today, overdueNotifiedAt: null },
+        );
+        expect(mockNotify.notify).toHaveBeenCalledWith(
+          EMP.id,
+          NotificationAlertType.REPAIR_UPDATE,
+          'Repair Completed',
+          expect.stringContaining('return the loaner "HP ProBook"'),
+          'rep-1',
+          'asset_repair',
+        );
+        expect(mockAudit.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: AuditAction.REPAIR_COMPLETED,
+            metadata: expect.objectContaining({
+              loanerAssetId: 'loan-1',
+              loanerDueBy: today,
+            }),
+          }),
+        );
+      });
+
+      it('leaves a loaner that is already back alone', async () => {
+        mockRepo.findOne.mockResolvedValue(
+          repair({
+            loanerAssetId: 'loan-1',
+            loaner: loaner({ status: AssetStatus.RETURNED, custodianId: null }),
+          }),
+        );
+        await service.close(
+          laptop({ status: AssetStatus.ISSUED }),
+          AssetStatus.ISSUED,
+          IT.id,
+          UserRole.IT_PERSONNEL,
+          'ip',
+        );
+        expect(mockRepo.manager.update).not.toHaveBeenCalled();
+        expect(mockNotify.notify).toHaveBeenCalledWith(
+          EMP.id,
+          NotificationAlertType.REPAIR_UPDATE,
+          'Repair Completed',
+          expect.not.stringContaining('loaner'),
+          'rep-1',
+          'asset_repair',
+        );
+      });
+
+      it('shows the loaner on the repair view, flagged while still with the holder', async () => {
+        current = repair({ loanerAssetId: 'loan-1', loaner: loaner() });
+        const view = await service.findOneForUser('rep-1', IT);
+        expect(view.loaner).toMatchObject({
+          id: 'loan-1',
+          itemDescription: 'HP ProBook',
+          withHolder: true,
+        });
+      });
+
+      it('attachLoaner() links it, audits it and tells the holder when it is due', async () => {
+        await service.attachLoaner(repair(), loaner(), '2026-10-20', IT, 'ip');
+        expect(mockRepo.update).toHaveBeenCalledWith('rep-1', {
+          loanerAssetId: 'loan-1',
+        });
+        expect(mockAudit.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: AuditAction.REPAIR_UPDATED,
+            metadata: expect.objectContaining({
+              loanerAssetId: 'loan-1',
+              loanerReturnBy: '2026-10-20',
+            }),
+          }),
+        );
+        expect(mockNotify.notify).toHaveBeenCalledWith(
+          EMP.id,
+          NotificationAlertType.REPAIR_UPDATE,
+          'Loaner Issued',
+          expect.stringContaining('return it by 2026-10-20'),
+          'rep-1',
+          'asset_repair',
+        );
+      });
     });
 
     it('nothing to close when no record is open', async () => {

@@ -33,6 +33,17 @@ export interface Repair {
     components: string | null;
   } | null;
   custodianLabel: string | null;
+  /** Unit lent to the holder while this one is repaired. */
+  loaner: {
+    id: string;
+    itemDescription: string;
+    propertyNumber: string | null;
+    serialNumber: string | null;
+    status: string;
+    expectedReturnDate: string | null;
+    /** Still out with the person it was lent to. */
+    withHolder: boolean;
+  } | null;
   /** Whether the viewer may update / close it (server-decided). */
   canAct: boolean;
 }
@@ -68,6 +79,10 @@ export const repairsApi = {
 
   complete: (id: string, dto: CompleteRepairInput) =>
     client.post<ApiResponse<Repair>>(`/v1/repairs/${id}/complete`, dto).then((r) => r.data),
+
+  /** Lend the holder an available unit of the same type; due back by `expectedReturnDate` (default: the repair's due date). */
+  issueLoaner: (id: string, dto: { assetId: string; expectedReturnDate?: string }) =>
+    client.post<ApiResponse<Repair>>(`/v1/repairs/${id}/loaner`, dto).then((r) => r.data),
 };
 
 export const SERVICE_TYPE_LABEL: Record<RepairServiceType, string> = {

@@ -9,6 +9,7 @@ import {
   DEFAULT_REORDER_LEVEL,
   USEFUL_LIFE_YEARS,
   MAX_LOGIN_ATTEMPTS,
+  REPEAT_REPAIR_LIMIT,
 } from '../../../packages/shared/src/constants';
 import { AssetClass } from '../../../packages/shared/src/enums';
 
@@ -49,6 +50,18 @@ describe('SystemConfigService — getters + fallback', () => {
     expect(service.getDefaultReorderLevel()).toBe(DEFAULT_REORDER_LEVEL);
     expect(service.getMaxLoginAttempts()).toBe(MAX_LOGIN_ATTEMPTS);
     expect(service.getUsefulLifeYears()).toEqual(USEFUL_LIFE_YEARS);
+    expect(service.getRepeatRepairLimit()).toBe(REPEAT_REPAIR_LIMIT);
+  });
+
+  it('serves a stored repeat-repair limit, and ignores one below 2', async () => {
+    rows.push({ key: CONFIG_KEYS.REPEAT_REPAIR_LIMIT, value: 4 });
+    service = await build();
+    expect(service.getRepeatRepairLimit()).toBe(4);
+
+    rows.length = 0;
+    rows.push({ key: CONFIG_KEYS.REPEAT_REPAIR_LIMIT, value: 1 });
+    service = await build();
+    expect(service.getRepeatRepairLimit()).toBe(REPEAT_REPAIR_LIMIT);
   });
 
   it('falls back to the constant when a stored scalar fails validation', async () => {
@@ -156,6 +169,13 @@ describe('SystemConfigService — update() + getAll()', () => {
     service = await build();
     await expect(
       service.update(CONFIG_KEYS.SLA_APPROVAL_HOURS, 0, 'admin-1'),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a repeat-repair limit below 2', async () => {
+    service = await build();
+    await expect(
+      service.update(CONFIG_KEYS.REPEAT_REPAIR_LIMIT, 1, 'admin-1'),
     ).rejects.toThrow(BadRequestException);
   });
 

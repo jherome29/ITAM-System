@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
   ValidateIf,
@@ -40,6 +41,17 @@ export class UpdateRepairDto {
   @IsString()
   @MaxLength(2000)
   actionTaken?: string;
+}
+
+/** POST /repairs/:id/loaner — lend the holder an available unit meanwhile. */
+export class IssueLoanerDto {
+  @IsUUID()
+  assetId!: string;
+
+  /** Defaults to the repair's due date. */
+  @IsOptional()
+  @IsDateString()
+  expectedReturnDate?: string;
 }
 
 /** POST /repairs/:id/complete — record the outcome; drives the asset lifecycle. */

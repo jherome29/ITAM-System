@@ -6,6 +6,7 @@ import * as bcrypt from 'bcrypt';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
+import { createTestApp } from './create-test-app';
 import { UserEntity } from '../src/users/entities/user.entity';
 import { UserRole } from '../../packages/shared/src/enums';
 import { BCRYPT_ROUNDS } from '../../packages/shared/src/constants';
@@ -32,9 +33,7 @@ describe('Alternate approver (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api');
-    await app.init();
+    app = await createTestApp(moduleFixture);
     userRepo = moduleFixture.get(getRepositoryToken(UserEntity));
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);

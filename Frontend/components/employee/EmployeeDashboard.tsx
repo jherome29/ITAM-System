@@ -7,7 +7,6 @@ import {
   ArrowRight,
   Bell,
   CalendarClock,
-  CheckCircle2,
   ChevronRight,
   ClipboardList,
   FileWarning,
@@ -15,22 +14,36 @@ import {
   MapPin,
   PackageCheck,
   Plus,
+  Repeat2,
   Search,
   Send,
+  Undo2,
 } from 'lucide-react';
 import { StatusChip } from '@/components/admin/AdminUi';
 import { DashboardSkeleton } from '@/components/states/DashboardSkeleton';
 import { useAuth } from '@/lib/auth/use-auth';
 import { requisitionsApi, type Requisition, type RequisitionStats } from '@/lib/api/requisitions';
 import { notificationsApi } from '@/lib/api/notifications';
-import { assetMockRows } from '@/lib/mock/assets.mock';
+import { assetsApi, type MyAsset } from '@/lib/api/assets';
+import { localToday } from '@/lib/dates';
+import { formatDate } from '@/lib/requisitions/requisition-view';
 
-// "Assets currently assigned to me" has no backend equivalent yet — assets.controller.ts
-// and requisitions.controller.ts expose nothing scoped to "my custody" the way
-// requisitions/mine does for requisitions. Everything sourced from this mock stays
-// clearly labeled "Preview data" below rather than presented as real, per the same
-// disclosure convention WorkflowPage.tsx uses for its still-mock sections.
-const employeeId = 'EMP-001';
+/** A loaned item due back within this many days shows under "Needs your attention". */
+const DUE_SOON_DAYS = 7;
+
+function addDays(isoDay: string, days: number): string {
+  const d = new Date(`${isoDay}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Issued items with a return date that is past or within DUE_SOON_DAYS. */
+function dueBack(assets: MyAsset[], today: string): MyAsset[] {
+  const horizon = addDays(today, DUE_SOON_DAYS);
+  return assets
+    .filter((a) => a.status === 'issued' && a.expectedReturnDate && a.expectedReturnDate.slice(0, 10) <= horizon)
+    .sort((a, b) => String(a.expectedReturnDate).localeCompare(String(b.expectedReturnDate)));
+}
 
 // Statuses that mean a request is still moving — mirrors RequisitionStatus in
 // packages/shared/src/enums minus the terminal FULFILLED/REJECTED/CANCELLED states.
@@ -41,17 +54,19 @@ export function EmployeeDashboard() {
   const [requests, setRequests] = useState<Requisition[]>([]);
   const [stats, setStats] = useState<RequisitionStats | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [assets, setAssets] = useState<MyAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([requisitionsApi.mine(), requisitionsApi.stats(), notificationsApi.list()])
-      .then(([requisitionsRes, statsRes, notificationsRes]) => {
+    Promise.all([requisitionsApi.mine(), requisitionsApi.stats(), notificationsApi.list(), assetsApi.mine()])
+      .then(([requisitionsRes, statsRes, notificationsRes, assetsRes]) => {
         if (cancelled) return;
         setRequests(requisitionsRes.data.data);
         setStats(statsRes.data);
         setUnreadCount(notificationsRes.data.unreadCount);
+        setAssets(assetsRes.data);
         setError('');
       })
       .catch(() => {
@@ -65,12 +80,14 @@ export function EmployeeDashboard() {
     };
   }, []);
 
-  const assets = assetMockRows.filter((asset) => asset.assignedEmployeeId === employeeId);
-  const pendingAssets = assets.filter((item) => item.acknowledgmentStatus === 'Pending');
+  const today = localToday();
+  const returnsDue = dueBack(assets, today);
+  // Qualifies for a replacement and none is open yet — the holder may want one.
+  const replaceable = assets.filter((a) => a.replacement?.eligible && !a.replacement.openRequestNumber);
   const activeRequests = requests.filter((request) => ACTIVE_STATUSES.has(request.status));
   const rejectedRequests = requests.filter((request) => request.status === 'rejected');
   const activeRequestCount = stats ? stats.pending + stats.onHold : activeRequests.length;
-  const attentionCount = pendingAssets.length + rejectedRequests.length;
+  const attentionCount = returnsDue.length + replaceable.length + rejectedRequests.length;
 
   if (loading) return <DashboardSkeleton />;
 
@@ -97,9 +114,9 @@ export function EmployeeDashboard() {
       <section aria-labelledby="employee-overview-heading" className="space-y-2">
         <h2 id="employee-overview-heading" className="text-lg font-extrabold text-slate-950">Overview</h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryMetric href="/employee/assigned-assets" label="Assigned assets" value={assets.length} detail="Accountable to you" icon={PackageCheck} tone="blue" preview />
+          <SummaryMetric href="/employee/assigned-assets" label="Assigned assets" value={assets.length} detail="Accountable to you" icon={PackageCheck} tone="blue" />
           <SummaryMetric href="/employee/requisitions" label="Active requests" value={activeRequestCount} detail="In progress" icon={ClipboardList} tone="blue" />
-          <SummaryMetric href="/employee/assigned-assets" label="To acknowledge" value={pendingAssets.length} detail="Action required" icon={CheckCircle2} tone="amber" preview />
+          <SummaryMetric href="/employee/assigned-assets" label="Due back" value={returnsDue.length} detail={`Overdue or within ${DUE_SOON_DAYS} days`} icon={Undo2} tone="amber" />
           <SummaryMetric href="/employee/notifications" label="Unread updates" value={unreadCount} detail="New activity" icon={Bell} tone="green" />
         </div>
       </section>
@@ -116,17 +133,32 @@ export function EmployeeDashboard() {
           <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">You are all caught up — nothing needs your attention right now.</div>
         ) : (
           <div className="grid gap-3 lg:grid-cols-2">
-            {pendingAssets.map((asset) => (
+            {returnsDue.map((asset) => {
+              const due = String(asset.expectedReturnDate).slice(0, 10);
+              const overdue = due < today;
+              return (
+                <AttentionRow
+                  key={`return-${asset.id}`}
+                  icon={Undo2}
+                  title={`${overdue ? 'Overdue: return' : 'Return'} ${asset.itemDescription}`}
+                  detail={overdue ? `It was due back on ${formatDate(due)}. Return it to the custodian or file a return request.` : `Due back on ${formatDate(due)}.`}
+                  meta={asset.propertyNumber || asset.serialNumber || ''}
+                  href="/employee/returns-incidents"
+                  action="File a return"
+                  tone={overdue ? 'red' : 'amber'}
+                />
+              );
+            })}
+            {replaceable.map((asset) => (
               <AttentionRow
-                key={asset.id}
-                icon={CheckCircle2}
-                title={`Acknowledge ${asset.name}`}
-                detail="Confirm receipt and the recorded condition of this asset."
-                meta={asset.id}
+                key={`replace-${asset.id}`}
+                icon={Repeat2}
+                title={`${asset.itemDescription} qualifies for a replacement`}
+                detail={asset.replacement.reason}
+                meta={asset.propertyNumber || asset.serialNumber || ''}
                 href="/employee/assigned-assets"
-                action="Acknowledge"
+                action="Request replacement"
                 tone="amber"
-                preview
               />
             ))}
             {rejectedRequests.map((request) => (
@@ -170,19 +202,31 @@ export function EmployeeDashboard() {
           )}
         </DashboardPanel>
 
-        <DashboardPanel title="My property" detail="Assets under your accountability" action={<Link href="/employee/assigned-assets" className="text-sm font-bold text-blue-700 hover:text-blue-900">Manage</Link>} badge={<PreviewBadge />}>
-          <div className="divide-y divide-slate-100">
-            {assets.map((asset) => (
-              <Link href="/employee/assigned-assets" key={asset.id} className="group flex items-start gap-3 px-4 py-3.5 hover:bg-slate-50">
-                <span className="grid h-9 w-9 flex-none place-items-center rounded-md bg-slate-100 text-slate-600 group-hover:bg-blue-50 group-hover:text-blue-700"><Laptop className="h-4 w-4" /></span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-start justify-between gap-2"><p className="text-sm font-bold text-slate-950">{asset.name}</p><StatusChip status={asset.acknowledgmentStatus} tone={asset.acknowledgmentStatus === 'Pending' ? 'amber' : 'green'} /></div>
-                  <p className="mt-1 text-xs text-slate-500">{asset.id} · {asset.condition}</p>
-                  <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-slate-500"><MapPin className="h-3.5 w-3.5" />{asset.location}</p>
-                </div>
-              </Link>
-            ))}
-          </div>
+        <DashboardPanel title="My property" detail="Assets under your accountability" action={<Link href="/employee/assigned-assets" className="text-sm font-bold text-blue-700 hover:text-blue-900">Manage</Link>}>
+          {assets.length === 0 ? (
+            <div className="p-8 text-center text-sm text-slate-500">No property is assigned to you.</div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {assets.slice(0, 6).map((asset) => {
+                const location = asset.officeLocation || asset.officeOrSection;
+                return (
+                  <Link href="/employee/assigned-assets" key={asset.id} className="group flex items-start gap-3 px-4 py-3.5 hover:bg-slate-50">
+                    <span className="grid h-9 w-9 flex-none place-items-center rounded-md bg-slate-100 text-slate-600 group-hover:bg-blue-50 group-hover:text-blue-700"><Laptop className="h-4 w-4" /></span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-start justify-between gap-2"><p className="text-sm font-bold text-slate-950">{asset.itemDescription}</p><StatusChip status={asset.status.replaceAll('_', ' ')} tone={assetTone(asset.status)} /></div>
+                      <p className="mt-1 text-xs text-slate-500">{[asset.propertyNumber || asset.serialNumber, asset.condition.replaceAll('_', ' ')].filter(Boolean).join(' · ')}</p>
+                      {asset.repair ? (
+                        <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-slate-500"><CalendarClock className="h-3.5 w-3.5" />Under repair — expected back {formatDate(asset.repair.dueDate)}</p>
+                      ) : location ? (
+                        <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-slate-500"><MapPin className="h-3.5 w-3.5" />{location}</p>
+                      ) : null}
+                    </div>
+                  </Link>
+                );
+              })}
+              {assets.length > 6 && <Link href="/employee/assigned-assets" className="block px-4 py-3 text-center text-xs font-bold text-blue-700 hover:bg-slate-50">View all {assets.length}</Link>}
+            </div>
+          )}
         </DashboardPanel>
       </div>
 
@@ -204,14 +248,15 @@ const tones = {
   red: 'border-red-200 bg-red-50 text-red-700',
 };
 
-// Scoped disclosure for the sections still backed by lib/mock data — see the
-// employeeId comment above for why (no "my assigned assets" backend endpoint yet).
-function PreviewBadge() {
-  return <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">Preview data</span>;
+function assetTone(status: string): 'blue' | 'amber' | 'red' | 'green' | 'slate' {
+  if (status === 'issued') return 'green';
+  if (status === 'under_repair') return 'amber';
+  if (status === 'flagged_for_disposal') return 'red';
+  return 'slate';
 }
 
-function AttentionRow({ icon: Icon, title, detail, meta, href, action, tone, preview }: Readonly<{ icon: LucideIcon; title: string; detail: string; meta: string; href: string; action: string; tone: 'amber' | 'red'; preview?: boolean }>) {
-  return <article className="grid min-w-0 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-[0_2px_8px_rgba(15,23,42,0.05)] sm:grid-cols-[auto_minmax(0,1fr)]"><span className={`grid h-10 w-10 place-items-center rounded-md border ${tones[tone]}`}><Icon className="h-4 w-4" /></span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-bold text-slate-950">{title}</p><span className="text-xs font-semibold text-slate-500">{meta}</span>{preview && <PreviewBadge />}</div><p className="mt-1 text-xs leading-5 text-slate-600">{detail}</p><Link href={href} className="mt-2 inline-flex min-h-8 items-center gap-1.5 text-sm font-bold text-blue-700 hover:text-blue-900">{action}<ArrowRight className="h-4 w-4" /></Link></div></article>;
+function AttentionRow({ icon: Icon, title, detail, meta, href, action, tone }: Readonly<{ icon: LucideIcon; title: string; detail: string; meta: string; href: string; action: string; tone: 'amber' | 'red' }>) {
+  return <article className="grid min-w-0 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-[0_2px_8px_rgba(15,23,42,0.05)] sm:grid-cols-[auto_minmax(0,1fr)]"><span className={`grid h-10 w-10 place-items-center rounded-md border ${tones[tone]}`}><Icon className="h-4 w-4" /></span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-bold text-slate-950">{title}</p><span className="text-xs font-semibold text-slate-500">{meta}</span></div><p className="mt-1 text-xs leading-5 text-slate-600">{detail}</p><Link href={href} className="mt-2 inline-flex min-h-8 items-center gap-1.5 text-sm font-bold text-blue-700 hover:text-blue-900">{action}<ArrowRight className="h-4 w-4" /></Link></div></article>;
 }
 
 function summaryToneClass(tone: 'blue' | 'amber' | 'green') {
@@ -220,7 +265,7 @@ function summaryToneClass(tone: 'blue' | 'amber' | 'green') {
   return 'text-blue-700';
 }
 
-function SummaryMetric({ href, label, value, detail, icon: Icon, tone, preview }: Readonly<{ href: string; label: string; value: number; detail: string; icon: LucideIcon; tone: 'blue' | 'amber' | 'green'; preview?: boolean }>) {
+function SummaryMetric({ href, label, value, detail, icon: Icon, tone }: Readonly<{ href: string; label: string; value: number; detail: string; icon: LucideIcon; tone: 'blue' | 'amber' | 'green' }>) {
   return (
     <Link href={href} className="group flex min-h-[104px] min-w-0 items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-[0_3px_12px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
       <span className={`grid h-12 w-12 flex-none place-items-center rounded-lg border ${tones[tone]}`}>
@@ -229,7 +274,6 @@ function SummaryMetric({ href, label, value, detail, icon: Icon, tone, preview }
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-1.5">
           <span className="block truncate text-xs font-semibold text-slate-500">{label}</span>
-          {preview && <PreviewBadge />}
         </span>
         <span className="mt-1.5 flex min-w-0 items-baseline gap-2">
           <span className="text-[26px] font-extrabold leading-none text-slate-950">{value}</span>

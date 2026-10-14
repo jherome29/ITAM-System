@@ -26,6 +26,20 @@ export interface Requisition {
   approver?: { id: string; name: string; employeeId: string } | null;
   /** Replacement requisitions only — the unit being replaced. */
   replacedAsset?: ReplacedAsset | null;
+  /** COA documents generated for it (detail endpoint only). */
+  documents?: RequisitionDocument[];
+}
+
+export interface RequisitionDocument {
+  id: string;
+  formType: string;
+  generatedAt: string;
+}
+
+/** fulfilledItems links a line to the unit handed out — for a replacement, that unit is issued to the requester. */
+export interface FulfillRequisitionDto {
+  notes?: string;
+  fulfilledItems?: Array<{ requisitionItemId: string; assetId: string }>;
 }
 
 export interface ReplacedAsset {
@@ -39,6 +53,39 @@ export interface ReplacedAsset {
   status: string;
   acquisitionDate: string | null;
   components: string | null;
+}
+
+export type ReplacementBasis = 'condition' | 'useful_life' | 'repeat_repair' | 'loss_or_damage';
+
+export const REPLACEMENT_BASIS_LABEL: Record<ReplacementBasis, string> = {
+  condition: 'No longer serviceable',
+  useful_life: 'Past useful life',
+  repeat_repair: 'Repeated repairs',
+  loss_or_damage: 'Lost, stolen or written off',
+};
+
+/** Replacement Validation page — GET /v1/requisitions/replacement-review. */
+export interface ReplacementReview {
+  requests: Array<Requisition & {
+    /** Criterion the request was justified on at submission (from the audit trail). */
+    replacementBasis: ReplacementBasis | null;
+    /** Completed repairs of the replaced unit in the last 12 months. */
+    repairsInWindow: number;
+  }>;
+  /** Held assets that already qualify but have no open replacement request. */
+  candidates: Array<{
+    id: string;
+    itemDescription: string;
+    propertyNumber: string | null;
+    assetType: string;
+    assetClass: string;
+    status: string;
+    condition: string;
+    acquisitionDate: string | null;
+    holder: { name: string; employeeId: string } | null;
+    repairsInWindow: number;
+    eligibility: { eligible: boolean; basis: ReplacementBasis | null; reason: string };
+  }>;
 }
 
 export interface RequisitionItem {
@@ -84,6 +131,9 @@ export const requisitionsApi = {
   stats: () =>
     client.get<ApiResponse<RequisitionStats>>('/v1/requisitions/stats').then((r) => r.data),
 
+  replacementReview: () =>
+    client.get<ApiResponse<ReplacementReview>>('/v1/requisitions/replacement-review').then((r) => r.data),
+
   getOne: (id: string) =>
     client.get<ApiResponse<Requisition>>(`/v1/requisitions/${id}`).then((r) => r.data),
 
@@ -103,6 +153,12 @@ export const requisitionsApi = {
   hold: (id: string, reason: string) =>
     client.post<ApiResponse<Requisition>>(`/v1/requisitions/${id}/hold`, { reason }).then((r) => r.data),
 
-  fulfill: (id: string) =>
-    client.post<ApiResponse<Requisition>>(`/v1/requisitions/${id}/fulfill`).then((r) => r.data),
+  fulfill: (id: string, dto: FulfillRequisitionDto = {}) =>
+    client.post<ApiResponse<Requisition>>(`/v1/requisitions/${id}/fulfill`, dto).then((r) => r.data),
+
+  /** A COA document generated for this requisition (e.g. the replacement's return receipt). */
+  document: (id: string, formId: string): Promise<Blob> =>
+    client
+      .get(`/v1/requisitions/${id}/documents/${formId}`, { responseType: 'blob' })
+      .then((r) => r.data as Blob),
 };

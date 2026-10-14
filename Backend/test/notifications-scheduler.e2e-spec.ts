@@ -6,6 +6,7 @@ import { Repository } from 'typeorm';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
+import { createTestApp } from './create-test-app';
 import { UserEntity } from '../src/users/entities/user.entity';
 import { RequisitionEntity } from '../src/requisitions/entities/requisition.entity';
 import { NotificationEntity } from '../src/notifications/entities/notification.entity';
@@ -59,9 +60,7 @@ describe('Notifications scheduler (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api'); // matches main.ts bootstrap() — not implied by AppModule alone
-    await app.init();
+    app = await createTestApp(moduleFixture);
 
     jwtService = moduleFixture.get(JwtService);
     userRepo = moduleFixture.get(getRepositoryToken(UserEntity));

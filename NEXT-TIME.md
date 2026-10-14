@@ -12,11 +12,10 @@ Where the `feature/returns-incidents-and-workflow-fixes` branch stands after the
 - [x] **Open the PR `feature/returns-incidents-and-workflow-fixes` → `develop`.**
       Open as **#102**, every CI check green; needs 1 review. (`gh`'s active
       account token is still invalid — the `dreiiiiim` account works.)
-- [ ] **Apply migrations `008`–`013` to shared Supabase** (local Docker Postgres
-      already has them; Supabase was never touched — its MCP is `read_only=true`).
-      Teammates: same for every database that existed before them (each local
-      Docker Postgres). Run it statement by statement in the Supabase SQL editor,
-      because `ALTER TYPE … ADD VALUE` cannot run inside a transaction. Locally:
+- [x] **Apply migrations to shared Supabase** — done 2026-10-11 through `008`–`014`
+      (001–008 were already there; 009–014 applied via the claude.ai Supabase
+      connector's `apply_migration`, since the `supabase` MCP is read-only).
+      Teammates: every older local Docker Postgres still needs 009–014. Locally:
       ```powershell
       docker cp "Database\schemas\013_asset_repairs.sql" aimrs_postgres:/tmp/m.sql
       docker exec aimrs_postgres psql -v ON_ERROR_STOP=1 -U aimrs_user -d aimrs_dev -f /tmp/m.sql
@@ -37,41 +36,41 @@ Where the `feature/returns-incidents-and-workflow-fixes` branch stands after the
 | Repairs (new, schema 013) | Repair record per stay `under_repair`. Maintenance & Repair queue for both custodians. Outcome repaired / not repairable. Condition follows the lifecycle. Holder notified. Overdue watcher (`repair_overdue`). Repair History report. |
 | Deps | next 16.4.0. Non-breaking audit fix. `braces` allowlisted (no fix exists; lint tooling only). |
 
-## 3. Next features (agreed gaps, not built yet)
+## 3. Next features — built 2026-10-11 on `feature/replacement-repair-followups`
 
-- [ ] **Repeat repairs as a replacement reason.** Example: repaired ≥ N times in 12 months.
+- [x] **Repeat repairs as a replacement reason.** Example: repaired ≥ N times in 12 months.
       Add it to `Backend/src/assets/replacement-eligibility.ts` with the count from
       `asset_repairs`, and make N a system-config value. The Property Officer's
       "Replacement Validation" page (`/property-officer/replacements`) is still
       mock data and could show this.
-- [ ] **Loaner unit while an item is under repair.** Today the holder has to file
+- [x] **Loaner unit while an item is under repair.** (schema `014`) Today the holder has to file
       a normal requisition with an expected return date. Option: on the repair
       drawer, "Issue loaner", which issues an available unit with a return date
       and links it to the repair, then prompts its return when the repair closes.
-- [ ] **Issue the new unit when a replacement is fulfilled.** `fulfill()` returns
+- [x] **Issue the new unit when a replacement is fulfilled.** `fulfill()` returns
       the old unit, but the new one is still issued separately through Custody &
       Issuance (fulfil only links the item). Consider issuing it in the same step.
-- [ ] **Requester access to the replacement receipt.** The receipt is generated
+- [x] **Requester access to the replacement receipt.** The receipt is generated
       and linked to the requisition (`related_requisition_id`), but only the
       custodian sees it (Reports & Forms). Add a download on the requisition
       detail, like Returns & Incidents documents.
-- [ ] **Admin dashboard watcher panel.** It shows only the last sweep time and
+- [x] **Admin dashboard watcher panel.** It shows only the last sweep time and
       trigger. Show per-watcher counts, including the new `overdueRepairs`.
 
 ## 4. Clean-ups
 
-- [ ] **Dead code in `Frontend/components/prototype/WorkflowPage.tsx`.** The IT
+- [x] **Dead code in `Frontend/components/prototype/WorkflowPage.tsx`.** The IT
       Asset Custodian `maintenance` slug is now routed to `RepairQueue`, so the
       `isItAssetCustodianLiveMaintenance` / `submitMaintenanceDecision` path is
       unreachable. Remove it and its mock rows.
-- [ ] **Most e2e specs build the app without `main.ts`'s global
+- [x] **Most e2e specs build the app without `main.ts`'s global
       `ValidationPipe`**, so DTO rules are not exercised there. `repairs.e2e-spec.ts`
       and `security.e2e-spec.ts` add it explicitly. Consider a shared
       `createTestApp()` helper that mirrors `main.ts`.
 - [ ] **Leftover E2E rows in the local dev DB** (`[E2E-DOCS-…]` cabinets, under
       repair / flagged). Harmless, but they clutter the queues. Reset with
       RUN-LOCAL.md §6 if wanted.
-- [ ] **Employee dashboard tiles marked "PREVIEW DATA"** are still mock data. See
+- [x] **Employee dashboard tiles marked "PREVIEW DATA"** are still mock data. See
       `MOCK-DATA-WIRING.md`.
 
 ## 5. Still open from the wider plan (see `PATH-TO-DONE.md`)

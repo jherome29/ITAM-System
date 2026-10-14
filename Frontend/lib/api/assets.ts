@@ -34,7 +34,12 @@ export interface Asset {
 /** Server-computed replacement rule (CLAUDE.md §17) for one of my assets. */
 export interface ReplacementEligibility {
   eligible: boolean;
-  basis: 'condition' | 'useful_life' | 'loss_or_damage' | null;
+  basis:
+    | 'condition'
+    | 'useful_life'
+    | 'repeat_repair'
+    | 'loss_or_damage'
+    | null;
   reason: string;
   /** An open replacement requisition for this asset, if one exists. */
   openRequestNumber: string | null;

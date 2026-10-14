@@ -3,6 +3,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
+import { createTestApp } from './create-test-app';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -12,8 +13,7 @@ describe('AppController (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    await app.init();
+    app = await createTestApp(moduleFixture);
   });
 
   it('returns 404 for the root path — all API routes live under /api', () => {

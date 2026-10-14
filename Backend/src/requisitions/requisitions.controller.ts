@@ -10,7 +10,9 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { RequisitionsService } from './requisitions.service';
 import { CreateRequisitionDto } from './dto/create-requisition.dto';
 import {
@@ -114,6 +116,25 @@ export class RequisitionsController {
   }
 
   /**
+   * GET /api/v1/requisitions/replacement-review
+   * Replacement requisitions with their justification, plus held assets that
+   * already qualify for one. Read-only oversight, scoped by asset type.
+   * Declared before `:id` so the literal path is not parsed as a UUID.
+   */
+  @Get('replacement-review')
+  @Roles(
+    UserRole.PROPERTY_OFFICER,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+  )
+  async replacementReview(@Req() req: AuthReq) {
+    const result = await this.svc.replacementReview(req.user.role);
+    return { message: 'Replacement review retrieved', data: result };
+  }
+
+  /**
    * GET /api/v1/requisitions/:id
    * Full detail including approval timeline.
    */
@@ -134,6 +155,42 @@ export class RequisitionsController {
       req.user.role,
     );
     return { message: 'Requisition retrieved', data: result };
+  }
+
+  /**
+   * GET /api/v1/requisitions/:id/documents/:formId
+   * A COA document generated for this requisition (the replacement's return
+   * receipt). Same read access as GET /:id, so the requester can download it.
+   */
+  @Get(':id/documents/:formId')
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
+  async document(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('formId', ParseUUIDPipe) formId: string,
+    @Req() req: AuthReq,
+    @Res() res: Response,
+  ) {
+    const doc = await this.svc.getDocument(
+      id,
+      formId,
+      req.user.id,
+      req.user.role,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Length': String(doc.buffer.length),
+      'Content-Disposition': `attachment; filename="${doc.formType}-${doc.requestNumber}.pdf"`,
+      'Cache-Control': 'private, no-store',
+    });
+    res.end(doc.buffer);
   }
 
   /**

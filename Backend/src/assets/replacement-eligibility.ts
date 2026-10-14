@@ -3,13 +3,18 @@ import {
   AssetCondition,
   AssetStatus,
 } from '../../../packages/shared/src/enums';
+import { REPEAT_REPAIR_WINDOW_MONTHS } from '../../../packages/shared/src/constants';
 import type { AssetEntity } from './entities/asset.entity';
 
 // SVC: Design & Transition — replacement validation (CLAUDE.md §17). One rule
 // set shared by the requisition guard (RequisitionsService.create) and the
 // holder's "My Assigned Assets" view, so the button and the API never disagree.
 
-export type ReplacementBasis = 'condition' | 'useful_life' | 'loss_or_damage';
+export type ReplacementBasis =
+  | 'condition'
+  | 'useful_life'
+  | 'repeat_repair'
+  | 'loss_or_damage';
 
 export interface ReplacementEligibility {
   eligible: boolean;
@@ -20,12 +25,19 @@ export interface ReplacementEligibility {
 
 const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1_000;
 
+/** Completed "repaired" stays in the look-back window, and the configured limit. */
+export interface RepeatRepairs {
+  count: number;
+  limit: number;
+}
+
 /**
  * Whether the holder may requisition a replacement for `asset`. The caller has
  * already established that the holder is the asset's current custodian.
  *
  *   - flagged for disposal while still held → loss / theft / damage reported
  *   - issued and no longer serviceable       → condition
+ *   - issued and repaired `limit`+ times in the window → repeat_repair
  *   - issued and past its class's useful life → useful_life
  *
  * Anything else (serviceable and young, under repair, …) is not replaceable.
@@ -37,6 +49,7 @@ export function replacementEligibility(
   >,
   usefulLifeYears: Record<AssetClass, number>,
   now = Date.now(),
+  repeatRepairs?: RepeatRepairs,
 ): ReplacementEligibility {
   if (asset.status === AssetStatus.FLAGGED_FOR_DISPOSAL) {
     return {
@@ -65,6 +78,16 @@ export function replacementEligibility(
       eligible: true,
       basis: 'condition',
       reason: `Condition is "${String(asset.condition).replaceAll('_', ' ')}".`,
+    };
+  }
+
+  if (repeatRepairs && repeatRepairs.count >= repeatRepairs.limit) {
+    return {
+      eligible: true,
+      basis: 'repeat_repair',
+      reason:
+        `Repaired ${repeatRepairs.count} times in the last ` +
+        `${REPEAT_REPAIR_WINDOW_MONTHS} months (limit ${repeatRepairs.limit}).`,
     };
   }
 

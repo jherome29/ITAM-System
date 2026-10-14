@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
+import { createTestApp } from './create-test-app';
 import { UserEntity } from '../src/users/entities/user.entity';
 import { AssetEntity } from '../src/assets/entities/asset.entity';
 import {
@@ -139,18 +140,7 @@ describe('Repairs (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api');
-    // Same pipe as main.ts bootstrap() — the DTO rules are part of what we test.
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
-    await app.init();
+    app = await createTestApp(moduleFixture);
     userRepo = moduleFixture.get(getRepositoryToken(UserEntity));
     assetRepo = moduleFixture.get(getRepositoryToken(AssetEntity));
     dataSource = moduleFixture.get(DataSource);

@@ -83,6 +83,33 @@ describe('replacementEligibility (CLAUDE.md §17)', () => {
     ).toBe(false);
   });
 
+  it('allows a serviceable, young asset repaired up to the repeat-repair limit', () => {
+    const r = replacementEligibility(asset(), USEFUL_LIFE, NOW, {
+      count: 3,
+      limit: 3,
+    });
+    expect(r).toMatchObject({ eligible: true, basis: 'repeat_repair' });
+    expect(r.reason).toMatch(/Repaired 3 times in the last 12 months/);
+  });
+
+  it('refuses below the repeat-repair limit', () => {
+    expect(
+      replacementEligibility(asset(), USEFUL_LIFE, NOW, { count: 2, limit: 3 })
+        .eligible,
+    ).toBe(false);
+  });
+
+  it('prefers the condition basis over repeat repairs', () => {
+    expect(
+      replacementEligibility(
+        asset({ condition: AssetCondition.UNSERVICEABLE }),
+        USEFUL_LIFE,
+        NOW,
+        { count: 5, limit: 3 },
+      ).basis,
+    ).toBe('condition');
+  });
+
   it('refuses a serviceable asset with no acquisition date instead of guessing its age', () => {
     const r = replacementEligibility(
       asset({ acquisitionDate: null as unknown as Date }),

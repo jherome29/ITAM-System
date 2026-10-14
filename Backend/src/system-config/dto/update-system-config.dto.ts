@@ -38,6 +38,12 @@ export class UpdateSystemConfigDto {
   maxLoginAttempts?: number;
 
   @IsOptional()
+  @IsInt()
+  @Min(2)
+  @Max(20)
+  repeatRepairLimit?: number;
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => UsefulLifeYearsDto)
   usefulLifeYears?: UsefulLifeYearsDto;

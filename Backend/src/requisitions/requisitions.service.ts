@@ -19,10 +19,7 @@ import {
   AssetsService,
   OPEN_REQUISITION_STATUSES,
 } from '../assets/assets.service';
-import {
-  ReplacementBasis,
-  replacementEligibility,
-} from '../assets/replacement-eligibility';
+import { ReplacementBasis } from '../assets/replacement-eligibility';
 import { ReportsService } from '../reports/reports.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -265,6 +262,56 @@ export class RequisitionsService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
+  // ── Replacement review (Property Officer watch list) ──────────────────────
+  /**
+   * Replacement requisitions (newest 200) with the criterion they were
+   * justified on at submission — read from the immutable audit entry, since
+   * the old unit's state changes once it is collected — plus held assets that
+   * already qualify but have no open request. Scoped by the caller's asset types.
+   * SVC: Design & Transition — replacement validation (CLAUDE.md §17).
+   */
+  async replacementReview(role: UserRole) {
+    const scope = resolveAssetTypeScope(role);
+    const qb = this.reqRepo
+      .createQueryBuilder('r')
+      .leftJoinAndSelect('r.items', 'items')
+      .leftJoinAndSelect('r.requestedBy', 'requestedBy')
+      .leftJoinAndSelect('r.supervisor', 'supervisor')
+      .innerJoinAndSelect('r.replacedAsset', 'replacedAsset')
+      .orderBy('r.createdAt', 'DESC')
+      .take(200);
+    if (scope && scope.length > 0) {
+      qb.where('replacedAsset.assetType IN (:...scope)', { scope });
+    }
+    const rows = await qb.getMany();
+
+    const [submissions, repairCounts, candidates] = await Promise.all([
+      this.auditService.findByRecordsAndAction(
+        rows.map((r) => r.id),
+        AuditAction.REQUISITION_SUBMITTED,
+      ),
+      this.assetsService.recentRepairCounts(
+        rows.map((r) => r.replacedAssetId!),
+      ),
+      this.assetsService.replacementCandidates(scope),
+    ]);
+    const basisById = new Map(
+      submissions.map((a) => [
+        a.affectedRecordId,
+        (a.metadata?.replacementBasis as ReplacementBasis | undefined) ?? null,
+      ]),
+    );
+
+    return {
+      requests: rows.map((r) => ({
+        ...withRequester(r),
+        replacementBasis: basisById.get(r.id) ?? null,
+        repairsInWindow: repairCounts.get(r.replacedAssetId!) ?? 0,
+      })),
+      candidates,
+    };
+  }
+
   // ── Detail for display — findOne() plus the requester summary ─────────────
   // Kept separate from findOne(), which approve/reject/fulfill load and then
   // save: the view shape (requester, no requestedBy) must never be persisted.
@@ -276,14 +323,40 @@ export class RequisitionsService {
     const req = await this.findOne(id, requestingUserId, requestingRole);
     const lookup = (userId: string | null) =>
       userId ? this.usersService.findOne(userId).catch(() => null) : null;
-    const [requester, approver, replaced] = await Promise.all([
+    const [requester, approver, replaced, forms] = await Promise.all([
       lookup(req.requestedById),
       lookup(req.supervisorId),
       req.replacedAssetId
         ? this.assetsService.findOne(req.replacedAssetId).catch(() => null)
         : null,
+      this.reportsService.formsForRequisition(req.id),
     ]);
-    return withRequester(req, requester, approver, replaced);
+    return {
+      ...withRequester(req, requester, approver, replaced),
+      // COA documents generated for this request (e.g. the receipt for the
+      // unit surrendered on a replacement) — the requester's proof.
+      documents: forms.map((f) => ({
+        id: f.id,
+        formType: f.formType,
+        generatedAt: f.generatedAt,
+      })),
+    };
+  }
+
+  /**
+   * A document generated for this requisition. Same read access as the
+   * requisition itself (findOne's IDOR + scope guards), so the requester can
+   * download their own receipt.
+   */
+  async getDocument(
+    id: string,
+    formId: string,
+    requestingUserId: string,
+    requestingRole: UserRole,
+  ) {
+    const req = await this.findOne(id, requestingUserId, requestingRole);
+    const pdf = await this.reportsService.requisitionFormPdf(req.id, formId);
+    return { ...pdf, requestNumber: req.requestNumber };
   }
 
   // ── Requisition stats — dashboard counts in flat shape matching frontend ────
@@ -422,10 +495,9 @@ export class RequisitionsService {
       );
     }
 
-    const eligibility = replacementEligibility(
-      asset,
-      this.systemConfig.getUsefulLifeYears(),
-    );
+    const eligibility = (
+      await this.assetsService.replacementEligibilityFor([asset])
+    ).get(asset.id)!;
     if (!eligibility.eligible || !eligibility.basis) {
       throw new BadRequestException(
         `Replacement not justified for "${asset.itemDescription}": ${eligibility.reason}`,
@@ -964,6 +1036,13 @@ export class RequisitionsService {
       );
     }
 
+    // Replacement: the new unit is checked before anything is written, so a
+    // wrong pick leaves the old unit with its holder and the request open.
+    const newUnit =
+      req.requisitionType === RequisitionType.REPLACEMENT
+        ? await this.replacementUnitFor(req, dto)
+        : null;
+
     // Replacement: the old unit comes back as the new one goes out. Runs
     // before the fulfillment write so a refused lifecycle transition leaves
     // the requisition untouched and the custodian sees why.
@@ -1050,6 +1129,20 @@ export class RequisitionsService {
       return em.getRepository(RequisitionEntity).save(req);
     });
 
+    // Replacement: hand the new unit to the requester in the same step (PAR /
+    // ICS follow from the asset page as for any issuance). Pre-validated above,
+    // so a failure here is unexpected — logged, and the custodian can still
+    // issue it from Custody & Issuance.
+    const issued = newUnit
+      ? await this.issueReplacementUnit(
+          req,
+          newUnit,
+          itPersonnelId,
+          userRole,
+          ipAddress,
+        )
+      : false;
+
     // After the transaction commits: give each decremented supply an immediate
     // low-stock check rather than waiting for the daily sweep. Runs outside the
     // txn, so a failure here (e.g. notify infra down inside _sendLowStockAlert)
@@ -1073,6 +1166,9 @@ export class RequisitionsService {
       NotificationAlertType.REQUISITION_FULFILLED,
       'Requisition Fulfilled',
       `Your requisition ${req.requestNumber} has been fulfilled by the ${FULFILLER_LABEL[userRole] ?? 'custodian'}. Please collect your item(s).` +
+        (issued && newUnit
+          ? ` "${newUnit.itemDescription}"${newUnit.propertyNumber ? ` (${newUnit.propertyNumber})` : ''} is now issued to you.`
+          : '') +
         (surrender?.outcome === 'returned'
           ? ` "${surrender.itemDescription}" has been received back and is no longer assigned to you.`
           : ''),
@@ -1094,10 +1190,79 @@ export class RequisitionsService {
         fulfilledItems: dto.fulfilledItems,
         stockDecrements,
         ...(surrender ? { replacedAsset: surrender } : {}),
+        ...(newUnit ? { issuedAssetId: newUnit.id, issued } : {}),
       },
     });
 
     return saved;
+  }
+
+  /**
+   * The unit a replacement is fulfilled with, when the custodian picked one:
+   * an available unit of the same asset type, not the old unit itself.
+   * Returns null when no unit was linked (it is then issued separately).
+   */
+  private async replacementUnitFor(
+    req: RequisitionEntity,
+    dto: FulfillRequisitionDto,
+  ): Promise<AssetEntity | null> {
+    const [item] = req.items;
+    const link = dto.fulfilledItems?.find(
+      (f) => f.requisitionItemId === item?.id,
+    );
+    if (!item || !link) return null;
+    if (link.assetId === req.replacedAssetId) {
+      throw new BadRequestException(
+        'The replacement must be a different unit from the one being replaced.',
+      );
+    }
+    const unit = await this.assetsService.findOne(link.assetId);
+    if (unit.assetType !== item.assetType) {
+      throw new BadRequestException(
+        `"${unit.itemDescription}" is ${unit.assetType} — this request needs an ${item.assetType} unit.`,
+      );
+    }
+    if (unit.assetClass === AssetClass.IES) {
+      throw new BadRequestException(
+        'A replacement is a unit asset, not a supply item.',
+      );
+    }
+    if (unit.status !== AssetStatus.AVAILABLE) {
+      throw new BadRequestException(
+        `"${unit.itemDescription}" is ${String(unit.status).replaceAll('_', ' ')}, not available.`,
+      );
+    }
+    return unit;
+  }
+
+  private async issueReplacementUnit(
+    req: RequisitionEntity,
+    unit: AssetEntity,
+    userId: string,
+    userRole: UserRole,
+    ipAddress: string,
+  ): Promise<boolean> {
+    try {
+      await this.assetsService.updateLifecycle(
+        unit.id,
+        {
+          status: AssetStatus.ISSUED,
+          custodianId: req.requestedById,
+          notes: `${req.requestNumber}: issued as a replacement`,
+        },
+        userId,
+        userRole,
+        ipAddress,
+        resolveAssetTypeScope(userRole),
+      );
+      return true;
+    } catch (e) {
+      this.logger.error(
+        `${req.requestNumber}: could not issue replacement unit ${unit.id}`,
+        e instanceof Error ? e.stack : String(e),
+      );
+      return false;
+    }
   }
 
   /** Requester-facing hand-over instructions for an approved replacement. */

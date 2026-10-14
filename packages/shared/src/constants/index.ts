@@ -32,6 +32,16 @@ export const DEFAULT_REORDER_LEVEL = 10;
  */
 export const REPAIR_DEFAULT_TURNAROUND_DAYS = 14;
 
+/**
+ * Replacement validation — a serviceable asset repaired this many times within
+ * REPEAT_REPAIR_WINDOW_MONTHS may be replaced: it keeps failing (CLAUDE.md §17).
+ * Default for the `repeat_repair_limit` system-config value.
+ */
+export const REPEAT_REPAIR_LIMIT = 3;
+
+/** Look-back window for REPEAT_REPAIR_LIMIT. */
+export const REPEAT_REPAIR_WINDOW_MONTHS = 12;
+
 /** Inventory accuracy target: 98% */
 export const INVENTORY_ACCURACY_TARGET = 0.98;
 

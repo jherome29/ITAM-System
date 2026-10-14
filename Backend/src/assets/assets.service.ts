@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -26,6 +27,7 @@ import {
   UserRole,
 } from '../../../packages/shared/src/enums';
 import { SystemConfigService } from '../system-config/system-config.service';
+import { REPEAT_REPAIR_WINDOW_MONTHS } from '../../../packages/shared/src/constants';
 import {
   ReplacementEligibility,
   replacementEligibility,
@@ -35,7 +37,7 @@ import {
   RepairContext,
   repairDueDate,
 } from './asset-repairs.service';
-import { CompleteRepairDto } from './dto/repair.dto';
+import { CompleteRepairDto, IssueLoanerDto } from './dto/repair.dto';
 import { UserEntity } from '../users/entities/user.entity';
 import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 
@@ -425,17 +427,17 @@ export class AssetsService {
 
     const byStatus: Record<string, number> = {};
     statusRows.forEach((r) => {
-      byStatus[r.status] = parseInt(r.count, 10);
+      byStatus[r.status] = Number.parseInt(r.count, 10);
     });
 
     const byClass: Record<string, number> = {};
     classRows.forEach((r) => {
-      byClass[r.assetClass] = parseInt(r.count, 10);
+      byClass[r.assetClass] = Number.parseInt(r.count, 10);
     });
 
     const byType: Record<string, number> = {};
     typeRows.forEach((r) => {
-      byType[r.assetType] = parseInt(r.count, 10);
+      byType[r.assetType] = Number.parseInt(r.count, 10);
     });
 
     const total = Object.values(byStatus).reduce((s, c) => s + c, 0);
@@ -504,7 +506,7 @@ export class AssetsService {
         })
         .getRawMany();
 
-    const usefulLife = this.systemConfig.getUsefulLifeYears();
+    const eligibility = await this.replacementEligibilityFor(assets);
     const repairs = await this.repairs.openForAssets(
       assets
         .filter((a) => a.status === AssetStatus.UNDER_REPAIR)
@@ -514,7 +516,7 @@ export class AssetsService {
       const repair = repairs.get(asset.id);
       return Object.assign(asset, {
         replacement: {
-          ...replacementEligibility(asset, usefulLife),
+          ...eligibility.get(asset.id)!,
           openRequestNumber:
             open.find((r) => r.assetId === asset.id)?.requestNumber ?? null,
         },
@@ -527,6 +529,105 @@ export class AssetsService {
             }
           : null,
       });
+    });
+  }
+
+  /**
+   * Replacement eligibility for each asset, keyed by id — the one place that
+   * gathers the inputs (config thresholds, recent repair counts), so the
+   * holder's button and RequisitionsService's guard always agree.
+   */
+  async replacementEligibilityFor(
+    assets: AssetEntity[],
+  ): Promise<Map<string, ReplacementEligibility>> {
+    const usefulLife = this.systemConfig.getUsefulLifeYears();
+    const limit = this.systemConfig.getRepeatRepairLimit();
+    const counts = await this.recentRepairCounts(assets.map((a) => a.id));
+    const now = Date.now();
+    return new Map(
+      assets.map((a) => [
+        a.id,
+        replacementEligibility(a, usefulLife, now, {
+          count: counts.get(a.id) ?? 0,
+          limit,
+        }),
+      ]),
+    );
+  }
+
+  /** Completed repairs per asset within the repeat-repair look-back window. */
+  recentRepairCounts(assetIds: string[]): Promise<Map<string, number>> {
+    const since = new Date();
+    since.setUTCMonth(since.getUTCMonth() - REPEAT_REPAIR_WINDOW_MONTHS);
+    return this.repairs.repairedCountsSince(assetIds, since);
+  }
+
+  /**
+   * Held assets that already qualify for a replacement but have no open
+   * replacement requisition — the Property Officer's watch list.
+   * SVC: Improve — surfaces items that keep failing or have aged out.
+   */
+  async replacementCandidates(assetTypeScope?: AssetType[]) {
+    const qb = this.assetRepo
+      .createQueryBuilder('a')
+      .where('a.custodianId IS NOT NULL')
+      .andWhere('a.status IN (:...statuses)', {
+        statuses: [AssetStatus.ISSUED, AssetStatus.FLAGGED_FOR_DISPOSAL],
+      });
+    if (assetTypeScope && assetTypeScope.length > 0) {
+      qb.andWhere('a.assetType IN (:...scope)', { scope: assetTypeScope });
+    }
+    const held = await qb.getMany();
+    if (held.length === 0) return [];
+
+    const [eligibility, counts, open] = await Promise.all([
+      this.replacementEligibilityFor(held),
+      this.recentRepairCounts(held.map((a) => a.id)),
+      this.assetRepo.manager
+        .createQueryBuilder()
+        .select('r.replaced_asset_id', 'assetId')
+        .from('requisitions', 'r')
+        .where('r.replaced_asset_id IN (:...ids)', {
+          ids: held.map((a) => a.id),
+        })
+        .andWhere('r.status IN (:...statuses)', {
+          statuses: OPEN_REQUISITION_STATUSES,
+        })
+        .getRawMany<{ assetId: string }>(),
+    ]);
+    const requested = new Set(open.map((r) => r.assetId));
+    const due = held.filter(
+      (a) => eligibility.get(a.id)?.eligible && !requested.has(a.id),
+    );
+    const holders = await Promise.all(
+      [...new Set(due.map((a) => a.custodianId!))].map((id) =>
+        this.usersService.findOne(id).catch(() => null),
+      ),
+    );
+    const byId = new Map(
+      holders.filter((u): u is UserEntity => !!u).map((u) => [u.id, u]),
+    );
+    return due.map((a) => {
+      const holder = byId.get(a.custodianId!);
+      return {
+        id: a.id,
+        itemDescription: a.itemDescription,
+        propertyNumber: a.propertyNumber ?? null,
+        assetType: a.assetType,
+        assetClass: a.assetClass,
+        status: a.status,
+        condition: a.condition,
+        acquisitionDate: a.acquisitionDate ?? null,
+        // Name + employee ID only (CLAUDE.md §8.4).
+        holder: holder
+          ? {
+              name: `${holder.firstName} ${holder.lastName}`.trim(),
+              employeeId: holder.employeeId,
+            }
+          : null,
+        repairsInWindow: counts.get(a.id) ?? 0,
+        eligibility: eligibility.get(a.id)!,
+      };
     });
   }
 
@@ -814,6 +915,86 @@ export class AssetsService {
   }
 
   /**
+   * Lend the holder of an item under repair an available unit of the same
+   * asset type. Issued to them with an expected return date (the repair's due
+   * date unless one is given), so the overdue-return watcher covers it; the
+   * repair closing brings that date forward (AssetRepairsService.recallLoaner).
+   * Same permission as acting on the repair.
+   * SVC: Deliver & Support — continuity of service during repair.
+   */
+  async issueLoaner(
+    repairId: string,
+    dto: IssueLoanerDto,
+    user: UserEntity,
+    ipAddress: string,
+  ) {
+    const repair = await this.repairs.load(repairId);
+    this.repairs.assertCanAct(repair, user);
+    if (!repair.holderId) {
+      throw new BadRequestException(
+        'This item was in stock when it went in — there is no holder to lend a unit to.',
+      );
+    }
+    if (
+      repair.loaner &&
+      repair.loaner.status === AssetStatus.ISSUED &&
+      repair.loaner.custodianId === repair.holderId
+    ) {
+      throw new ConflictException(
+        `"${repair.loaner.itemDescription}" is already out on loan for this repair.`,
+      );
+    }
+    if (dto.assetId === repair.assetId) {
+      throw new BadRequestException('An item cannot be its own loaner.');
+    }
+
+    const scope = resolveAssetTypeScope(user.role);
+    const loaner = await this.findOne(dto.assetId, scope);
+    if (loaner.assetType !== repair.asset.assetType) {
+      throw new BadRequestException(
+        `A loaner for an ${repair.asset.assetType} item must be ${repair.asset.assetType} too.`,
+      );
+    }
+    if (loaner.assetClass === AssetClass.IES) {
+      throw new BadRequestException(
+        'A loaner is a unit asset, not a supply item.',
+      );
+    }
+    if (loaner.status !== AssetStatus.AVAILABLE) {
+      throw new BadRequestException(
+        `"${loaner.itemDescription}" is ${loaner.status.replaceAll('_', ' ')}, not available.`,
+      );
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const returnBy = (dto.expectedReturnDate ?? repairDueDate(repair)).slice(
+      0,
+      10,
+    );
+    if (returnBy < today) {
+      throw new BadRequestException(
+        'The loaner return date cannot be in the past.',
+      );
+    }
+
+    await this.updateLifecycle(
+      loaner.id,
+      {
+        status: AssetStatus.ISSUED,
+        custodianId: repair.holderId,
+        expectedReturnDate: returnBy,
+        notes: `Loaner while "${repair.asset.itemDescription}" is under repair`,
+      },
+      user.id,
+      user.role,
+      ipAddress,
+      scope,
+    );
+    await this.repairs.attachLoaner(repair, loaner, returnBy, user, ipAddress);
+    return this.repairs.findOneForUser(repairId, user);
+  }
+
+  /**
    * ISSUED is reachable from AVAILABLE (a fresh issue) and from UNDER_REPAIR —
    * but only to hand a repaired item back to the holder who still carries it.
    * Giving a repaired item to someone else goes through AVAILABLE first, so
@@ -910,7 +1091,8 @@ export class AssetsService {
     const asset = await this.findOne(id, assetTypeScope);
 
     // Generate deterministic identifiers based on property number + UUID
-    const base = asset.propertyNumber || id.replace(/-/g, '').substring(0, 12);
+    const base =
+      asset.propertyNumber || id.replaceAll('-', '').substring(0, 12);
     const qrCode = `AIMRS-QR-${base.toUpperCase()}`;
     const barcodeValue = `AIMRS-BC-${base.toUpperCase()}`;
 

@@ -10,6 +10,7 @@ const base: SystemConfigFormValues = {
   slaApprovalHours: '24',
   defaultReorderLevel: '10',
   maxLoginAttempts: '5',
+  repeatRepairLimit: '3',
   usefulLifePPE: '5',
   usefulLifeSEP: '3',
   usefulLifeIES: '1',
@@ -20,6 +21,7 @@ const config: SystemConfig = {
   defaultReorderLevel: 10,
   usefulLifeYears: { PPE: 5, SEP: 3, IES: 1 },
   maxLoginAttempts: 5,
+  repeatRepairLimit: 3,
 };
 
 describe('buildUpdateSystemConfigPayload', () => {
@@ -47,6 +49,7 @@ describe('systemConfigToForm', () => {
       slaApprovalHours: '24',
       defaultReorderLevel: '10',
       maxLoginAttempts: '5',
+  repeatRepairLimit: '3',
       usefulLifePPE: '5',
       usefulLifeSEP: '3',
       usefulLifeIES: '1',
@@ -58,6 +61,7 @@ describe('systemConfigToForm', () => {
       slaApprovalHours: 24,
       defaultReorderLevel: 10,
       maxLoginAttempts: 5,
+      repeatRepairLimit: 3,
       usefulLifeYears: { PPE: 5, SEP: 3, IES: 1 },
     });
   });

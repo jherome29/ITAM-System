@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { AuditLogEntity } from './entities/audit-log.entity';
 import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
 
@@ -100,6 +100,15 @@ export class AuditService {
       take: limit,
     });
     return { data, total, page, limit };
+  }
+
+  /** Entries of one action for several records, oldest first. */
+  async findByRecordsAndAction(recordIds: string[], action: AuditAction) {
+    if (recordIds.length === 0) return [];
+    return this.auditRepo.find({
+      where: { affectedRecordId: In(recordIds), action },
+      order: { timestamp: 'ASC' },
+    });
   }
 
   async findByRecord(recordId: string) {

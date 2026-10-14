@@ -117,7 +117,10 @@ describe('SchedulerService', () => {
 
   describe('getWatcherStatus()', () => {
     it('reports no sweep before any watcher has run', () => {
-      expect(service.getWatcherStatus()).toEqual({ lastSweep: null });
+      expect(service.getWatcherStatus()).toEqual({
+        lastSweep: null,
+        watchers: {},
+      });
     });
 
     it('records a manual sweep after runAllChecks with the full summary', async () => {
@@ -150,6 +153,30 @@ describe('SchedulerService', () => {
 
       expect(lastSweep?.trigger).toBe('hourly-cron');
       expect(lastSweep?.summary).toEqual({ slaBreaches: 1, pendingNudges: 0 });
+    });
+
+    it('keeps each watcher on its own last run, so an hourly sweep does not hide the daily counts', async () => {
+      assets.checkOverdueReturns.mockResolvedValue(2);
+      assets.checkLowStock.mockResolvedValue(0);
+      repairs.checkOverdue.mockResolvedValue(4);
+      await service.dailyChecks();
+
+      requisitions.checkSlaBreaches.mockRejectedValue(new Error('boom'));
+      requisitions.checkPendingApprovalNudges.mockResolvedValue(1);
+      await service.hourlyChecks();
+
+      const { watchers, lastSweep } = service.getWatcherStatus();
+      expect(lastSweep?.trigger).toBe('hourly-cron');
+      expect(watchers.overdueRepairs).toMatchObject({
+        trigger: 'daily-cron',
+        count: 4,
+      });
+      expect(watchers.overdueReturns?.count).toBe(2);
+      expect(watchers.slaBreaches).toMatchObject({
+        trigger: 'hourly-cron',
+        count: -1,
+      });
+      expect(watchers.pendingNudges?.count).toBe(1);
     });
   });
 });

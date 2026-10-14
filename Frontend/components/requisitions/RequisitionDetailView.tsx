@@ -1,8 +1,11 @@
 'use client';
 
-import { AlertTriangle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { AlertTriangle, FileDown } from 'lucide-react';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
-import type { Requisition } from '@/lib/api/requisitions';
+import { requisitionsApi, type Requisition, type RequisitionDocument } from '@/lib/api/requisitions';
+import { FORM_LABEL } from '@/lib/asset-requests/asset-request-rules';
+import { downloadBlob } from '@/lib/download';
 import {
   formatDate,
   formatDateTime,
@@ -45,6 +48,56 @@ function ReplacedAssetPanel({ request }: Readonly<{ request: Requisition }>) {
     </p>
     {old.components && !lostOrWrittenOff && <p className="mt-0.5 text-xs text-slate-600">Components to collect: {old.components}</p>}
     <p className="mt-2 text-xs text-blue-900">{handover}</p>
+  </div>;
+}
+
+/**
+ * COA documents generated for a fulfilled requisition — today the receipt for
+ * the unit surrendered on a replacement — downloadable by anyone who can read
+ * the request, the requester included. List rows carry no documents, so they
+ * are fetched from the detail endpoint when absent.
+ */
+function DocumentsSection({ request }: Readonly<{ request: Requisition }>) {
+  const [docs, setDocs] = useState<RequisitionDocument[] | null>(request.documents ?? null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (request.documents || request.status !== 'fulfilled') return;
+    let live = true;
+    requisitionsApi.getOne(request.id).then((res) => { if (live) setDocs(res.data.documents ?? []); }).catch(() => { if (live) setDocs([]); });
+    return () => { live = false; };
+  }, [request.id, request.status, request.documents]);
+
+  if (!docs || docs.length === 0) return null;
+
+  const download = async (doc: RequisitionDocument) => {
+    setBusy(doc.id);
+    setError('');
+    try {
+      downloadBlob(await requisitionsApi.document(request.id, doc.id), `${doc.formType}-${request.requestNumber}.pdf`);
+    } catch {
+      setError('The document could not be downloaded. Please try again.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return <div>
+    <p className="text-xs font-bold text-slate-500">Official documents</p>
+    <ul className="mt-2 space-y-2">
+      {docs.map((doc) => <li key={doc.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 text-sm">
+        <span>
+          <span className="font-semibold text-slate-800">{FORM_LABEL[doc.formType] ?? doc.formType.replaceAll('_', ' ')}</span>
+          <span className="block text-xs text-slate-500">Generated {formatDateTime(doc.generatedAt)}</span>
+        </span>
+        <button type="button" disabled={busy === doc.id} onClick={() => void download(doc)} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+          <FileDown className="h-4 w-4" aria-hidden="true" /> {busy === doc.id ? 'Downloading…' : 'Download PDF'}
+        </button>
+      </li>)}
+    </ul>
+    {error && <p className="mt-2 text-sm font-semibold text-red-700">{error}</p>}
+    <p className="mt-2 text-xs text-slate-500">Printed copies are signed at the custodian&apos;s office; this digital copy is kept for COA audit reference.</p>
   </div>;
 }
 
@@ -96,6 +149,8 @@ export function RequisitionDetailView({ request }: Readonly<{ request: Requisiti
         </div>)}
       </div>
     </div>
+
+    <DocumentsSection key={request.id} request={request} />
 
     <div><p className="text-xs font-bold text-slate-500">Justification</p><p className="mt-2 whitespace-pre-line text-sm text-slate-700">{request.justification}</p></div>
 
