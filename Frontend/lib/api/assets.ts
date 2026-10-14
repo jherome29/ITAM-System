@@ -31,6 +31,36 @@ export interface Asset {
   updatedAt: string;
 }
 
+/** Server-computed replacement rule (CLAUDE.md §17) for one of my assets. */
+export interface ReplacementEligibility {
+  eligible: boolean;
+  basis: 'condition' | 'useful_life' | 'loss_or_damage' | null;
+  reason: string;
+  /** An open replacement requisition for this asset, if one exists. */
+  openRequestNumber: string | null;
+}
+
+/** An asset from GET /v1/assets/mine — the holder's view. */
+export type MyAsset = Asset & {
+  replacement: ReplacementEligibility;
+  /** While under repair: where it is and when it is due back. */
+  repair: { serviceType: 'in_house' | 'external'; serviceProvider: string | null; openedAt: string; dueDate: string } | null;
+};
+
+/** One grouped, requestable line from GET /v1/assets/catalogue/items. */
+export interface CatalogueItem {
+  itemDescription: string;
+  brand: string | null;
+  itemCode: string | null;
+  assetType: string;
+  assetClass: string;
+  isSupply: boolean;
+  /** Units available (PPE/SEP) or quantity on hand (IES). */
+  available: number;
+  conditions: string[];
+  locations: string[];
+}
+
 export interface AssetStats {
   total: number;
   available: number;
@@ -119,6 +149,21 @@ export const assetsApi = {
     client
       .get<ApiResponse<PaginatedResponse<Asset>>>("/v1/assets/catalogue")
       .then((r) => r.data),
+
+  catalogueItems: (params: { search?: string; assetType?: string; assetClass?: string; limit?: number } = {}) => {
+    const query: Record<string, string | number> = {};
+    if (params.search) query.search = params.search;
+    if (params.assetType) query.assetType = params.assetType;
+    if (params.assetClass) query.assetClass = params.assetClass;
+    if (params.limit) query.limit = params.limit;
+    return client
+      .get<ApiResponse<CatalogueItem[]>>("/v1/assets/catalogue/items", { params: query })
+      .then((r) => r.data);
+  },
+
+  /** Assets currently assigned to the logged-in user (custodianId = me). */
+  mine: () =>
+    client.get<ApiResponse<MyAsset[]>>('/v1/assets/mine').then((r) => r.data),
 
   getOne: (id: string) =>
     client.get<ApiResponse<Asset>>(`/v1/assets/${id}`).then((r) => r.data),

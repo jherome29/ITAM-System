@@ -1,0 +1,123 @@
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { AssetsService } from './assets.service';
+import { AssetRepairsService } from './asset-repairs.service';
+import { CompleteRepairDto, UpdateRepairDto } from './dto/repair.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '../../../packages/shared/src/enums';
+import { UserEntity } from '../users/entities/user.entity';
+
+interface AuthenticatedRequest {
+  user: UserEntity;
+  ip: string;
+}
+
+const READERS = [
+  UserRole.IT_PERSONNEL,
+  UserRole.PROPERTY_CUSTODIAN,
+  UserRole.PROPERTY_OFFICER,
+  UserRole.SYSTEM_ADMIN,
+  UserRole.MANAGEMENT,
+];
+
+// SVC: Deliver & Support — maintenance and repair records.
+// Custodians act within their asset-type scope (ICT → IT Personnel,
+// Fixed/Supplies → Property Custodian); the System Administrator acts only on
+// a custodian's own item (AssetRepairsService.canAct). Everyone else reads.
+@Controller('v1/repairs')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class RepairsController {
+  constructor(
+    private readonly repairs: AssetRepairsService,
+    private readonly assets: AssetsService,
+  ) {}
+
+  /** GET /api/v1/repairs?status=open|closed — scoped queue / history. */
+  @Get()
+  @Roles(...READERS)
+  async list(
+    @Req() req: AuthenticatedRequest,
+    @Query('status') status?: string,
+  ) {
+    return {
+      message: 'Repairs retrieved',
+      data: await this.repairs.list(req.user, status),
+    };
+  }
+
+  /** GET /api/v1/repairs/asset/:assetId — one asset's repair history. */
+  @Get('asset/:assetId')
+  @Roles(...READERS)
+  async forAsset(
+    @Param('assetId', ParseUUIDPipe) assetId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return {
+      message: 'Repair history retrieved',
+      data: await this.repairs.listForAsset(assetId, req.user),
+    };
+  }
+
+  @Get(':id')
+  @Roles(...READERS)
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return {
+      message: 'Repair retrieved',
+      data: await this.repairs.findOneForUser(id, req.user),
+    };
+  }
+
+  /** PATCH /api/v1/repairs/:id — service details, expected date, findings. */
+  @Patch(':id')
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.SYSTEM_ADMIN,
+  )
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateRepairDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return {
+      message: 'Repair updated',
+      data: await this.repairs.update(id, dto, req.user, req.ip),
+    };
+  }
+
+  /** POST /api/v1/repairs/:id/complete — repaired or unrepairable. */
+  @Post(':id/complete')
+  @HttpCode(HttpStatus.OK)
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.SYSTEM_ADMIN,
+  )
+  async complete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CompleteRepairDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return {
+      message: 'Repair completed',
+      data: await this.assets.completeRepair(id, dto, req.user, req.ip),
+    };
+  }
+}

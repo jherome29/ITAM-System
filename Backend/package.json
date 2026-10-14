@@ -94,6 +94,8 @@
       "auth/auth.service.ts",
       "auth/guards/roles.guard.ts",
       "assets/assets.service.ts",
+      "assets/replacement-eligibility.ts",
+      "assets/asset-repairs.service.ts",
       "requisitions/requisitions.service.ts",
       "notifications/notifications.service.ts",
       "audit/audit.service.ts",
@@ -102,7 +104,10 @@
       "system-config/system-config.service.ts",
       "health/health.controller.ts",
       "admin/admin.service.ts",
-      "admin/admin.controller.ts"
+      "admin/admin.controller.ts",
+      "asset-requests/asset-requests.service.ts",
+      "asset-requests/asset-requests.controller.ts",
+      "asset-requests/attachment-files.ts"
     ],
     "coverageThreshold": {
       "global": {

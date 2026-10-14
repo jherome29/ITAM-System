@@ -53,7 +53,10 @@ describe('role-based sidebar navigation', () => {
   });
 
   it('marks management and audit viewer controls as read-only', () => {
-    expect(roleNavigation[ProposedUserRole.MANAGEMENT_AUDIT_VIEWER].every((item) => item.readOnly)).toBe(true);
+    // Oversight pages are read-only; the one exception is the viewer's own
+    // accountability — they hold property too and must be able to return it.
+    const nav = roleNavigation[ProposedUserRole.MANAGEMENT_AUDIT_VIEWER];
+    expect(nav.filter((item) => !item.readOnly).map((item) => item.href)).toEqual(['/management-audit/assigned-assets']);
     expect(hasUiPermission(ProposedUserRole.MANAGEMENT_AUDIT_VIEWER, 'read_only')).toBe(true);
     expect(hasUiPermission(ProposedUserRole.MANAGEMENT_AUDIT_VIEWER, 'issue_property')).toBe(false);
   });

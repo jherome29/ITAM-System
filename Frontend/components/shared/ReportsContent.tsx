@@ -12,6 +12,7 @@ const ALL_REPORT_TYPES = [
   { value: 'ASSET_RETURN', label: 'Asset Return Record', formats: ['pdf'] as const },
   { value: 'PHYSICAL_COUNT', label: 'Physical Count Summary', formats: ['pdf', 'excel'] as const },
   { value: 'DISPOSAL', label: 'Disposal Documentation Report', formats: ['pdf'] as const },
+  { value: 'REPAIR_HISTORY', label: 'Repair History', formats: ['pdf', 'excel'] as const },
 ];
 
 export function ReportsContent({

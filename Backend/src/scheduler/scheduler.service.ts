@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { RequisitionsService } from '../requisitions/requisitions.service';
 import { AssetsService } from '../assets/assets.service';
+import { AssetRepairsService } from '../assets/asset-repairs.service';
 
 /**
  * Aggregated result of one full watcher sweep.
@@ -16,6 +17,7 @@ export interface CheckSummary {
   pendingNudges: number;
   overdueReturns: number;
   lowStock: number;
+  overdueRepairs: number;
 }
 
 export interface WatcherSweep {
@@ -37,6 +39,7 @@ export class SchedulerService {
   constructor(
     private readonly requisitions: RequisitionsService,
     private readonly assets: AssetsService,
+    private readonly repairs: AssetRepairsService,
   ) {}
 
   getWatcherStatus(): { lastSweep: WatcherSweep | null } {
@@ -93,13 +96,16 @@ export class SchedulerService {
     const lowStock = await this.runWatcher('checkLowStock', () =>
       this.assets.checkLowStock(),
     );
+    const overdueRepairs = await this.runWatcher('checkOverdueRepairs', () =>
+      this.repairs.checkOverdue(),
+    );
     this.logger.log(
-      `daily: overdueReturns=${overdueReturns} lowStock=${lowStock}`,
+      `daily: overdueReturns=${overdueReturns} lowStock=${lowStock} overdueRepairs=${overdueRepairs}`,
     );
     this.lastSweep = {
       at: new Date().toISOString(),
       trigger: 'daily-cron',
-      summary: { overdueReturns, lowStock },
+      summary: { overdueReturns, lowStock, overdueRepairs },
     };
   }
 
@@ -116,6 +122,9 @@ export class SchedulerService {
       ),
       lowStock: await this.runWatcher('checkLowStock', () =>
         this.assets.checkLowStock(),
+      ),
+      overdueRepairs: await this.runWatcher('checkOverdueRepairs', () =>
+        this.repairs.checkOverdue(),
       ),
     };
     this.lastSweep = {

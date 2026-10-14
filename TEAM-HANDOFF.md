@@ -2,7 +2,7 @@
 
 > **For:** Nelson James Casambros · Andrei Fredrick Montaniel · Jairus Nathan Valenton
 > **Target Completion:** October 2026
-> **Last updated:** September 10, 2026
+> **Last updated:** October 11, 2026
 
 Read this file first, then **CLAUDE.md** (the single source of truth for the whole project). Everything else is linked from one of these two.
 
@@ -35,7 +35,9 @@ If you have an old local clone with a branch called `FE-Updated-not-finished`: t
 - **PR #96** — `fix/admin-shell-ui`: dead `/` breadcrumb crumb removed + acronym labels, slim custom scrollbars app-wide, collapsed-sidebar overlap fix, **`PATCH /users/:id/activate`** (reactivate a deactivated account) + an in-app `PasswordResetDialog` (replaces `window.prompt`), Toast auto-dismiss, `TRUST_PROXY` so audit entries log the real client IP behind a proxy, CLAUDE.md §14 date table trimmed.
 - **PR #98** — `feature/master-admin-dashboard`: Master Admin governance/platform mock pages + `admin.mock.ts` **cut as out of scope** (2026-09-09); dashboard rebuilt on live data (`GET /api/v1/admin/dashboard-stats`). Then an admin-hardening pass: **force sign-out** (`PATCH /users/:id/revoke-sessions` — bumps `tokenVersion` only), **unlock** wired into the directory + live **Locked** status + role filter, **per-account activity** panel (`GET /audit/user/:id`), **audit date range** (`startDate`/`endDate` on `GET /audit`), **config provenance** (`meta` on `GET /system-config`), **watcher heartbeat** (`GET /notifications/watcher-status`). Backend test-first, +~40 tests (303 total). No schema change.
 
-**Open branches awaiting merge:** none with code. Only `docs/admin-dashboard-plan` (2 superseded planning-doc commits). Health on `main` (2026-09-10): backend `tsc` clean + 303/303 unit tests; frontend `tsc` clean + 40/40 tests + production build clean. Not re-run this pass: ESLint (both), backend webpack build, coverage %, `audit:check` (both), `secretlint`, backend e2e (Docker), Docker image builds.
+**Open PR (2026-10-11): #102 `feature/returns-incidents-and-workflow-fixes` → `develop`**, all CI checks green, needs 1 review. Returns & Incidents (schemas 010–012), Maintenance & Repair (schema 013), derived request types + replacement flow, self-approval routing fix, notification deep-links, catalogue item picker (008–009), next 16.4.0. **After it merges, apply schemas 008–013 to every database that predates them** (shared Supabase + your local Docker Postgres) — `008`, `010` and `013` contain `ALTER TYPE … ADD VALUE`, so run them statement by statement in the Supabase SQL editor (not as one transaction). All of them are safe to re-run. Without them the backend fails on `asset_requests` / `asset_repairs` queries and the new enum values.
+
+**Previously open branches:** none with code. Only `docs/admin-dashboard-plan` (2 superseded planning-doc commits). Health on `main` (2026-09-10): backend `tsc` clean + 303/303 unit tests; frontend `tsc` clean + 40/40 tests + production build clean. Not re-run this pass: ESLint (both), backend webpack build, coverage %, `audit:check` (both), `secretlint`, backend e2e (Docker), Docker image builds.
 
 For a one-screen state map see **`FEATURE-STATUS.md`** (✅ / 🟡 / 🔴 mock / ⬜); for the full path to CICC handover see **`PATH-TO-DONE.md`**; for the plain-language gap list see **`SYSTEM-STATUS.md`**; for a screen-by-screen mock inventory see **`MOCK-DATA-WIRING.md`** — all at the repo root.
 
@@ -136,6 +138,12 @@ Full role details and page routes: **`docs/guides/ROLES.md`**
 - **Master Admin dashboard rebuilt on live data** + admin-hardening pass (force sign-out, unlock wired, per-account activity, audit date range, config `meta`, watcher heartbeat) — merged, PR #98.
 - **Docker/deploy pass** (merged, PR #95) + `fix/admin-shell-ui` (merged, PR #96).
 
+### In PR #102 (open against `develop`, 2026-10-11)
+- **Requisitions** — request type derived (`supply` / `new` / `replacement`), `repair` refused; items picked from live inventory with a "Not in inventory" flag; replacement starts from My Assigned Assets after an eligibility check and fulfilling it takes the old unit back with a Receipt; a requisition is never routed to or decided by its own requester.
+- **Returns & Incidents** (CLAUDE.md Module 6) — return / repair / damage / loss / theft with attachments, two-step custodian decision, one open case per item, auto-generated COA documents the requester can download; System Admin decides a custodian's own request.
+- **Maintenance & Repair** (CLAUDE.md Module 7) — `asset_repairs` record per repair stay, queue for both custodians, outcome repaired / not repairable, condition follows the lifecycle, overdue-repair watcher, Repair History report.
+- **My Assigned Assets** for every role; notification clicks deep-link to the record's drawer.
+
 ### Solid, all on `main`
 - Auth: JWT + httpOnly refresh tokens, bcrypt, account lockout, RBAC guards, real login for all 7 roles — no mock accounts anywhere in the codebase anymore
 - 7 roles: the original 5 (Employee, Supervisor, IT Personnel, System Admin, Management) plus Property Custodian and Property Officer, scoped to Fixed + Supplies assets
@@ -152,7 +160,7 @@ Full role details and page routes: **`docs/guides/ROLES.md`**
 ### Known-fake despite looking real — no backend exists yet (see `FEATURE-STATUS.md` 🔴 / `MOCK-DATA-WIRING.md` for the full list)
 - Master Admin `reference-data` page — no backend; discloses "...in frontend mock state". (The governance/platform mock pages — approval workflows, custodian coverage, master data, system health, org units, access reviews — were **cut as out of scope** and deleted, PR #98. System Settings itself is **real** — PR #87.)
 - `physical-inventory` slugs, Property Officer corrections / reconciliation — no physical-count backend. (Replacement-validation backend now exists — PR #86 — but the standalone Property Officer `replacements` screen is still the mock list.)
-- Employee "returns & incidents" and "assigned assets" — no returns/incidents module; assigned-assets needs a custodian filter on `GET /v1/assets`
+- Employee dashboard tiles marked "PREVIEW DATA" (Returns & Incidents and My Assigned Assets are real since PR #102)
 - Two "Preview data"-labeled chart panels on the Management / Management&Audit dashboards
 
 ---
@@ -171,7 +179,8 @@ Don't duplicate the gap list here — **`PATH-TO-DONE.md`** (everything between 
 | ~~6~~ | ~~Alternate approver designation~~ — **merged, PR #89 / #90** |
 | ~~7~~ | ~~Master Admin governance backend~~ — **cut as out of scope (PR #98)**; dashboard rebuilt on live data |
 | 8 | Physical count / reconciliation workflow + 2 missing management reports (Asset Utilization Summary, Audit Trail export) |
-| 9 | Small wiring leftovers (`MOCK-DATA-WIRING.md` Parts B–C) — Approving Officer `approval-history`, Property Officer `disposal`/`audit`, Employee assigned-assets filter, Returns/Incidents module, trends/utilisation endpoint, dead-mock-code deletion |
+| 9 | Small wiring leftovers (`MOCK-DATA-WIRING.md` Parts B–C) — Approving Officer `approval-history`, Property Officer `disposal`/`audit`, trends/utilisation endpoint, dead-mock-code deletion. (Assigned assets + Returns/Incidents: **done, PR #102**) |
+| 10 | Replacement / repair follow-ups — repeat repairs as a replacement reason, loaner unit during repair, issue the new unit on replacement fulfilment, requester download of the replacement receipt (`NEXT-TIME.md` §3) |
 
 Phase 5 (`docs/phases/PHASE-5-TESTING.md`): the **formal Jest security suite is merged (PR #92)** and gates CI; JMeter load test, OWASP ZAP scan, and UAT with CICC are still open and are best run once the build above is functionally complete — see `PATH-TO-DONE.md` §C for the rationale. Still open beyond the table: a `Frontend/` coverage gate, plus production readiness (§D), data onboarding (§E), and compliance/handover (§F) in `PATH-TO-DONE.md`. Tooling not yet added (Husky, MFA/TOTP, idle session timeout, Playwright e2e): `docs/guides/FUTURE-TOOLING.md`.
 

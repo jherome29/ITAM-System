@@ -6,7 +6,9 @@ export const ASSET_LIFECYCLE_TRANSITIONS: Record<string, string[]> = {
   issued: ['returned', 'under_repair', 'flagged_for_disposal'],
   returned: ['available', 'under_repair'],
   transferred: ['available'],
-  under_repair: ['available', 'flagged_for_disposal'],
+  // 'issued' from under_repair = hand a repaired item back to the holder who
+  // still carries it (the backend refuses it for anyone else / no holder).
+  under_repair: ['issued', 'available', 'flagged_for_disposal'],
   flagged_for_disposal: ['disposed'],
   disposed: [],
 };

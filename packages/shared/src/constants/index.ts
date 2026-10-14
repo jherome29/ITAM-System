@@ -26,6 +26,12 @@ export const SLA_APPROVAL_HOURS = 24;
 /** Fallback low-stock threshold when an IES asset has no per-item reorder_level. */
 export const DEFAULT_REORDER_LEVEL = 10;
 
+/**
+ * A repair with no expected completion date is treated as due this many days
+ * after it was opened — the overdue-repair watcher alerts the custodian then.
+ */
+export const REPAIR_DEFAULT_TURNAROUND_DAYS = 14;
+
 /** Inventory accuracy target: 98% */
 export const INVENTORY_ACCURACY_TARGET = 0.98;
 

@@ -9,6 +9,7 @@ export interface WatcherSweep {
     pendingNudges: number;
     overdueReturns: number;
     lowStock: number;
+    overdueRepairs: number;
   }>;
 }
 

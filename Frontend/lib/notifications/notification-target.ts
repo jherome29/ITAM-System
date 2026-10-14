@@ -1,0 +1,99 @@
+import type { Notification } from '@/lib/api/notifications';
+
+// Outcome alerts about a request the user *submitted* — these belong on their
+// own "My Requisitions" view, not on the queue they work as an approver or
+// custodian.
+const OWN_REQUEST_OUTCOMES = new Set([
+  'requisition_approved',
+  'requisition_rejected',
+  'requisition_fulfilled',
+]);
+
+/**
+ * Where clicking a notification should take the user, or null when there is no
+ * page for that record in this role's workspace (the caller falls back to the
+ * notifications inbox).
+ *
+ * `basePath` is the role workspace root, e.g. '/approving-officer'. Queue pages
+ * take `?open=<id>` and open that request's detail drawer on arrival.
+ */
+type Target = (basePath: string, id: string, alertType: string) => string | null;
+const CUSTODIAN_BASES = new Set(['/it-asset-custodian', '/property-custodian']);
+const openParam = (id: string) => `?open=${encodeURIComponent(id)}`;
+
+const requisitionTarget: Target = (basePath, id, alertType) => {
+  const open = openParam(id);
+  const isOwnOutcome = OWN_REQUEST_OUTCOMES.has(alertType);
+  switch (basePath) {
+    case '/employee':
+      return `/employee/requisitions/${encodeURIComponent(id)}`;
+    case '/approving-officer':
+      return isOwnOutcome ? `/approving-officer/requisitions${open}` : `/approving-officer/approvals${open}`;
+    case '/it-asset-custodian':
+      return isOwnOutcome ? `/it-asset-custodian/requisitions${open}` : `/it-asset-custodian/fulfillment${open}`;
+    case '/property-custodian':
+      return `/property-custodian/fulfillment${open}`;
+    default:
+      return null;
+  }
+};
+
+// Workspaces with a "My Assigned Assets" page that lists the holder's own
+// return / incident requests (the employee has a dedicated page instead).
+const HOLDER_BASES = new Set([
+  '/approving-officer',
+  '/it-asset-custodian',
+  '/property-custodian',
+  '/property-officer',
+  '/master-admin',
+  '/management-audit',
+]);
+// Who decides requests: the custodians, plus the System Administrator as the
+// fallback for a custodian's own request.
+const DECIDER_BASES = new Set([...CUSTODIAN_BASES, '/master-admin']);
+
+// Returns & Incidents: the holder's alerts (approved / rejected / completed)
+// open their own list; deciders' alerts (new / cancelled) open the queue.
+const assetRequestTarget: Target = (basePath, id, alertType) => {
+  if (basePath === '/employee') return `/employee/returns-incidents${openParam(id)}`;
+  if (alertType === 'asset_request') {
+    return DECIDER_BASES.has(basePath) ? `${basePath}/returns-incidents${openParam(id)}` : null;
+  }
+  return HOLDER_BASES.has(basePath) ? `${basePath}/assigned-assets${openParam(id)}` : null;
+};
+
+// Repairs: an overdue alert opens the custodian's Maintenance & Repair queue;
+// the holder's "repaired / not repairable" notice opens their own assets.
+const repairTarget: Target = (basePath, id, alertType) => {
+  if (alertType === 'repair_overdue') {
+    if (CUSTODIAN_BASES.has(basePath)) return `${basePath}/maintenance${openParam(id)}`;
+    return basePath === '/master-admin' ? `/master-admin/repairs${openParam(id)}` : null;
+  }
+  if (basePath === '/employee') return '/employee/assigned-assets';
+  return HOLDER_BASES.has(basePath) ? `${basePath}/assigned-assets` : null;
+};
+
+const assetTarget: Target = (basePath, id) =>
+  CUSTODIAN_BASES.has(basePath) ? `${basePath}/assets/${encodeURIComponent(id)}` : null;
+
+const TARGETS: Record<string, Target> = {
+  requisition: requisitionTarget,
+  asset_request: assetRequestTarget,
+  asset_repair: repairTarget,
+  asset: assetTarget,
+};
+
+export function notificationTarget(
+  basePath: string,
+  n: Pick<Notification, 'alertType' | 'relatedRecordId' | 'relatedRecordType'>,
+): string | null {
+  const target = n.relatedRecordType ? TARGETS[n.relatedRecordType] : undefined;
+  if (!n.relatedRecordId || !target) return null;
+  return target(basePath, n.relatedRecordId, n.alertType);
+}
+
+/** '/approving-officer/approvals' → '/approving-officer'. */
+export function workspaceBasePath(pathname: string): string {
+  const first = pathname.split('/').find(Boolean);
+  return first ? `/${first}` : '';
+}

@@ -16,13 +16,64 @@ import { UpdateAssetDto } from './dto/update-asset.dto';
 import { UpdateLifecycleDto } from './dto/update-lifecycle.dto';
 import {
   AssetClass,
+  AssetCondition,
   AssetStatus,
   AssetType,
   AuditAction,
   NotificationAlertType,
+  RepairOutcome,
+  RequisitionStatus,
   UserRole,
 } from '../../../packages/shared/src/enums';
 import { SystemConfigService } from '../system-config/system-config.service';
+import {
+  ReplacementEligibility,
+  replacementEligibility,
+} from './replacement-eligibility';
+import {
+  AssetRepairsService,
+  RepairContext,
+  repairDueDate,
+} from './asset-repairs.service';
+import { CompleteRepairDto } from './dto/repair.dto';
+import { UserEntity } from '../users/entities/user.entity';
+import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
+
+/**
+ * The asset's condition after a lifecycle move. Before this, nothing updated
+ * it: an item under repair still read "serviceable", and a fixed one could
+ * still read "for repair" — which also fed replacement eligibility.
+ *   → under_repair                     serviceable becomes for_repair
+ *   under_repair → issued / available  serviceable (it was repaired)
+ *   under_repair → flagged for disposal unserviceable
+ * An explicit override (e.g. a damaged item written off) wins.
+ */
+export function conditionAfter(
+  from: AssetStatus,
+  to: AssetStatus,
+  current: AssetCondition,
+  override?: AssetCondition,
+): AssetCondition {
+  if (override) return override;
+  if (to === AssetStatus.UNDER_REPAIR) {
+    return current === AssetCondition.SERVICEABLE
+      ? AssetCondition.FOR_REPAIR
+      : current;
+  }
+  if (from === AssetStatus.UNDER_REPAIR) {
+    return to === AssetStatus.FLAGGED_FOR_DISPOSAL
+      ? AssetCondition.UNSERVICEABLE
+      : AssetCondition.SERVICEABLE;
+  }
+  return current;
+}
+
+/** Requisition states in which a replacement is still in flight. */
+export const OPEN_REQUISITION_STATUSES = [
+  RequisitionStatus.PENDING_SUPERVISOR,
+  RequisitionStatus.PENDING_FULFILLMENT,
+  RequisitionStatus.ON_HOLD,
+];
 
 // ─── State Machine ─────────────────────────────────────────────────────────
 // Valid asset lifecycle transitions per CLAUDE.md section 5.4:
@@ -49,13 +100,44 @@ const VALID_TRANSITIONS: Record<string, AssetStatus[]> = {
   ],
   [AssetStatus.RETURNED]: [AssetStatus.AVAILABLE, AssetStatus.UNDER_REPAIR],
   [AssetStatus.TRANSFERRED]: [AssetStatus.AVAILABLE],
+  // ISSUED here only hands a repaired item back to the holder who still
+  // carries it (updateLifecycle enforces that); anyone else gets it via AVAILABLE.
   [AssetStatus.UNDER_REPAIR]: [
+    AssetStatus.ISSUED,
     AssetStatus.AVAILABLE,
     AssetStatus.FLAGGED_FOR_DISPOSAL,
   ],
   [AssetStatus.FLAGGED_FOR_DISPOSAL]: [AssetStatus.DISPOSED],
   [AssetStatus.DISPOSED]: [], // Terminal state — no further transitions
 };
+
+const CATALOGUE_ITEMS_MAX = 100;
+
+/** One requestable line in the requisition item picker. */
+export interface CatalogueItem {
+  itemDescription: string;
+  brand: string | null;
+  itemCode: string | null;
+  assetType: AssetType;
+  assetClass: AssetClass;
+  isSupply: boolean;
+  /** Units available (PPE/SEP) or quantity on hand (IES). */
+  available: number;
+  conditions: string[];
+  locations: string[];
+}
+
+interface RawCatalogueRow {
+  itemDescription: string;
+  brand: string | null;
+  itemCode: string | null;
+  assetType: AssetType;
+  assetClass: AssetClass;
+  units: string;
+  quantity: string;
+  conditions: string | null;
+  locations: string | null;
+}
 
 // Map each transition to its corresponding audit action
 const TRANSITION_AUDIT_ACTION: Record<string, AuditAction> = {
@@ -81,6 +163,7 @@ export class AssetsService {
     private readonly usersService: UsersService,
     private readonly notificationsService: NotificationsService,
     private readonly systemConfig: SystemConfigService,
+    private readonly repairs: AssetRepairsService,
   ) {}
 
   // ── List all assets (paginated, optional search + status filter) ──────────
@@ -159,6 +242,121 @@ export class AssetsService {
       take: limit,
     });
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  // ── Catalogue items — grouped requestable inventory for the requisition picker
+  // SVC: Engage — requesters choose from what CICC actually holds. Identical
+  // units collapse into one row with an availability count (IES supplies sum
+  // their quantity on hand). Per-unit identifiers and acquisition cost are
+  // deliberately not selected (CLAUDE.md §8.4 data minimisation).
+  async findCatalogueItems(opts: {
+    search?: string;
+    assetType?: string;
+    assetClass?: string;
+    limit?: number;
+  }): Promise<CatalogueItem[]> {
+    const { search, assetType, assetClass } = opts;
+    if (
+      assetType &&
+      !Object.values(AssetType).includes(assetType as AssetType)
+    ) {
+      throw new BadRequestException('Invalid assetType filter.');
+    }
+    if (
+      assetClass &&
+      !Object.values(AssetClass).includes(assetClass as AssetClass)
+    ) {
+      throw new BadRequestException('Invalid assetClass filter.');
+    }
+    const limit = Math.min(
+      Math.max(Number(opts.limit) || 50, 1),
+      CATALOGUE_ITEMS_MAX,
+    );
+
+    const qb = this.assetRepo
+      .createQueryBuilder('a')
+      .select('a.itemDescription', 'itemDescription')
+      .addSelect('a.brand', 'brand')
+      .addSelect('MIN(a.itemCode)', 'itemCode')
+      .addSelect('a.assetType', 'assetType')
+      .addSelect('a.assetClass', 'assetClass')
+      .addSelect('COUNT(*)', 'units')
+      .addSelect('COALESCE(SUM(a.quantity), 0)', 'quantity')
+      // chr(31) (ASCII unit separator) — location text itself contains commas.
+      .addSelect(
+        'STRING_AGG(DISTINCT a.condition::text, chr(31))',
+        'conditions',
+      )
+      .addSelect(
+        'STRING_AGG(DISTINCT COALESCE(a.officeLocation, a.officeOrSection), chr(31))',
+        'locations',
+      )
+      .where('a.status = :status', { status: AssetStatus.AVAILABLE })
+      .andWhere('(a.assetClass <> :ies OR a.quantity > 0)', {
+        ies: AssetClass.IES,
+      });
+
+    if (assetType) qb.andWhere('a.assetType = :assetType', { assetType });
+    if (assetClass) qb.andWhere('a.assetClass = :assetClass', { assetClass });
+    if (search?.trim()) {
+      qb.andWhere(
+        '(LOWER(a.itemDescription) LIKE LOWER(:q) OR LOWER(a.brand) LIKE LOWER(:q) OR LOWER(a.itemCode) LIKE LOWER(:q))',
+        { q: `%${search.trim()}%` },
+      );
+    }
+
+    const rows = await qb
+      .groupBy('a.itemDescription')
+      .addGroupBy('a.brand')
+      .addGroupBy('a.assetType')
+      .addGroupBy('a.assetClass')
+      .orderBy('a.itemDescription', 'ASC')
+      .limit(limit)
+      .getRawMany<RawCatalogueRow>();
+
+    const split = (s: string | null) =>
+      (s ?? '')
+        .split('\u001f')
+        .map((x) => x.trim())
+        .filter(Boolean);
+
+    return rows.map((r) => {
+      const isSupply = r.assetClass === AssetClass.IES;
+      return {
+        itemDescription: r.itemDescription,
+        brand: r.brand ?? null,
+        itemCode: r.itemCode ?? null,
+        assetType: r.assetType,
+        assetClass: r.assetClass,
+        isSupply,
+        available: Number(isSupply ? r.quantity : r.units),
+        conditions: split(r.conditions),
+        locations: split(r.locations),
+      };
+    });
+  }
+
+  // ── Does live inventory hold this item right now? ─────────────────────────
+  // Used at requisition submission to tag each line inInventory, so the
+  // custodian can tell picked-from-stock lines from typed-in ones.
+  async isInCatalogue(
+    itemDescription: string,
+    assetType: AssetType,
+    assetClass: AssetClass,
+  ): Promise<boolean> {
+    const count = await this.assetRepo
+      .createQueryBuilder('a')
+      .where('a.status = :status', { status: AssetStatus.AVAILABLE })
+      .andWhere('LOWER(TRIM(a.itemDescription)) = :desc', {
+        desc: itemDescription.trim().toLowerCase(),
+      })
+      .andWhere('a.assetType = :assetType', { assetType })
+      .andWhere('a.assetClass = :assetClass', { assetClass })
+      .andWhere('(a.assetClass <> :ies OR a.quantity > 0)', {
+        ies: AssetClass.IES,
+      })
+      .getCount();
+    return count > 0;
   }
 
   // ── Asset stats — IT Personnel & Management dashboard counts ──────────────
@@ -261,6 +459,77 @@ export class AssetsService {
   // may read/act on (mirrors findAll()'s scoping — see asset-type-scope.util).
   // Every write-side method below routes through here first, so an
   // out-of-scope asset is rejected before any mutation is attempted.
+  // ── Assets assigned to one user ────────────────────────────────────────────
+  // SVC: Engage — the holder's own accountability view.
+  /**
+   * The caller's assets, each with whether a replacement may be requisitioned
+   * for it (same rule RequisitionsService.create enforces) and the number of an
+   * already-open replacement requisition, so the UI never offers a second one.
+   */
+  async findMine(userId: string): Promise<
+    Array<
+      AssetEntity & {
+        replacement: ReplacementEligibility & {
+          openRequestNumber: string | null;
+        };
+        /** While under repair: where it is and when it is due back. */
+        repair: {
+          serviceType: string;
+          serviceProvider: string | null;
+          openedAt: Date;
+          dueDate: string;
+        } | null;
+      }
+    >
+  > {
+    const assets = await this.assetRepo.find({
+      where: { custodianId: userId },
+      order: { updatedAt: 'DESC' },
+    });
+    if (assets.length === 0) return [];
+
+    // Raw table read (not RequisitionEntity) keeps AssetsService free of an
+    // import on the requisitions module, which already depends on this one.
+    const open: Array<{ assetId: string; requestNumber: string }> =
+      await this.assetRepo.manager
+        .createQueryBuilder()
+        .select('r.replaced_asset_id', 'assetId')
+        .addSelect('r.request_number', 'requestNumber')
+        .from('requisitions', 'r')
+        .where('r.replaced_asset_id IN (:...ids)', {
+          ids: assets.map((a) => a.id),
+        })
+        .andWhere('r.status IN (:...statuses)', {
+          statuses: OPEN_REQUISITION_STATUSES,
+        })
+        .getRawMany();
+
+    const usefulLife = this.systemConfig.getUsefulLifeYears();
+    const repairs = await this.repairs.openForAssets(
+      assets
+        .filter((a) => a.status === AssetStatus.UNDER_REPAIR)
+        .map((a) => a.id),
+    );
+    return assets.map((asset) => {
+      const repair = repairs.get(asset.id);
+      return Object.assign(asset, {
+        replacement: {
+          ...replacementEligibility(asset, usefulLife),
+          openRequestNumber:
+            open.find((r) => r.assetId === asset.id)?.requestNumber ?? null,
+        },
+        repair: repair
+          ? {
+              serviceType: repair.serviceType,
+              serviceProvider: repair.serviceProvider,
+              openedAt: repair.openedAt,
+              dueDate: repairDueDate(repair),
+            }
+          : null,
+      });
+    });
+  }
+
   async findOne(
     id: string,
     assetTypeScope?: AssetType[],
@@ -385,6 +654,9 @@ export class AssetsService {
     userRole: UserRole,
     ipAddress: string,
     assetTypeScope?: AssetType[],
+    // Internal callers only (never from the HTTP DTO): who/what sent it to
+    // repair, the repair's findings on the way out, and a condition override.
+    context: RepairContext & { condition?: AssetCondition } = {},
   ): Promise<AssetEntity> {
     const asset = await this.findOne(id, assetTypeScope);
     const targetStatus = dto.status;
@@ -398,67 +670,55 @@ export class AssetsService {
       );
     }
 
-    // ── Business rule: asset cannot be issued if status !== 'available' ───
-    // (already enforced by state machine above, but explicit guard for clarity)
+    // Who holds the asset after this transition (and the hand-back-from-repair
+    // rule) — resolved before anything is written.
+    const backToHolder = await this.resolveIssueRecipient(asset, dto);
+
+    // ── Business rule: a disposal flag requires documented justification ──
+    // (CLAUDE.md §6 Module 1) — enforced here, not just in the UI.
     if (
-      targetStatus === AssetStatus.ISSUED &&
-      asset.status !== AssetStatus.AVAILABLE
+      targetStatus === AssetStatus.FLAGGED_FOR_DISPOSAL &&
+      !dto.notes?.trim()
     ) {
       throw new BadRequestException(
-        `Asset cannot be issued. Current status is "${asset.status}". ` +
-          `Asset must be "available" before it can be issued.`,
+        'A justification (notes) is required to flag an asset for disposal.',
       );
     }
 
     // ── Apply the transition ───────────────────────────────────────────────
     const previousStatus = asset.status;
+    const previousHolder = asset.custodianId;
     asset.status = targetStatus;
+    asset.condition = conditionAfter(
+      previousStatus,
+      targetStatus,
+      asset.condition,
+      context.condition,
+    );
 
-    // Record the expected return date when a loaned asset is issued — this
-    // arms the overdue-return watcher (checkOverdueReturns). Omitting the
-    // date on an ISSUED transition explicitly clears any stale value.
-    // Always re-arm the overdue stamp too: an asset can reach ISSUED again
-    // via ISSUED → UNDER_REPAIR → AVAILABLE → ISSUED without ever passing
-    // through RETURNED, so a fresh issue must clear any prior notification
-    // mark or the asset would be excluded from the watcher forever.
-    if (targetStatus === AssetStatus.ISSUED) {
-      asset.expectedReturnDate = dto.expectedReturnDate
-        ? new Date(dto.expectedReturnDate)
-        : null;
-      asset.overdueNotifiedAt = null;
-    }
-
-    // Resolve employeeId → UUID if provided (IT Personnel don't know raw UUIDs)
-    if (dto.employeeId && dto.status === AssetStatus.ISSUED) {
-      const recipient = await this.usersService.findByEmployeeId(
-        dto.employeeId,
-      );
-      if (!recipient) {
-        throw new BadRequestException(
-          `No user found with employee ID "${dto.employeeId}".`,
-        );
-      }
-      asset.custodianId = recipient.id;
-    } else if (dto.custodianId !== undefined) {
-      asset.custodianId = dto.custodianId;
-    }
-
-    // Clear custodian on return/disposal
-    if (
-      targetStatus === AssetStatus.RETURNED ||
-      targetStatus === AssetStatus.DISPOSED
-    ) {
-      asset.custodianId = null;
-      // On return, re-arm the overdue-return watcher: drop the due date and
-      // the "already notified" stamp so the next loan of this asset starts
-      // from a clean slate.
-      if (targetStatus === AssetStatus.RETURNED) {
-        asset.expectedReturnDate = null;
-        asset.overdueNotifiedAt = null;
-      }
-    }
+    this.applyCustody(asset, dto, targetStatus, backToHolder);
 
     const saved = await this.assetRepo.save(asset);
+
+    // Repair record: one per stay in under_repair, whichever screen moved it.
+    if (targetStatus === AssetStatus.UNDER_REPAIR) {
+      await this.repairs.open(saved, previousHolder, performedById, {
+        ...context,
+        problem: context.problem ?? dto.notes,
+      });
+    } else if (previousStatus === AssetStatus.UNDER_REPAIR) {
+      await this.repairs.close(
+        saved,
+        targetStatus,
+        performedById,
+        userRole,
+        ipAddress,
+        {
+          ...context,
+          actionTaken: context.actionTaken ?? dto.notes,
+        },
+      );
+    }
 
     // ── Record transaction in asset history ────────────────────────────────
     const tx = this.txRepo.create({
@@ -490,6 +750,152 @@ export class AssetsService {
     });
 
     return saved;
+  }
+
+  /**
+   * Record a repair's outcome and move the asset accordingly:
+   *   repaired     → back to its holder (issued), or into stock (available)
+   *                  when it has none or `returnToStock` is set
+   *   unrepairable → flagged for disposal, findings as the justification;
+   *                  the holder keeps accountability (and can request a
+   *                  replacement) until COA relief
+   * The repair record itself is closed inside updateLifecycle.
+   * SVC: Deliver & Support — maintenance and repair.
+   */
+  async completeRepair(
+    repairId: string,
+    dto: CompleteRepairDto,
+    user: UserEntity,
+    ipAddress: string,
+  ) {
+    const repair = await this.repairs.load(repairId);
+    this.repairs.assertCanAct(repair, user);
+    if (repair.asset.status !== AssetStatus.UNDER_REPAIR) {
+      throw new BadRequestException(
+        `The asset is "${repair.asset.status.replaceAll('_', ' ')}", not under repair.`,
+      );
+    }
+    // Re-checked here, not only in the DTO: the closing record must say what was done.
+    if ((dto.actionTaken ?? '').trim().length < 5) {
+      throw new BadRequestException(
+        'Describe the work done in at least 5 characters.',
+      );
+    }
+    const unrepairable = dto.outcome === RepairOutcome.UNREPAIRABLE;
+    if (unrepairable && !dto.findings?.trim()) {
+      throw new BadRequestException(
+        'Record the findings — they are the justification for the disposal flag.',
+      );
+    }
+
+    let target = AssetStatus.FLAGGED_FOR_DISPOSAL;
+    if (!unrepairable) {
+      target =
+        repair.asset.custodianId && !dto.returnToStock
+          ? AssetStatus.ISSUED
+          : AssetStatus.AVAILABLE;
+    }
+    await this.updateLifecycle(
+      repair.assetId,
+      {
+        status: target,
+        notes: unrepairable
+          ? `Unrepairable: ${dto.findings!.trim()}`
+          : `Repaired: ${dto.actionTaken.trim()}`,
+      },
+      user.id,
+      user.role,
+      ipAddress,
+      // Admin (fallback decider) is unscoped; custodians stay in their scope.
+      resolveAssetTypeScope(user.role),
+      { findings: dto.findings, actionTaken: dto.actionTaken },
+    );
+    return this.repairs.findOneForUser(repairId, user);
+  }
+
+  /**
+   * ISSUED is reachable from AVAILABLE (a fresh issue) and from UNDER_REPAIR —
+   * but only to hand a repaired item back to the holder who still carries it.
+   * Giving a repaired item to someone else goes through AVAILABLE first, so
+   * the original holder's accountability is closed explicitly. Returns true
+   * for a hand-back.
+   */
+  private async resolveIssueRecipient(
+    asset: AssetEntity,
+    dto: UpdateLifecycleDto,
+  ): Promise<boolean> {
+    if (dto.status !== AssetStatus.ISSUED) return false;
+
+    const recipient = dto.employeeId
+      ? await this.usersService.findByEmployeeId(dto.employeeId)
+      : null;
+    if (dto.employeeId && !recipient) {
+      throw new BadRequestException(
+        `No user found with employee ID "${dto.employeeId}".`,
+      );
+    }
+
+    if (asset.status === AssetStatus.UNDER_REPAIR) {
+      if (!asset.custodianId) {
+        throw new BadRequestException(
+          'This repaired asset has no holder to return it to — make it "available" first, then issue it.',
+        );
+      }
+      if (recipient && recipient.id !== asset.custodianId) {
+        throw new BadRequestException(
+          'A repaired asset goes back to its holder. To give it to someone else, make it "available" first.',
+        );
+      }
+      return true;
+    }
+
+    if (asset.status !== AssetStatus.AVAILABLE) {
+      throw new BadRequestException(
+        `Asset cannot be issued. Current status is "${asset.status}". ` +
+          `Asset must be "available" before it can be issued.`,
+      );
+    }
+    if (recipient) asset.custodianId = recipient.id;
+    else if (dto.custodianId !== undefined) asset.custodianId = dto.custodianId;
+    return false;
+  }
+
+  /** Custodian and loan-date bookkeeping for the target status. */
+  private applyCustody(
+    asset: AssetEntity,
+    dto: UpdateLifecycleDto,
+    targetStatus: AssetStatus,
+    backToHolder: boolean,
+  ): void {
+    // Record the expected return date when a loaned asset is issued — this
+    // arms the overdue-return watcher (checkOverdueReturns). A fresh issue
+    // without a date clears any stale value; a hand-back from repair keeps the
+    // loan's existing date unless a new one is given. Always re-arm the
+    // overdue stamp, or the asset would be excluded from the watcher forever.
+    if (targetStatus === AssetStatus.ISSUED) {
+      if (dto.expectedReturnDate) {
+        asset.expectedReturnDate = new Date(dto.expectedReturnDate);
+      } else if (!backToHolder) {
+        asset.expectedReturnDate = null;
+      }
+      asset.overdueNotifiedAt = null;
+      return;
+    }
+
+    if (dto.custodianId !== undefined) asset.custodianId = dto.custodianId;
+
+    // Back in stock, returned or disposed: nobody holds it any more. AVAILABLE
+    // used to keep a stale holder after a repair, so the item sat in the
+    // catalogue and on the old holder's "My Assigned Assets" at once.
+    if (
+      targetStatus === AssetStatus.AVAILABLE ||
+      targetStatus === AssetStatus.RETURNED ||
+      targetStatus === AssetStatus.DISPOSED
+    ) {
+      asset.custodianId = null;
+      asset.expectedReturnDate = null;
+      asset.overdueNotifiedAt = null;
+    }
   }
 
   // ── Generate QR code identifier ───────────────────────────────────────────

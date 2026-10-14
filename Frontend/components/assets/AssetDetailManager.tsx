@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, QrCode, Pencil, Save, X, Clock } from 'lucide-react';
+import { ArrowLeft, QrCode, Pencil, Save, X, Clock, Wrench } from 'lucide-react';
 import { assetsApi, type Asset, type UpdateAssetDto } from '@/lib/api/assets';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
+import { OUTCOME_LABEL, SERVICE_TYPE_LABEL, repairsApi, type Repair } from '@/lib/api/repairs';
+import { formatDate } from '@/lib/requisitions/requisition-view';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { ASSET_LIFECYCLE_TRANSITIONS as NEXT_TRANSITIONS } from '@/lib/assets/lifecycle-transitions';
@@ -120,6 +122,11 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
   const [transactions, setTransactions] = useState<AuditLog[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [formSuggestion, setFormSuggestion] = useState<string | null>(null);
+  const [repairs, setRepairs] = useState<Repair[]>([]);
+  const loadRepairs = useCallback(
+    () => repairsApi.forAsset(assetId).then((res) => setRepairs(res.data)).catch(() => {}),
+    [assetId],
+  );
 
   useEffect(() => {
     Promise.all([
@@ -128,10 +135,11 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
         setEditForm(buildEditForm(res.data));
       }),
       auditApi.byRecord(assetId).then((res) => setTransactions(res.data?.data ?? [])).catch(() => {}),
+      loadRepairs(),
     ])
       .catch(() => {})
       .finally(() => { setLoading(false); setHistoryLoading(false); });
-  }, [assetId]);
+  }, [assetId, loadRepairs]);
 
   const handleGenerateQr = async () => {
     if (!asset) return;
@@ -163,8 +171,9 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
       setLifecycleEmployeeId('');
       setLifecycleToLocation('');
       setLifecycleExpectedReturnDate('');
-      // Refresh audit history after lifecycle change
+      // Refresh audit and repair history after lifecycle change
       auditApi.byRecord(assetId).then((r) => setTransactions(r.data?.data ?? [])).catch(() => {});
+      void loadRepairs();
       // Suggest relevant COA form
       const cls = res.data.assetClass;
       if (statusSnapshot === 'issued') {
@@ -209,7 +218,11 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
   if (loading) return <div className="p-6"><LoadingSkeleton rows={10} /></div>;
   if (!asset) return <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">Asset not found.</div>;
 
-  const nextStates = NEXT_TRANSITIONS[asset.status] ?? [];
+  // From under repair, 'issued' only hands the item back to its holder — it is
+  // offered only when there is one, and needs no recipient ID.
+  const handBack = asset.status === 'under_repair' && Boolean(asset.custodianId);
+  const nextStates = (NEXT_TRANSITIONS[asset.status] ?? []).filter((s) => s !== 'issued' || asset.status !== 'under_repair' || handBack);
+  const stateLabel = (s: string) => (handBack && s === 'issued' ? 'Repaired — return to holder' : optionLabel(s));
 
   return (
     <div className="space-y-5 max-w-4xl">
@@ -354,6 +367,35 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
         </DetailSection>
       </div>
 
+      {/* Repair History — one row per stay under repair */}
+      {repairs.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border border-blue-200">
+          <div className="p-5 border-b border-blue-200 bg-blue-50 flex items-center gap-2">
+            <Wrench className="w-5 h-5 text-[#1a4d7a]" />
+            <h2 className="text-base font-semibold text-[#1a4d7a]">Repair History</h2>
+            <span className="ml-auto text-xs text-gray-500">{repairs.length} repair{repairs.length === 1 ? '' : 's'} — managed in Maintenance &amp; Repair</span>
+          </div>
+          <ul className="divide-y divide-gray-100">
+            {repairs.map((r) => (
+              <li key={r.id} className="p-4 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-semibold text-gray-800">
+                    {formatDate(r.openedAt)} → {r.completedAt ? formatDate(r.completedAt) : `due ${formatDate(r.dueDate)}`}
+                    <span className="ml-2 font-normal text-gray-500">{SERVICE_TYPE_LABEL[r.serviceType]}{r.serviceProvider ? ` · ${r.serviceProvider}` : ''}{r.holder ? ` · held by ${r.holder.name}` : ''}</span>
+                  </p>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${r.outcome === 'repaired' ? 'bg-emerald-50 text-emerald-700' : r.outcome ? 'bg-gray-100 text-gray-700' : r.overdue ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>
+                    {r.outcome ? OUTCOME_LABEL[r.outcome] : r.overdue ? 'Overdue' : 'Under repair'}
+                  </span>
+                </div>
+                {r.reportedProblem && <p className="mt-1 text-gray-600"><span className="font-semibold">Problem:</span> {r.reportedProblem}</p>}
+                {r.findings && <p className="mt-0.5 text-gray-600"><span className="font-semibold">Findings:</span> {r.findings}</p>}
+                {r.actionTaken && <p className="mt-0.5 text-gray-600"><span className="font-semibold">Work done:</span> {r.actionTaken}</p>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Transaction History */}
       <div className="bg-white rounded-lg shadow-sm border border-blue-200">
         <div className="p-5 border-b border-blue-200 bg-blue-50 flex items-center gap-2">
@@ -417,13 +459,17 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                 >
                   <option value="">— select status —</option>
                   {nextStates.map((s) => (
-                    <option key={s} value={s}>{optionLabel(s)}</option>
+                    <option key={s} value={s}>{stateLabel(s)}</option>
                   ))}
                 </select>
               </div>
 
+              {targetStatus === 'issued' && handBack && (
+                <p className="rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-900">The repaired item goes back to its current holder, who is notified to collect it. To give it to someone else, make it Available first.</p>
+              )}
+
               {/* ISSUED: Employee ID input */}
-              {targetStatus === 'issued' && (
+              {targetStatus === 'issued' && !handBack && (
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                     Recipient Employee ID <span className="text-red-500">*</span>
@@ -501,7 +547,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                 disabled={
                   updating ||
                   !targetStatus ||
-                  (targetStatus === 'issued' && !lifecycleEmployeeId.trim()) ||
+                  (targetStatus === 'issued' && !handBack && !lifecycleEmployeeId.trim()) ||
                   (targetStatus === 'transferred' && !lifecycleToLocation.trim()) ||
                   (targetStatus === 'flagged_for_disposal' && !lifecycleNotes.trim())
                 }

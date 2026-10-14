@@ -34,10 +34,12 @@ function statusLabel(status: string): string {
   return status.split('_').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ');
 }
 
-export function StatusBadge({ status }: Readonly<{ status: string }>) {
+/** `label` overrides the derived text (e.g. "Awaiting approval") while the
+ *  colour still comes from the raw status value. */
+export function StatusBadge({ status, label }: Readonly<{ status: string; label?: string }>) {
   return (
     <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${statusStyles[status] ?? statusStyles.Draft}`}>
-      {statusLabel(status)}
+      {label ?? statusLabel(status)}
     </span>
   );
 }

@@ -12,7 +12,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsEnum, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import { Response } from 'express';
 import { ReportsService, GenerateFormInput } from './reports.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -28,7 +28,15 @@ interface AuthReq {
 
 class GenerateReportDto {
   @IsString() reportType!: string;
-  @IsString() format!: 'PDF' | 'Excel';
+
+  // Accepted case-insensitively because the frontend sends 'pdf' / 'excel'
+  // (Frontend/lib/api/reports.ts), while generated_reports.format carries a
+  // CHECK (format IN ('PDF','Excel')). @IsIn keeps anything else a 400 instead
+  // of letting it reach the INSERT and surface as a 500.
+  @IsIn(['PDF', 'Excel', 'pdf', 'excel'], {
+    message: 'format must be one of: PDF, Excel',
+  })
+  format!: string;
 }
 
 class GenerateFormDto implements GenerateFormInput {
@@ -120,7 +128,10 @@ export class ReportsController {
     @Req() req: AuthReq,
     @Res() res: Response,
   ) {
-    const format = dto.format.toUpperCase() as 'PDF' | 'Excel';
+    // Normalise to the exact casing the DB CHECK constraint accepts —
+    // toUpperCase() alone yields 'EXCEL', which violates it.
+    const format: 'PDF' | 'Excel' =
+      dto.format.toLowerCase() === 'pdf' ? 'PDF' : 'Excel';
     const { buffer } = await this.svc.generate(
       dto.reportType,
       format,

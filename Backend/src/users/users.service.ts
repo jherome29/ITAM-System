@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { UserEntity } from './entities/user.entity';
 import {
@@ -92,15 +92,23 @@ export class UsersService {
    * chart determines it. Prefers an exact officeOrSection match; falls back
    * to any active Supervisor in the same division if no section match exists.
    */
+  /**
+   * The approving supervisor for a section (falling back to the division).
+   * `excludeUserId` skips one user — the requester — so a supervisor's own
+   * requisition is never routed back to them (segregation of duties).
+   */
   async findSupervisorForSection(
     officeOrSection: string,
     division: string,
+    excludeUserId?: string,
   ): Promise<UserEntity | null> {
+    const notRequester = excludeUserId ? { id: Not(excludeUserId) } : {};
     const bySection = await this.userRepo.findOne({
       where: {
         role: UserRole.SUPERVISOR,
         officeOrSection,
         isActive: true,
+        ...notRequester,
       },
     });
     if (bySection) return bySection;
@@ -110,6 +118,7 @@ export class UsersService {
         role: UserRole.SUPERVISOR,
         division,
         isActive: true,
+        ...notRequester,
       },
     });
   }

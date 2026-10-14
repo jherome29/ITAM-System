@@ -23,6 +23,11 @@ export class GeneratedFormEntity {
   @Column({ nullable: true, type: 'uuid' })
   relatedRequisitionId!: string | null;
 
+  // Return / incident request this form documents (schema 012) — lets the
+  // requester download their own proof of return / incident report.
+  @Column({ nullable: true, type: 'uuid' })
+  relatedAssetRequestId!: string | null;
+
   @Column()
   filePath!: string;
 
