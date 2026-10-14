@@ -6,6 +6,7 @@ import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
 import { AuditLogEntity } from '../audit/entities/audit-log.entity';
 import { SystemConfigService } from '../system-config/system-config.service';
+import { AUDIT_REASON_REFRESH_TOKEN_REUSE } from '../audit/audit-reasons';
 import {
   AssetClass,
   AssetStatus,
@@ -90,12 +91,7 @@ export class AdminService {
       this.assets.count(),
       this.assets.count({ where: { status: AssetStatus.AVAILABLE } }),
       this.countLowStock(),
-      this.audit.count({
-        where: {
-          action: AuditAction.USER_LOGIN_FAILED,
-          timestamp: MoreThanOrEqual(startOfToday),
-        },
-      }),
+      this.countFailedLoginsSince(startOfToday),
       this.audit.count({ where: { timestamp: MoreThanOrEqual(startOfToday) } }),
     ]);
 
@@ -112,6 +108,21 @@ export class AdminService {
       audit: { failedLoginsToday, eventsToday },
       generatedAt: now.toISOString(),
     };
+  }
+
+  // Failed sign-in attempts. A superseded session's rejected refresh is audited
+  // as USER_LOGIN_FAILED too (no enum value of its own), but it is session
+  // churn, not a wrong password — counting it made the dashboard report
+  // password-guessing that never happened.
+  private countFailedLoginsSince(since: Date): Promise<number> {
+    return this.audit
+      .createQueryBuilder('a')
+      .where('a.action = :action', { action: AuditAction.USER_LOGIN_FAILED })
+      .andWhere('a.timestamp >= :since', { since })
+      .andWhere("COALESCE(a.metadata ->> 'reason', '') <> :reuse", {
+        reuse: AUDIT_REASON_REFRESH_TOKEN_REUSE,
+      })
+      .getCount();
   }
 
   // Every role starts at 0 so the dashboard renders a complete legend even for

@@ -8,6 +8,7 @@ import { healthApi, type HealthStatus } from '@/lib/api/health';
 import { systemConfigApi, type SystemConfig } from '@/lib/api/systemConfig';
 import { reportsApi, type KpiData } from '@/lib/api/reports';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
+import { auditEventLabel } from '@/lib/audit-label';
 import { schedulerApi, type WatcherName, type WatcherStatus, type WatcherSweep } from '@/lib/api/scheduler';
 import { AdminPageHeader, MetricCard, Panel, StatusChip, type AdminTone } from './AdminUi';
 
@@ -356,7 +357,7 @@ export function AdminDashboard() {
               recentLogs.map((log) => (
                 <div key={log.id} className="py-3">
                   <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm font-semibold text-slate-900">{log.action.replace(/_/g, ' ')}</p>
+                    <p className="text-sm font-semibold text-slate-900">{auditEventLabel(log)}</p>
                     <StatusChip status={log.userRole.replace(/_/g, ' ')} />
                   </div>
                   <p className="mt-1 text-xs text-slate-500">{log.ipAddress || 'no-ip'} · {new Date(log.timestamp).toLocaleString()}</p>
