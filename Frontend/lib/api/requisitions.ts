@@ -128,6 +128,12 @@ export const requisitionsApi = {
   mine: (page = 1, limit = 15) =>
     client.get<ApiResponse<PaginatedResponse<Requisition>>>('/v1/requisitions/mine', { params: { page, limit } }).then((r) => r.data),
 
+  /** Requisitions this approver has decided, newest decision first (the pending queue is `list`). */
+  decided: (page = 1, limit = 200) =>
+    client
+      .get<ApiResponse<PaginatedResponse<Requisition>>>('/v1/requisitions/decided', { params: { page, limit } })
+      .then((r) => r.data),
+
   stats: () =>
     client.get<ApiResponse<RequisitionStats>>('/v1/requisitions/stats').then((r) => r.data),
 

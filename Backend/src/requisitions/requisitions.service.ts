@@ -9,7 +9,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Not, Repository } from 'typeorm';
 import { RequisitionEntity } from './entities/requisition.entity';
 import { RequisitionItemEntity } from './entities/requisition-item.entity';
 import { RequisitionApprovalEntity } from './entities/requisition-approval.entity';
@@ -255,6 +255,28 @@ export class RequisitionsService {
         replacedAsset: true,
       },
       order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    const data = rows.map((r) => withRequester(r));
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  // ── Decisions I made as an approver ────────────────────────────────────────
+  // findAll() gives a supervisor only the PENDING queue, so a requisition left
+  // every list they could read the moment they decided it. This is their
+  // history. supervisorId is whoever the request was routed to (the alternate
+  // approver when the primary was away), so it is the person who decided it.
+  async findDecidedBy(approverId: string, page = 1, limit = 20) {
+    const [rows, total] = await this.reqRepo.findAndCount({
+      where: { supervisorId: approverId, supervisorDecidedAt: Not(IsNull()) },
+      relations: {
+        items: true,
+        requestedBy: true,
+        supervisor: true,
+        replacedAsset: true,
+      },
+      order: { supervisorDecidedAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
     });
