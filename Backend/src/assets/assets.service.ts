@@ -48,6 +48,10 @@ import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
  *   → under_repair                     serviceable becomes for_repair
  *   under_repair → issued / available  serviceable (it was repaired)
  *   under_repair → flagged for disposal unserviceable
+ *   flagged for disposal → available   serviceable (restored to stock: found,
+ *                                      or flagged in error — a justification is
+ *                                      required, and an item that turns out to
+ *                                      be damaged is flagged for repair next)
  * An explicit override (e.g. a damaged item written off) wins.
  */
 export function conditionAfter(
@@ -66,6 +70,13 @@ export function conditionAfter(
     return to === AssetStatus.FLAGGED_FOR_DISPOSAL
       ? AssetCondition.UNSERVICEABLE
       : AssetCondition.SERVICEABLE;
+  }
+  // Back in stock: an "available" item must not sit there marked unserviceable.
+  if (
+    from === AssetStatus.FLAGGED_FOR_DISPOSAL &&
+    to === AssetStatus.AVAILABLE
+  ) {
+    return AssetCondition.SERVICEABLE;
   }
   return current;
 }
@@ -109,7 +120,13 @@ const VALID_TRANSITIONS: Record<string, AssetStatus[]> = {
     AssetStatus.AVAILABLE,
     AssetStatus.FLAGGED_FOR_DISPOSAL,
   ],
-  [AssetStatus.FLAGGED_FOR_DISPOSAL]: [AssetStatus.DISPOSED],
+  // AVAILABLE here is a reversal — an item reported lost that turned up, or a
+  // flag raised in error — and needs a written justification like the flag did
+  // (updateLifecycle enforces it). DISPOSED stays terminal.
+  [AssetStatus.FLAGGED_FOR_DISPOSAL]: [
+    AssetStatus.DISPOSED,
+    AssetStatus.AVAILABLE,
+  ],
   [AssetStatus.DISPOSED]: [], // Terminal state — no further transitions
 };
 
@@ -783,6 +800,17 @@ export class AssetsService {
     ) {
       throw new BadRequestException(
         'A justification (notes) is required to flag an asset for disposal.',
+      );
+    }
+    // Reversing the flag needs one too: it takes a written-off item (and the
+    // holder's relief from accountability) back, so say why it is being restored.
+    if (
+      asset.status === AssetStatus.FLAGGED_FOR_DISPOSAL &&
+      targetStatus === AssetStatus.AVAILABLE &&
+      !dto.notes?.trim()
+    ) {
+      throw new BadRequestException(
+        'A justification (notes) is required to restore a flagged asset to stock — say why (e.g. found, or flagged in error).',
       );
     }
 

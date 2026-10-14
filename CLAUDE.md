@@ -228,7 +228,11 @@ interface Asset {
                     └──[Transferred] → [Available (new location)]
                     │
                     └──[Flagged for Disposal] → [Disposed]
+                                   │
+                                   └──→ [Available]   (restored: found after being reported lost, or flagged in error)
 ```
+
+Restoring a flagged asset to `available` needs a written justification (as the flag itself does), releases any holder, and sets the condition to `serviceable` — an item that turns out to be damaged is then flagged for repair. `disposed` is terminal.
 
 Every state transition must:
 1. Be authorized by the appropriate role
@@ -256,6 +260,7 @@ Key screens (matching Figma mockup):
 - An asset cannot be issued if its status is not `available`
 - An asset cannot be requisitioned as a replacement unless the existing asset has met useful-life threshold, condition criteria, or loss/damage criteria (replacement validation)
 - A disposal flag requires documented justification, condition assessment, and recommended action — actual disposal execution is out of scope; only documentation is managed
+- Reversing a disposal flag (restoring the asset to `available`) also requires a documented justification; it is audited like any other transition
 
 ### Module 2: Requisition & Approval Workflow
 
