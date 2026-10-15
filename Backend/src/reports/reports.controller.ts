@@ -222,17 +222,21 @@ export class ReportsController {
     @Req() req: AuthReq,
     @Res() res: Response,
   ) {
-    const buffer = await this.svc.generateForm(
+    const { form, buffer } = await this.svc.generateFormRecord(
       dto,
       req.user.id,
       req.user.role,
       req.ip,
     );
-    const filename = `${dto.formType}-${Date.now()}.pdf`;
+    // Filed and quoted by its number, so the file is named after it.
+    const filename = `${form.documentNumber ?? `${dto.formType}-${new Date().toISOString().slice(0, 10)}`}.pdf`;
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="${filename}"`,
       'Content-Length': buffer.length,
+      ...(form.documentNumber
+        ? { 'X-Document-Number': form.documentNumber }
+        : {}),
     });
     res.end(buffer);
   }

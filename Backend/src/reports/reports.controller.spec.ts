@@ -125,3 +125,43 @@ describe('GenerateReportDto', () => {
     ]);
   });
 });
+
+// The number a form was given is what people quote and file it under, so the
+// download carries it: as the file name, and as a header the page can read.
+describe('ReportsController - generateForm', () => {
+  const makeService = (documentNumber: string | null) =>
+    ({
+      generateFormRecord: jest.fn().mockResolvedValue({
+        buffer: Buffer.from('%PDF'),
+        form: { id: 'f-1', formType: 'PAR', documentNumber },
+      }),
+    }) as unknown as ReportsService & { generateFormRecord: jest.Mock };
+
+  const run = async (documentNumber: string | null) => {
+    const res = makeRes();
+    await new ReportsController(makeService(documentNumber)).generateForm(
+      { formType: 'PAR' as never },
+      makeReq(),
+      res,
+    );
+    return res.set.mock.calls[0][0] as Record<string, string | number>;
+  };
+
+  it('names the file after the document number and exposes the number', async () => {
+    const headers = await run('PAR-2026-0007');
+
+    expect(headers['Content-Disposition']).toBe(
+      'attachment; filename="PAR-2026-0007.pdf"',
+    );
+    expect(headers['X-Document-Number']).toBe('PAR-2026-0007');
+  });
+
+  it('falls back to the form type and date for a form that is not numbered', async () => {
+    const headers = await run(null);
+
+    expect(headers['Content-Disposition']).toMatch(
+      /^attachment; filename="PAR-\d{4}-\d{2}-\d{2}\.pdf"$/,
+    );
+    expect(headers['X-Document-Number']).toBeUndefined();
+  });
+});
