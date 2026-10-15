@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { UserEntity } from './entities/user.entity';
 import {
@@ -19,6 +19,13 @@ import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
 import { BCRYPT_ROUNDS } from '../../../packages/shared/src/constants';
 
 // SVC: Plan — user account management (System Admin only)
+
+/** The minimal view of a person that other lists may show (who holds an asset). */
+export interface HolderSummary {
+  id: string;
+  name: string;
+  employeeId: string;
+}
 
 @Injectable()
 export class UsersService {
@@ -70,6 +77,26 @@ export class UsersService {
       where: { role, isActive: true },
       order: { lastName: 'ASC' },
     });
+  }
+
+  /**
+   * Name + employee ID for a set of users, one query. Used to show who holds an
+   * asset in the custodians' lists — deliberately nothing else about the person
+   * (CLAUDE.md §8.4 data minimisation). Each person is looked up once however
+   * many assets they hold.
+   */
+  async findHolderSummaries(ids: string[]): Promise<HolderSummary[]> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return [];
+    const users = await this.userRepo.find({
+      where: { id: In(unique) },
+      select: { id: true, firstName: true, lastName: true, employeeId: true },
+    });
+    return users.map((u) => ({
+      id: u.id,
+      name: `${u.firstName} ${u.lastName}`.trim(),
+      employeeId: u.employeeId,
+    }));
   }
 
   /**

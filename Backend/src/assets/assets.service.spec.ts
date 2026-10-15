@@ -70,6 +70,7 @@ describe('AssetsService', () => {
     findByEmployeeId: jest.fn(),
     findByRole: jest.fn(),
     findOne: jest.fn(),
+    findHolderSummaries: jest.fn(),
   };
 
   const mockNotifService = {
@@ -1188,6 +1189,51 @@ describe('AssetsService', () => {
       mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
       await service.findAll(1, 20, 'Dell', 'issued');
       expect(qb.andWhere).toHaveBeenCalledTimes(2);
+    });
+
+    // Custody & Issuance has to show WHO holds each asset. The list used to carry
+    // only the holder's UUID, so the page could not say.
+    it('attaches who holds each issued asset, and null for the rest', async () => {
+      const qb = makeQb();
+      qb.getManyAndCount.mockResolvedValue([
+        [
+          { id: 'a-1', custodianId: 'u-1' },
+          { id: 'a-2', custodianId: null },
+          { id: 'a-3', custodianId: 'u-1' },
+        ],
+        3,
+      ]);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      mockUsersService.findHolderSummaries.mockResolvedValue([
+        { id: 'u-1', name: 'Juan dela Cruz', employeeId: 'CICC-EMP-001' },
+      ]);
+
+      const result = await service.findAll();
+
+      // Only the holders' ids are asked for (the lookup de-duplicates itself).
+      const asked = mockUsersService.findHolderSummaries.mock
+        .calls[0][0] as string[];
+      expect(new Set(asked)).toEqual(new Set(['u-1']));
+      expect(result.data.map((a) => a.custodian)).toEqual([
+        { id: 'u-1', name: 'Juan dela Cruz', employeeId: 'CICC-EMP-001' },
+        null,
+        { id: 'u-1', name: 'Juan dela Cruz', employeeId: 'CICC-EMP-001' },
+      ]);
+    });
+
+    it('does not look anyone up when no listed asset is held', async () => {
+      const qb = makeQb();
+      qb.getManyAndCount.mockResolvedValue([
+        [{ id: 'a-1', custodianId: null }],
+        1,
+      ]);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      mockUsersService.findHolderSummaries.mockClear();
+
+      const result = await service.findAll();
+
+      expect(mockUsersService.findHolderSummaries).not.toHaveBeenCalled();
+      expect(result.data[0].custodian).toBeNull();
     });
 
     it('applies assetType scope filter when assetTypeScope is provided', async () => {

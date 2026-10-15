@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Not } from 'typeorm';
+import { In, Not } from 'typeorm';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UserEntity } from './entities/user.entity';
@@ -144,6 +144,35 @@ describe('UsersService', () => {
       mockRepo.find.mockResolvedValue([]);
       const result = await service.findByRole(UserRole.MANAGEMENT);
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('findHolderSummaries()', () => {
+    it('does not query at all when there are no ids', async () => {
+      mockRepo.find.mockClear();
+      const result = await service.findHolderSummaries([]);
+      expect(result).toEqual([]);
+      expect(mockRepo.find).not.toHaveBeenCalled();
+    });
+
+    it('returns only id, name and employee ID — nothing else about the person', async () => {
+      mockRepo.find.mockResolvedValue([
+        makeUser({ id: 'u-1', firstName: 'Juan', lastName: 'dela Cruz' }),
+      ]);
+
+      const result = await service.findHolderSummaries(['u-1']);
+
+      expect(result).toEqual([
+        { id: 'u-1', name: 'Juan dela Cruz', employeeId: 'EMP-001' },
+      ]);
+    });
+
+    it('looks each person up once, however many assets they hold', async () => {
+      mockRepo.find.mockResolvedValue([]);
+      await service.findHolderSummaries(['u-1', 'u-1', 'u-2']);
+      expect(mockRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: In(['u-1', 'u-2']) } }),
+      );
     });
   });
 
