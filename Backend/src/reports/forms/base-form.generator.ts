@@ -4,13 +4,18 @@ import PDFDocument from 'pdfkit';
 
 export const PAGE = { width: 595.28, height: 841.89, margin: 40 } as const;
 export const CONTENT_WIDTH = PAGE.width - PAGE.margin * 2;
+/** The lowest y anything may be drawn at: past it pdfkit silently starts a new page for each text call. */
+export const CONTENT_BOTTOM = PAGE.height - PAGE.margin;
 export const FONT_REGULAR = 'Helvetica';
 export const FONT_BOLD = 'Helvetica-Bold';
 export const GRAY_LIGHT = '#f5f5f5';
 export const GRAY_BORDER = '#888888';
 export const BLACK = '#000000';
 
-/** Creates a new A4 PDFDocument with standard margins. */
+/**
+ * Creates a new A4 PDFDocument with standard margins. Pages are buffered so
+ * bufferize() can number them once the page count is known.
+ */
 export function createDoc(): PDFKit.PDFDocument {
   return new PDFDocument({
     size: 'A4',
@@ -21,7 +26,23 @@ export function createDoc(): PDFKit.PDFDocument {
       right: PAGE.margin,
     },
     autoFirstPage: true,
+    bufferPages: true,
   });
+}
+
+/**
+ * Makes room for `needed` points below `y`: returns `y` when it fits, otherwise
+ * starts a new page and returns the top margin. Anything drawn after a table
+ * (signature blocks, totals) goes through this so it never lands off the page.
+ */
+export function ensureSpace(
+  doc: PDFKit.PDFDocument,
+  y: number,
+  needed: number,
+): number {
+  if (y + needed <= CONTENT_BOTTOM) return y;
+  doc.addPage();
+  return PAGE.margin;
 }
 
 /**
@@ -151,11 +172,43 @@ export function drawMetaFields(
   return y;
 }
 
+const TABLE_HEADER_HEIGHT = 20;
+/** Room a row's text needs above and below it inside its cell. */
+const CELL_PADDING = 8;
+
+/** Draws the shaded column-header row at `y`; returns the y below it. */
+function drawTableHeader(
+  doc: PDFKit.PDFDocument,
+  cols: { header: string; width: number }[],
+  y: number,
+): number {
+  const tableWidth = cols.reduce((s, c) => s + c.width, 0);
+  doc
+    .rect(PAGE.margin, y, tableWidth, TABLE_HEADER_HEIGHT)
+    .fillAndStroke(GRAY_LIGHT, GRAY_BORDER);
+
+  let cx = PAGE.margin;
+  for (const col of cols) {
+    doc.font(FONT_BOLD).fontSize(7).fillColor(BLACK);
+    doc.text(col.header, cx + 2, y + 4, {
+      width: col.width - 4,
+      align: 'center',
+    });
+    cx += col.width;
+  }
+  return y + TABLE_HEADER_HEIGHT;
+}
+
 /**
  * Draws a bordered table with a shaded header row.
  * cols = [{header, width (px)}]
  * rows = string[][] each row's cell values
- * Returns Y after the table.
+ * rowHeight is the minimum height: a row grows to fit text that wraps.
+ *
+ * The table flows onto further pages (repeating the header) rather than running
+ * past the bottom margin - pdfkit answers any text drawn there with a new page
+ * per cell, which turned a 55-asset count sheet into 211 one-word pages.
+ * Returns Y after the table, on its last page.
  */
 export function drawTable(
   doc: PDFKit.PDFDocument,
@@ -166,49 +219,51 @@ export function drawTable(
 ): number {
   const tableWidth = cols.reduce((s, c) => s + c.width, 0);
   const startX = PAGE.margin;
-  const headerH = 20;
 
-  // Header background
-  doc
-    .rect(startX, y, tableWidth, headerH)
-    .fillAndStroke(GRAY_LIGHT, GRAY_BORDER);
-
-  // Header text
-  let cx = startX;
-  for (const col of cols) {
-    doc.font(FONT_BOLD).fontSize(7).fillColor(BLACK);
-    doc.text(col.header, cx + 2, y + 4, {
-      width: col.width - 4,
-      align: 'center',
-    });
-    cx += col.width;
+  // The header never sits alone at the foot of a page: it needs room for itself
+  // and a first row.
+  if (y + TABLE_HEADER_HEIGHT + rowHeight > CONTENT_BOTTOM) {
+    doc.addPage();
+    y = PAGE.margin;
   }
-  y += headerH;
+  y = drawTableHeader(doc, cols, y);
 
-  // Data rows
   for (const row of rows) {
-    // Row border
-    doc.rect(startX, y, tableWidth, rowHeight).stroke(GRAY_BORDER);
+    const cells = cols.map((_, i) => (row[i] ?? '').toString());
+    doc.font(FONT_REGULAR).fontSize(7);
+    const height = Math.max(
+      rowHeight,
+      ...cells.map(
+        (text, i) =>
+          doc.heightOfString(text, { width: cols[i].width - 6 }) + CELL_PADDING,
+      ),
+    );
 
-    cx = startX;
+    if (y + height > CONTENT_BOTTOM) {
+      doc.addPage();
+      y = drawTableHeader(doc, cols, PAGE.margin);
+    }
+
+    // Row border
+    doc.rect(startX, y, tableWidth, height).stroke(GRAY_BORDER);
+
+    let cx = startX;
     for (let i = 0; i < cols.length; i++) {
-      const cellText = (row[i] ?? '').toString();
       doc.font(FONT_REGULAR).fontSize(7).fillColor(BLACK);
-      doc.text(cellText, cx + 3, y + 4, {
+      doc.text(cells[i], cx + 3, y + 4, {
         width: cols[i].width - 6,
         align: 'left',
-        lineBreak: false,
       });
       // Vertical cell divider
       if (i < cols.length - 1) {
         doc
           .moveTo(cx + cols[i].width, y)
-          .lineTo(cx + cols[i].width, y + rowHeight)
+          .lineTo(cx + cols[i].width, y + height)
           .stroke(GRAY_BORDER);
       }
       cx += cols[i].width;
     }
-    y += rowHeight;
+    y += height;
   }
 
   // Bottom border
@@ -218,6 +273,9 @@ export function drawTable(
     .stroke(GRAY_BORDER);
   return y + 6;
 }
+
+/** Vertical space a signature block takes (label, line, name, role, date). */
+const SIGNATURE_BLOCK_HEIGHT = 64;
 
 /**
  * Draws a signature block with equal-width columns.
@@ -229,6 +287,8 @@ export function drawSignatureBlock(
   signatories: { label: string; name: string; role: string; date?: string }[],
   y: number,
 ): number {
+  // Kept together: a block that does not fit under the table starts a new page.
+  y = ensureSpace(doc, y, SIGNATURE_BLOCK_HEIGHT);
   const colW = CONTENT_WIDTH / signatories.length;
   const signLineY = y + 28;
 
@@ -263,6 +323,32 @@ export function drawSignatureBlock(
 }
 
 /**
+ * Writes "Page n of N" at the foot of every page of a multi-page form. A
+ * single-page form is left as the official template has it.
+ */
+function addPageNumbers(doc: PDFKit.PDFDocument): void {
+  const { start, count } = doc.bufferedPageRange();
+  if (count < 2) return;
+  for (let i = 0; i < count; i++) {
+    doc.switchToPage(start + i);
+    // The footer sits inside the bottom margin; drawing there would otherwise
+    // make pdfkit start another page, so lift the margin while writing it.
+    const bottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    doc
+      .font(FONT_REGULAR)
+      .fontSize(7)
+      .fillColor('#666666')
+      .text(`Page ${i + 1} of ${count}`, PAGE.margin, PAGE.height - 28, {
+        width: CONTENT_WIDTH,
+        align: 'center',
+        lineBreak: false,
+      });
+    doc.page.margins.bottom = bottom;
+  }
+}
+
+/**
  * Collects pdfkit stream output into a single Buffer.
  */
 export function bufferize(doc: PDFKit.PDFDocument): Promise<Buffer> {
@@ -271,6 +357,7 @@ export function bufferize(doc: PDFKit.PDFDocument): Promise<Buffer> {
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
+    addPageNumbers(doc);
     doc.end();
   });
 }
