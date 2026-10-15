@@ -6,6 +6,7 @@ import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
 import { GeneratedReportEntity } from './entities/generated-report.entity';
 import { GeneratedFormEntity } from './entities/generated-form.entity';
+import { DocumentCounterEntity } from './entities/document-counter.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
 import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { UserEntity } from '../users/entities/user.entity';
@@ -19,6 +20,7 @@ import { SystemConfigModule } from '../system-config/system-config.module';
     TypeOrmModule.forFeature([
       GeneratedReportEntity,
       GeneratedFormEntity,
+      DocumentCounterEntity, // Running form numbers; allocated with raw SQL, declared for the schema
       AssetEntity,
       RequisitionEntity,
       UserEntity, // For loading custodians, requesters, and signatories in form generators
