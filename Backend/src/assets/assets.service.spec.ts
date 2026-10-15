@@ -654,6 +654,58 @@ describe('AssetsService', () => {
     });
   });
 
+  // ── A supply line is stock, not a unit ─────────────────────────────────────
+  // Supplies (IES) leave stock through requisition fulfilment, which draws the
+  // quantity down. Issuing the whole line through the lifecycle would flip its
+  // status to "issued" with the stock untouched, and show 120 reams as held by
+  // one person.
+  describe('updateLifecycle() — supply (IES) lines', () => {
+    const supply = () =>
+      makeAsset({ assetClass: AssetClass.IES, assetType: AssetType.SUPPLIES });
+
+    test.each([AssetStatus.ISSUED, AssetStatus.TRANSFERRED])(
+      'cannot be moved to %s as a unit',
+      async (target) => {
+        mockAssetRepo.findOne.mockResolvedValue(supply());
+
+        await expect(
+          service.updateLifecycle(
+            'asset-uuid-1',
+            { status: target, employeeId: 'CICC-0042', toLocation: 'Ops' },
+            'user-1',
+            UserRole.PROPERTY_CUSTODIAN,
+            '127.0.0.1',
+          ),
+        ).rejects.toThrow(/requisition/i);
+
+        expect(mockAssetRepo.save).not.toHaveBeenCalled();
+        expect(mockAuditService.log).not.toHaveBeenCalled();
+      },
+    );
+
+    it('can still be made available when it is received', async () => {
+      mockAssetRepo.findOne.mockResolvedValue({
+        ...supply(),
+        status: AssetStatus.REGISTERED,
+      });
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+      mockTxRepo.create.mockReturnValue({});
+      mockTxRepo.save.mockResolvedValue({});
+
+      const result = await service.updateLifecycle(
+        'asset-uuid-1',
+        { status: AssetStatus.AVAILABLE },
+        'user-1',
+        UserRole.PROPERTY_CUSTODIAN,
+        '127.0.0.1',
+      );
+
+      expect(result.status).toBe(AssetStatus.AVAILABLE);
+    });
+  });
+
   // ── Business rule: asset must be available before it can be issued ─────────
   it('throws 400 if issuing a non-available asset', async () => {
     const asset = makeAsset({ status: AssetStatus.UNDER_REPAIR });

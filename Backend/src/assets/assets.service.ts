@@ -793,6 +793,20 @@ export class AssetsService {
       );
     }
 
+    // ── Business rule: a supply line is stock, not a unit ──────────────────
+    // Supplies (IES) leave stock through requisition fulfilment, which draws the
+    // quantity down. Issuing the whole line here would flip its status with the
+    // stock untouched — 120 reams "held" by one person.
+    if (
+      asset.assetClass === AssetClass.IES &&
+      (targetStatus === AssetStatus.ISSUED ||
+        targetStatus === AssetStatus.TRANSFERRED)
+    ) {
+      throw new BadRequestException(
+        'A supply line cannot be issued or transferred as a unit. Supplies are issued from stock through a requisition — fulfil it and the quantity is drawn down.',
+      );
+    }
+
     // Who holds the asset after this transition (and the hand-back-from-repair
     // rule) — resolved before anything is written.
     const backToHolder = await this.resolveIssueRecipient(asset, dto);
