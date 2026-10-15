@@ -18,6 +18,7 @@ import {
   Wifi,
 } from "lucide-react";
 import { assetsApi, type Asset } from "@/lib/api/assets";
+import { locationLabel } from "@/lib/assets/asset-location";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { LoadingSkeleton } from "@/components/ui/LoadingSkeleton";
 import { CenteredModal } from "@/components/ui/CenteredModal";
@@ -448,11 +449,11 @@ export function AssetRegistryList({
 
 function AssetCard({ asset, href }: Readonly<{ asset: Asset; href: string }>) {
   const attention = isAttentionAsset(asset);
+  const where = locationLabel(asset);
   const location =
-    asset.officeOrSection ||
-    asset.officeLocation ||
-    asset.division ||
-    "Location not recorded";
+    where === "—"
+      ? asset.division || "Location not recorded"
+      : where;
   const supportingText =
     asset.assetType === "Supplies"
       ? `${asset.quantity} on hand · Reorder at ${asset.reorderLevel ?? DEFAULT_REORDER_LEVEL}`
@@ -549,7 +550,7 @@ function AssetTable({
                 {asset.assetType}
               </td>
               <td className="px-5 py-3 text-sm text-slate-600">
-                {asset.officeOrSection || asset.officeLocation || "—"}
+                {locationLabel(asset)}
               </td>
               <td className="px-5 py-3">
                 <StatusBadge status={asset.status} />

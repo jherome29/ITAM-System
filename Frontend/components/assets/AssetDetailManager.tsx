@@ -7,6 +7,7 @@ import { assetsApi, type Asset, type UpdateAssetDto } from '@/lib/api/assets';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { OUTCOME_LABEL, SERVICE_TYPE_LABEL, repairsApi, type Repair } from '@/lib/api/repairs';
 import { formatDate } from '@/lib/requisitions/requisition-view';
+import { historyEntries, lastTransfer } from '@/lib/assets/asset-history';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { ASSET_LIFECYCLE_TRANSITIONS as NEXT_TRANSITIONS, lifecycleNotesRequired } from '@/lib/assets/lifecycle-transitions';
@@ -114,6 +115,9 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
   const [lifecycleEmployeeId, setLifecycleEmployeeId] = useState('');
   const [lifecycleToLocation, setLifecycleToLocation] = useState('');
   const [lifecycleExpectedReturnDate, setLifecycleExpectedReturnDate] = useState('');
+  // Arrival of a transferred asset: where it now sits, so the registry matches.
+  const [lifecycleOffice, setLifecycleOffice] = useState('');
+  const [lifecycleRoom, setLifecycleRoom] = useState('');
 
   const [edit, setEdit] = useState(false);
   const [editForm, setEditForm] = useState<UpdateAssetDto>({});
@@ -134,7 +138,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
         setAsset(res.data);
         setEditForm(buildEditForm(res.data));
       }),
-      auditApi.byRecord(assetId).then((res) => setTransactions(res.data?.data ?? [])).catch(() => {}),
+      auditApi.byRecord(assetId).then((res) => setTransactions(res.data ?? [])).catch(() => {}),
       loadRepairs(),
     ])
       .catch(() => {})
@@ -154,6 +158,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
   const handleLifecycleUpdate = async () => {
     const statusSnapshot = targetStatus;
     if (!asset || !statusSnapshot) return;
+    const arriving = asset.status === 'transferred' && statusSnapshot === 'available';
     setUpdating(true);
     setLifecycleError('');
     try {
@@ -163,6 +168,9 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
         employeeId: lifecycleEmployeeId || undefined,
         toLocation: lifecycleToLocation || undefined,
         expectedReturnDate: lifecycleExpectedReturnDate || undefined,
+        // Only an arrival (transferred → available) takes a new office/location.
+        officeOrSection: arriving ? lifecycleOffice.trim() || undefined : undefined,
+        officeLocation: arriving ? lifecycleRoom.trim() || undefined : undefined,
       });
       setAsset(res.data);
       setShowLifecycle(false);
@@ -171,8 +179,10 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
       setLifecycleEmployeeId('');
       setLifecycleToLocation('');
       setLifecycleExpectedReturnDate('');
+      setLifecycleOffice('');
+      setLifecycleRoom('');
       // Refresh audit and repair history after lifecycle change
-      auditApi.byRecord(assetId).then((r) => setTransactions(r.data?.data ?? [])).catch(() => {});
+      auditApi.byRecord(assetId).then((r) => setTransactions(r.data ?? [])).catch(() => {});
       void loadRepairs();
       // Suggest relevant COA form
       const cls = res.data.assetClass;
@@ -199,7 +209,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
       const res = await assetsApi.update(asset.id, editForm);
       setAsset(res.data);
       setEdit(false);
-      auditApi.byRecord(assetId).then((r) => setTransactions(r.data?.data ?? [])).catch(() => {});
+      auditApi.byRecord(assetId).then((r) => setTransactions(r.data ?? [])).catch(() => {});
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       setSaveError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to save.'));
@@ -225,6 +235,9 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
   const notesRequired = lifecycleNotesRequired(asset.status, targetStatus);
   const restoring = asset.status === 'flagged_for_disposal' && targetStatus === 'available';
   const stateLabel = (s: string) => (handBack && s === 'issued' ? 'Repaired — return to holder' : optionLabel(s));
+  // While transferred the registry still shows the place it left; say where it went.
+  const transfer = asset.status === 'transferred' ? lastTransfer(asset.locationHistory) : null;
+  const history = historyEntries(transactions);
 
   return (
     <div className="space-y-5 max-w-4xl">
@@ -300,6 +313,12 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
 
       {saveError && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">{saveError}</div>
+      )}
+
+      {transfer && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <strong>Transferred to {transfer.to}</strong> on {formatDate(transfer.at)}. The location below is where it came from. When it arrives, choose <em>Update Lifecycle → Available</em> and confirm its new office and location.
+        </div>
       )}
 
       {formSuggestion && (
@@ -406,34 +425,30 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
         </div>
         {historyLoading ? (
           <div className="p-6"><LoadingSkeleton rows={4} /></div>
-        ) : transactions.length === 0 ? (
+        ) : history.length === 0 ? (
           <div className="px-6 py-10 text-center text-sm text-gray-400">No lifecycle history recorded yet.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Date / Time', 'Action', 'Performed By', 'Notes'].map((h) => (
+                  {['Date / Time', 'Event', 'By', 'Details'].map((h) => (
                     <th key={h} className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {transactions.map((tx) => (
-                  <tr key={tx.id} className="hover:bg-blue-50 transition-colors">
+                {history.map((entry) => (
+                  <tr key={entry.id} className="align-top hover:bg-blue-50 transition-colors">
                     <td className="px-5 py-3 text-sm text-gray-600 whitespace-nowrap">
-                      {new Date(tx.timestamp).toLocaleString()}
+                      {new Date(entry.when).toLocaleString()}
                     </td>
                     <td className="px-5 py-3">
-                      <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium">
-                        {tx.action.replace(/_/g, ' ')}
-                      </span>
+                      <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium whitespace-nowrap">{entry.event}</span>
                     </td>
-                    <td className="px-5 py-3 text-sm font-mono text-gray-500">
-                      {tx.userId ? `···${tx.userId.slice(-8)}` : '—'}
-                    </td>
-                    <td className="px-5 py-3 text-sm text-gray-600 max-w-xs truncate">
-                      {(tx.metadata as Record<string, string> | null)?.notes ?? '—'}
+                    <td className="px-5 py-3 text-sm text-gray-600 whitespace-nowrap">{entry.by}</td>
+                    <td className="px-5 py-3 text-sm text-gray-600">
+                      {entry.details.length === 0 ? '—' : entry.details.map((line) => <p key={line}>{line}</p>)}
                     </td>
                   </tr>
                 ))}
@@ -456,7 +471,16 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                 </label>
                 <select
                   value={targetStatus}
-                  onChange={(e) => { setTargetStatus(e.target.value); setLifecycleError(''); setLifecycleEmployeeId(''); setLifecycleToLocation(''); setLifecycleExpectedReturnDate(''); }}
+                  onChange={(e) => {
+                    setTargetStatus(e.target.value);
+                    setLifecycleError('');
+                    setLifecycleEmployeeId('');
+                    setLifecycleToLocation('');
+                    setLifecycleExpectedReturnDate('');
+                    // Arrival: suggest the office it was sent to; the custodian confirms or corrects it.
+                    setLifecycleOffice(asset.status === 'transferred' && e.target.value === 'available' ? (transfer?.to ?? '') : '');
+                    setLifecycleRoom('');
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]"
                 >
                   <option value="">— select status —</option>
@@ -516,6 +540,41 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]"
                   />
                 </div>
+              )}
+
+              {/* ARRIVAL (transferred → available): where it now sits, so the registry matches reality */}
+              {asset.status === 'transferred' && targetStatus === 'available' && (
+                <>
+                  <p className="rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                    The asset has arrived. Confirm where it now sits and the registry will show it there. Leave a field blank to keep what the registry has today.
+                  </p>
+                  <div>
+                    <label htmlFor="arrival-office" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                      Office / Section
+                    </label>
+                    <input
+                      id="arrival-office"
+                      type="text"
+                      placeholder={asset.officeOrSection || 'e.g. Cyber Intelligence Unit'}
+                      value={lifecycleOffice}
+                      onChange={(e) => setLifecycleOffice(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="arrival-room" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                      Location (room / floor)
+                    </label>
+                    <input
+                      id="arrival-room"
+                      type="text"
+                      placeholder={asset.officeLocation || 'e.g. Intelligence Room, 4th Floor'}
+                      value={lifecycleRoom}
+                      onChange={(e) => setLifecycleRoom(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]"
+                    />
+                  </div>
+                </>
               )}
 
               {/* Notes field — required for FLAGGED_FOR_DISPOSAL, optional for others */}

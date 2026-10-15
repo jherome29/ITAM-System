@@ -60,6 +60,7 @@ describe('AssetsService', () => {
   const mockTxRepo = {
     create: jest.fn(),
     save: jest.fn(),
+    find: jest.fn(),
   };
 
   const mockAuditService = {
@@ -626,6 +627,114 @@ describe('AssetsService', () => {
   });
 
   // ── Section 12.1 — State machine invalid transitions ──────────────────────
+  // A transfer used to keep its destination only in the transactions table, which
+  // no screen reads: the audit entry said "available → transferred" and the
+  // registry kept the old location, so nobody could tell where the asset went.
+  describe('updateLifecycle() — transfers and arrival', () => {
+    const arm = (asset: AssetEntity) => {
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+      mockTxRepo.create.mockReturnValue({});
+      mockTxRepo.save.mockResolvedValue({});
+    };
+    const move = (
+      id: string,
+      dto: Parameters<AssetsService['updateLifecycle']>[1],
+    ) =>
+      service.updateLifecycle(
+        id,
+        dto,
+        'user-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+    it('puts the destination in the audit entry when an asset is transferred', async () => {
+      arm(makeAsset({ status: AssetStatus.AVAILABLE }));
+
+      await move('asset-uuid-1', {
+        status: AssetStatus.TRANSFERRED,
+        toLocation: 'Cyber Intelligence Unit, 4th Floor',
+      });
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.ASSET_TRANSFERRED,
+          metadata: expect.objectContaining({
+            fromStatus: AssetStatus.AVAILABLE,
+            toStatus: AssetStatus.TRANSFERRED,
+            toLocation: 'Cyber Intelligence Unit, 4th Floor',
+          }),
+        }),
+      );
+    });
+
+    it('moves the registry to the new office and location when a transferred asset arrives', async () => {
+      arm(
+        makeAsset({
+          status: AssetStatus.TRANSFERRED,
+          officeOrSection: 'Systems Administration',
+          officeLocation: 'IT Storeroom, 3rd Floor',
+        }),
+      );
+
+      const arrived = await move('asset-uuid-1', {
+        status: AssetStatus.AVAILABLE,
+        officeOrSection: 'Cyber Intelligence Unit',
+        officeLocation: 'Intelligence Room, 4th Floor',
+      });
+
+      expect(arrived.officeOrSection).toBe('Cyber Intelligence Unit');
+      expect(arrived.officeLocation).toBe('Intelligence Room, 4th Floor');
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            officeOrSection: 'Cyber Intelligence Unit',
+            officeLocation: 'Intelligence Room, 4th Floor',
+          }),
+        }),
+      );
+    });
+
+    it('keeps the old office and location when the arrival gives none', async () => {
+      arm(
+        makeAsset({
+          status: AssetStatus.TRANSFERRED,
+          officeOrSection: 'Systems Administration',
+          officeLocation: 'IT Storeroom, 3rd Floor',
+        }),
+      );
+
+      const arrived = await move('asset-uuid-1', {
+        status: AssetStatus.AVAILABLE,
+      });
+
+      expect(arrived.officeOrSection).toBe('Systems Administration');
+      expect(arrived.officeLocation).toBe('IT Storeroom, 3rd Floor');
+    });
+
+    it('ignores a new office or location on any other transition', async () => {
+      arm(
+        makeAsset({
+          status: AssetStatus.RETURNED,
+          officeOrSection: 'Systems Administration',
+          officeLocation: 'IT Storeroom, 3rd Floor',
+        }),
+      );
+
+      const result = await move('asset-uuid-1', {
+        status: AssetStatus.AVAILABLE,
+        officeOrSection: 'Somewhere else',
+        officeLocation: 'Another room',
+      });
+
+      expect(result.officeOrSection).toBe('Systems Administration');
+      expect(result.officeLocation).toBe('IT Storeroom, 3rd Floor');
+    });
+  });
+
   describe('updateLifecycle() — invalid transitions', () => {
     const invalidPairs: [AssetStatus, AssetStatus][] = [
       [AssetStatus.ISSUED, AssetStatus.REGISTERED], // Can't go back to registered
@@ -1267,6 +1376,57 @@ describe('AssetsService', () => {
       expect(result.itemDescription).toBe('New Laptop');
     });
 
+    // The edit form sends every field, so listing the keys it sent made each save
+    // read as "changed everything" in the asset's history.
+    it('audits only the fields that actually changed', async () => {
+      const asset = makeAsset({
+        brand: 'Dell',
+        officeOrSection: 'Systems Administration',
+        acquisitionDate: new Date('2025-08-12'),
+        acquisitionCost: '46500.00' as unknown as number,
+      });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.update(
+        asset.id,
+        {
+          brand: 'Dell', // same
+          officeOrSection: 'Cyber Intelligence Unit', // changed
+          acquisitionDate: '2025-08-12T00:00:00.000Z', // same day, different format
+          acquisitionCost: 46500, // same amount, number vs "46500.00"
+        },
+        'user-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.ASSET_UPDATED,
+          metadata: { updatedFields: ['officeOrSection'] },
+        }),
+      );
+    });
+
+    it('audits an edit that changed nothing with an empty list', async () => {
+      const asset = makeAsset({ brand: 'Dell' });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      mockAssetRepo.update.mockResolvedValue({ affected: 1 });
+
+      await service.update(
+        asset.id,
+        { brand: 'Dell' },
+        'user-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: { updatedFields: [] } }),
+      );
+    });
+
     it('throws NotFoundException when asset does not exist', async () => {
       mockAssetRepo.findOne.mockResolvedValue(null);
 
@@ -1341,6 +1501,52 @@ describe('AssetsService', () => {
       mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
       await service.findAll(1, 20, 'Dell', 'issued');
       expect(qb.andWhere).toHaveBeenCalledTimes(2);
+    });
+
+    // The list has to say where a transferred asset went; its location column
+    // still shows where it came from until it arrives.
+    it('says where each transferred asset went, from its latest transfer', async () => {
+      const qb = makeQb();
+      qb.getManyAndCount.mockResolvedValue([
+        [
+          { id: 't-1', status: AssetStatus.TRANSFERRED, custodianId: null },
+          { id: 'a-1', status: AssetStatus.AVAILABLE, custodianId: null },
+        ],
+        2,
+      ]);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      mockUsersService.findHolderSummaries.mockResolvedValue([]);
+      // Newest first, as the query orders them.
+      mockTxRepo.find.mockResolvedValue([
+        { assetId: 't-1', toLocation: 'Cyber Intelligence Unit' },
+        { assetId: 't-1', toLocation: 'Records Section (earlier move)' },
+      ]);
+
+      const result = await service.findAll();
+
+      expect(result.data.map((a) => a.transferredTo)).toEqual([
+        'Cyber Intelligence Unit',
+        null,
+      ]);
+      const asked = mockTxRepo.find.mock.calls[0][0] as {
+        where: { assetId: { _value: string[] } };
+      };
+      expect(asked.where.assetId._value).toEqual(['t-1']);
+    });
+
+    it('does not look up transfers when nothing in the list is transferred', async () => {
+      const qb = makeQb();
+      qb.getManyAndCount.mockResolvedValue([
+        [{ id: 'a-1', status: AssetStatus.AVAILABLE, custodianId: null }],
+        1,
+      ]);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      mockUsersService.findHolderSummaries.mockResolvedValue([]);
+
+      const result = await service.findAll();
+
+      expect(mockTxRepo.find).not.toHaveBeenCalled();
+      expect(result.data[0].transferredTo).toBeNull();
     });
 
     // Custody & Issuance has to show WHO holds each asset. The list used to carry

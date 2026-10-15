@@ -31,6 +31,7 @@ export const auditApi = {
   byUser: (userId: string, page = 1, limit = 50) =>
     client.get<ApiResponse<PaginatedAuditLogs>>(`/v1/audit/user/${userId}`, { params: { page, limit } }).then((r) => r.data),
 
+  /** One record's history, newest first by the screen. The API returns the list itself under `data`. */
   byRecord: (recordId: string) =>
-    client.get<ApiResponse<{ data: AuditLog[] }>>(`/v1/audit/record/${recordId}`).then((r) => r.data),
+    client.get<ApiResponse<AuditLog[]>>(`/v1/audit/record/${recordId}`).then((r) => r.data),
 };
