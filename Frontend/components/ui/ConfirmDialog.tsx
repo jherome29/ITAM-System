@@ -7,6 +7,7 @@ export function ConfirmDialog({
   title,
   detail,
   confirmLabel = 'Confirm',
+  confirmDisabled = false,
   children,
   onConfirm,
   onCancel,
@@ -15,6 +16,8 @@ export function ConfirmDialog({
   title: string;
   detail: string;
   confirmLabel?: string;
+  /** Blocks the confirm button, e.g. while the dialog's own input says the action cannot succeed. */
+  confirmDisabled?: boolean;
   children?: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
@@ -31,7 +34,7 @@ export function ConfirmDialog({
           <button type="button" onClick={onCancel} className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
             Cancel
           </button>
-          <button type="button" onClick={onConfirm} className="rounded-md bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800">
+          <button type="button" onClick={onConfirm} disabled={confirmDisabled} className="rounded-md bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:hover:bg-slate-300">
             {confirmLabel}
           </button>
         </div>

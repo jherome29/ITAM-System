@@ -7,6 +7,14 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { RequisitionForm } from '@/components/requisitions/RequisitionForm';
 import { RequisitionDetailView, SlaBadge } from '@/components/requisitions/RequisitionDetailView';
 import { requisitionItemsLabel } from '@/lib/requisitions/catalogue-items';
+import {
+  defaultStockId,
+  fulfilledItemsFor,
+  isSupplyLine,
+  stockOptionsFor,
+  stockProblem,
+  type StockOption,
+} from '@/lib/requisitions/supply-stock';
 import { formatDate, requesterLabel, requisitionStatusLabel } from '@/lib/requisitions/requisition-view';
 import { rowActionMode } from '@/lib/workflow/row-action';
 import { detailActions, rowActionLabel } from '@/lib/workflow/actions';
@@ -172,6 +180,10 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   // Keyed by requisition so a stale list from another request never shows.
   const [replacementUnitList, setReplacementUnitList] = useState<{ requisitionId: string; units: Asset[] } | null>(null);
   const [replacementUnitId, setReplacementUnitId] = useState('');
+  // Supply fulfilment: the stock record each supply line is drawn from. null for
+  // a line means the lookup failed (the server then resolves the record itself).
+  const [supplyStock, setSupplyStock] = useState<{ requisitionId: string; options: Record<string, StockOption[] | null> } | null>(null);
+  const [stockPicks, setStockPicks] = useState<Record<string, string>>({});
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const statuses = ['All', ...Array.from(new Set(rows.map((row) => String(row.status ?? 'Open'))))];
@@ -242,8 +254,43 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     return () => { live = false; };
   }, [pickingForId, replacementLine, selectedRequisition?.replacedAsset?.id]);
 
-  // Custodian fulfilment queue: fulfil (optionally issuing the replacement unit) or hold,
-  // through the requisitions API.
+  // Supply lines of the request being fulfilled. A supply leaves stock when the
+  // request is fulfilled, so the custodian sees - and can change - which stock
+  // record it comes out of. (Replacements are units, never supplies.)
+  const supplyLines = useMemo(
+    () => (confirmAction === 'Fulfill' && isFulfillmentPage && !replacementLine ? (selectedRequisition?.items ?? []).filter(isSupplyLine) : []),
+    [confirmAction, isFulfillmentPage, replacementLine, selectedRequisition],
+  );
+  const supplyForId = supplyLines.length > 0 ? selectedRequisition?.id : undefined;
+  const supplyOptions = supplyForId && supplyStock?.requisitionId === supplyForId ? supplyStock.options : null;
+
+  useEffect(() => {
+    if (!supplyForId) return;
+    let live = true;
+    Promise.all(
+      supplyLines.map(async (line) => {
+        try {
+          const res = await assetsApi.list(1, 100, line.itemDescription, 'available', line.assetType, 'IES');
+          return [line.id, stockOptionsFor(line, res.data.data)] as const;
+        } catch {
+          return [line.id, null] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!live) return;
+      setSupplyStock({ requisitionId: supplyForId, options: Object.fromEntries(entries) });
+      setStockPicks(Object.fromEntries(entries.map(([lineId, options]) => [lineId, options ? defaultStockId(options) : ''])));
+    });
+    return () => { live = false; };
+  }, [supplyForId, supplyLines]);
+
+  /** The first reason a supply line cannot be drawn from stock, or null. A failed lookup never blocks: the server decides. */
+  const supplyBlockedReason = supplyOptions
+    ? supplyLines.map((line) => { const options = supplyOptions[line.id]; return options ? stockProblem(line, options, stockPicks[line.id] ?? '') : null; }).find(Boolean) ?? null
+    : null;
+
+  // Custodian fulfilment queue: fulfil (optionally issuing the replacement unit, or
+  // drawing supplies from the chosen stock record) or hold, through the requisitions API.
   const submitFulfillmentDecision = async (action: 'Fulfill' | 'On Hold') => {
     if (!selected || actionSubmitting) return;
     const trimmedRemarks = remarks.trim();
@@ -254,9 +301,13 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     setActionSubmitting(true);
     try {
       const id = String(selected.id);
+      let drewFromStock = false;
       if (action === 'Fulfill') {
         const line = requisitionById[id]?.requisitionType === 'replacement' ? requisitionById[id]?.items[0] : undefined;
-        await requisitionsApi.fulfill(id, line && replacementUnitId ? { fulfilledItems: [{ requisitionItemId: line.id, assetId: replacementUnitId }] } : {});
+        const drawnFromStock = fulfilledItemsFor(requisitionById[id]?.items ?? [], stockPicks);
+        drewFromStock = drawnFromStock.length > 0;
+        const fulfilledItems = line && replacementUnitId ? [{ requisitionItemId: line.id, assetId: replacementUnitId }] : drawnFromStock;
+        await requisitionsApi.fulfill(id, fulfilledItems.length > 0 ? { fulfilledItems } : {});
       } else {
         await requisitionsApi.hold(id, trimmedRemarks);
       }
@@ -264,8 +315,17 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       setSelected(null);
       setRemarks('');
       setErrors({});
-      notify(action === 'Fulfill' ? (replacementUnitId ? 'Requisition fulfilled — replacement unit issued.' : 'Requisition fulfilled.') : 'Requisition placed on hold.');
+      notify(
+        action === 'Fulfill'
+          ? replacementUnitId
+            ? 'Requisition fulfilled — replacement unit issued.'
+            : drewFromStock
+              ? 'Requisition fulfilled — the quantity was drawn from stock.'
+              : 'Requisition fulfilled.'
+          : 'Requisition placed on hold.',
+      );
       setReplacementUnitId('');
+      setStockPicks({});
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
@@ -522,6 +582,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
         title={`${confirmAction} record`}
         detail="This updates the real record and is written to the audit trail."
         confirmLabel={actionSubmitting ? 'Processing…' : (confirmAction ?? 'Confirm')}
+        confirmDisabled={actionSubmitting || (supplyLines.length > 0 && (supplyOptions === null || Boolean(supplyBlockedReason)))}
         onConfirm={() => {
           if (!confirmAction) return;
           if (isApprovalsPage && (confirmAction === 'Approve' || confirmAction === 'Reject')) {
@@ -534,8 +595,35 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
             void submitDisposalRecommendation();
           }
         }}
-        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setIssueExpectedReturnDate(''); setTransferToLocation(''); setReplacementUnitId(''); }}
+        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setIssueExpectedReturnDate(''); setTransferToLocation(''); setReplacementUnitId(''); setStockPicks({}); }}
       >
+        {supplyLines.map((line) => {
+          const options = supplyOptions?.[line.id];
+          const chosen = options?.find((option) => option.id === stockPicks[line.id]);
+          const problem = options ? stockProblem(line, options, stockPicks[line.id] ?? '') : null;
+          return (
+            <label key={line.id} className="block text-sm font-semibold text-slate-700">
+              <span>Draw {line.quantity} × {line.itemDescription} from stock</span>
+              <select
+                value={stockPicks[line.id] ?? ''}
+                onChange={(event) => setStockPicks((current) => ({ ...current, [line.id]: event.target.value }))}
+                disabled={options === undefined || options === null || options.length === 0}
+                className="mt-2 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                {options === undefined && <option value="">Loading stock…</option>}
+                {options === null && <option value="">Stock could not be loaded — the system will pick the oldest record</option>}
+                {options && options.length === 0 && <option value="">No stock on record</option>}
+                {options && options.length > 0 && !stockPicks[line.id] && <option value="">Choose a stock record…</option>}
+                {(options ?? []).map((option) => (
+                  <option key={option.id} value={option.id} disabled={!option.enough}>{option.label}{option.enough ? '' : ' — not enough'}</option>
+                ))}
+              </select>
+              <span className={`mt-1 block text-xs font-normal ${problem ? 'text-red-600' : 'text-slate-500'}`}>
+                {problem ?? (chosen ? `${chosen.onHand} on hand → ${chosen.remaining} left after this fulfilment.` : 'The quantity leaves stock when you fulfil.')}
+              </span>
+            </label>
+          );
+        })}
         {pickingReplacementUnit && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Replacement unit to issue</span>

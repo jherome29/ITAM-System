@@ -88,6 +88,7 @@ describe('RequisitionsService', () => {
 
   const mockAssetRepo = {
     findOne: jest.fn(),
+    find: jest.fn(),
     save: jest.fn(),
   };
 
@@ -1931,22 +1932,234 @@ describe('RequisitionsService', () => {
       );
     });
 
-    it('still fulfills via the legacy path when no fulfilledItems are supplied', async () => {
-      armFulfillable([mkItem()]);
+    // The Fulfil screen sends no stock record for an ordinary supply
+    // requisition, so the server has to find the stock itself. Before this, such
+    // a fulfilment closed the request and deducted nothing: stock never moved
+    // and low-stock alerts never fired.
+    describe('when the custodian does not name a stock record', () => {
+      const stockRecord = (
+        over: Record<string, unknown> = {},
+      ): Record<string, unknown> => ({
+        id: 'sup-1',
+        assetClass: AssetClass.IES,
+        assetType: AssetType.ICT,
+        status: AssetStatus.AVAILABLE,
+        itemDescription: 'USB drives (box)',
+        quantity: 10,
+        dateOfDelivery: new Date('2026-01-01'),
+        createdAt: new Date('2026-01-01'),
+        ...over,
+      });
 
-      const result = await service.fulfill(
-        'req-supply-1',
-        'it-1',
-        UserRole.IT_PERSONNEL,
-        {},
-        '127.0.0.1',
-      );
+      /**
+       * The rows the stock lookup can see. `find` applies its `where` the way
+       * the database does, and the locked re-read serves the same rows.
+       */
+      const armStock = (records: Array<Record<string, unknown>>) => {
+        mockAssetRepo.find.mockImplementation(
+          ({ where }: { where: Record<string, unknown> }) =>
+            Promise.resolve(
+              records.filter((r) =>
+                Object.entries(where).every(([k, v]) => r[k] === v),
+              ),
+            ),
+        );
+        mockAssetRepo.findOne.mockImplementation(
+          ({ where }: { where: { id: string } }) =>
+            Promise.resolve(records.find((r) => r.id === where.id) ?? null),
+        );
+        mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+          Promise.resolve(a),
+        );
+      };
 
-      expect(result.status).toBe(RequisitionStatus.FULFILLED);
-      expect(mockAssetRepo.findOne).not.toHaveBeenCalled();
-      expect(
-        mockAssetsService.notifyLowStockIfBelowThreshold,
-      ).not.toHaveBeenCalled();
+      const fulfilWithoutPick = () =>
+        service.fulfill(
+          'req-supply-1',
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          {},
+          '127.0.0.1',
+        );
+
+      it('draws the line from the one matching stock record, links it and audits the draw-down', async () => {
+        const req = armFulfillable([mkItem({ quantity: 4 })]);
+        armStock([stockRecord({ quantity: 10 })]);
+
+        const result = await fulfilWithoutPick();
+
+        expect(result.status).toBe(RequisitionStatus.FULFILLED);
+        expect(mockAssetRepo.save).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sup-1', quantity: 6 }),
+        );
+        expect(req.items[0].fulfilledAssetId).toBe('sup-1');
+        expect(mockItemRepo.update).toHaveBeenCalledWith('ri-ies-1', {
+          fulfilledAssetId: 'sup-1',
+        });
+        expect(mockAuditService.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: AuditAction.REQUISITION_FULFILLED,
+            metadata: expect.objectContaining({
+              stockDecrements: [{ assetId: 'sup-1', from: 10, to: 6 }],
+            }),
+          }),
+        );
+        expect(
+          mockAssetsService.notifyLowStockIfBelowThreshold,
+        ).toHaveBeenCalledWith('sup-1');
+      });
+
+      it('matches the description ignoring case and surrounding spaces', async () => {
+        armFulfillable([mkItem({ itemDescription: '  usb DRIVES (box) ' })]);
+        armStock([stockRecord({ quantity: 10 })]);
+
+        await fulfilWithoutPick();
+
+        expect(mockAssetRepo.save).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sup-1', quantity: 6 }),
+        );
+      });
+
+      it('ignores stock of another item, another asset type or one that is not available', async () => {
+        armFulfillable([mkItem({ quantity: 2 })]);
+        armStock([
+          stockRecord({ id: 'other-item', itemDescription: 'HDMI cables' }),
+          stockRecord({ id: 'other-type', assetType: AssetType.FIXED }),
+          stockRecord({ id: 'on-hold', status: AssetStatus.UNDER_REPAIR }),
+          stockRecord({ id: 'the-one', quantity: 5 }),
+        ]);
+
+        await fulfilWithoutPick();
+
+        expect(mockAssetRepo.save).toHaveBeenCalledTimes(1);
+        expect(mockAssetRepo.save).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'the-one', quantity: 3 }),
+        );
+      });
+
+      it('takes the oldest delivery first (FIFO) when several records hold enough', async () => {
+        armFulfillable([mkItem({ quantity: 2 })]);
+        armStock([
+          stockRecord({ id: 'newer', dateOfDelivery: new Date('2026-06-01') }),
+          stockRecord({ id: 'older', dateOfDelivery: new Date('2026-02-01') }),
+        ]);
+
+        await fulfilWithoutPick();
+
+        expect(mockAssetRepo.save).toHaveBeenCalledTimes(1);
+        expect(mockAssetRepo.save).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'older', quantity: 8 }),
+        );
+      });
+
+      it('skips a record that is too small and uses the next one that holds enough', async () => {
+        armFulfillable([mkItem({ quantity: 6 })]);
+        armStock([
+          stockRecord({
+            id: 'small',
+            quantity: 3,
+            dateOfDelivery: new Date('2026-01-01'),
+          }),
+          stockRecord({
+            id: 'big',
+            quantity: 20,
+            dateOfDelivery: new Date('2026-03-01'),
+          }),
+        ]);
+
+        await fulfilWithoutPick();
+
+        expect(mockAssetRepo.save).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'big', quantity: 14 }),
+        );
+      });
+
+      it('refuses with a clear 400 and writes nothing when no stock is on record for the item', async () => {
+        armFulfillable([mkItem()]);
+        armStock([stockRecord({ itemDescription: 'HDMI cables' })]);
+
+        await expect(fulfilWithoutPick()).rejects.toThrow(
+          /No stock on record for "USB drives \(box\)"/,
+        );
+
+        expect(mockAssetRepo.save).not.toHaveBeenCalled();
+        expect(mockReqRepo.save).not.toHaveBeenCalled();
+        expect(mockAuditService.log).not.toHaveBeenCalled();
+      });
+
+      it('refuses with Insufficient stock when no single record holds enough', async () => {
+        armFulfillable([mkItem({ quantity: 50 })]);
+        armStock([
+          stockRecord({ id: 'a', quantity: 10 }),
+          stockRecord({ id: 'b', quantity: 20 }),
+        ]);
+
+        await expect(fulfilWithoutPick()).rejects.toThrow(
+          'Insufficient stock: requested 50, available 20',
+        );
+
+        expect(mockAssetRepo.save).not.toHaveBeenCalled();
+        expect(mockReqRepo.save).not.toHaveBeenCalled();
+      });
+
+      it('never looks up stock for a unit (PPE/SEP) line, so unit fulfilments are unchanged', async () => {
+        armFulfillable([
+          mkItem({ id: 'ri-sep', assetClass: AssetClass.SEP, quantity: 1 }),
+        ]);
+
+        const result = await fulfilWithoutPick();
+
+        expect(result.status).toBe(RequisitionStatus.FULFILLED);
+        expect(mockAssetRepo.find).not.toHaveBeenCalled();
+        expect(mockAssetRepo.findOne).not.toHaveBeenCalled();
+        expect(
+          mockAssetsService.notifyLowStockIfBelowThreshold,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('keeps an explicit pick for one line and resolves the others', async () => {
+        armFulfillable([
+          mkItem({
+            id: 'ri-a',
+            quantity: 1,
+            itemDescription: 'USB drives (box)',
+          }),
+          mkItem({ id: 'ri-b', quantity: 2, itemDescription: 'HDMI cables' }),
+        ]);
+        armStock([
+          stockRecord({ id: 'usb-picked', quantity: 9 }),
+          stockRecord({
+            id: 'usb-other',
+            quantity: 9,
+            dateOfDelivery: new Date('2025-01-01'),
+          }),
+          stockRecord({
+            id: 'hdmi',
+            itemDescription: 'HDMI cables',
+            quantity: 7,
+          }),
+        ]);
+
+        await service.fulfill(
+          'req-supply-1',
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          {
+            fulfilledItems: [
+              { requisitionItemId: 'ri-a', assetId: 'usb-picked' },
+            ],
+          },
+          '127.0.0.1',
+        );
+
+        const saved = mockAssetRepo.save.mock.calls.map(
+          ([a]: [{ id: string; quantity: number }]) => [a.id, a.quantity],
+        );
+        expect(saved).toEqual([
+          ['usb-picked', 8],
+          ['hdmi', 5],
+        ]);
+      });
     });
 
     it('rejects a fulfilledItems entry that matches no requisition item — rolls back, writes nothing', async () => {

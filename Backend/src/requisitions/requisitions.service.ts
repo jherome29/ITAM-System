@@ -67,6 +67,11 @@ export interface RequesterSummary {
   officeOrSection: string;
 }
 
+/** Item names compare ignoring case and stray spacing ("  usb DRIVES " = "USB drives"). */
+function normalizeItemName(name: string | null | undefined): string {
+  return (name ?? '').trim().replaceAll(/\s+/g, ' ').toLowerCase();
+}
+
 function toRequesterSummary(user?: UserEntity | null): RequesterSummary | null {
   if (!user) return null;
   return {
@@ -1107,13 +1112,34 @@ export class RequisitionsService {
       const itemRepo = em.getRepository(RequisitionItemEntity);
       const assetRepo = em.getRepository(AssetEntity);
 
-      if (dto.fulfilledItems?.length) {
-        for (const { requisitionItemId, assetId } of dto.fulfilledItems) {
-          // Reject a fulfilledItems entry naming an id that is not on THIS
-          // requisition before any write — otherwise the itemRepo.update below
-          // would overwrite the fulfilledAssetId link on another requisition's
-          // item. Thrown inside the transaction, so it rolls the whole
-          // fulfillment back (consistent with the insufficient-stock 400).
+      // Reject a fulfilledItems entry naming an id that is not on THIS
+      // requisition before any write — otherwise the itemRepo.update below
+      // would overwrite the fulfilledAssetId link on another requisition's
+      // item. Thrown inside the transaction, so it rolls the whole
+      // fulfillment back (consistent with the insufficient-stock 400).
+      for (const { requisitionItemId } of dto.fulfilledItems ?? []) {
+        if (!req.items.some((i) => i.id === requisitionItemId)) {
+          throw new BadRequestException(
+            `Requisition item "${requisitionItemId}" does not belong to this requisition.`,
+          );
+        }
+      }
+
+      // A supply (IES) line must leave stock. The custodian may pick the stock
+      // record; when none is named — the Fulfil screen sends no pick for an
+      // ordinary supply requisition — the server finds it. Without this the
+      // request closed with nothing deducted, so stock never moved and the
+      // low-stock alerts never fired.
+      const links = [...(dto.fulfilledItems ?? [])];
+      for (const item of req.items) {
+        if (item.assetClass !== AssetClass.IES) continue;
+        if (links.some((l) => l.requisitionItemId === item.id)) continue;
+        const stock = await this.resolveSupplyStock(assetRepo, item);
+        links.push({ requisitionItemId: item.id, assetId: stock.id });
+      }
+
+      if (links.length) {
+        for (const { requisitionItemId, assetId } of links) {
           const reqItem = req.items.find((i) => i.id === requisitionItemId);
           if (!reqItem) {
             throw new BadRequestException(
@@ -1235,6 +1261,50 @@ export class RequisitionsService {
     });
 
     return saved;
+  }
+
+  /**
+   * The stock record a supply line is drawn from when the custodian did not
+   * name one: same item (case and spacing ignored), same asset type, still
+   * available. Oldest delivery first (FIFO), and the first record that holds
+   * the whole quantity — a line is drawn from one record. The caller re-reads
+   * the chosen row under a write lock, so a race cannot overdraw it.
+   */
+  private async resolveSupplyStock(
+    assetRepo: Repository<AssetEntity>,
+    item: RequisitionItemEntity,
+  ): Promise<AssetEntity> {
+    const sameItem = (a: AssetEntity) =>
+      normalizeItemName(a.itemDescription) ===
+      normalizeItemName(item.itemDescription);
+    const received = (a: AssetEntity) =>
+      new Date(a.dateOfDelivery ?? a.createdAt).getTime();
+
+    const matches = (
+      await assetRepo.find({
+        where: {
+          assetClass: AssetClass.IES,
+          assetType: item.assetType,
+          status: AssetStatus.AVAILABLE,
+        },
+      })
+    )
+      .filter(sameItem)
+      .sort((a, b) => received(a) - received(b));
+
+    if (matches.length === 0) {
+      throw new BadRequestException(
+        `No stock on record for "${item.itemDescription}". Register the stock first, or place the requisition on hold.`,
+      );
+    }
+    const enough = matches.find((a) => a.quantity >= item.quantity);
+    if (!enough) {
+      const largest = Math.max(...matches.map((a) => a.quantity));
+      throw new BadRequestException(
+        `Insufficient stock: requested ${item.quantity}, available ${largest}`,
+      );
+    }
+    return enough;
   }
 
   /**
