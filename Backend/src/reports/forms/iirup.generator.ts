@@ -14,6 +14,7 @@ import {
   PAGE,
   CONTENT_WIDTH,
   identityFields,
+  conditionLabel,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — IIRUP for flagging unserviceable assets (Appendix 74)
@@ -89,7 +90,7 @@ export async function generateIIRUP(
         `${asset.itemDescription}${asset.brand ? ' / ' + asset.brand : ''}${asset.serialNumber ? '\nS/N: ' + asset.serialNumber : ''}`,
         fmtDate(asset.acquisitionDate),
         phpFormat(asset.acquisitionCost),
-        asset.condition,
+        conditionLabel(asset.condition),
         'For Disposal',
       ],
     ],

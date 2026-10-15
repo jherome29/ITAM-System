@@ -9,6 +9,7 @@ import {
   phpFormat,
   fmtDate,
   identityFields,
+  conditionLabel,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — WMR documents waste/unserviceable materials for a period (Appendix 65)
@@ -48,7 +49,7 @@ export async function generateWMR(
     a.itemDescription + (a.brand ? ' / ' + a.brand : ''),
     '1',
     phpFormat(a.acquisitionCost),
-    a.condition,
+    conditionLabel(a.condition),
   ]);
 
   y = drawTable(

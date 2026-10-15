@@ -266,6 +266,7 @@ describe('RPCI with many assets', () => {
     assetClass: 'SEP',
     acquisitionCost: 46500,
     condition: 'serviceable',
+    quantity: 1,
   });
 
   it('is a handful of pages, not one page per cell', async () => {

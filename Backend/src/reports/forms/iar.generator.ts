@@ -15,6 +15,7 @@ import {
   CONTENT_WIDTH,
   identityFields,
   documentNumber,
+  conditionLabel,
 } from './base-form.generator';
 
 // SVC: Obtain/Build — IAR generated when newly procured assets are received and inspected (Appendix 62)
@@ -103,7 +104,7 @@ export async function generateIAR(
         asset.propertyNumber ?? '—',
         `${asset.itemDescription}${asset.brand ? ' / ' + asset.brand : ''}${asset.serialNumber ? '\nS/N: ' + asset.serialNumber : ''}`,
         phpFormat(asset.acquisitionCost),
-        asset.condition,
+        conditionLabel(asset.condition),
       ],
     ],
     y,

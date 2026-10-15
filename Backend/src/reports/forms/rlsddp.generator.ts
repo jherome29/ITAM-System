@@ -15,6 +15,7 @@ import {
   CONTENT_WIDTH,
   identityFields,
   documentNumber,
+  conditionLabel,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — RLSDDP for lost/stolen/damaged/destroyed property (Appendix 75)
@@ -111,7 +112,7 @@ export async function generateRLSSDDP(
         `${asset.itemDescription}${asset.brand ? ' / ' + asset.brand : ''}${asset.serialNumber ? '\nS/N: ' + asset.serialNumber : ''}`,
         fmtDate(asset.acquisitionDate),
         phpFormat(asset.acquisitionCost),
-        asset.condition,
+        conditionLabel(asset.condition),
       ],
     ],
     y,

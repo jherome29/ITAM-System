@@ -8,6 +8,7 @@ import {
   drawSignatureBlock,
   phpFormat,
   fmtDate,
+  conditionLabel,
   identityFields,
 } from './base-form.generator';
 
@@ -18,6 +19,8 @@ interface AssetLike {
   assetClass: string;
   acquisitionCost: number;
   condition: string;
+  /** Stock on record: units on hand for supplies, 1 for an individual item. */
+  quantity: number;
 }
 
 export async function generateRPCI(
@@ -52,25 +55,27 @@ export async function generateRPCI(
     a.itemDescription,
     'unit',
     phpFormat(a.acquisitionCost),
-    '1',
-    '1',
+    String(a.quantity),
+    // Filled in by hand during the count - pre-filling it with the card
+    // quantity would make every sheet "balance" before anyone counted.
     '',
     '',
-    a.condition,
+    '',
+    conditionLabel(a.condition),
   ]);
 
   y = drawTable(
     doc,
     [
       { header: 'ARTICLE', width: 45 },
-      { header: 'DESCRIPTION', width: 160 },
+      { header: 'DESCRIPTION', width: 135 },
       { header: 'UNIT', width: 35 },
       { header: 'UNIT COST', width: 65 },
       { header: 'QTY PER\nCARD', width: 45 },
       { header: 'QTY PER\nCOUNT', width: 45 },
       { header: 'SHORT-\nAGE', width: 40 },
       { header: 'OVER-\nAGE', width: 40 },
-      { header: 'REMARKS', width: 40 },
+      { header: 'REMARKS', width: 65 },
     ],
     rows,
     y,

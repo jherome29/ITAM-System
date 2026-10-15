@@ -15,6 +15,7 @@ import {
   CONTENT_WIDTH,
   identityFields,
   documentNumber,
+  conditionLabel,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — PTR generated when IT Personnel records an asset transfer (Appendix 76)
@@ -121,7 +122,7 @@ export async function generatePTR(
         `${asset.itemDescription}${asset.brand ? ' / ' + asset.brand : ''}`,
         '1',
         phpFormat(asset.acquisitionCost),
-        asset.condition ?? '—',
+        conditionLabel(asset.condition),
       ],
     ],
     y,

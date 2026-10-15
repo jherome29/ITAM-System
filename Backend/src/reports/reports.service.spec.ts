@@ -859,6 +859,99 @@ describe('ReportsService', () => {
     });
   });
 
+  // ── RSMI / RPCI content ───────────────────────────────────────────────────
+  describe('generateFormRecord() — RSMI and RPCI content', () => {
+    beforeEach(() => {
+      mockFormRepo.create.mockImplementation((x: object) => x);
+      mockFormRepo.save.mockImplementation((x: object) =>
+        Promise.resolve({ id: 'form-1', ...x }),
+      );
+    });
+
+    const drawn = async (run: () => Promise<unknown>) => {
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+      await run();
+      const out = text.mock.calls.map(([t]) => String(t));
+      text.mockRestore();
+      return out;
+    };
+
+    it('RSMI lists only supplies, priced from the stock they were issued from', async () => {
+      mockReqRepo.find.mockResolvedValue([
+        {
+          requestNumber: 'REQ-0031',
+          items: [
+            {
+              assetClass: AssetClass.IES,
+              assetType: AssetType.SUPPLIES,
+              itemDescription: 'Bond Paper A4',
+              quantity: 3,
+              fulfilledAssetId: 'stock-1',
+            },
+            {
+              assetClass: AssetClass.PPE,
+              assetType: AssetType.ICT,
+              itemDescription: 'Server Rack',
+              quantity: 1,
+              fulfilledAssetId: 'unit-9',
+            },
+            {
+              assetClass: AssetClass.IES,
+              assetType: AssetType.SUPPLIES,
+              itemDescription: 'Ink Cartridge',
+              quantity: 2,
+              fulfilledAssetId: null,
+            },
+          ],
+        },
+      ]);
+      // Postgres hands decimals back as strings.
+      mockAssetRepo.find.mockResolvedValue([
+        { id: 'stock-1', acquisitionCost: '250.00', itemCode: 'SUP-0001' },
+      ]);
+
+      const out = await drawn(() =>
+        service.generateFormRecord(
+          { formType: OfficialFormType.RSMI },
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      );
+
+      expect(out).toContain('Bond Paper A4');
+      expect(out).toContain('Ink Cartridge');
+      expect(out).not.toContain('Server Rack');
+      expect(out).toContain('SUP-0001');
+      expect(out).toContain('TOTAL AMOUNT: PHP 750.00');
+      expect(out).not.toContain('PHP 0.00');
+    });
+
+    it('RPCI carries the stock on record, with the physical count left to the counter', async () => {
+      mockAssetRepo.find.mockResolvedValue([
+        {
+          itemDescription: 'Bond Paper A4',
+          assetClass: AssetClass.IES,
+          acquisitionCost: '250.00',
+          condition: AssetCondition.SERVICEABLE,
+          quantity: 48,
+        },
+      ]);
+
+      const out = await drawn(() =>
+        service.generateFormRecord(
+          { formType: OfficialFormType.RPCI },
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      );
+
+      expect(out).toContain('48');
+      expect(out).toContain('Serviceable');
+    });
+  });
+
   // ── downloadForm() ────────────────────────────────────────────────────────
   describe('downloadForm()', () => {
     const makeFormQb = (returnValue: object | null) => ({

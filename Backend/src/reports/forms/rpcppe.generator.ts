@@ -9,6 +9,7 @@ import {
   phpFormat,
   fmtDate,
   identityFields,
+  conditionLabel,
 } from './base-form.generator';
 
 // SVC: Improve — RPCPPE for annual physical count of PPE (Appendix 73)
@@ -59,7 +60,7 @@ export async function generateRPCPPE(
     a.serialNumber ?? '—',
     fmtDate(a.acquisitionDate),
     phpFormat(a.acquisitionCost),
-    a.condition,
+    conditionLabel(a.condition),
     a.officeOrSection ?? '—',
     a.accountableOfficer ?? '—',
   ]);

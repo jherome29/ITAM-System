@@ -412,6 +412,13 @@ export function bufferize(doc: PDFKit.PDFDocument): Promise<Buffer> {
 }
 
 /** Formats PHP currency. */
+/** 'for_repair' -> 'For repair'. Forms print words, not database values. */
+export function conditionLabel(condition: string | null | undefined): string {
+  if (!condition) return '—';
+  const words = condition.replace(/_/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 export function phpFormat(amount: number | string): string {
   const n = typeof amount === 'string' ? parseFloat(amount) : amount;
   if (isNaN(n)) return 'PHP 0.00';

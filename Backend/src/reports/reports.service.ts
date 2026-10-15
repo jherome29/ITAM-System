@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { Between, In, Repository } from 'typeorm';
 import PDFDocument from 'pdfkit';
 import ExcelJS from 'exceljs';
 import { GeneratedReportEntity } from './entities/generated-report.entity';
@@ -927,15 +927,40 @@ export class ReportsService {
           relations: { items: true },
           order: { fulfilledAt: 'ASC' },
         });
-        const items = reqs.flatMap((r) =>
-          r.items.map((i) => ({
-            requestNumber: r.requestNumber,
-            itemDescription: i.itemDescription,
-            assetType: i.assetType,
-            quantity: i.quantity,
-            acquisitionCost: 0,
-          })),
+        // Supplies only: the report is of supplies and materials, and a
+        // laptop or a desk in the same requisition belongs on the PAR/ICS.
+        const supplyLines = reqs.flatMap((r) =>
+          r.items
+            .filter((i) => i.assetClass === AssetClass.IES)
+            .map((i) => ({ requestNumber: r.requestNumber, line: i })),
         );
+        // Unit cost and stock number come from the stock the line was issued
+        // from; a line fulfilled before stock was linked has neither.
+        const stockIds = [
+          ...new Set(
+            supplyLines.flatMap(({ line }) =>
+              line.fulfilledAssetId ? [line.fulfilledAssetId] : [],
+            ),
+          ),
+        ];
+        const stock = stockIds.length
+          ? await this.assetRepo.find({ where: { id: In(stockIds) } })
+          : [];
+        const stockById = new Map(stock.map((a) => [a.id, a]));
+        const items = supplyLines.map(({ requestNumber, line }) => {
+          const unit = line.fulfilledAssetId
+            ? stockById.get(line.fulfilledAssetId)
+            : undefined;
+          return {
+            requestNumber,
+            itemDescription: line.itemDescription,
+            assetType: line.assetType,
+            quantity: line.quantity,
+            // Postgres returns decimals as strings.
+            acquisitionCost: unit ? Number(unit.acquisitionCost) : null,
+            stockNumber: unit?.itemCode || null,
+          };
+        });
         buffer = await generateRSMI(items, from, to);
         break;
       }
