@@ -24,7 +24,7 @@ export default async function PropertyOfficerPage({
   if (segment === 'notifications') return <NotificationsContent />;
   if (segment === 'assigned-assets') return <MyAssignedAssets eyebrow="Property Officer" canRequestReplacement={false} showRequestHistory openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'assets' && child === 'new') return <RegisterAssetForm basePath="/property-officer/assets" />;
-  if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/property-officer/assets" formsPath="/it-personnel/forms" />;
+  if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/property-officer/assets" formsPath="/property-officer/reports" />;
   if (segment === 'assets') return <AssetRegistryList basePath="/property-officer/assets" title="Consolidated Asset Registry" />;
   if (segment === 'reports') return <FormsArchiveContent />;
   if (segment === 'replacements' || segment === 'replacement-validation') return <ReplacementReview eyebrow="Property Officer" assetBasePath="/property-officer/assets" />;

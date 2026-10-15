@@ -62,6 +62,7 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { label: 'ICT Physical Inventory', href: '/it-asset-custodian/physical-inventory', icon: ScanLine },
     { label: 'ICT Disposal Recommendations', href: '/it-asset-custodian/disposal', icon: Archive },
     { label: 'ICT Reports & Forms', href: '/it-asset-custodian/reports', icon: FileBarChart },
+    { label: 'Management Reports', href: '/it-asset-custodian/management-reports', icon: FileText },
     { section: 'My Requests', label: 'My Requisitions', href: '/it-asset-custodian/requisitions', icon: ClipboardList },
     { label: 'My Assigned Assets', href: '/it-asset-custodian/assigned-assets', icon: PackageCheck },
     { label: 'Notifications', href: '/it-asset-custodian/notifications', icon: Bell },
