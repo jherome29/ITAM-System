@@ -7,9 +7,11 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Repository } from 'typeorm';
 import { Request } from 'express';
 import { SystemConfigService } from './system-config.service';
-import { CONFIG_KEYS } from './system-config.keys';
+import { CONFIG_KEYS, type SystemConfigSnapshot } from './system-config.keys';
 import { UpdateSystemConfigDto } from './dto/update-system-config.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -38,12 +40,49 @@ export class SystemConfigController {
   constructor(
     private readonly svc: SystemConfigService,
     private readonly audit: AuditService,
+    @InjectRepository(UserEntity)
+    private readonly userRepo: Repository<UserEntity>,
   ) {}
 
-  @Get()
-  getAll() {
+  /** The settings with each one's last editor named, not just identified by id. */
+  private async snapshot(): Promise<SystemConfigSnapshot> {
+    const all = this.svc.getAll();
+    const ids = [
+      ...new Set(
+        Object.values(all.meta).flatMap((m) =>
+          m.updatedBy ? [m.updatedBy] : [],
+        ),
+      ),
+    ];
+    const people = ids.length
+      ? await this.userRepo.find({
+          where: { id: In(ids) },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const names = new Map(
+      people.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]),
+    );
     return {
-      data: this.svc.getAll(),
+      ...all,
+      meta: Object.fromEntries(
+        Object.entries(all.meta).map(([key, m]) => [
+          key,
+          {
+            ...m,
+            updatedByName: m.updatedBy
+              ? (names.get(m.updatedBy) ?? null)
+              : null,
+          },
+        ]),
+      ),
+    };
+  }
+
+  @Get()
+  async getAll() {
+    return {
+      data: await this.snapshot(),
       message: 'System configuration retrieved',
     };
   }
@@ -78,7 +117,7 @@ export class SystemConfigController {
     });
 
     return {
-      data: this.svc.getAll(),
+      data: await this.snapshot(),
       message: 'System configuration updated',
     };
   }

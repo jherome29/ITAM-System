@@ -17,6 +17,9 @@ export interface SystemConfigMeta {
   updatedAt: string | null;
   // User id of whoever last changed it, or null (never changed / unknown).
   updatedBy: string | null;
+  // Their name, filled in by the controller; null when nobody changed it or the
+  // account no longer exists. Not stored - the service only knows ids.
+  updatedByName?: string | null;
 }
 
 export interface SystemConfigSnapshot {

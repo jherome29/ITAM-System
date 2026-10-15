@@ -52,7 +52,7 @@ function ProvenanceLine({
   return (
     <p className="mt-1 text-xs text-slate-400">
       Last changed {entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : 'at an unknown time'}
-      {entry.updatedBy ? ` by ${entry.updatedBy}` : ''}
+      {entry.updatedBy ? ` by ${entry.updatedByName ?? 'a removed account'}` : ''}
     </p>
   );
 }
@@ -153,6 +153,25 @@ function SystemSettingsPage() {
               Settings saved.
             </div>
           )}
+
+          <Panel title="Official forms">
+            <div className="space-y-4 p-5">
+              <div>
+                <Field label="Entity name">
+                  <input value={form.entityName} onChange={set('entityName')} maxLength={150} className={inputClass} />
+                </Field>
+                <p className="mt-1 text-xs text-slate-500">Printed in the header of every official COA form and management report.</p>
+                <ProvenanceLine meta={meta} keyName={CONFIG_META_KEYS.entityName} />
+              </div>
+              <div>
+                <Field label="Fund cluster">
+                  <input value={form.fundCluster} onChange={set('fundCluster')} maxLength={60} placeholder="e.g. 01 Regular Agency Fund" className={inputClass} />
+                </Field>
+                <p className="mt-1 text-xs text-slate-500">Printed on the forms that carry one. Leave empty and the form prints a line to fill in by hand.</p>
+                <ProvenanceLine meta={meta} keyName={CONFIG_META_KEYS.fundCluster} />
+              </div>
+            </div>
+          </Panel>
 
           <Panel title="Requisition SLA">
             <div className="p-5">
@@ -270,8 +289,8 @@ function SystemSettingsPage() {
           </Panel>
 
           <p className="px-1 text-xs text-slate-400">
-            Numbering formats, notification routing, forms &amp; print, data retention, and
-            localization are planned and not yet configurable here.
+            Document-number formats, notification routing, data retention, and localization are not
+            configurable here yet.
           </p>
         </>
       )}
