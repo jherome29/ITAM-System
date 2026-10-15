@@ -170,6 +170,75 @@ describe('ReportsService', () => {
       const result = await service.findAllForms();
       expect(result).toMatchObject({ data: [], total: 0, page: 1, limit: 50 });
     });
+
+    // The archive used to show "asset 3fa85f64…" and no author: a custodian
+    // could not tell which of fifty PARs was for which laptop.
+    it('labels each form with its asset, requisition and author', async () => {
+      mockFormRepo.findAndCount.mockResolvedValue([
+        [
+          {
+            id: 'f-1',
+            formType: OfficialFormType.PAR,
+            documentNumber: 'PAR-2026-0007',
+            generatedById: 'u-1',
+            relatedAssetId: 'a-1',
+            relatedRequisitionId: 'r-1',
+            relatedAssetRequestId: null,
+            filePath: 'stored',
+            generatedAt: new Date('2026-10-15T08:00:00Z'),
+          },
+          {
+            id: 'f-2',
+            formType: OfficialFormType.RPCI,
+            documentNumber: null,
+            generatedById: 'u-gone',
+            relatedAssetId: null,
+            relatedRequisitionId: null,
+            relatedAssetRequestId: null,
+            filePath: 'stored',
+            generatedAt: new Date('2026-10-14T08:00:00Z'),
+          },
+        ],
+        2,
+      ]);
+      mockAssetRepo.find.mockResolvedValue([
+        {
+          id: 'a-1',
+          itemDescription: 'Dell Latitude',
+          propertyNumber: 'P-001',
+        },
+      ]);
+      mockReqRepo.find.mockResolvedValue([
+        { id: 'r-1', requestNumber: 'REQ-0031' },
+      ]);
+      mockUserRepo.find.mockResolvedValue([
+        { id: 'u-1', firstName: 'Ian', lastName: 'Cruz' },
+      ]);
+
+      const { data } = await service.findAllForms();
+
+      expect(data[0]).toMatchObject({
+        id: 'f-1',
+        documentNumber: 'PAR-2026-0007',
+        assetLabel: 'Dell Latitude (P-001)',
+        requisitionNumber: 'REQ-0031',
+        generatedByName: 'Ian Cruz',
+      });
+      expect(data[1]).toMatchObject({
+        assetLabel: null,
+        requisitionNumber: null,
+        generatedByName: null,
+      });
+    });
+
+    it('does not look anything up for an empty page', async () => {
+      mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAllForms();
+
+      expect(mockAssetRepo.find).not.toHaveBeenCalled();
+      expect(mockUserRepo.find).not.toHaveBeenCalled();
+    });
   });
 
   // ── getKpi() ──────────────────────────────────────────────────────────────
@@ -984,6 +1053,100 @@ describe('ReportsService', () => {
           }),
         }),
       );
+    });
+  });
+
+  // ── returnee lookups and required inputs ──────────────────────────────────
+  describe('generateFormRecord() — returnee lookup and required inputs', () => {
+    const holder = {
+      id: 'emp-1',
+      firstName: 'Juan',
+      lastName: 'dela Cruz',
+      employeeId: 'CICC-0042',
+      role: UserRole.EMPLOYEE,
+      division: 'Operations',
+      officeOrSection: 'Field',
+    };
+    const issuer = { ...holder, id: 'it-1', employeeId: 'CICC-IT-001' };
+
+    beforeEach(() => {
+      mockFormRepo.create.mockImplementation((x: object) => x);
+      mockFormRepo.save.mockImplementation((x: object) =>
+        Promise.resolve({ id: 'form-1', ...x }),
+      );
+      mockAssetRepo.findOne.mockResolvedValue(makeAsset({ custodianId: null }));
+      mockAssetRequestRepo.findOne.mockResolvedValue(null);
+      mockReqRepo.findOne.mockResolvedValue(null);
+      mockUserRepo.findOne.mockImplementation(
+        ({ where }: { where: { id?: string; employeeId?: string } }) =>
+          Promise.resolve(
+            [holder, issuer].find(
+              (u) =>
+                (where.id && u.id === where.id) ||
+                (where.employeeId && u.employeeId === where.employeeId),
+            ) ?? null,
+          ),
+      );
+    });
+
+    const receipt = (extra: object = {}) =>
+      service.generateFormRecord(
+        {
+          formType: OfficialFormType.RECEIPT_RETURNED_PROPERTY,
+          assetId: 'a-1',
+          ...extra,
+        },
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+    // The page used to ask for a "Returnee User UUID" nobody can see anywhere.
+    it('finds the returnee by employee ID', async () => {
+      await receipt({ returneeEmployeeId: 'CICC-0042' });
+
+      expect(mockUserRepo.findOne).toHaveBeenCalledWith({
+        where: { employeeId: 'CICC-0042' },
+      });
+    });
+
+    it('404s on an employee ID that belongs to nobody', async () => {
+      await expect(
+        receipt({ returneeEmployeeId: 'CICC-9999' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    // A unit handed back through a replacement requisition has no return
+    // request and no custodian, so its receipt used to 404 for want of a name.
+    it('takes the holder from the replacement requisition that collected the unit', async () => {
+      mockReqRepo.findOne.mockResolvedValue({ requestedById: 'emp-1' });
+
+      const { form } = await receipt();
+
+      expect(mockReqRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            replacedAssetId: 'a-1',
+            status: RequisitionStatus.FULFILLED,
+          }),
+        }),
+      );
+      expect(form.formType).toBe(OfficialFormType.RECEIPT_RETURNED_PROPERTY);
+    });
+
+    it('asks for the receiving office on a Property Transfer Report', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(
+        makeAsset({ custodianId: 'emp-1' }),
+      );
+
+      await expect(
+        service.generateFormRecord(
+          { formType: OfficialFormType.PTR, assetId: 'a-1' },
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

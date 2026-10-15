@@ -75,6 +75,7 @@ class GenerateFormDto implements GenerateFormInput {
   @IsOptional() @IsString() purpose?: string;
   @IsOptional() @IsString() requestingDivision?: string;
   @IsOptional() @IsUUID() returneeId?: string;
+  @IsOptional() @IsString() returneeEmployeeId?: string;
   @IsOptional() @IsUUID() receiverId?: string;
   @IsOptional() @IsString() dateFrom?: string;
   @IsOptional() @IsString() dateTo?: string;

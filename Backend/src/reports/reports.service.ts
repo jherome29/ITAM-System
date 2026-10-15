@@ -63,6 +63,8 @@ export interface GenerateFormInput {
   purpose?: string;
   requestingDivision?: string;
   returneeId?: string;
+  /** CICC employee ID (e.g. CICC-0042) - what a custodian can actually see. */
+  returneeEmployeeId?: string;
   receiverId?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -111,10 +113,48 @@ export class ReportsService {
   }
 
   async findAllForms(page = 1, limit = 50) {
-    const [data, total] = await this.formRepo.findAndCount({
+    const [forms, total] = await this.formRepo.findAndCount({
       order: { generatedAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
+    });
+
+    // Names for the ids, so the archive can say which laptop and whose slip
+    // instead of "asset 3fa85f64…". One lookup per kind for the whole page.
+    const ids = (pick: (f: GeneratedFormEntity) => string | null) => [
+      ...new Set(forms.map(pick).filter((id): id is string => id !== null)),
+    ];
+    const assetIds = ids((f) => f.relatedAssetId);
+    const requisitionIds = ids((f) => f.relatedRequisitionId);
+    const userIds = ids((f) => f.generatedById);
+    const [assets, requisitions, users] = await Promise.all([
+      assetIds.length
+        ? this.assetRepo.find({ where: { id: In(assetIds) } })
+        : [],
+      requisitionIds.length
+        ? this.reqRepo.find({ where: { id: In(requisitionIds) } })
+        : [],
+      userIds.length ? this.userRepo.find({ where: { id: In(userIds) } }) : [],
+    ]);
+    const assetById = new Map(assets.map((a) => [a.id, a]));
+    const requisitionById = new Map(requisitions.map((r) => [r.id, r]));
+    const userById = new Map(users.map((u) => [u.id, u]));
+
+    const data = forms.map((f) => {
+      const asset = f.relatedAssetId ? assetById.get(f.relatedAssetId) : null;
+      const author = userById.get(f.generatedById);
+      return {
+        ...f,
+        assetLabel: asset
+          ? `${asset.itemDescription}${asset.propertyNumber ? ` (${asset.propertyNumber})` : ''}`
+          : null,
+        requisitionNumber: f.relatedRequisitionId
+          ? (requisitionById.get(f.relatedRequisitionId)?.requestNumber ?? null)
+          : null,
+        generatedByName: author
+          ? `${author.firstName} ${author.lastName}`
+          : null,
+      };
     });
     return { data, total, page, limit };
   }
@@ -839,6 +879,16 @@ export class ReportsService {
           throw new NotFoundException(`User ${input.returneeId} not found`);
         return u;
       }
+      if (input.returneeEmployeeId) {
+        const u = await this.userRepo.findOne({
+          where: { employeeId: input.returneeEmployeeId },
+        });
+        if (!u)
+          throw new NotFoundException(
+            `No employee with ID ${input.returneeEmployeeId}`,
+          );
+        return u;
+      }
       if (asset.custodianId) return getCustodian(asset);
       const lastReturn = await this.assetRequestRepo.findOne({
         where: {
@@ -848,10 +898,22 @@ export class ReportsService {
         },
         order: { completedAt: 'DESC' },
       });
-      const u = lastReturn ? await getUser(lastReturn.requestedById) : null;
+      // A unit collected by a replacement requisition never had a return
+      // request: the holder is whoever asked for its replacement.
+      const replacement = lastReturn
+        ? null
+        : await this.reqRepo.findOne({
+            where: {
+              replacedAssetId: asset.id,
+              status: RequisitionStatus.FULFILLED,
+            },
+            order: { fulfilledAt: 'DESC' },
+          });
+      const holderId = lastReturn?.requestedById ?? replacement?.requestedById;
+      const u = await getUser(holderId);
       if (!u) {
         throw new NotFoundException(
-          `Asset ${asset.id} has no current custodian or completed return request — specify the returnee.`,
+          `Asset ${asset.id} has no current custodian or completed return — enter the returnee's employee ID.`,
         );
       }
       return u;
@@ -894,10 +956,16 @@ export class ReportsService {
       case OfficialFormType.PTR: {
         const asset = await getAsset(input.assetId);
         const releasingOfficer = await getIssuer();
+        // A transfer report with no destination is not a report; the form used
+        // to print the placeholder "Target Office/Section" instead.
+        if (!input.targetOffice?.trim())
+          throw new BadRequestException(
+            'targetOffice is required for a Property Transfer Report',
+          );
         buffer = await generatePTR(
           asset,
           releasingOfficer,
-          input.targetOffice ?? 'Target Office/Section',
+          input.targetOffice.trim(),
         );
         break;
       }
