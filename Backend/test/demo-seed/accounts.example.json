@@ -1,0 +1,7 @@
+{
+  "employee": { "login": "employee.email@example.gov.ph", "password": "CHANGE-ME" },
+  "supervisor": { "login": "supervisor.email@example.gov.ph", "password": "CHANGE-ME" },
+  "it_personnel": { "login": "it.custodian.email@example.gov.ph", "password": "CHANGE-ME" },
+  "property_custodian": { "login": "property.custodian.email@example.gov.ph", "password": "CHANGE-ME" },
+  "system_admin": { "login": "admin.email@example.gov.ph", "password": "CHANGE-ME" }
+}
