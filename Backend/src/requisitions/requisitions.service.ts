@@ -670,32 +670,50 @@ export class RequisitionsService {
       }
     }
 
-    // Generate request number: REQ-YYYY-NNNN
-    const count = await this.reqRepo.count();
-    const requestNumber = `REQ-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
     const submittedAt = new Date();
     const slaHours = this.systemConfig.getSlaApprovalHours();
     const slaDeadline = new Date(
       submittedAt.getTime() + slaHours * 60 * 60 * 1_000,
     );
 
-    const req = this.reqRepo.create({
-      requestNumber,
-      requestedById,
-      requisitionType: dto.requisitionType,
-      justification: dto.justification,
-      requiredDate: new Date(dto.requiredDate),
-      replacedAssetId:
-        dto.requisitionType === RequisitionType.REPLACEMENT
-          ? (dto.replacedAssetId ?? null)
-          : null,
-      supervisorId: approverId,
-      ...(routedToAlternate ? { alternateRoutedAt: new Date() } : {}),
-      status: RequisitionStatus.PENDING_SUPERVISOR,
-      submittedAt,
-      slaDeadline,
+    // Request number REQ-YYYY-NNNN. It was `count()+1` over every year with no
+    // lock, so simultaneous submissions drew the same number, the UNIQUE
+    // constraint rejected the loser and the user got a 500 (6 of 8 simultaneous
+    // submissions failed live) — and a new year never restarted at 0001. The
+    // count and the insert now run under a transaction-scoped advisory lock, so
+    // submissions queue for a few milliseconds instead of colliding (same
+    // pattern as AssetRequestsService).
+    const saved = await this.reqRepo.manager.transaction(async (em) => {
+      await em.query(
+        "SELECT pg_advisory_xact_lock(hashtext('requisition_number'))",
+      );
+      const repo = em.getRepository(RequisitionEntity);
+      const year = submittedAt.getFullYear();
+      const count = await repo
+        .createQueryBuilder('r')
+        .where('r.requestNumber LIKE :p', { p: `REQ-${year}-%` })
+        .getCount();
+
+      return repo.save(
+        repo.create({
+          requestNumber: `REQ-${year}-${String(count + 1).padStart(4, '0')}`,
+          requestedById,
+          requisitionType: dto.requisitionType,
+          justification: dto.justification,
+          requiredDate: new Date(dto.requiredDate),
+          replacedAssetId:
+            dto.requisitionType === RequisitionType.REPLACEMENT
+              ? (dto.replacedAssetId ?? null)
+              : null,
+          supervisorId: approverId,
+          ...(routedToAlternate ? { alternateRoutedAt: new Date() } : {}),
+          status: RequisitionStatus.PENDING_SUPERVISOR,
+          submittedAt,
+          slaDeadline,
+        }),
+      );
     });
-    const saved = await this.reqRepo.save(req);
+    const requestNumber = saved.requestNumber;
 
     // Save line items. inInventory is decided here against live stock, never
     // taken from the client, so the custodian's "not in inventory" badge can't

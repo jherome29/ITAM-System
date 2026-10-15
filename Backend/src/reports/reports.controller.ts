@@ -101,7 +101,7 @@ export class ReportsController {
 
   /**
    * GET /api/v1/reports/kpi
-   * Management dashboard KPIs (inventoryAccuracy, avgApprovalHours, slaComplianceRate, …).
+   * Management dashboard KPIs (recordCompleteness, avgApprovalHours, slaComplianceRate, …).
    */
   @Get('kpi')
   @Roles(UserRole.MANAGEMENT, UserRole.SYSTEM_ADMIN)

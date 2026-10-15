@@ -3,6 +3,7 @@ import {
   Get,
   Param,
   Query,
+  Req,
   UseGuards,
   ParseUUIDPipe,
 } from '@nestjs/common';
@@ -64,7 +65,10 @@ export class AuditController {
   /**
    * GET /api/v1/audit/record/:recordId
    * Full history of a specific record (asset, requisition, user, etc.).
-   * Roles: System Admin, Management, IT Personnel, Property Custodian, Property Officer
+   * Roles: System Admin, Management (any record); IT Personnel, Property
+   * Custodian, Property Officer (only assets inside their own asset-type scope
+   * — AuditService.findRecordHistory enforces it, so a custodian cannot pull a
+   * user's login history through this route).
    */
   @Get('record/:recordId')
   @Roles(
@@ -74,8 +78,11 @@ export class AuditController {
     UserRole.PROPERTY_CUSTODIAN,
     UserRole.PROPERTY_OFFICER,
   )
-  async findByRecord(@Param('recordId', ParseUUIDPipe) recordId: string) {
-    const result = await this.svc.findByRecord(recordId);
+  async findByRecord(
+    @Param('recordId', ParseUUIDPipe) recordId: string,
+    @Req() req: { user: { role: UserRole } },
+  ) {
+    const result = await this.svc.findRecordHistory(recordId, req.user.role);
     return { message: 'Record audit history retrieved', data: result };
   }
 }

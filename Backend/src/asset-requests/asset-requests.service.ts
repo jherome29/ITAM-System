@@ -905,12 +905,13 @@ export class AssetRequestsService {
       ipAddress,
       resolveAssetTypeScope(user.role),
       {
-        // Opens the repair record with the holder's description, or marks a
-        // damaged item written off as unserviceable.
+        // Opens the repair record with the holder's description. Every route
+        // into a write-off (damaged beyond repair, lost, stolen) leaves the
+        // item unserviceable — otherwise a lost unit keeps reading
+        // "serviceable" on the holder's screen and on the RLSDDP.
         assetRequestId: req.id,
         problem: req.details,
-        ...(target === AssetStatus.FLAGGED_FOR_DISPOSAL &&
-        req.type === AssetRequestType.DAMAGE
+        ...(target === AssetStatus.FLAGGED_FOR_DISPOSAL
           ? { condition: AssetCondition.UNSERVICEABLE }
           : {}),
       },

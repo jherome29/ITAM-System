@@ -7,6 +7,7 @@ import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { usersApi, type CreateUserDto, type UpdateUserDto, type User } from '@/lib/api/users';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
+import { auditEventLabel } from '@/lib/audit-label';
 import { alternateApproverOptions, buildAvailabilityPayload } from '@/lib/users/availability';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
 
@@ -79,7 +80,7 @@ function UserAuditHistory({ userId }: Readonly<{ userId: string }>) {
           logs.map((log) => (
             <div key={log.id} className="py-3">
               <div className="flex items-start justify-between gap-3">
-                <p className="text-sm font-semibold text-slate-900">{log.action.replace(/_/g, ' ')}</p>
+                <p className="text-sm font-semibold text-slate-900">{auditEventLabel(log)}</p>
                 <span className="whitespace-nowrap text-xs text-slate-500">{new Date(log.timestamp).toLocaleString()}</span>
               </div>
               <p className="mt-1 text-xs text-slate-500">

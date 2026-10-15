@@ -18,6 +18,7 @@ import {
   AssetCondition,
   AssetType,
   OfficialFormType,
+  RequisitionStatus,
 } from '../../../packages/shared/src/enums';
 
 const makeAsset = (overrides: Partial<AssetEntity> = {}): AssetEntity =>
@@ -155,20 +156,29 @@ describe('ReportsService', () => {
       getRawMany: jest.fn().mockResolvedValue(getRawManyResult),
     });
 
+    // clearAllMocks() keeps queued mockReturnValueOnce values, so a test that
+    // queues more query builders than the code consumes would leak them into
+    // the next test. These tests depend on the exact order, so start clean.
+    beforeEach(() => {
+      mockReqRepo.createQueryBuilder.mockReset();
+      mockAssetRepo.createQueryBuilder.mockReset();
+    });
+
     it('computes KPIs correctly when data exists', async () => {
       mockAssetRepo.count.mockResolvedValue(10);
       mockReqRepo.count.mockResolvedValue(5);
       // completeAssets QB
       mockAssetRepo.createQueryBuilder.mockReturnValue(makeQb(8));
-      // decidedRows QB → withinSla QB → fulfilledThisMonth QB
+      // decidedRows QB -> withinSla QB -> pendingPastSla QB -> fulfilledThisMonth QB
       mockReqRepo.createQueryBuilder
         .mockReturnValueOnce(makeQb(0, [{ hours: '2.5' }, { hours: '1.5' }]))
         .mockReturnValueOnce(makeQb(2))
+        .mockReturnValueOnce(makeQb(0))
         .mockReturnValueOnce(makeQb(3));
 
       const result = await service.getKpi();
       expect(result.totalAssets).toBe(10);
-      expect(result.inventoryAccuracy).toBe(80); // 8/10 * 100
+      expect(result.recordCompleteness).toBe(80); // 8/10 * 100
       expect(result.avgApprovalHours).toBe(2); // (2.5+1.5)/2
       expect(result.slaComplianceRate).toBe(100); // 2/2 * 100
       expect(result.fulfilledThisMonth).toBe(3);
@@ -182,12 +192,69 @@ describe('ReportsService', () => {
       mockReqRepo.createQueryBuilder
         .mockReturnValueOnce(makeQb(0, []))
         .mockReturnValueOnce(makeQb(0))
+        .mockReturnValueOnce(makeQb(0))
         .mockReturnValueOnce(makeQb(0));
 
       const result = await service.getKpi();
-      expect(result.inventoryAccuracy).toBe(100);
+      expect(result.recordCompleteness).toBe(100);
       expect(result.avgApprovalHours).toBe(0);
       expect(result.slaComplianceRate).toBe(100);
+    });
+
+    // SLA compliance only looked at requisitions that had ALREADY been decided,
+    // so the ones that blew through the 24-hour deadline and were still waiting
+    // never counted: the dashboard read "SLA compliance 100%" right beside "4
+    // requisitions past the 24-hour approval SLA".
+    describe('SLA compliance counts requisitions still waiting past their deadline', () => {
+      const run = async (
+        decided: number,
+        onTime: number,
+        stillLate: number,
+      ) => {
+        mockAssetRepo.count.mockResolvedValue(0);
+        mockReqRepo.count.mockResolvedValue(0);
+        mockAssetRepo.createQueryBuilder.mockReturnValue(makeQb(0));
+        const pendingQb = makeQb(stillLate);
+        mockReqRepo.createQueryBuilder
+          .mockReturnValueOnce(
+            makeQb(
+              0,
+              Array.from({ length: decided }, () => ({ hours: '1' })),
+            ),
+          )
+          .mockReturnValueOnce(makeQb(onTime))
+          .mockReturnValueOnce(pendingQb)
+          .mockReturnValueOnce(makeQb(0));
+        return { result: await service.getKpi(), pendingQb };
+      };
+
+      it('a requisition still waiting past its deadline is a breach, not invisible', async () => {
+        // 2 decided in time, 1 still waiting past its deadline -> 2 of 3.
+        const { result } = await run(2, 2, 1);
+        expect(result.slaComplianceRate).toBe(67);
+      });
+
+      it('four stalled requisitions drag a perfect record down (the dashboard case)', async () => {
+        // 1 decided in time, 4 stalled -> 1 of 5, not "100%".
+        const { result } = await run(1, 1, 4);
+        expect(result.slaComplianceRate).toBe(20);
+      });
+
+      it('a decision made after the deadline is a breach too (unchanged)', async () => {
+        const { result } = await run(2, 1, 0);
+        expect(result.slaComplianceRate).toBe(50);
+      });
+
+      it('only counts requisitions awaiting the supervisor whose deadline has passed', async () => {
+        const { pendingQb } = await run(0, 0, 0);
+        expect(pendingQb.where).toHaveBeenCalledWith('r.status = :pending', {
+          pending: RequisitionStatus.PENDING_SUPERVISOR,
+        });
+        expect(pendingQb.andWhere).toHaveBeenCalledWith(
+          'r.slaDeadline < :now',
+          { now: expect.any(Date) as Date },
+        );
+      });
     });
   });
 

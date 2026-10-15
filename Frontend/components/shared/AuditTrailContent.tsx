@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { FileSearch, Filter, Download } from 'lucide-react';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
+import { auditEventLabel } from '@/lib/audit-label';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
@@ -119,7 +120,7 @@ export function AuditTrailContent() {
                       <td className="px-6 py-4 text-gray-600 whitespace-nowrap">{new Date(log.timestamp).toLocaleString()}</td>
                       <td className="px-6 py-4 text-gray-700 font-mono text-xs">{log.userId}</td>
                       <td className="px-6 py-4 text-gray-600 text-xs">{log.userRole.replace(/_/g, ' ')}</td>
-                      <td className="px-6 py-4"><span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium whitespace-nowrap">{log.action.replace(/_/g, ' ')}</span></td>
+                      <td className="px-6 py-4"><span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium whitespace-nowrap">{auditEventLabel(log)}</span></td>
                       <td className="px-6 py-4 text-gray-600">
                         {log.affectedRecordType && <span className="text-xs">{log.affectedRecordType}</span>}
                         {log.affectedRecordId && <span className="block text-xs font-mono text-gray-400">{log.affectedRecordId.slice(0, 8)}…</span>}

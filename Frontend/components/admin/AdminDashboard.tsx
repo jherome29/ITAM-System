@@ -8,6 +8,8 @@ import { healthApi, type HealthStatus } from '@/lib/api/health';
 import { systemConfigApi, type SystemConfig } from '@/lib/api/systemConfig';
 import { reportsApi, type KpiData } from '@/lib/api/reports';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
+import { auditEventLabel } from '@/lib/audit-label';
+import { attentionPanelState } from '@/lib/admin-attention';
 import { schedulerApi, type WatcherName, type WatcherStatus, type WatcherSweep } from '@/lib/api/scheduler';
 import { AdminPageHeader, MetricCard, Panel, StatusChip, type AdminTone } from './AdminUi';
 
@@ -181,6 +183,7 @@ export function AdminDashboard() {
   const platformValue = health ? (health.db ? 'Operational' : 'Degraded') : 'Unknown';
   const platformTone: AdminTone = health ? (health.db ? 'green' : 'red') : 'slate';
   const attention = stats ? buildAttention(stats, health) : [];
+  const panel = attentionPanelState(loading, stats !== null, attention.length);
   const roleMax = stats ? Math.max(1, ...Object.values(stats.users.byRole)) : 1;
 
   return (
@@ -198,9 +201,9 @@ export function AdminDashboard() {
       )}
 
       <section aria-label="Items needing attention" className="space-y-2">
-        {loading ? (
+        {panel === 'loading' ? (
           <div className="h-16 animate-pulse rounded-lg border border-slate-200 bg-white" />
-        ) : attention.length === 0 ? (
+        ) : panel === 'unavailable' ? null /* the failure banner above says why; never claim "all clear" without the numbers */ : panel === 'clear' ? (
           <div className="flex items-center gap-3 rounded-lg border border-emerald-200 border-l-4 border-l-emerald-500 bg-white px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
             <CheckCircle2 className="h-5 w-5 flex-none text-emerald-600" />
             <p className="text-sm font-semibold text-slate-900">No administrative items need attention right now.</p>
@@ -277,7 +280,7 @@ export function AdminDashboard() {
           <div className="divide-y divide-slate-100 px-4">
             {kpi ? (
               [
-                ['Inventory accuracy', `${kpi.inventoryAccuracy}%`],
+                ['Record completeness', `${kpi.recordCompleteness}%`],
                 ['Avg. approval time', `${kpi.avgApprovalHours} h`],
                 ['SLA compliance', `${kpi.slaComplianceRate}%`],
                 ['Fulfilled this month', String(kpi.fulfilledThisMonth)],
@@ -356,7 +359,7 @@ export function AdminDashboard() {
               recentLogs.map((log) => (
                 <div key={log.id} className="py-3">
                   <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm font-semibold text-slate-900">{log.action.replace(/_/g, ' ')}</p>
+                    <p className="text-sm font-semibold text-slate-900">{auditEventLabel(log)}</p>
                     <StatusChip status={log.userRole.replace(/_/g, ' ')} />
                   </div>
                   <p className="mt-1 text-xs text-slate-500">{log.ipAddress || 'no-ip'} · {new Date(log.timestamp).toLocaleString()}</p>

@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { RequisitionsService } from '../requisitions/requisitions.service';
 import { AssetsService } from '../assets/assets.service';
 import { AssetRepairsService } from '../assets/asset-repairs.service';
+import { APP_TIME_ZONE } from '../../../packages/shared/src/constants';
 
 /**
  * Aggregated result of one full watcher sweep.
@@ -97,7 +98,7 @@ export class SchedulerService {
     }
   }
 
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_HOUR, { timeZone: APP_TIME_ZONE })
   async hourlyChecks(): Promise<void> {
     const slaBreaches = await this.runWatcher('checkSlaBreaches', () =>
       this.requisitions.checkSlaBreaches(),
@@ -112,7 +113,8 @@ export class SchedulerService {
     this.record('hourly-cron', { slaBreaches, pendingNudges });
   }
 
-  @Cron(CronExpression.EVERY_DAY_AT_7AM)
+  // 7:00 CICC time, whatever the server clock says.
+  @Cron(CronExpression.EVERY_DAY_AT_7AM, { timeZone: APP_TIME_ZONE })
   async dailyChecks(): Promise<void> {
     const overdueReturns = await this.runWatcher('checkOverdueReturns', () =>
       this.assets.checkOverdueReturns(),

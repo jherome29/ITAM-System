@@ -25,6 +25,7 @@ import { UsersService } from '../users/users.service';
 import { checkAttachments, sanitizeFileName } from './attachment-files';
 import {
   AssetClass,
+  AssetCondition,
   AssetRequestStatus,
   AssetRequestType,
   AssetStatus,
@@ -858,6 +859,51 @@ describe('AssetRequestsService', () => {
         'asset_request',
       );
     });
+
+    // The lifecycle context's 7th argument carries the condition override.
+    const lifecycleContext = () =>
+      mockAssets.updateLifecycle.mock.calls[0][6] as {
+        condition?: AssetCondition;
+      };
+
+    it.each([AssetRequestType.LOSS, AssetRequestType.THEFT])(
+      '%s: the written-off asset is marked unserviceable, not left "serviceable"',
+      async (type) => {
+        current = makeReq({ status: AssetRequestStatus.APPROVED, type });
+        await service.complete('ar-1', {}, IT, 'ip');
+        expect(mockAssets.updateLifecycle).toHaveBeenCalledWith(
+          'asset-1',
+          expect.objectContaining({ status: AssetStatus.FLAGGED_FOR_DISPOSAL }),
+          IT.id,
+          UserRole.IT_PERSONNEL,
+          'ip',
+          [AssetType.ICT],
+          expect.objectContaining({ condition: AssetCondition.UNSERVICEABLE }),
+        );
+      },
+    );
+
+    it('damage → disposal: the written-off asset is marked unserviceable', async () => {
+      current = makeReq({
+        status: AssetRequestStatus.APPROVED,
+        type: AssetRequestType.DAMAGE,
+      });
+      await service.complete('ar-1', { outcome: 'disposal' }, IT, 'ip');
+      expect(lifecycleContext().condition).toBe(AssetCondition.UNSERVICEABLE);
+    });
+
+    it.each([
+      [AssetRequestType.RETURN, undefined],
+      [AssetRequestType.REPAIR, undefined],
+      [AssetRequestType.DAMAGE, 'repair' as const],
+    ])(
+      '%s (→ not a write-off): no condition override, the lifecycle decides',
+      async (type, outcome) => {
+        current = makeReq({ status: AssetRequestStatus.APPROVED, type });
+        await service.complete('ar-1', { outcome }, IT, 'ip');
+        expect(lifecycleContext().condition).toBeUndefined();
+      },
+    );
 
     it('damage → disposal: receipt + RLSDDP (Damaged) + IIRUP, accountability cleared', async () => {
       current = makeReq({

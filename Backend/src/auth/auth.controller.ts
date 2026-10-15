@@ -19,6 +19,18 @@ import { RolesGuard } from './guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../../../packages/shared/src/enums';
 
+/**
+ * The client address for the audit trail. `req.ip` is resolved by Express under
+ * the "trust proxy" setting from main.ts (TRUST_PROXY), so it is the real client
+ * behind CICC IT's proxy and the socket address when directly exposed. The raw
+ * X-Forwarded-For header is client-controlled: its first entry let anyone write
+ * a forged address into the login / refresh / logout audit rows, failed logins
+ * included.
+ */
+function clientIp(req: Request): string {
+  return req.ip ?? req.socket.remoteAddress ?? 'unknown';
+}
+
 // SVC: Design & Transition — single unified login, role-based redirect
 // All responses use the { statusCode, message, data } envelope via ResponseInterceptor
 
@@ -51,10 +63,7 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ipAddress =
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
-      req.socket.remoteAddress ??
-      'unknown';
+    const ipAddress = clientIp(req);
 
     const result = await this.authService.login(
       dto.emailOrEmployeeId,
@@ -86,10 +95,7 @@ export class AuthController {
     ];
     if (!cookieValue) throw new UnauthorizedException();
 
-    const ipAddress =
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
-      req.socket.remoteAddress ??
-      'unknown';
+    const ipAddress = clientIp(req);
 
     const result = await this.authService.rotateRefreshToken(
       cookieValue,
@@ -113,10 +119,7 @@ export class AuthController {
     @Req() req: Request & { user: { id: string; role: UserRole } },
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ipAddress =
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
-      req.socket.remoteAddress ??
-      'unknown';
+    const ipAddress = clientIp(req);
 
     await this.authService.logout(req.user.id, req.user.role, ipAddress, res);
     return { message: 'Logged out successfully', data: null };
@@ -133,49 +136,6 @@ export class AuthController {
     return {
       message: 'Profile retrieved',
       data: req.user,
-    };
-  }
-
-  // ─── Demo endpoints for RBAC pattern documentation ────────────────────
-
-  @Get('admin-only')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SYSTEM_ADMIN)
-  adminDemo() {
-    return {
-      message: 'Admin access confirmed',
-      data: {
-        note: 'Only SYSTEM_ADMIN reaches this endpoint. All others receive 403 Forbidden.',
-        pattern:
-          '@UseGuards(JwtAuthGuard, RolesGuard) + @Roles(UserRole.SYSTEM_ADMIN)',
-      },
-    };
-  }
-
-  @Get('it-and-admin')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN)
-  itAndAdminDemo() {
-    return {
-      message: 'IT Personnel or Admin access confirmed',
-      data: {
-        note: 'Accessible by IT_PERSONNEL and SYSTEM_ADMIN. Others receive 403.',
-        pattern: '@Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN)',
-      },
-    };
-  }
-
-  @Get('read-only-roles')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT, UserRole.IT_PERSONNEL)
-  readOnlyRolesDemo() {
-    return {
-      message: 'Read-only roles access confirmed',
-      data: {
-        note: 'Dashboard/report pattern — IT_PERSONNEL, SYSTEM_ADMIN, MANAGEMENT.',
-        pattern:
-          '@Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT)',
-      },
     };
   }
 }

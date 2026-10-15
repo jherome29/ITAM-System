@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { roleNavigation } from '@/lib/roles/role-navigation';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
 import { useAuth } from '@/lib/auth/use-auth';
-import { shouldRedirectToLogin } from '@/lib/auth/guard';
+import { shouldRedirectToLogin, wrongWorkspaceRedirect } from '@/lib/auth/guard';
 import { SidebarNav } from './SidebarNav';
 import { TopBar } from './TopBar';
 
@@ -21,14 +21,21 @@ export function AppShell({ role, children }: Readonly<{ role: ProposedUserRole; 
   // new role-prototype routes) without one. Backend guards independently
   // enforce everything regardless; this is UX-only defense-in-depth
   // (SECURITY.md §10.3), not the real security boundary.
+  //
+  // Two checks: signed out → /login; signed in but on another role's workspace
+  // (an employee typing /master-admin/...) → their own home, rendering nothing
+  // meanwhile so the foreign sidebar and buttons never flash.
   const { isLoading, user } = useAuth();
   const router = useRouter();
+  const ownHome = wrongWorkspaceRedirect(user, isLoading, role);
 
   useEffect(() => {
     if (shouldRedirectToLogin(user, isLoading)) {
       router.replace('/login');
+    } else if (ownHome) {
+      router.replace(ownHome);
     }
-  }, [isLoading, user, router]);
+  }, [isLoading, user, ownHome, router]);
 
   if (isLoading) {
     return (
@@ -38,7 +45,7 @@ export function AppShell({ role, children }: Readonly<{ role: ProposedUserRole; 
     );
   }
 
-  if (!user) return null;
+  if (!user || ownHome) return null;
 
   return (
     <div className="min-h-screen bg-[#f4f7fb] text-slate-950">

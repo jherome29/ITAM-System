@@ -18,6 +18,7 @@ import {
   AssetRequestStatus,
   AssetRequestType,
   RepairServiceType,
+  RequisitionStatus,
 } from '../../../packages/shared/src/enums';
 
 // Form generators
@@ -103,6 +104,12 @@ export class ReportsService {
   /**
    * getKpi — Management dashboard KPIs.
    * SVC: Improve — executive-level inventory and process metrics.
+   *
+   * `recordCompleteness` is the share of assets that have both a property
+   * number and a serial number. It is a data-quality measure, NOT inventory
+   * accuracy: accuracy means agreement with a physical count, which the system
+   * does not record (it used to be exposed as `inventoryAccuracy`, which read
+   * as one).
    */
   async getKpi() {
     const totalAssets = await this.assetRepo.count();
@@ -111,7 +118,7 @@ export class ReportsService {
       .where('a.propertyNumber IS NOT NULL')
       .andWhere('a.serialNumber IS NOT NULL')
       .getCount();
-    const inventoryAccuracy =
+    const recordCompleteness =
       totalAssets > 0 ? Math.round((completeAssets / totalAssets) * 100) : 100;
 
     const decidedRows = await this.reqRepo
@@ -139,9 +146,20 @@ export class ReportsService {
       .andWhere('r.slaDeadline IS NOT NULL')
       .andWhere('r.supervisorDecidedAt <= r.slaDeadline')
       .getCount();
-    const totalDecided = decidedRows.length;
+    // A requisition still waiting past its deadline is a breach already. Only
+    // counting the decided ones left the stalled ones invisible, so the
+    // dashboard read "SLA compliance 100%" beside "4 requisitions past SLA".
+    // Requisitions still inside their window are not assessable yet and stay out.
+    const pendingPastSla = await this.reqRepo
+      .createQueryBuilder('r')
+      .where('r.status = :pending', {
+        pending: RequisitionStatus.PENDING_SUPERVISOR,
+      })
+      .andWhere('r.slaDeadline < :now', { now: new Date() })
+      .getCount();
+    const assessed = decidedRows.length + pendingPastSla;
     const slaComplianceRate =
-      totalDecided > 0 ? Math.round((withinSla / totalDecided) * 100) : 100;
+      assessed > 0 ? Math.round((withinSla / assessed) * 100) : 100;
 
     const totalRequisitions = await this.reqRepo.count();
 
@@ -156,7 +174,7 @@ export class ReportsService {
       .getCount();
 
     return {
-      inventoryAccuracy,
+      recordCompleteness,
       avgApprovalHours,
       slaComplianceRate,
       totalAssets,

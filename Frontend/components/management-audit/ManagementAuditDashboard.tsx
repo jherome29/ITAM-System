@@ -80,7 +80,7 @@ export function ManagementAuditDashboard() {
         </div>
         <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
           <span className="grid h-12 w-12 place-items-center rounded-lg border border-purple-200 bg-purple-50 text-purple-700"><BarChart3 className="h-5 w-5" /></span>
-          <span><span className="block text-xs font-semibold text-slate-500">Inventory accuracy</span><span className="text-2xl font-extrabold text-slate-950">{kpi ? `${kpi.inventoryAccuracy}%` : '—'}</span></span>
+          <span><span className="block text-xs font-semibold text-slate-500">Record completeness</span><span className="text-2xl font-extrabold text-slate-950">{kpi ? `${kpi.recordCompleteness}%` : '—'}</span></span>
         </div>
         <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
           <span className="grid h-12 w-12 place-items-center rounded-lg border border-amber-200 bg-amber-50 text-amber-700"><TrendingDown className="h-5 w-5" /></span>

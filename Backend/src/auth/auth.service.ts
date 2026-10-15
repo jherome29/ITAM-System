@@ -12,6 +12,7 @@ import { randomUUID } from 'crypto';
 import { UserEntity } from '../users/entities/user.entity';
 import { BCRYPT_ROUNDS } from '../../../packages/shared/src/constants';
 import { AuditService } from '../audit/audit.service';
+import { AUDIT_REASON_REFRESH_TOKEN_REUSE } from '../audit/audit-reasons';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
 import { JwtPayload } from './guards/jwt.strategy';
@@ -252,7 +253,7 @@ export class AuthService {
         affectedRecordId: userId,
         affectedRecordType: 'users',
         ipAddress,
-        metadata: { reason: 'refresh_token_reuse_detected' },
+        metadata: { reason: AUDIT_REASON_REFRESH_TOKEN_REUSE },
       });
       throw new UnauthorizedException(
         'Session invalidated. Please log in again.',

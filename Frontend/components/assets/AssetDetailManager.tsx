@@ -9,7 +9,7 @@ import { OUTCOME_LABEL, SERVICE_TYPE_LABEL, repairsApi, type Repair } from '@/li
 import { formatDate } from '@/lib/requisitions/requisition-view';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
-import { ASSET_LIFECYCLE_TRANSITIONS as NEXT_TRANSITIONS } from '@/lib/assets/lifecycle-transitions';
+import { ASSET_LIFECYCLE_TRANSITIONS as NEXT_TRANSITIONS, lifecycleNotesRequired } from '@/lib/assets/lifecycle-transitions';
 
 function optionLabel(value: string): string {
   return value.split('_').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ');
@@ -222,6 +222,8 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
   // offered only when there is one, and needs no recipient ID.
   const handBack = asset.status === 'under_repair' && Boolean(asset.custodianId);
   const nextStates = (NEXT_TRANSITIONS[asset.status] ?? []).filter((s) => s !== 'issued' || asset.status !== 'under_repair' || handBack);
+  const notesRequired = lifecycleNotesRequired(asset.status, targetStatus);
+  const restoring = asset.status === 'flagged_for_disposal' && targetStatus === 'available';
   const stateLabel = (s: string) => (handBack && s === 'issued' ? 'Repaired — return to holder' : optionLabel(s));
 
   return (
@@ -519,14 +521,16 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
               {/* Notes field — required for FLAGGED_FOR_DISPOSAL, optional for others */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                  Notes {targetStatus === 'flagged_for_disposal' && <span className="text-red-500">* (required — justify disposal)</span>}
+                  Notes {notesRequired && <span className="text-red-500">* (required — {restoring ? 'say why it is being restored' : 'justify disposal'})</span>}
                 </label>
                 <textarea
                   rows={3}
                   value={lifecycleNotes}
                   onChange={(e) => setLifecycleNotes(e.target.value)}
                   placeholder={
-                    targetStatus === 'flagged_for_disposal'
+                    restoring
+                      ? 'Required: why is this asset being restored to stock? (e.g. found, flagged in error) and its condition'
+                      : targetStatus === 'flagged_for_disposal'
                       ? 'Required: describe condition, reason for disposal, and recommended action'
                       : targetStatus === 'under_repair'
                       ? 'Optional: describe the issue or defect'
@@ -549,7 +553,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                   !targetStatus ||
                   (targetStatus === 'issued' && !handBack && !lifecycleEmployeeId.trim()) ||
                   (targetStatus === 'transferred' && !lifecycleToLocation.trim()) ||
-                  (targetStatus === 'flagged_for_disposal' && !lifecycleNotes.trim())
+                  (notesRequired && !lifecycleNotes.trim())
                 }
                 className="flex-1 px-4 py-2 bg-[#1a4d7a] text-white rounded-md text-sm font-medium hover:bg-[#143d61] disabled:opacity-50 transition-colors"
               >
