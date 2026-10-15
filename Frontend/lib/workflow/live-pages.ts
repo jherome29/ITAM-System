@@ -23,15 +23,13 @@ export function normalizeWorkflowSlug(slug: string): string {
 }
 
 /**
- * The pages WorkflowPage fills from the real API, per role. Anything else it
- * could render is hard-coded SAMPLE data (made-up "REQ-2025-0xx" requests,
- * "INV-001" counts) with action buttons that save nothing — so the role
- * routers refuse every page that is not listed here. Wire a page to the API,
- * then add it to this list.
+ * The pages WorkflowPage serves, per role. Every one reads real records and every
+ * action on it saves. The role routers refuse anything not listed here, so an
+ * address with no real screen behind it is "not found" - never a made-up page.
+ * Wire a page to the API, then add it to this list.
  */
 const LIVE_WORKFLOW_PAGES: Partial<Record<ProposedUserRole, readonly string[]>> = {
   [ProposedUserRole.APPROVING_OFFICER]: ['approvals', 'requisitions'],
-  [ProposedUserRole.MANAGEMENT_AUDIT_VIEWER]: ['audit'],
   [ProposedUserRole.IT_ASSET_CUSTODIAN]: ['fulfillment', 'custody', 'disposal', 'requisitions'],
   [ProposedUserRole.PROPERTY_CUSTODIAN]: ['fulfillment', 'custody', 'disposal'],
 };
