@@ -390,6 +390,8 @@ All reports are generated from live database records at time of export. Access g
 | Audit Trail Report | PDF / Excel | System Admin, Management |
 | Disposal Documentation Report | PDF | IT Personnel, Management |
 
+`POST /api/v1/reports/generate` validates `reportType` against the shared `ReportType` enum (unknown → 400). **Audit Trail Report** (`AUDIT_TRAIL`) lists who/role/action/record/IP newest first for an optional `dateFrom`/`dateTo`, capped at 10,000 rows (the cap is stated in the title); only the System Administrator and Management may generate it (403 otherwise). Surfaced as **Report (PDF / Excel)** on the Audit Log page. Physical Count Summary excludes disposed assets, matching the Physical Inventory sheet. *Asset Utilization Summary is not built.*
+
 ### 7.2 Official COA/CICC Transaction Forms (Auto-generated)
 
 | File Reference | Official Form Name | Trigger Event |
@@ -412,6 +414,14 @@ All reports are generated from live database records at time of export. Access g
 | Appendix 74 - IIRUP | Inventory and Inspection Report of Unserviceable Property | IT Personnel flags unserviceable assets |
 | Appendix 75 - RLSDDP | Report of Lost, Stolen, Damaged, or Destroyed Property | IT Personnel/officer reports property loss/damage |
 | Appendix 76 - PTR | Property Transfer Report | Inter-office/inter-unit property transfer |
+
+**Numbering, identity, archive (schema `016`):**
+- PAR, ICS, PTR, IAR, Receipt of Returned Property (RRPE) / SEP (RRSP), RLSDDP and Move-Out take a real running number `<SERIES>-<YYYY>-<NNNN>` (`Backend/src/reports/document-numbers.ts`), allocated from `document_counters` with one atomic upsert **inside the transaction that stores the form** — a form that fails to generate rolls its number back (no holes), and two at once never share one. Stored in `generated_forms.document_number`, shown on the PDF, in the download file name / `X-Document-Number` header (exposed via CORS) and in the archive. RIS keeps the requisition number; the periodic reports (RPCI, RPCPPE, RSMI, RSPI, WMR, Annex A.4) are not numbered. The format is a placeholder until CICC's property office gives its own series.
+- **Entity name and Fund Cluster are system settings** (`entity_name`, `fund_cluster`; Master Admin → System Settings → Official forms), not fixed text. The generators are plain functions, so ReportsService runs them inside `withFormIdentity()` (AsyncLocalStorage) and `identityFields()` / `documentNumber()` read it back. An unset Fund Cluster prints a fill-in line.
+- Tables paginate (`drawTable` / `ensureSpace` / "Page n of N"); text drawn below `CONTENT_BOTTOM` makes pdfkit start a new page per call, so anything after a table goes through `ensureSpace`.
+- RSMI lists supply (IES) lines only, priced from the stock they were issued from (`fulfilledAssetId`); a line with no stock link prints a dash and is left out of the total. RPCI carries the stock on record and leaves the physical count blank. Conditions print as words (`conditionLabel`).
+- Receipts accept `returneeEmployeeId`; a unit collected by a replacement requisition takes its holder from that requisition. A PTR without `targetOffice` is a 400.
+- `GET /api/v1/reports/forms` returns `assetLabel`, `requisitionNumber`, `generatedByName`, `documentNumber` and filters by `formType` / `search` (document number) with paging. The page is **Reports & Forms** (`components/shared/FormsWorkspaceContent.tsx`): a catalogue of the 18 forms (`lib/forms/form-catalog.ts`) with a drawer per form (record pickers, not UUIDs) and the archive; Property Officer / Management get the archive only.
 
 > All forms follow official Commission on Audit (COA) format. Forms requiring physical signatures are printed and signed manually; digital copies are retained in AIMRS for audit reference.
 
@@ -554,6 +564,8 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 18. **Docker build context is the repo root, not `Backend/` or `Frontend/`** — this is an npm-workspaces monorepo and both apps import `packages/shared`. `docker build -f Backend/Dockerfile .` (context `.`) with the Dockerfiles copying `packages/shared` beside the app. Reverting to `context: ./Backend` re-breaks the build (the `../../../packages/shared` import escapes the context). There is one root `package-lock.json` — no per-workspace lockfiles.
 
 19. **DB TLS is `DATABASE_SSL`-driven** — default (unset) is verified SSL. `disable` for a local/CI Postgres that speaks no TLS; `no-verify` for a dev machine behind a TLS-intercepting proxy (set it in `Backend/.env`, never in code). This replaced the uncommitted `rejectUnauthorized: false` hack that used to live in `app.module.ts`.
+
+20. **Schema changes are listed in two places** — `Database/schemas/NNN_*.sql` (Supabase / production) **and** `docker-compose.yml` (the dev init list). The e2e suite builds its tables from the entities (`synchronize` under `NODE_ENV=test`), so a table that is only written with raw SQL (`document_counters`) still needs an entity declaring it. Apply a new schema file to Supabase before running a backend that needs it against that database.
 
 ### Out of Scope (Never Build These)
 - Procurement and supplier management
