@@ -1,3 +1,4 @@
+import { notFound } from 'next/navigation';
 import { AdminDashboard } from './AdminDashboard';
 import { AdminIdentityPages } from './AdminIdentityPages';
 import { AdminPlatformPages } from './AdminPlatformPages';
@@ -23,5 +24,6 @@ export function AdminWorkspace({ slug, openId }: Readonly<{ slug: string; openId
   if (platformSlugs.includes(slug as (typeof platformSlugs)[number])) {
     return <AdminPlatformPages slug={slug as (typeof platformSlugs)[number]} />;
   }
-  return <AdminDashboard />;
+  // An address with no screen behind it is not found - as for every other role.
+  notFound();
 }
