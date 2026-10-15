@@ -58,22 +58,26 @@ function parseArgs(argv: string[], env: NodeJS.ProcessEnv): Options {
   };
 }
 
-function loadAccounts(path: string): Accounts {
+// Messages here never repeat the path: it comes from an environment variable,
+// which is treated as sensitive, and a log line adds nothing the operator
+// doesn't already know.
+export function loadAccounts(path: string): Accounts {
   let text: string;
   try {
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- operator-supplied CLI path to their own credentials file
     text = readFileSync(path, 'utf8');
   } catch {
     throw new Error(
-      `Cannot read the accounts file at ${path}. Copy accounts.example.json to ` +
-        'accounts.local.json and fill it in (see README.md).',
+      'Cannot read the accounts file. Copy accounts.example.json to ' +
+        'accounts.local.json and fill it in, or point --accounts / ' +
+        'DEMO_SEED_ACCOUNTS at your file (see README.md).',
     );
   }
   try {
     return parseAccounts(JSON.parse(text));
   } catch (e) {
     if (e instanceof SyntaxError) {
-      throw new Error(`Accounts file ${path} is not valid JSON.`);
+      throw new Error('The accounts file is not valid JSON.');
     }
     throw e;
   }
@@ -98,7 +102,7 @@ function printPlan(opts: Options) {
 
   console.log('Demo data plan (nothing has been sent):\n');
   console.log(`  target API     ${opts.apiUrl}`);
-  console.log(`  accounts file  ${opts.accountsPath}`);
+  console.log('  accounts file  (set by --accounts / DEMO_SEED_ACCOUNTS)');
   console.log(`  acts as        ${REQUIRED_ROLES.join(', ')}\n`);
   console.log(
     `  assets          ${DEMO_ASSETS.length}  (${count(DEMO_ASSETS, (a) => a.dto.assetType)})`,
