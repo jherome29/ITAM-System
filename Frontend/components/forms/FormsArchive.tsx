@@ -122,10 +122,10 @@ export function FormsArchive({ refreshKey }: Readonly<{ refreshKey: number }>) {
                   <tr key={form.id} className="hover:bg-blue-50/40">
                     <td className={tdClass}>
                       <p className="font-bold text-slate-950">{formByType(form.formType)?.abbr ?? form.formType}</p>
-                      <p className="max-w-64 truncate text-xs text-slate-500" title={formTypeLabel(form.formType)}>{formTypeLabel(form.formType)}</p>
+                      <p className="max-w-48 truncate text-xs text-slate-500" title={formTypeLabel(form.formType)}>{formTypeLabel(form.formType)}</p>
                     </td>
                     <td className={tdClass}>{form.documentNumber ? <StatusChip status={form.documentNumber} tone="blue" /> : <span className="text-slate-400">—</span>}</td>
-                    <td className={`${tdClass} max-w-64 truncate`} title={subjectOf(form)}>{subjectOf(form)}</td>
+                    <td className={`${tdClass} max-w-48 truncate`} title={subjectOf(form)}>{subjectOf(form)}</td>
                     <td className={tdClass}>{form.generatedByName ?? '—'}</td>
                     <td className={tdClass}>{when(form.generatedAt)}</td>
                     <td className={`${tdClass} text-right`}>

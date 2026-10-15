@@ -11,7 +11,7 @@ import { apiErrorMessage } from '@/lib/api/error-message';
 import { downloadBlob } from '@/lib/download';
 import {
   systemConfigApi,
-  buildUpdateSystemConfigPayload,
+  changedSystemConfigPayload,
   systemConfigToForm,
   CONFIG_META_KEYS,
   type SystemConfigFormValues,
@@ -59,6 +59,8 @@ function ProvenanceLine({
 
 function SystemSettingsPage() {
   const [form, setForm] = useState<SystemConfigFormValues | null>(null);
+  // As last loaded or saved: Save sends only what differs from it.
+  const [initialForm, setInitialForm] = useState<SystemConfigFormValues | null>(null);
   const [meta, setMeta] = useState<Record<string, SystemConfigMeta> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -69,7 +71,9 @@ function SystemSettingsPage() {
     systemConfigApi
       .get()
       .then((r) => {
-        setForm(systemConfigToForm(r.data));
+        const loaded = systemConfigToForm(r.data);
+        setForm(loaded);
+        setInitialForm(loaded);
         setMeta(r.data.meta ?? null);
         setError('');
       })
@@ -91,13 +95,20 @@ function SystemSettingsPage() {
       setForm((f) => (f ? { ...f, [k]: e.target.value } : f));
 
   const handleSave = async () => {
-    if (!form) return;
+    if (!form || !initialForm) return;
     setError('');
     setSaved(false);
+    const changes = changedSystemConfigPayload(form, initialForm);
+    if (Object.keys(changes).length === 0) {
+      setError('Nothing has changed.');
+      return;
+    }
     setSaving(true);
     try {
-      const r = await systemConfigApi.update(buildUpdateSystemConfigPayload(form));
-      setForm(systemConfigToForm(r.data));
+      const r = await systemConfigApi.update(changes);
+      const reloaded = systemConfigToForm(r.data);
+      setForm(reloaded);
+      setInitialForm(reloaded);
       setMeta(r.data.meta ?? null);
       setSaved(true);
     } catch (err: unknown) {

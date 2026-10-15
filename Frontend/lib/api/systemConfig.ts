@@ -83,6 +83,38 @@ export function buildUpdateSystemConfigPayload(
   };
 }
 
+const trimmed = (v: SystemConfigFormValues): SystemConfigFormValues => ({
+  ...v,
+  entityName: v.entityName.trim(),
+  fundCluster: v.fundCluster.trim(),
+});
+
+/**
+ * The settings that differ from what was loaded - and only those. Each setting
+ * records who last changed it, so sending the untouched ones as well stamped
+ * every setting as changed on every save.
+ */
+export function changedSystemConfigPayload(
+  current: SystemConfigFormValues,
+  initial: SystemConfigFormValues,
+): UpdateSystemConfigPayload {
+  const now = trimmed(current);
+  const was = trimmed(initial);
+  const all = buildUpdateSystemConfigPayload(now);
+  const payload: UpdateSystemConfigPayload = {};
+  if (now.slaApprovalHours !== was.slaApprovalHours) payload.slaApprovalHours = all.slaApprovalHours;
+  if (now.defaultReorderLevel !== was.defaultReorderLevel) payload.defaultReorderLevel = all.defaultReorderLevel;
+  if (now.maxLoginAttempts !== was.maxLoginAttempts) payload.maxLoginAttempts = all.maxLoginAttempts;
+  if (now.repeatRepairLimit !== was.repeatRepairLimit) payload.repeatRepairLimit = all.repeatRepairLimit;
+  if (now.entityName !== was.entityName) payload.entityName = all.entityName;
+  if (now.fundCluster !== was.fundCluster) payload.fundCluster = all.fundCluster;
+  // One setting on the server, so the three classes travel together.
+  if (now.usefulLifePPE !== was.usefulLifePPE || now.usefulLifeSEP !== was.usefulLifeSEP || now.usefulLifeIES !== was.usefulLifeIES) {
+    payload.usefulLifeYears = all.usefulLifeYears;
+  }
+  return payload;
+}
+
 export const systemConfigApi = {
   get: () =>
     client
