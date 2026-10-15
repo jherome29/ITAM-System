@@ -22,15 +22,57 @@ loudly instead of inserting rows the app would never have allowed.
 
 Run `npm run seed:demo` (no flags) for the exact plan and a per-role summary.
 
+### Second round: every page filled (`--scenario pages`)
+
+The first round fills the requisition and incident queues, but leaves pages bare:
+Maintenance & Repair, My Assigned Assets for anyone but the demo employee, My
+Requisitions for the Approving Officer and IT, the Master Admin's escalation
+queues, transferred and disposed assets. `scenario-pages.ts` goes on top of the
+first round and fills those, with the same rules: it replays the flows through
+the API as the real roles.
+
+| | |
+|---|---|
+| Assets | 33 — 20 ICT, 13 Fixed (`DEMO-P-…`), spread over 8 offices for the physical count |
+| Held by | every role: the Approving Officer, IT, Property Custodian, Property Officer, Management and the Master Admin each hold items; the demo employee holds 12 |
+| Maintenance & Repair | 5 ICT + 1 Fixed repairs open — in-house, external, one **overdue** with a loaner lent out — and a history of 5 repaired and 1 written off, plus one item repaired three times (the "repeated repairs" replacement reason) |
+| My Requisitions | the Approving Officer files 2 and IT files 1 of their own |
+| Replacement Validation | one completed replacement per custodian domain (the old unit is taken back and its receipt generated) |
+| Master Admin escalations | return and repair requests on a custodian's *own* item, which only the System Administrator can decide: one waiting, three decided |
+| Custody / dashboards | 1 transferred and 2 disposed assets |
+
+```bash
+npm run seed:demo -- --scenario pages                 # dry run: the plan, sends nothing
+npm run seed:demo -- --scenario pages --apply         # writes it
+```
+
+Run the first round first. Two things differ from it:
+
+* **It modifies one account.** The Approving Officer's own requisitions need a
+  backup approver, so the Master Admin sets one (`alternateApproverId`). It uses
+  the only other active supervisor, or the one you name with
+  `--backup-approver <employee ID>`; if there are several and you named none, it
+  stops before writing. Unless someone signs in as that backup account, the
+  Approving Officer's own requisitions simply stay pending, which is what My
+  Requisitions should show.
+* **The Property Officer and Management only hold assets.** Their accounts are
+  looked up in the directory (there must be exactly one active account of each
+  role, or it stops before writing). Everything is resolved before the first write.
+
 ### Everything is tagged
 
-* Assets carry a `DEMO-` property number and serial number (`DEMO-ICT-0001`, …).
-* Every requisition justification and request description starts with `[DEMO]`.
-* The data only uses the existing accounts — **it creates no users.**
+* Assets carry a `DEMO-` property number and serial number (`DEMO-ICT-0001`, …;
+  the pages round uses `DEMO-P-…`).
+* Every requisition justification, request description and repair problem starts
+  with `[DEMO]`.
+* Neither round creates users. The pages round changes one thing on an existing
+  account: the backup approver above.
 
-`validateScenario()` refuses to run a scenario that has lost these markers, and
-`scenario.spec.ts` checks the payloads against the real DTO classes, so a rule
-change that would break the seed fails in `npm test`, not mid-run.
+`validateScenario()` / `validatePages()` refuse to run a scenario that has lost
+these markers, and `scenario.spec.ts` / `scenario-pages.spec.ts` check the
+payloads against the real DTO classes (the pages round also runs every step
+against a model of each asset's lifecycle), so a rule change that would break the
+seed fails in `npm test`, not mid-run.
 
 ## Running it
 
@@ -49,7 +91,7 @@ change that would break the seed fails in `npm test`, not mid-run.
 
 The employee, supervisor, etc. it logs in as must already exist with the
 expected sections (the demo employee and supervisor share a section so the
-requisitions route to that supervisor). No user is created or modified.
+requisitions route to that supervisor). No user is created.
 
 ### Safety rules built in
 
@@ -57,7 +99,9 @@ requisitions route to that supervisor). No user is created or modified.
 * **Local only unless you say otherwise.** A non-local `--api` host is refused
   without `--allow-remote`. Use that flag deliberately for the pilot server.
 * **Won't stack on itself.** If any `DEMO-` asset is already visible, it stops
-  before writing anything.
+  before writing anything (the pages round checks for `DEMO-P-`). That also means
+  the first round will not run once the pages round is in, so run them in order.
+* **A typo in `--scenario` stops the run** instead of falling back to the first round.
 * **Stops at the first failure** rather than piling more writes on a broken step.
 * **Paced** to ~54 requests/minute to stay under the API's 60/min rate limit.
 
@@ -83,6 +127,7 @@ credential problem, so fix that first. Then either:
 ## Removing demo data
 
 The API has no delete for assets or requests (and the audit log is immutable),
-so removal is a SQL job keyed on the `DEMO-` / `[DEMO]` markers. For the pilot,
+so removal is a SQL job keyed on the `DEMO-` / `[DEMO]` markers (and the backup
+approver the pages round set, if you want that undone too). For the pilot,
 the clean answer is to seed a **fresh pilot database** and discard it afterwards,
 rather than seeding a database that also holds real records.

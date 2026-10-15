@@ -14,6 +14,14 @@ import {
   custodianFor,
   validateScenario,
 } from './scenario';
+import { dayOffset } from './dates';
+import { applyPages } from './seed-pages';
+import {
+  PAGES_ASSETS,
+  PAGES_STEPS,
+  pagesCoverage,
+  validatePages,
+} from './scenario-pages';
 import {
   AssetRequestType,
   AssetStatus,
@@ -21,31 +29,49 @@ import {
   UserRole,
 } from '../../../packages/shared/src/enums';
 
-// Pilot demo-data seeder. Replays test/demo-seed/scenario.ts through the real
+// Pilot demo-data seeder. Replays the scenarios in test/demo-seed through the real
 // API as the real roles, so the data is indistinguishable from normal use:
 // numbering, notifications, audit trail and COA forms all come from the app.
 //
 //   npx ts-node test/demo-seed/seed.ts                     # dry run — prints the plan
 //   npx ts-node test/demo-seed/seed.ts --apply             # writes it
+//   npx ts-node test/demo-seed/seed.ts --scenario pages    # the second round (see below)
+//
+// `base` (scenario.ts) fills the requisition and incident queues. `pages`
+// (scenario-pages.ts) goes on top of it and fills the pages `base` leaves bare:
+// Maintenance & Repair, My Assigned Assets, My Requisitions, the Admin's
+// escalation queues, transferred/disposed assets. Run `base` first.
 //
 // See README.md in this folder for the accounts file and the safety rules.
 
 const DEFAULT_API = 'http://localhost:3001/api';
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+const SCENARIOS = ['base', 'pages'] as const;
+type ScenarioName = (typeof SCENARIOS)[number];
 
 interface Options {
   apply: boolean;
   allowRemote: boolean;
   apiUrl: string;
   accountsPath: string;
+  scenario: ScenarioName;
+  backupApprover?: string;
 }
 
-function parseArgs(argv: string[], env: NodeJS.ProcessEnv): Options {
+export function parseArgs(argv: string[], env: NodeJS.ProcessEnv): Options {
   const flag = (name: string) => argv.includes(`--${name}`);
   const value = (name: string): string | undefined => {
     const i = argv.indexOf(`--${name}`);
     return i >= 0 ? argv[i + 1] : undefined;
   };
+  // Only an absent flag means "base". `--scenario` with a missing or mistyped value must
+  // stop the run rather than quietly seed the wrong scenario into a shared database.
+  const scenario = flag('scenario') ? value('scenario') : 'base';
+  if (!scenario || !(SCENARIOS as readonly string[]).includes(scenario)) {
+    throw new Error(
+      `Unknown --scenario "${scenario ?? ''}". Choose one of: ${SCENARIOS.join(', ')}.`,
+    );
+  }
   return {
     apply: flag('apply'),
     allowRemote: flag('allow-remote'),
@@ -55,6 +81,8 @@ function parseArgs(argv: string[], env: NodeJS.ProcessEnv): Options {
         env.DEMO_SEED_ACCOUNTS ??
         'test/demo-seed/accounts.local.json',
     ),
+    scenario: scenario as ScenarioName,
+    backupApprover: value('backup-approver'),
   };
 }
 
@@ -83,21 +111,81 @@ export function loadAccounts(path: string): Accounts {
   }
 }
 
-const dayOffset = (days: number) =>
-  new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
-
 // ── Plan (dry run) ───────────────────────────────────────────────────────────
 
+const count = <T>(items: T[], pick: (i: T) => string) =>
+  Object.entries(
+    items.reduce<Record<string, number>>((acc, i) => {
+      acc[pick(i)] = (acc[pick(i)] ?? 0) + 1;
+      return acc;
+    }, {}),
+  )
+    .map(([k, n]) => `${n} ${k}`)
+    .join(', ');
+
+function printPagesPlan(opts: Options) {
+  const c = pagesCoverage();
+  console.log('Page-coverage plan (nothing has been sent):\n');
+  console.log(`  target API     ${opts.apiUrl}`);
+  console.log('  accounts file  (set by --accounts / DEMO_SEED_ACCOUNTS)');
+  console.log(`  acts as        ${REQUIRED_ROLES.join(', ')}\n`);
+  console.log(
+    `  assets          ${PAGES_ASSETS.length}  (${count(PAGES_ASSETS, (a) => a.dto.assetType)})`,
+  );
+  console.log(
+    `  steps           ${PAGES_STEPS.length}  (${count(PAGES_STEPS, (s) => s.do)})\n`,
+  );
+  console.log('  What each page will show:');
+  const lines: Array<[string, string]> = [
+    [
+      'Maintenance & Repair',
+      `${c.openRepairs.ict} ICT + ${c.openRepairs.fixed} Fixed open (${c.openRepairs.inHouse} in-house, ` +
+        `${c.openRepairs.external} external, ${c.openRepairs.overdue} overdue, ${c.openRepairs.withLoaner} with a loaner); ` +
+        `history: ${c.closedRepairs.repaired} repaired, ${c.closedRepairs.unrepairable} unrepairable, ` +
+        `${c.repeatRepairAssets} item(s) repaired repeatedly`,
+    ],
+    [
+      'My Assigned Assets',
+      Object.entries(c.holders)
+        .map(([role, n]) => `${role} ${n}`)
+        .join(', '),
+    ],
+    [
+      'My Requisitions',
+      Object.entries(c.ownRequisitions)
+        .map(([role, n]) => `${role} ${n}`)
+        .join(', '),
+    ],
+    [
+      'Master Admin escalations',
+      `${c.custodianRequests.waiting} custodian request(s) waiting, ${c.custodianRequests.decided} decided; ` +
+        `${c.openRepairs.heldByCustodian} open repair(s) on a custodian's own item`,
+    ],
+    [
+      'Dashboards / Custody',
+      `${c.transferred} transferred, ${c.disposed} disposed; ${c.locations} offices for the physical count`,
+    ],
+    [
+      'Replacement Validation',
+      `${c.completedReplacements.ict} ICT + ${c.completedReplacements.fixed} Fixed replacement(s) completed`,
+    ],
+  ];
+  for (const [page, text] of lines) {
+    console.log(`    ${page.padEnd(26)}${text}`);
+  }
+  console.log();
+  console.log(
+    "Also sets the Approving Officer's backup approver (the only other active supervisor, or --backup-approver <employee ID>).",
+  );
+  console.log(
+    'Re-run with --apply --scenario pages to write this. Logging in signs out any',
+  );
+  console.log(
+    'existing session on each of the accounts above (one session per account).',
+  );
+}
+
 function printPlan(opts: Options) {
-  const count = <T>(items: T[], pick: (i: T) => string) =>
-    Object.entries(
-      items.reduce<Record<string, number>>((acc, i) => {
-        acc[pick(i)] = (acc[pick(i)] ?? 0) + 1;
-        return acc;
-      }, {}),
-    )
-      .map(([k, n]) => `${n} ${k}`)
-      .join(', ');
   const c = coverage();
 
   console.log('Demo data plan (nothing has been sent):\n');
@@ -174,7 +262,8 @@ const done = (label: string) => {
   console.log(`  ✓ ${label}`);
 };
 
-async function apply(opts: Options) {
+/** Remote-host guard, then one login per role (each signs out that account's earlier sessions). */
+async function connect(opts: Options) {
   const host = new URL(opts.apiUrl).hostname;
   if (!LOCAL_HOSTS.has(host) && !opts.allowRemote) {
     throw new Error(
@@ -190,6 +279,19 @@ async function apply(opts: Options) {
     session[role] = await api.login(`login ${role}`, accounts[role]);
     done(`logged in as ${role}`);
   }
+  return { api, session };
+}
+
+async function applyPagesScenario(opts: Options) {
+  const { api, session } = await connect(opts);
+  await applyPages(api, session, done, { backupApprover: opts.backupApprover });
+  console.log(
+    `\nDone — ${steps} steps. Sign in as each role to see its pages filled.`,
+  );
+}
+
+async function applyBase(opts: Options) {
+  const { api, session } = await connect(opts);
   const employee = session[UserRole.EMPLOYEE];
   const custodian = (role: CustodianRole) => session[role];
 
@@ -384,21 +486,31 @@ async function decideAndFulfil(
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 async function main() {
-  const problems = validateScenario();
+  let opts: Options;
+  try {
+    opts = parseArgs(process.argv.slice(2), process.env);
+  } catch (e) {
+    console.error(`✖ ${(e as Error).message}`);
+    process.exitCode = 1;
+    return;
+  }
+  const pages = opts.scenario === 'pages';
+  const problems = pages ? validatePages() : validateScenario();
   if (problems.length > 0) {
     console.error(
-      'The demo scenario is invalid:\n  - ' + problems.join('\n  - '),
+      `The ${opts.scenario} demo scenario is invalid:\n  - ` +
+        problems.join('\n  - '),
     );
     process.exitCode = 1;
     return;
   }
-  const opts = parseArgs(process.argv.slice(2), process.env);
   if (!opts.apply) {
-    printPlan(opts);
+    if (pages) printPagesPlan(opts);
+    else printPlan(opts);
     return;
   }
   try {
-    await apply(opts);
+    await (pages ? applyPagesScenario(opts) : applyBase(opts));
   } catch (e) {
     console.error(`\n✖ ${(e as Error).message}`);
     if (e instanceof ApiError) {
