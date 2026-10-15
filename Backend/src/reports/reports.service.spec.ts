@@ -1,6 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import { Not } from 'typeorm';
 import { ReportsService } from './reports.service';
 import { GeneratedReportEntity } from './entities/generated-report.entity';
 import { GeneratedFormEntity } from './entities/generated-form.entity';
@@ -86,6 +91,7 @@ describe('ReportsService', () => {
 
   const mockUserRepo = {
     findOne: jest.fn(),
+    find: jest.fn(),
   };
 
   const mockAssetRequestRepo = {
@@ -98,6 +104,7 @@ describe('ReportsService', () => {
 
   const mockAuditService = {
     log: jest.fn().mockResolvedValue(undefined),
+    findAll: jest.fn(),
   };
 
   const mockSystemConfig = {
@@ -314,6 +321,32 @@ describe('ReportsService', () => {
       );
     });
 
+    // The audit trail names every user and every record; the role matrix
+    // (CLAUDE.md 4) gives it to the System Administrator and Management only.
+    it.each([UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN])(
+      'refuses the Audit Trail Report to %s',
+      async (role) => {
+        await expect(
+          service.generate('AUDIT_TRAIL', 'PDF', 'u-1', role, '127.0.0.1'),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockReportRepo.save).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT])(
+      'gives the Audit Trail Report to %s',
+      async (role) => {
+        const result = await service.generate(
+          'AUDIT_TRAIL',
+          'PDF',
+          'u-1',
+          role,
+          '127.0.0.1',
+        );
+        expect(result.buffer).toEqual(Buffer.from('mock-pdf'));
+      },
+    );
+
     it('builds Excel and stores xlsx extension in filePath', async () => {
       const result = await service.generate(
         'ASSET_MASTER_LIST',
@@ -396,12 +429,18 @@ describe('ReportsService', () => {
       rows: (string | number | null)[][];
     };
     type ServiceWithFetch = {
-      fetchReportData: (t: string) => Promise<ReportData>;
+      fetchReportData: (
+        t: string,
+        range?: { from?: string; to?: string },
+      ) => Promise<ReportData>;
     };
 
     // Typed accessor avoids no-unsafe-call while still reaching the private method
-    const fetch = (type: string): Promise<ReportData> =>
-      (service as unknown as ServiceWithFetch).fetchReportData(type);
+    const fetch = (
+      type: string,
+      range?: { from?: string; to?: string },
+    ): Promise<ReportData> =>
+      (service as unknown as ServiceWithFetch).fetchReportData(type, range);
 
     const makeDisposalQb = (assets: AssetEntity[]) => ({
       where: jest.fn().mockReturnThis(),
@@ -475,13 +514,20 @@ describe('ReportsService', () => {
       expect(r.rows[0][4]).toBe('serviceable');
     });
 
-    it('PHYSICAL_COUNT returns all assets', async () => {
+    it('PHYSICAL_COUNT counts what is still on the books, not disposed assets', async () => {
       mockAssetRepo.find.mockResolvedValue([makeAsset()]);
 
       const r = await fetch('PHYSICAL_COUNT');
 
       expect(r.title).toBe('Physical Count Summary');
       expect(r.rows).toHaveLength(1);
+      // Disposed assets are off the books: the count sheet in the app leaves
+      // them out, and the exported summary used to disagree with it.
+      expect(mockAssetRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: Not(AssetStatus.DISPOSED) },
+        }),
+      );
     });
 
     it('DISPOSAL uses createQueryBuilder and handles null/non-null cost', async () => {
@@ -554,13 +600,95 @@ describe('ReportsService', () => {
       );
     });
 
-    it('default case returns generic headers and uses replaceAll on title', async () => {
-      mockAssetRepo.find.mockResolvedValue([makeAsset()]);
+    it('rejects a report type it does not know instead of returning an asset list', async () => {
+      await expect(fetch('UNKNOWN_REPORT_TYPE')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockAssetRepo.find).not.toHaveBeenCalled();
+    });
 
-      const r = await fetch('UNKNOWN_REPORT_TYPE');
+    describe('AUDIT_TRAIL', () => {
+      const entry = (over: object = {}) => ({
+        timestamp: new Date('2026-10-15T08:30:00Z'),
+        userId: 'u-1',
+        userRole: UserRole.IT_PERSONNEL,
+        action: AuditAction.FORM_GENERATED,
+        affectedRecordType: 'form',
+        affectedRecordId: 'form-1',
+        ipAddress: '10.0.0.5',
+        ...over,
+      });
 
-      expect(r.title).toBe('UNKNOWN REPORT TYPE');
-      expect(r.headers).toEqual(['Property #', 'Description', 'Status']);
+      it('lists who did what, to which record, from where', async () => {
+        mockAuditService.findAll.mockResolvedValue({
+          data: [entry()],
+          total: 1,
+        });
+        mockUserRepo.find.mockResolvedValue([
+          {
+            id: 'u-1',
+            firstName: 'Ian',
+            lastName: 'Cruz',
+            employeeId: 'CICC-IT-001',
+          },
+        ]);
+
+        const r = await fetch('AUDIT_TRAIL', {
+          from: '2026-10-01',
+          to: '2026-10-15',
+        });
+
+        expect(mockAuditService.findAll).toHaveBeenCalledWith(
+          1,
+          10_000,
+          undefined,
+          '2026-10-01',
+          '2026-10-15',
+        );
+        expect(r.title).toBe('Audit Trail Report');
+        expect(r.headers).toEqual([
+          'Timestamp (UTC)',
+          'User',
+          'Role',
+          'Action',
+          'Record Type',
+          'Record ID',
+          'IP Address',
+        ]);
+        expect(r.rows[0]).toEqual([
+          '2026-10-15 08:30:00',
+          'Ian Cruz (CICC-IT-001)',
+          UserRole.IT_PERSONNEL,
+          AuditAction.FORM_GENERATED,
+          'form',
+          'form-1',
+          '10.0.0.5',
+        ]);
+      });
+
+      it('falls back to the account id when the account can no longer be found', async () => {
+        mockAuditService.findAll.mockResolvedValue({
+          data: [entry({ userId: 'u-gone' })],
+          total: 1,
+        });
+        mockUserRepo.find.mockResolvedValue([]);
+
+        const r = await fetch('AUDIT_TRAIL');
+
+        expect(r.rows[0][1]).toBe('u-gone');
+      });
+
+      it('says so in the title when the export is capped', async () => {
+        mockAuditService.findAll.mockResolvedValue({
+          data: [entry()],
+          total: 12_345,
+        });
+        mockUserRepo.find.mockResolvedValue([]);
+
+        const r = await fetch('AUDIT_TRAIL');
+
+        expect(r.title).toBe('Audit Trail Report (latest 1 of 12,345 entries)');
+      });
     });
   });
 

@@ -1,6 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, In, Repository } from 'typeorm';
+import { Between, In, Not, Repository } from 'typeorm';
 import PDFDocument from 'pdfkit';
 import ExcelJS from 'exceljs';
 import { GeneratedReportEntity } from './entities/generated-report.entity';
@@ -65,6 +70,15 @@ export interface GenerateFormInput {
   // Returns & Incidents request that produced it.
   assetRequestId?: string;
 }
+
+/** Optional period for the reports that take one (YYYY-MM-DD, end inclusive). */
+export interface ReportRange {
+  from?: string;
+  to?: string;
+}
+
+/** An audit export is held in memory and drawn row by row, so it is bounded. */
+const AUDIT_REPORT_ROW_LIMIT = 10_000;
 
 @Injectable()
 export class ReportsService {
@@ -199,11 +213,25 @@ export class ReportsService {
     generatedById: string,
     userRole: UserRole,
     ipAddress: string,
+    range: ReportRange = {},
   ): Promise<{ buffer: Buffer; report: GeneratedReportEntity }> {
+    // Role matrix (CLAUDE.md 4): the audit trail is for the System Administrator
+    // and Management. The endpoint is open to IT and the property custodian for
+    // the other reports, so this one is checked here.
+    if (
+      reportType === 'AUDIT_TRAIL' &&
+      userRole !== UserRole.SYSTEM_ADMIN &&
+      userRole !== UserRole.MANAGEMENT
+    ) {
+      throw new ForbiddenException(
+        'The audit trail report is limited to the System Administrator and Management',
+      );
+    }
+
     const buffer =
       format === 'PDF'
-        ? await this.buildPdfReport(reportType)
-        : await this.buildExcelReport(reportType);
+        ? await this.buildPdfReport(reportType, range)
+        : await this.buildExcelReport(reportType, range);
 
     const ext = format === 'PDF' ? 'pdf' : 'xlsx';
     const report = this.reportRepo.create({
@@ -228,8 +256,14 @@ export class ReportsService {
   }
 
   // ── PDF report builder ─────────────────────────────────────────────────────
-  private async buildPdfReport(reportType: string): Promise<Buffer> {
-    const { rows, headers, title } = await this.fetchReportData(reportType);
+  private async buildPdfReport(
+    reportType: string,
+    range: ReportRange,
+  ): Promise<Buffer> {
+    const { rows, headers, title } = await this.fetchReportData(
+      reportType,
+      range,
+    );
 
     return new Promise<Buffer>((resolve, reject) => {
       const doc = new PDFDocument({
@@ -312,8 +346,14 @@ export class ReportsService {
   }
 
   // ── Excel report builder ───────────────────────────────────────────────────
-  private async buildExcelReport(reportType: string): Promise<Buffer> {
-    const { rows, headers, title } = await this.fetchReportData(reportType);
+  private async buildExcelReport(
+    reportType: string,
+    range: ReportRange,
+  ): Promise<Buffer> {
+    const { rows, headers, title } = await this.fetchReportData(
+      reportType,
+      range,
+    );
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'AIMRS — CICC';
@@ -335,7 +375,7 @@ export class ReportsService {
     // Generated date row
     sheet.mergeCells(2, 1, 2, headers.length);
     sheet.getCell(2, 1).value =
-      `Generated: ${new Date().toLocaleString('en-PH')} | CICC`;
+      `Generated: ${new Date().toLocaleString('en-PH')} | ${this.systemConfig.getEntityName()}`;
     sheet.getCell(2, 1).font = {
       italic: true,
       size: 9,
@@ -384,7 +424,10 @@ export class ReportsService {
   }
 
   // ── Data fetcher — returns typed rows for a given report type ─────────────
-  private async fetchReportData(reportType: string): Promise<{
+  private async fetchReportData(
+    reportType: string,
+    range: ReportRange = {},
+  ): Promise<{
     headers: string[];
     rows: (string | number | null)[][];
     title: string;
@@ -512,7 +555,10 @@ export class ReportsService {
       }
 
       case 'PHYSICAL_COUNT': {
+        // What is still on the books: disposed assets are gone, and the count
+        // sheet in the app already leaves them out.
         const assets = await this.assetRepo.find({
+          where: { status: Not(AssetStatus.DISPOSED) },
           order: { condition: 'ASC' },
         });
         return {
@@ -620,20 +666,53 @@ export class ReportsService {
         };
       }
 
-      default: {
-        const assets = await this.assetRepo.find({
-          order: { createdAt: 'DESC' },
-        });
+      // SVC: Improve - the audit trail as a document, for COA review.
+      case 'AUDIT_TRAIL': {
+        const { data: entries, total } = await this.auditService.findAll(
+          1,
+          AUDIT_REPORT_ROW_LIMIT,
+          undefined,
+          range.from,
+          range.to,
+        );
+        const users = entries.length
+          ? await this.userRepo.find({
+              where: { id: In([...new Set(entries.map((e) => e.userId))]) },
+            })
+          : [];
+        const byId = new Map(users.map((u) => [u.id, u]));
+        const who = (id: string) => {
+          const u = byId.get(id);
+          return u ? `${u.firstName} ${u.lastName} (${u.employeeId})` : id;
+        };
         return {
-          title: reportType.replaceAll('_', ' '),
-          headers: ['Property #', 'Description', 'Status'],
-          rows: assets.map((a) => [
-            a.propertyNumber ?? '—',
-            a.itemDescription,
-            a.status,
+          title:
+            total > entries.length
+              ? `Audit Trail Report (latest ${entries.length.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} entries)`
+              : 'Audit Trail Report',
+          headers: [
+            'Timestamp (UTC)',
+            'User',
+            'Role',
+            'Action',
+            'Record Type',
+            'Record ID',
+            'IP Address',
+          ],
+          rows: entries.map((e) => [
+            e.timestamp.toISOString().slice(0, 19).replace('T', ' '),
+            who(e.userId),
+            e.userRole,
+            e.action,
+            e.affectedRecordType,
+            e.affectedRecordId,
+            e.ipAddress,
           ]),
         };
       }
+
+      default:
+        throw new BadRequestException(`Unknown report type: ${reportType}`);
     }
   }
 

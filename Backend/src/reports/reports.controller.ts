@@ -12,13 +12,24 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { IsEnum, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsEnum,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+} from 'class-validator';
 import { Response } from 'express';
 import { ReportsService, GenerateFormInput } from './reports.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { UserRole, OfficialFormType } from '../../../packages/shared/src/enums';
+import {
+  UserRole,
+  OfficialFormType,
+  ReportType,
+} from '../../../packages/shared/src/enums';
 import { UserEntity } from '../users/entities/user.entity';
 
 interface AuthReq {
@@ -26,8 +37,19 @@ interface AuthReq {
   ip: string;
 }
 
-class GenerateReportDto {
-  @IsString() reportType!: string;
+export class GenerateReportDto {
+  // Anything else is a 400: this used to be a free string, and an unknown type
+  // came back as a 200 asset list under the requested name.
+  @IsEnum(ReportType) reportType!: ReportType;
+
+  // Period for the reports that take one (the audit trail); ignored by the rest.
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'dateFrom must be YYYY-MM-DD' })
+  dateFrom?: string;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'dateTo must be YYYY-MM-DD' })
+  dateTo?: string;
 
   // Accepted case-insensitively because the frontend sends 'pdf' / 'excel'
   // (Frontend/lib/api/reports.ts), while generated_reports.format carries a
@@ -138,6 +160,7 @@ export class ReportsController {
       req.user.id,
       req.user.role,
       req.ip,
+      { from: dto.dateFrom, to: dto.dateTo },
     );
     const isPdf = format === 'PDF';
     const ext = isPdf ? 'pdf' : 'xlsx';
