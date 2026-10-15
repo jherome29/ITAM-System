@@ -49,6 +49,12 @@ export function ManagementAuditDashboard() {
       if (r.status === 'fulfilled') setReqStats(r.value.data);
       if (a.status === 'fulfilled') setAssetStats(a.value.data);
       setLoading(false);
+    }).catch(() => {
+      // allSettled never rejects, so this only catches a throw inside the
+      // handler above — without it the skeleton would stay up forever.
+      if (cancelled) return;
+      setError('Failed to load KPI data. Please refresh the page.');
+      setLoading(false);
     });
     return () => { cancelled = true; };
   }, []);
