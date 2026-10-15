@@ -37,6 +37,7 @@ services:
       - ./Database/schemas/013_asset_repairs.sql:/docker-entrypoint-initdb.d/13_asset_repairs.sql:ro
       - ./Database/schemas/014_repair_loaner.sql:/docker-entrypoint-initdb.d/14_repair_loaner.sql:ro
       - ./Database/schemas/015_function_search_path.sql:/docker-entrypoint-initdb.d/15_function_search_path.sql:ro
+      - ./Database/schemas/016_document_numbers.sql:/docker-entrypoint-initdb.d/16_document_numbers.sql:ro
       - ./Database/seeds/001_dev_seed.sql:/docker-entrypoint-initdb.d/99_seed.sql:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U aimrs_user -d aimrs_dev']

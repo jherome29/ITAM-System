@@ -28,6 +28,11 @@ export class GeneratedFormEntity {
   @Column({ nullable: true, type: 'uuid' })
   relatedAssetRequestId!: string | null;
 
+  // Running number of the per-transaction forms, e.g. PAR-2026-0007 (schema
+  // 016). Null for periodic reports and for forms generated before it existed.
+  @Column({ type: 'text', nullable: true })
+  documentNumber!: string | null;
+
   @Column()
   filePath!: string;
 

@@ -14,6 +14,7 @@ import {
   PAGE,
   CONTENT_WIDTH,
   identityFields,
+  documentNumber,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — PTR generated when IT Personnel records an asset transfer (Appendix 76)
@@ -48,8 +49,13 @@ export async function generatePTR(
   const doc = createDoc();
   let y = drawRepublicHeader(doc);
 
-  const ptrNo = `PTR-${Date.now()}`;
-  y = drawFormTitle(doc, 'PROPERTY TRANSFER REPORT', 'PTR No.', ptrNo, y);
+  y = drawFormTitle(
+    doc,
+    'PROPERTY TRANSFER REPORT',
+    'PTR No.',
+    documentNumber(),
+    y,
+  );
 
   y = drawMetaFields(
     doc,

@@ -11,6 +11,7 @@ import {
   roleDisplay,
   fullName,
   identityFields,
+  documentNumber,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — Receipt of Returned Property/Equipment (Annex 28)
@@ -58,7 +59,7 @@ export async function generateReceiptReturnedProperty(
       },
       { label: 'Date', value: today() },
       { label: 'End-user/Office', value: returnee.officeOrSection },
-      { label: '', value: '' },
+      { label: 'RRPE No.', value: documentNumber() },
     ],
     y,
   );

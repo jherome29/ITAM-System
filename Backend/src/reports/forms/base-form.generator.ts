@@ -20,6 +20,8 @@ export interface FormIdentity {
   entityName: string;
   /** Empty until CICC has set one; the form then prints a fill-in line. */
   fundCluster: string;
+  /** The running number allocated to this form, for the forms that carry one. */
+  documentNumber?: string;
 }
 
 const DEFAULT_IDENTITY: FormIdentity = {
@@ -45,6 +47,14 @@ export function identityFields(): { label: string; value: string }[] {
     { label: 'Fund Cluster', value: fundCluster || '_______________' },
   ];
 }
+
+const NUMBER_FILL_IN = '_______________';
+
+/** The form's own running number, or a fill-in line when none was allocated. */
+export function documentNumber(): string {
+  return formIdentity().documentNumber ?? NUMBER_FILL_IN;
+}
+
 export const FONT_REGULAR = 'Helvetica';
 export const FONT_BOLD = 'Helvetica-Bold';
 export const GRAY_LIGHT = '#f5f5f5';

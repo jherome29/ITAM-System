@@ -11,6 +11,7 @@ import { AssetRequestEntity } from '../asset-requests/entities/asset-request.ent
 import { AssetRepairEntity } from '../assets/entities/asset-repair.entity';
 import { AuditService } from '../audit/audit.service';
 import { SystemConfigService } from '../system-config/system-config.service';
+import PDFDocument from 'pdfkit';
 import {
   AuditAction,
   UserRole,
@@ -54,11 +55,19 @@ describe('ReportsService', () => {
     createQueryBuilder: jest.fn(),
   };
 
+  // A form and its number are stored in one transaction; the manager hands the
+  // same repository back so assertions on mockFormRepo still see the save.
+  const mockEntityManager = {
+    query: jest.fn(),
+    getRepository: jest.fn(),
+  };
+
   const mockFormRepo = {
     findAndCount: jest.fn(),
     create: jest.fn(),
     save: jest.fn(),
     createQueryBuilder: jest.fn(),
+    manager: { transaction: jest.fn() },
   };
 
   const mockAssetRepo = {
@@ -130,6 +139,12 @@ describe('ReportsService', () => {
     service = module.get<ReportsService>(ReportsService);
     jest.clearAllMocks();
     mockAuditService.log.mockResolvedValue(undefined);
+    mockEntityManager.getRepository.mockReturnValue(mockFormRepo);
+    mockEntityManager.query.mockResolvedValue([{ last_value: 7 }]);
+    mockFormRepo.manager.transaction.mockImplementation(
+      (run: (em: typeof mockEntityManager) => Promise<unknown>) =>
+        run(mockEntityManager),
+    );
   });
 
   // ── findAll() ─────────────────────────────────────────────────────────────
@@ -748,6 +763,99 @@ describe('ReportsService', () => {
           '127.0.0.1',
         ),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ── document numbers ──────────────────────────────────────────────────────
+  describe('generateFormRecord() — document numbers', () => {
+    const year = new Date().getFullYear();
+    const user = {
+      id: 'emp-1',
+      firstName: 'Juan',
+      lastName: 'dela Cruz',
+      employeeId: 'CICC-EMP-001',
+      role: UserRole.EMPLOYEE,
+      division: 'Operations',
+      officeOrSection: 'Field',
+    };
+
+    beforeEach(() => {
+      mockFormRepo.create.mockImplementation((x: object) => x);
+      mockFormRepo.save.mockImplementation((x: object) =>
+        Promise.resolve({ id: 'form-1', ...x }),
+      );
+      mockUserRepo.findOne.mockResolvedValue(user);
+      mockAssetRepo.findOne.mockResolvedValue(
+        makeAsset({ custodianId: 'emp-1' }),
+      );
+    });
+
+    const generate = (formType: OfficialFormType, extra = {}) =>
+      service.generateFormRecord(
+        { formType, assetId: 'a-1', ...extra },
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+    it('stores the number it allocated with the form and prints it on the PDF', async () => {
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+
+      const { form } = await generate(OfficialFormType.PAR);
+
+      expect(mockEntityManager.query).toHaveBeenCalledWith(
+        expect.stringContaining('document_counters'),
+        ['PAR', year],
+      );
+      expect(form.documentNumber).toBe(`PAR-${year}-0007`);
+      expect(
+        text.mock.calls.some(([t]) => String(t).includes(`PAR-${year}-0007`)),
+      ).toBe(true);
+      text.mockRestore();
+    });
+
+    it('allocates and saves inside one transaction', async () => {
+      await generate(OfficialFormType.PTR, { targetOffice: 'Records' });
+
+      expect(mockFormRepo.manager.transaction).toHaveBeenCalledTimes(1);
+      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(
+        GeneratedFormEntity,
+      );
+    });
+
+    it('does not number a periodic report', async () => {
+      mockAssetRepo.find.mockResolvedValue([]);
+
+      const { form } = await generate(OfficialFormType.RPCI);
+
+      expect(mockEntityManager.query).not.toHaveBeenCalled();
+      expect(form.documentNumber).toBeNull();
+    });
+
+    it('a form that fails to generate takes no number and leaves no audit entry', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(null);
+
+      await expect(generate(OfficialFormType.PAR)).rejects.toThrow(
+        NotFoundException,
+      );
+
+      // The allocation was inside the transaction that threw, so it is rolled
+      // back with it - the series keeps no hole.
+      expect(mockFormRepo.save).not.toHaveBeenCalled();
+      expect(mockAuditService.log).not.toHaveBeenCalled();
+    });
+
+    it('audits the form once it is stored, with its number', async () => {
+      await generate(OfficialFormType.PAR);
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          affectedRecordId: 'form-1',
+          metadata: expect.objectContaining({
+            documentNumber: `PAR-${year}-0007`,
+          }),
+        }),
+      );
     });
   });
 

@@ -12,6 +12,7 @@ import {
   roleDisplay,
   fullName,
   identityFields,
+  documentNumber,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — PAR generated when IT Personnel issues a PPE item to an employee (Appendix 71)
@@ -50,7 +51,7 @@ export async function generatePAR(
     doc,
     'PROPERTY ACKNOWLEDGMENT RECEIPT',
     'PAR No.',
-    asset.propertyNumber ?? '_______________',
+    documentNumber(),
     y,
   );
 

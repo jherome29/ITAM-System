@@ -11,6 +11,7 @@ import { UserEntity } from '../users/entities/user.entity';
 import { AuditService } from '../audit/audit.service';
 import { SystemConfigService } from '../system-config/system-config.service';
 import { withFormIdentity } from './forms/base-form.generator';
+import { DOCUMENT_SERIES, allocateDocumentNumber } from './document-numbers';
 import {
   OfficialFormType,
   AuditAction,
@@ -665,22 +666,58 @@ export class ReportsService {
     userRole: UserRole,
     ipAddress: string,
   ): Promise<{ form: GeneratedFormEntity; buffer: Buffer }> {
-    // The agency name and Fund Cluster in the header are system settings; the
-    // generators read them from the request's context rather than fixed text.
-    return withFormIdentity(
-      {
-        entityName: this.systemConfig.getEntityName(),
-        fundCluster: this.systemConfig.getFundCluster(),
+    const series = DOCUMENT_SERIES[input.formType];
+    const identity = {
+      entityName: this.systemConfig.getEntityName(),
+      fundCluster: this.systemConfig.getFundCluster(),
+    };
+
+    // The number is taken and the form stored in one transaction: a form that
+    // fails to generate (no custodian, unknown asset) hands its number back
+    // instead of leaving a hole in the series.
+    const saved = await this.formRepo.manager.transaction(async (em) => {
+      const documentNumber = series
+        ? await allocateDocumentNumber(em, series, new Date().getFullYear())
+        : null;
+      // The agency name, Fund Cluster and number in the header are read by the
+      // generators from the request's context rather than fixed text.
+      return withFormIdentity(
+        { ...identity, documentNumber: documentNumber ?? undefined },
+        () =>
+          this.buildFormRecord(
+            input,
+            generatedById,
+            documentNumber,
+            em.getRepository(GeneratedFormEntity),
+          ),
+      );
+    });
+
+    // After the commit, so the trail never records a form that was rolled back.
+    await this.auditService.log({
+      userId: generatedById,
+      userRole,
+      action: AuditAction.FORM_GENERATED,
+      affectedRecordId: saved.form.id,
+      affectedRecordType: 'form',
+      ipAddress,
+      metadata: {
+        formType: input.formType,
+        documentNumber: saved.form.documentNumber ?? undefined,
+        assetId: input.assetId,
+        requisitionId: input.requisitionId,
+        assetRequestId: input.assetRequestId,
       },
-      () => this.buildFormRecord(input, generatedById, userRole, ipAddress),
-    );
+    });
+
+    return saved;
   }
 
   private async buildFormRecord(
     input: GenerateFormInput,
     generatedById: string,
-    userRole: UserRole,
-    ipAddress: string,
+    documentNumber: string | null,
+    formRepo: Repository<GeneratedFormEntity>,
   ): Promise<{ form: GeneratedFormEntity; buffer: Buffer }> {
     const { formType } = input;
     let buffer: Buffer;
@@ -988,8 +1025,9 @@ export class ReportsService {
     }
 
     // ── Persist form record with PDF content ──────────────────────────────
-    const form = this.formRepo.create({
+    const form = formRepo.create({
       formType,
+      documentNumber,
       relatedAssetId: input.assetId ?? null,
       relatedRequisitionId: input.requisitionId ?? null,
       relatedAssetRequestId: input.assetRequestId ?? null,
@@ -997,22 +1035,7 @@ export class ReportsService {
       generatedById,
       pdfContent: buffer,
     });
-    const saved = await this.formRepo.save(form);
-
-    await this.auditService.log({
-      userId: generatedById,
-      userRole,
-      action: AuditAction.FORM_GENERATED,
-      affectedRecordId: saved.id,
-      affectedRecordType: 'form',
-      ipAddress,
-      metadata: {
-        formType,
-        assetId: input.assetId,
-        requisitionId: input.requisitionId,
-        assetRequestId: input.assetRequestId,
-      },
-    });
+    const saved = await formRepo.save(form);
 
     return { form: saved, buffer };
   }

@@ -6,10 +6,18 @@ import {
   drawSignatureBlock,
   drawTable,
   formIdentity,
+  documentNumber,
   identityFields,
   withFormIdentity,
 } from './base-form.generator';
 import { generatePAR } from './par.generator';
+import { generateICS } from './ics.generator';
+import { generatePTR } from './ptr.generator';
+import { generateIAR } from './iar.generator';
+import { generateReceiptReturnedSEP } from './receipt-returned-sep.generator';
+import { generateReceiptReturnedProperty } from './receipt-returned-property.generator';
+import { generateRLSSDDP } from './rlsddp.generator';
+import { generateMoveOut } from './move-out.generator';
 import { generateRPCI } from './rpci.generator';
 import { FORM_ENTITY_NAME } from '../../../../packages/shared/src/constants';
 
@@ -267,5 +275,88 @@ describe('RPCI with many assets', () => {
     );
 
     expect(pageCountOf(pdf)).toBeLessThanOrEqual(8);
+  });
+});
+
+// The numbered forms used to print a number invented at render time: the
+// property number as the PAR No., "ICS-" + property number, "PTR-" + the clock.
+// They now print the number the service allocated for the stored form.
+describe('document numbers on forms', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  const asset = {
+    propertyNumber: 'DEMO-001',
+    itemDescription: 'Laptop',
+    brand: 'Dell',
+    serialNumber: 'SN-1',
+    components: null,
+    accountableOfficer: 'Ana Santos',
+    acquisitionCost: 46500,
+    acquisitionDate: '2025-08-12',
+    condition: 'serviceable',
+    assetClass: 'SEP',
+    officeOrSection: 'IT',
+    officeLocation: 'HQ',
+    division: 'IT',
+    supplier: 'Acme',
+    dateOfDelivery: '2025-08-10',
+  };
+  const user = {
+    firstName: 'Juan',
+    lastName: 'dela Cruz',
+    employeeId: 'CICC-EMP-001',
+    role: 'employee',
+    division: 'Operations',
+    officeOrSection: 'Field',
+  };
+
+  const forms: Array<[string, () => Promise<Buffer>]> = [
+    ['PAR', () => generatePAR(asset, user, user)],
+    ['ICS', () => generateICS(asset, user, user)],
+    ['PTR', () => generatePTR(asset, user, 'Target Office')],
+    ['IAR', () => generateIAR(asset, user)],
+    ['RRSP', () => generateReceiptReturnedSEP(asset, user, user)],
+    ['RRPE', () => generateReceiptReturnedProperty(asset, user, user)],
+    ['RLSDDP', () => generateRLSSDDP(asset, user, 'Lost', 'Misplaced')],
+    ['MOF', () => generateMoveOut(asset, user, 'Operations', 'Relocation')],
+  ];
+
+  const textOf = async (run: () => Promise<Buffer>, number?: string) => {
+    const text = jest.spyOn(PDFDocument.prototype, 'text');
+    await withFormIdentity(
+      { entityName: 'CICC', fundCluster: '', documentNumber: number },
+      run,
+    );
+    return text.mock.calls.map(([t]) => String(t));
+  };
+
+  it('has no number outside a numbered request', () => {
+    expect(documentNumber()).toBe('_______________');
+    withFormIdentity(
+      { entityName: 'CICC', fundCluster: '', documentNumber: 'PAR-2026-0007' },
+      () => expect(documentNumber()).toBe('PAR-2026-0007'),
+    );
+  });
+
+  it.each(forms)('%s prints the allocated number', async (series, run) => {
+    const drawn = await textOf(run, `${series}-2026-0007`);
+
+    expect(drawn.some((t) => t.includes(`${series}-2026-0007`))).toBe(true);
+  });
+
+  it.each(forms)(
+    '%s never prints a number made from the clock',
+    async (_series, run) => {
+      const drawn = await textOf(run);
+
+      expect(drawn.some((t) => /\d{10,}/.test(t))).toBe(false);
+    },
+  );
+
+  it('a PAR does not use the property number as its own number', async () => {
+    const drawn = await textOf(forms[0][1]);
+    const label = drawn.indexOf('PAR No.:');
+
+    expect(drawn[label + 1]).toBe('_______________');
   });
 });

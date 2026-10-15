@@ -14,6 +14,7 @@ import {
   PAGE,
   CONTENT_WIDTH,
   identityFields,
+  documentNumber,
 } from './base-form.generator';
 
 // SVC: Obtain/Build — IAR generated when newly procured assets are received and inspected (Appendix 62)
@@ -47,12 +48,11 @@ export async function generateIAR(
   const doc = createDoc();
   let y = drawRepublicHeader(doc);
 
-  const iarNo = `IAR-${Date.now()}`;
   y = drawFormTitle(
     doc,
     'INSPECTION AND ACCEPTANCE REPORT',
     'IAR No.',
-    iarNo,
+    documentNumber(),
     y,
   );
 

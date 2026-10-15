@@ -12,6 +12,7 @@ import {
   roleDisplay,
   fullName,
   identityFields,
+  documentNumber,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — ICS generated when IT Personnel issues a SEP item (Appendix 59)
@@ -45,9 +46,13 @@ export async function generateICS(
   const doc = createDoc();
   let y = drawRepublicHeader(doc);
 
-  // ICS number typically references the property number
-  const icsNo = `ICS-${asset.propertyNumber ?? Date.now()}`;
-  y = drawFormTitle(doc, 'INVENTORY CUSTODIAN SLIP', 'ICS No.', icsNo, y);
+  y = drawFormTitle(
+    doc,
+    'INVENTORY CUSTODIAN SLIP',
+    'ICS No.',
+    documentNumber(),
+    y,
+  );
 
   y = drawMetaFields(
     doc,
