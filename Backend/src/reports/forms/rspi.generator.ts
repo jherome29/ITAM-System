@@ -10,6 +10,7 @@ import {
   fmtDate,
   PAGE,
   CONTENT_WIDTH,
+  identityFields,
 } from './base-form.generator';
 
 // SVC: Improve — RSPI aggregates SEP issuances for a period (Annex A.7)
@@ -41,11 +42,7 @@ export async function generateRSPI(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'Period', value: `${fmtDate(dateFrom)} to ${fmtDate(dateTo)}` },
       { label: 'Date Generated', value: fmtDate(new Date()) },
     ],

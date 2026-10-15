@@ -8,6 +8,7 @@ import {
   drawSignatureBlock,
   phpFormat,
   fmtDate,
+  identityFields,
 } from './base-form.generator';
 
 // SVC: Improve — Annex A.4 registry of all SEP items issued for a period
@@ -41,11 +42,7 @@ export async function generateAnnexA4(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'Period', value: `${fmtDate(dateFrom)} to ${fmtDate(dateTo)}` },
       { label: 'Date Generated', value: fmtDate(new Date()) },
     ],

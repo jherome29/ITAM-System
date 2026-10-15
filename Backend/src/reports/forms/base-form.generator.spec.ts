@@ -1,11 +1,17 @@
+import PDFDocument from 'pdfkit';
 import {
   PAGE,
   bufferize,
   createDoc,
   drawSignatureBlock,
   drawTable,
+  formIdentity,
+  identityFields,
+  withFormIdentity,
 } from './base-form.generator';
+import { generatePAR } from './par.generator';
 import { generateRPCI } from './rpci.generator';
+import { FORM_ENTITY_NAME } from '../../../../packages/shared/src/constants';
 
 // Official forms list every asset, so their tables run past one page. The table
 // used to keep drawing below the page margin, and pdfkit answered by starting a
@@ -145,6 +151,104 @@ describe('page numbers', () => {
     await bufferize(doc);
 
     expect(drawn.some((d) => /^Page \d+ of \d+$/.test(d.text))).toBe(false);
+  });
+});
+
+// Every form used to print "Fund Cluster: General Fund" and the entity name as
+// fixed text. The cluster was an assumption nobody at CICC had made; both now
+// come from the system settings, per request.
+describe('form identity', () => {
+  const settings = {
+    entityName: 'CICC CENTRAL OFFICE',
+    fundCluster: '01 Regular Agency Fund',
+  };
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('defaults to the CICC name and a fill-in line for the fund cluster', () => {
+    expect(identityFields()).toEqual([
+      { label: 'Entity Name', value: FORM_ENTITY_NAME },
+      { label: 'Fund Cluster', value: '_______________' },
+    ]);
+  });
+
+  it('uses the configured entity name and fund cluster', () => {
+    withFormIdentity(settings, () => {
+      expect(identityFields()).toEqual([
+        { label: 'Entity Name', value: 'CICC CENTRAL OFFICE' },
+        { label: 'Fund Cluster', value: '01 Regular Agency Fund' },
+      ]);
+    });
+    // ...and only inside it.
+    expect(formIdentity().entityName).toBe(FORM_ENTITY_NAME);
+  });
+
+  it('keeps two requests running at the same time apart', async () => {
+    const seen: string[] = [];
+    const later = (name: string, ms: number) =>
+      withFormIdentity({ entityName: name, fundCluster: '' }, async () => {
+        await new Promise((r) => setTimeout(r, ms));
+        seen.push(formIdentity().entityName);
+      });
+
+    await Promise.all([later('FIRST', 20), later('SECOND', 1)]);
+
+    expect(seen.sort()).toEqual(['FIRST', 'SECOND']);
+  });
+
+  const drawnBy = async (run: () => Promise<Buffer>) => {
+    const text = jest.spyOn(PDFDocument.prototype, 'text');
+    await withFormIdentity(settings, run);
+    return text.mock.calls.map(([t]) => String(t));
+  };
+
+  it('a PAR prints the configured values, not fixed text', async () => {
+    const drawn = await drawnBy(() =>
+      generatePAR(
+        {
+          propertyNumber: 'DEMO-001',
+          itemDescription: 'Laptop',
+          brand: 'Dell',
+          serialNumber: 'SN-1',
+          acquisitionCost: 46500,
+          acquisitionDate: '2025-08-12',
+          condition: 'serviceable',
+          assetClass: 'SEP',
+          officeOrSection: 'IT',
+          division: 'IT',
+        },
+        {
+          firstName: 'Juan',
+          lastName: 'dela Cruz',
+          employeeId: 'CICC-EMP-001',
+          role: 'employee',
+          division: 'Operations',
+          officeOrSection: 'Field',
+        },
+        {
+          firstName: 'Jose',
+          lastName: 'Reyes',
+          employeeId: 'CICC-IT-001',
+          role: 'it_personnel',
+          division: 'IT',
+          officeOrSection: 'IT',
+        },
+      ),
+    );
+
+    expect(drawn).toContain(' CICC CENTRAL OFFICE');
+    expect(drawn).toContain(' 01 Regular Agency Fund');
+    expect(drawn.some((t) => t.includes('General Fund'))).toBe(false);
+  });
+
+  it('an RPCI prints a fill-in line when no fund cluster is set', async () => {
+    const text = jest.spyOn(PDFDocument.prototype, 'text');
+    await generateRPCI([], new Date('2026-10-15'));
+    const drawn = text.mock.calls.map(([t]) => String(t));
+
+    expect(drawn).toContain(` ${FORM_ENTITY_NAME}`);
+    expect(drawn).toContain(' _______________');
+    expect(drawn.some((t) => t.includes('General Fund'))).toBe(false);
   });
 });
 

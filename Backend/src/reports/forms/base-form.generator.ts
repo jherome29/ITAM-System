@@ -1,4 +1,6 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import PDFDocument from 'pdfkit';
+import { FORM_ENTITY_NAME } from '../../../../packages/shared/src/constants';
 
 // SVC: Improve — shared pdfkit utilities for all COA official form generators
 
@@ -6,6 +8,43 @@ export const PAGE = { width: 595.28, height: 841.89, margin: 40 } as const;
 export const CONTENT_WIDTH = PAGE.width - PAGE.margin * 2;
 /** The lowest y anything may be drawn at: past it pdfkit silently starts a new page for each text call. */
 export const CONTENT_BOTTOM = PAGE.height - PAGE.margin;
+
+// ── Who the form is for ──────────────────────────────────────────────────────
+// The agency name and Fund Cluster in the header come from the system settings.
+// The generators are plain functions, so the values travel with the request
+// instead of through every signature: ReportsService runs a generator inside
+// withFormIdentity(), and the header helpers read it back. Request-scoped, so two
+// forms being generated at once never see each other's settings.
+
+export interface FormIdentity {
+  entityName: string;
+  /** Empty until CICC has set one; the form then prints a fill-in line. */
+  fundCluster: string;
+}
+
+const DEFAULT_IDENTITY: FormIdentity = {
+  entityName: FORM_ENTITY_NAME,
+  fundCluster: '',
+};
+const identityStore = new AsyncLocalStorage<FormIdentity>();
+
+/** Runs `run` (a form generator) with the given identity in effect. */
+export function withFormIdentity<T>(identity: FormIdentity, run: () => T): T {
+  return identityStore.run(identity, run);
+}
+
+export function formIdentity(): FormIdentity {
+  return identityStore.getStore() ?? DEFAULT_IDENTITY;
+}
+
+/** The "Entity Name" and "Fund Cluster" header fields of an official form. */
+export function identityFields(): { label: string; value: string }[] {
+  const { entityName, fundCluster } = formIdentity();
+  return [
+    { label: 'Entity Name', value: entityName },
+    { label: 'Fund Cluster', value: fundCluster || '_______________' },
+  ];
+}
 export const FONT_REGULAR = 'Helvetica';
 export const FONT_BOLD = 'Helvetica-Bold';
 export const GRAY_LIGHT = '#f5f5f5';
@@ -67,7 +106,7 @@ export function drawRepublicHeader(doc: PDFKit.PDFDocument): number {
   );
   y += 10;
   doc.font(FONT_BOLD).fontSize(9);
-  doc.text('CYBERCRIME INVESTIGATION AND COORDINATING CENTER', PAGE.margin, y, {
+  doc.text(formIdentity().entityName.toUpperCase(), PAGE.margin, y, {
     width: CONTENT_WIDTH,
     align: 'center',
   });

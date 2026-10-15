@@ -9,6 +9,8 @@ import { AssetEntity } from '../assets/entities/asset.entity';
 import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { AuditService } from '../audit/audit.service';
+import { SystemConfigService } from '../system-config/system-config.service';
+import { withFormIdentity } from './forms/base-form.generator';
 import {
   OfficialFormType,
   AuditAction,
@@ -81,6 +83,7 @@ export class ReportsService {
     @InjectRepository(AssetRepairEntity)
     private readonly repairRepo: Repository<AssetRepairEntity>,
     private readonly auditService: AuditService,
+    private readonly systemConfig: SystemConfigService,
   ) {}
 
   async findAll(page = 1, limit = 50) {
@@ -250,7 +253,7 @@ export class ReportsService {
         .font('Helvetica')
         .fontSize(8)
         .text(
-          `Generated: ${new Date().toLocaleString('en-PH')}  |  Cybercrime Investigation and Coordinating Center`,
+          `Generated: ${new Date().toLocaleString('en-PH')}  |  ${this.systemConfig.getEntityName()}`,
           50,
           85,
         );
@@ -657,6 +660,23 @@ export class ReportsService {
    * caller must link to the saved form (Returns & Incidents documents).
    */
   async generateFormRecord(
+    input: GenerateFormInput,
+    generatedById: string,
+    userRole: UserRole,
+    ipAddress: string,
+  ): Promise<{ form: GeneratedFormEntity; buffer: Buffer }> {
+    // The agency name and Fund Cluster in the header are system settings; the
+    // generators read them from the request's context rather than fixed text.
+    return withFormIdentity(
+      {
+        entityName: this.systemConfig.getEntityName(),
+        fundCluster: this.systemConfig.getFundCluster(),
+      },
+      () => this.buildFormRecord(input, generatedById, userRole, ipAddress),
+    );
+  }
+
+  private async buildFormRecord(
     input: GenerateFormInput,
     generatedById: string,
     userRole: UserRole,

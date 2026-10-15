@@ -13,6 +13,7 @@ import {
   fullName,
   PAGE,
   CONTENT_WIDTH,
+  identityFields,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — IIRUP for flagging unserviceable assets (Appendix 74)
@@ -56,11 +57,7 @@ export async function generateIIRUP(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'As at', value: today() },
       {
         label: 'Division/Office',

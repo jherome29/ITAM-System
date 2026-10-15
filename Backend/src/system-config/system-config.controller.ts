@@ -26,6 +26,8 @@ const FIELD_TO_KEY: Record<keyof UpdateSystemConfigDto, string> = {
   maxLoginAttempts: CONFIG_KEYS.MAX_LOGIN_ATTEMPTS,
   usefulLifeYears: CONFIG_KEYS.USEFUL_LIFE_YEARS,
   repeatRepairLimit: CONFIG_KEYS.REPEAT_REPAIR_LIMIT,
+  entityName: CONFIG_KEYS.ENTITY_NAME,
+  fundCluster: CONFIG_KEYS.FUND_CLUSTER,
 };
 
 // SVC: Plan — System Administrator manages runtime configuration.

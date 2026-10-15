@@ -10,6 +10,7 @@ import {
   fmtDate,
   PAGE,
   CONTENT_WIDTH,
+  identityFields,
 } from './base-form.generator';
 
 // SVC: Improve — RSMI aggregates RIS records for a period (Appendix 64 / RSMI)
@@ -41,11 +42,7 @@ export async function generateRSMI(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'Period', value: `${fmtDate(dateFrom)} to ${fmtDate(dateTo)}` },
       { label: 'Date Generated', value: fmtDate(new Date()) },
     ],

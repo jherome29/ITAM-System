@@ -10,6 +10,7 @@ import { AssetEntity } from '../assets/entities/asset.entity';
 import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { AuditModule } from '../audit/audit.module';
+import { SystemConfigModule } from '../system-config/system-config.module';
 
 // SVC: Improve — report and COA form generation
 
@@ -25,6 +26,7 @@ import { AuditModule } from '../audit/audit.module';
       AssetRepairEntity, // Repair History report
     ]),
     AuditModule,
+    SystemConfigModule, // Entity name / Fund Cluster for the form headers
   ],
   controllers: [ReportsController],
   providers: [ReportsService],

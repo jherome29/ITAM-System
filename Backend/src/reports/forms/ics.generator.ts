@@ -11,6 +11,7 @@ import {
   today,
   roleDisplay,
   fullName,
+  identityFields,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — ICS generated when IT Personnel issues a SEP item (Appendix 59)
@@ -51,11 +52,7 @@ export async function generateICS(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'Date', value: today() },
       {
         label: 'Office/Section',

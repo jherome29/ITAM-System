@@ -6,6 +6,9 @@ export const CONFIG_KEYS = {
   USEFUL_LIFE_YEARS: 'useful_life_years',
   MAX_LOGIN_ATTEMPTS: 'max_login_attempts',
   REPEAT_REPAIR_LIMIT: 'repeat_repair_limit',
+  // Header of every official form.
+  ENTITY_NAME: 'entity_name',
+  FUND_CLUSTER: 'fund_cluster',
 } as const;
 
 export interface SystemConfigMeta {
@@ -22,6 +25,10 @@ export interface SystemConfigSnapshot {
   usefulLifeYears: { PPE: number; SEP: number; IES: number };
   maxLoginAttempts: number;
   repeatRepairLimit: number;
+  /** Agency name in the header of every official form. */
+  entityName: string;
+  /** Fund Cluster printed on the forms; empty until set (the form then prints a fill-in line). */
+  fundCluster: string;
   // Per-key provenance, keyed by CONFIG_KEYS value.
   meta: Record<string, SystemConfigMeta>;
 }

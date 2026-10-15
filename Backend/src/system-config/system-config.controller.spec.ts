@@ -63,6 +63,24 @@ describe('SystemConfigController', () => {
     ]);
   });
 
+  it('PATCH maps the form identity fields to their keys', async () => {
+    await controller.update(
+      { entityName: 'CICC', fundCluster: '01 Regular Agency Fund' },
+      req as never,
+    );
+
+    expect(svc.update).toHaveBeenCalledWith(
+      'entity_name',
+      'CICC',
+      'admin-uuid',
+    );
+    expect(svc.update).toHaveBeenCalledWith(
+      'fund_cluster',
+      '01 Regular Agency Fund',
+      'admin-uuid',
+    );
+  });
+
   it('PATCH with an empty body throws BadRequestException and does not audit', async () => {
     await expect(controller.update({}, req as never)).rejects.toBeInstanceOf(
       BadRequestException,

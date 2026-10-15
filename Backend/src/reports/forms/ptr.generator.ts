@@ -13,6 +13,7 @@ import {
   fullName,
   PAGE,
   CONTENT_WIDTH,
+  identityFields,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — PTR generated when IT Personnel records an asset transfer (Appendix 76)
@@ -53,11 +54,7 @@ export async function generatePTR(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'Date', value: today() },
       { label: 'Transfer Type', value: 'Within Agency — Office to Office' },
     ],

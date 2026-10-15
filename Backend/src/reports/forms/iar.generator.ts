@@ -13,6 +13,7 @@ import {
   fullName,
   PAGE,
   CONTENT_WIDTH,
+  identityFields,
 } from './base-form.generator';
 
 // SVC: Obtain/Build — IAR generated when newly procured assets are received and inspected (Appendix 62)
@@ -58,11 +59,7 @@ export async function generateIAR(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'Date', value: today() },
       { label: 'Date Received', value: fmtDate(asset.dateOfDelivery) },
       { label: 'Supplier', value: asset.supplier ?? '_______________' },

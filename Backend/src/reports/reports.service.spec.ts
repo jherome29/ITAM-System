@@ -10,6 +10,7 @@ import { UserEntity } from '../users/entities/user.entity';
 import { AssetRequestEntity } from '../asset-requests/entities/asset-request.entity';
 import { AssetRepairEntity } from '../assets/entities/asset-repair.entity';
 import { AuditService } from '../audit/audit.service';
+import { SystemConfigService } from '../system-config/system-config.service';
 import {
   AuditAction,
   UserRole,
@@ -90,6 +91,11 @@ describe('ReportsService', () => {
     log: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockSystemConfig = {
+    getEntityName: jest.fn(() => 'CICC TEST ENTITY'),
+    getFundCluster: jest.fn(() => ''),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -117,6 +123,7 @@ describe('ReportsService', () => {
           useValue: mockRepairRepo,
         },
         { provide: AuditService, useValue: mockAuditService },
+        { provide: SystemConfigService, useValue: mockSystemConfig },
       ],
     }).compile();
 

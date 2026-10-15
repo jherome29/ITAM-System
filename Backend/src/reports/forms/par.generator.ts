@@ -11,6 +11,7 @@ import {
   today,
   roleDisplay,
   fullName,
+  identityFields,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — PAR generated when IT Personnel issues a PPE item to an employee (Appendix 71)
@@ -56,11 +57,7 @@ export async function generatePAR(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'Date', value: today() },
       {
         label: 'Office/Section',

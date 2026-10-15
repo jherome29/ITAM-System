@@ -9,6 +9,7 @@ import {
   today,
   roleDisplay,
   fullName,
+  identityFields,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — Receipt of Returned Semi-Expendable Property (Annex A.6)
@@ -49,10 +50,7 @@ export async function generateReceiptReturnedSEP(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
+      ...identityFields(),
       { label: 'RRSP No.', value: rrspNo },
       { label: 'Date', value: today() },
       { label: 'Office/Section', value: returnee.officeOrSection },

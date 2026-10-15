@@ -13,6 +13,7 @@ import {
   fullName,
   PAGE,
   CONTENT_WIDTH,
+  identityFields,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — RLSDDP for lost/stolen/damaged/destroyed property (Appendix 75)
@@ -63,11 +64,7 @@ export async function generateRLSSDDP(
       { label: 'Date', value: today() },
       { label: 'PAR No.', value: asset.propertyNumber ?? '_______________' },
       { label: 'PAR Date', value: fmtDate(asset.acquisitionDate) },
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'Department/Office', value: officer.officeOrSection },
       {
         label: 'Accountable Officer',
