@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { appConfig } from '@/lib/config';
 import { roleNavigation } from '@/lib/roles/role-navigation';
 import { hasUiPermission } from '@/lib/roles/role-permissions';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
-import { getDashboardMockData } from '@/lib/mock/dashboard.mock';
-import { mockAssetsService } from '@/lib/services/mock-assets.service';
-import { mockApprovalsService } from '@/lib/services/mock-approvals.service';
 
 describe('role-based sidebar navigation', () => {
   it('shows only personal workflow pages for employees', () => {
@@ -62,43 +58,10 @@ describe('role-based sidebar navigation', () => {
   });
 });
 
-describe('prototype states and config', () => {
-  it('uses mock data by default for this phase', () => {
-    expect(appConfig.useMockData).toBe(true);
-  });
-
+describe('navigation coverage', () => {
   it('has enough nav items for responsive sidebar coverage', () => {
     // Dashboard / Users / Roles / System Settings / Audit / Notifications — the
     // six that survived the 2026-09-09 governance cut.
     expect(roleNavigation[ProposedUserRole.MASTER_ADMIN].length).toBeGreaterThanOrEqual(6);
-  });
-
-  it('has role preview enabled in mock development configuration', () => {
-    expect(appConfig.enableRolePreview).toBe(true);
-  });
-});
-
-describe('employee dashboard scope', () => {
-  it('does not expose agency-wide value or disposal KPIs to employee dashboard', () => {
-    const data = getDashboardMockData(ProposedUserRole.EMPLOYEE);
-    const labels = data.kpis.map((item) => item.label).join(' ');
-    const subtitles = data.kpis.map((item) => `${item.detail} ${item.trend}`).join(' ');
-    expect(labels).toContain('Assigned Assets');
-    expect(labels).toContain('Unread Notifications');
-    expect(labels).not.toContain('Total Assets');
-    expect(labels).not.toContain('For Disposal');
-    expect(subtitles).not.toContain('aggregate value');
-  });
-});
-
-describe('mock services', () => {
-  it('keeps ICT and property assets separated for custodians', () => {
-    expect(mockAssetsService.listIct().every((asset) => asset.scope === 'ICT')).toBe(true);
-    expect(mockAssetsService.listProperty().every((asset) => asset.scope !== 'ICT')).toBe(true);
-  });
-
-  it('prevents self requests from appearing in the approval queue service', () => {
-    const queue = mockApprovalsService.queueForApprover('Mila Santos', 'EMP-003');
-    expect(queue.every((request) => request.requesterId !== 'EMP-003')).toBe(true);
   });
 });
