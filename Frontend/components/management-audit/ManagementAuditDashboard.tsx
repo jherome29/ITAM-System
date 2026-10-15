@@ -5,11 +5,9 @@ import { Activity, BarChart3, TrendingDown, TrendingUp } from 'lucide-react';
 import { reportsApi, type KpiData } from '@/lib/api/reports';
 import { requisitionsApi, type RequisitionStats } from '@/lib/api/requisitions';
 import { assetsApi, type AssetStats } from '@/lib/api/assets';
-import { statusShare } from '@/lib/reports/status-share';
+import { assetStatusRows, requisitionStatusRows, statusShare, type StatusRow } from '@/lib/reports/status-share';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
-
-interface StatusRow { label: string; count: number; tone: string }
 
 function StatusBars({ rows, total, empty }: Readonly<{ rows: StatusRow[]; total: number; empty: string }>) {
   if (total === 0) return <p className="p-4 text-sm text-slate-500">{empty}</p>;
@@ -98,13 +96,7 @@ export function ManagementAuditDashboard() {
           <StatusBars
             total={reqStats?.total ?? 0}
             empty="No requisitions yet."
-            rows={[
-              { label: 'Awaiting approval', count: reqStats?.pending ?? 0, tone: 'bg-amber-500' },
-              { label: 'Approved — awaiting fulfilment', count: reqStats?.approved ?? 0, tone: 'bg-blue-600' },
-              { label: 'On hold', count: reqStats?.onHold ?? 0, tone: 'bg-slate-500' },
-              { label: 'Fulfilled', count: reqStats?.fulfilled ?? 0, tone: 'bg-emerald-500' },
-              { label: 'Rejected', count: reqStats?.rejected ?? 0, tone: 'bg-red-400' },
-            ]}
+            rows={reqStats ? requisitionStatusRows(reqStats) : []}
           />
         </section>
 
@@ -115,13 +107,7 @@ export function ManagementAuditDashboard() {
           <StatusBars
             total={assetStats?.total ?? 0}
             empty="No assets yet."
-            rows={[
-              { label: 'Available', count: assetStats?.available ?? 0, tone: 'bg-emerald-500' },
-              { label: 'Issued', count: assetStats?.issued ?? 0, tone: 'bg-blue-700' },
-              { label: 'Under repair', count: assetStats?.underRepair ?? 0, tone: 'bg-amber-500' },
-              { label: 'Flagged for disposal', count: assetStats?.flaggedForDisposal ?? 0, tone: 'bg-red-400' },
-              { label: 'Transferred', count: assetStats?.transferred ?? 0, tone: 'bg-slate-500' },
-            ]}
+            rows={assetStats ? assetStatusRows(assetStats) : []}
           />
         </section>
       </div>

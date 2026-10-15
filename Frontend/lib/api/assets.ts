@@ -24,6 +24,8 @@ export interface Asset {
   barcodeValue: string;
   status: string;
   custodianId: string | null;
+  /** Who holds it — name and employee ID only. Present on the custodians' asset list. */
+  custodian?: { id: string; name: string; employeeId: string } | null;
   quantity: number;
   reorderLevel: number | null;
   expectedReturnDate: string | null;
@@ -73,6 +75,8 @@ export interface AssetStats {
   underRepair: number;
   flaggedForDisposal: number;
   transferred: number;
+  returned: number;
+  disposed: number;
 }
 
 export interface CreateAssetDto {
