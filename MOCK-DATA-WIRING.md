@@ -48,10 +48,12 @@ sample screens:
 If one of these is built, add its page to `live-pages.ts` (or give it its own component)
 and its menu entry to `lib/roles/role-navigation.ts` — nothing else needs un-hiding.
 
-## Still on disk but not part of the redesign
+## The pre-redesign shells are gone
 
-`/admin`, `/supervisor`, `/it-personnel`, `/management/{reports,audit-trail,notifications}`
-are the pre-redesign shells. They read real data and login no longer sends anyone there,
-but they remain reachable by typed address (and `/it-personnel/forms` and
-`/it-personnel/qr-scan` are still link targets from the new workspaces), so they were left
-alone.
+`/admin`, `/supervisor`, `/it-personnel` and `/management/*` (29 files, plus the six shared
+components only they used) were deleted on 2026-10-15. Login had stopped sending anyone
+there, and every capability had a new equivalent except one: the IT custodian's
+management-report generator (`/it-personnel/reports`). That now lives at
+`/it-asset-custodian/management-reports`, in the IT menu. The Property Officer's "Go to Forms"
+button, the only link from a new screen into an old one, now points at
+`/property-officer/reports`.

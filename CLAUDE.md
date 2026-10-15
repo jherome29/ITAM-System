@@ -88,11 +88,13 @@ cicc/
 ├── Frontend/                   # Next.js frontend
 │   ├── app/                    # App Router pages
 │   │   ├── (auth)/             # Login page (public)
-│   │   ├── employee/           # Employee role pages
-│   │   ├── supervisor/         # Supervisor role pages
-│   │   ├── it-personnel/       # IT Personnel role pages
-│   │   ├── admin/              # System Administrator pages
-│   │   └── management/         # Management/read-only pages
+│   │   ├── employee/           # Employee workspace
+│   │   ├── approving-officer/  # Approving Officer workspace (catch-all [[...slug]] router)
+│   │   ├── it-asset-custodian/ # IT Asset Custodian workspace   (catch-all router)
+│   │   ├── property-custodian/ # Property Custodian workspace   (catch-all router)
+│   │   ├── property-officer/   # Property Officer workspace     (catch-all router)
+│   │   ├── master-admin/       # Master Administrator workspace (catch-all router)
+│   │   └── management-audit/   # Management & Audit viewer workspace, read-only (catch-all router)
 │   ├── components/             # Shared UI components
 │   ├── lib/                    # Utilities, API clients, hooks
 │   └── public/                 # Static assets (logo.png, etc.)
@@ -479,44 +481,51 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 ### All Roles — Shared
 - `/login` — Landing/login page (single unified login, role determines redirect)
 
+> Each role has one workspace. All but the Employee's are a single catch-all route
+> (`app/<workspace>/[[...slug]]/page.tsx`) that renders a dedicated component per page;
+> an address with no screen behind it is a 404. The pre-redesign shells (`/supervisor`,
+> `/it-personnel`, `/admin`, `/management`) were deleted on 2026-10-15 — the menu for each
+> role is `Frontend/lib/roles/role-navigation.ts`, the source of truth for this list.
+> Every role also has `My Assigned Assets` and `Notifications`.
+
 ### Employee (`/employee/`)
-- `/employee/dashboard` — Overview: pending requests, recent activity
-- `/employee/requisitions/new` — Submit requisition form
-- `/employee/requisitions` — My requisitions list
-- `/employee/requisitions/[id]` — Request status tracking (timeline view)
+- `/employee/dashboard` — Overview: my property, due-back items, pending requests
 - `/employee/catalogue` — Browse available assets
+- `/employee/requisitions`, `/employee/requisitions/new`, `/employee/requisitions/[id]` — My requisitions, submit, status timeline
+- `/employee/assigned-assets` — Assets I hold; request return / repair / replacement
+- `/employee/returns-incidents` — My return, repair, damage, loss and theft requests
 - `/employee/notifications` — Notifications inbox
 
-### Supervisor (`/supervisor/`)
-- `/supervisor/dashboard` — Pending approvals queue, metrics
-- `/supervisor/approvals` — All requisitions pending approval
-- `/supervisor/approvals/[id]` — Review and approve/reject requisition
-- `/supervisor/history` — Approval history log
-- `/supervisor/notifications` — Notifications inbox
+### Approving Officer (`/approving-officer/`)
+- `dashboard` — Pending approvals queue, metrics
+- `approvals` — Requests routed to me; approve / reject (the review drawer)
+- `approval-history` — My own past decisions, with turnaround
+- `requisitions` — My own requisitions
 
-### IT Personnel (`/it-personnel/`)
-- `/it-personnel/dashboard` — Inventory overview, alerts, pending fulfillments
-- `/it-personnel/assets` — Full asset inventory table
-- `/it-personnel/assets/new` — Add new asset form
-- `/it-personnel/assets/[id]` — Asset details: full record + inline edit mode + context-aware lifecycle modal + transaction history panel + form suggestion banner (no sub-routes — lifecycle and QR are actions on this page)
-- `/it-personnel/qr-scan` — QR/barcode scanner
-- `/it-personnel/requisitions` — Fulfillment queue (approved requisitions)
-- `/it-personnel/forms` — Generate official forms (RIS, PAR, ICS, etc.)
-- `/it-personnel/reports` — Generate reports (Asset Master List, Issuance Records, etc.)
-- `/it-personnel/notifications` — Notifications inbox
+### IT Asset Custodian (`/it-asset-custodian/`)
+- `dashboard`, `assets` (+ `assets/new`, `assets/[id]`: record, edit, lifecycle, QR, history), `qr-scanner`
+- `fulfillment` — Approved requisitions to fulfil or hold; `custody` — who holds what; issue / transfer / return
+- `returns-incidents`, `maintenance` (repairs), `physical-inventory` (count sheet), `disposal` (recommend disposal)
+- `reports` — Generate official COA forms; `management-reports` — Generate management reports (Asset Master List, Issuance, Returns, Repair History, …)
+- `requisitions` — My own requisitions
 
-### System Administrator (`/admin/`)
-- `/admin/dashboard` — System health, user activity, audit summary
-- `/admin/users` — User management (CRUD)
-- `/admin/users/[id]/role` — Role assignment
-- `/admin/audit-trail` — Full audit log viewer (filterable, exportable)
-- `/admin/config` — System configuration (thresholds, SLA targets, approval routes)
-- `/admin/notifications` — Notifications inbox
+### Property Custodian (`/property-custodian/`)
+- `dashboard`, `fixed-assets`, `supplies` (+ `/new`, `assets/[id]`), `qr-scanner`
+- `fulfillment`, `custody`, `returns-incidents`, `maintenance`, `physical-inventory`, `disposal`
+- `reports` — Generate official COA forms
 
-### Management (`/management/`)
-- `/management/dashboard` — Executive dashboard (KPIs, charts, utilization)
-- `/management/reports` — Report generation and download
-- `/management/audit-trail` — Read-only audit trail access
+### Property Officer (`/property-officer/`)
+- `dashboard`, `assets` (consolidated registry), `replacements` (replacement validation), `disposal` (disposal review, read-only), `reports` (forms archive)
+
+### Master Administrator (`/master-admin/`)
+- `dashboard` — System health, user activity, audit summary
+- `users`, `roles` — Accounts, role assignment; `configuration` — System settings (thresholds, SLA); `audit` — Full audit log (filterable, exportable)
+- `returns-incidents`, `repairs` — Fallback decider for custodians' own requests
+
+### Management & Audit Viewer (`/management-audit/`) — read-only
+- `dashboard` — Executive dashboard (KPIs, requisition and asset status breakdowns)
+- `asset-reports`, `requisition-reports`, `maintenance-disposal`, `physical-count` — Report generation and download
+- `audit` — Read-only audit log; `forms` — Forms archive
 
 ---
 
