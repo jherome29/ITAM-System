@@ -7,7 +7,7 @@ import { ReplacementReview } from '@/components/requisitions/ReplacementReview';
 import { DisposalReview } from '@/components/assets/DisposalReview';
 import { notFound } from 'next/navigation';
 import { WorkflowPage } from '@/components/prototype/WorkflowPage';
-import { FormsArchiveContent } from '@/components/shared/FormsArchiveContent';
+import { FormsWorkspaceContent } from '@/components/shared/FormsWorkspaceContent';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
 import { isLiveWorkflowPage } from '@/lib/workflow/live-pages';
@@ -26,7 +26,7 @@ export default async function PropertyOfficerPage({
   if (segment === 'assets' && child === 'new') return <RegisterAssetForm basePath="/property-officer/assets" />;
   if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/property-officer/assets" formsPath="/property-officer/reports" />;
   if (segment === 'assets') return <AssetRegistryList basePath="/property-officer/assets" title="Consolidated Asset Registry" />;
-  if (segment === 'reports') return <FormsArchiveContent />;
+  if (segment === 'reports') return <FormsWorkspaceContent eyebrow="Property Officer" canGenerate={false} />;
   if (segment === 'replacements' || segment === 'replacement-validation') return <ReplacementReview eyebrow="Property Officer" assetBasePath="/property-officer/assets" />;
   if (segment === 'disposal' || segment === 'disposal-review') return <DisposalReview eyebrow="Property Officer" assetBasePath="/property-officer/assets" />;
   // Only pages wired to real records may reach WorkflowPage; anything else is sample

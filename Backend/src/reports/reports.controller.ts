@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -117,8 +118,21 @@ export class ReportsController {
     UserRole.PROPERTY_CUSTODIAN,
     UserRole.PROPERTY_OFFICER,
   )
-  async findAllForms(@Query('page') page = 1, @Query('limit') limit = 50) {
-    const result = await this.svc.findAllForms(+page, +limit);
+  async findAllForms(
+    @Query('page') page = 1,
+    @Query('limit') limit = 50,
+    @Query('formType') formType?: string,
+    @Query('search') search?: string,
+  ) {
+    if (
+      formType &&
+      !Object.values(OfficialFormType).includes(formType as OfficialFormType)
+    )
+      throw new BadRequestException(`Unknown form type: ${formType}`);
+    const result = await this.svc.findAllForms(+page, +limit, {
+      formType: formType as OfficialFormType | undefined,
+      search,
+    });
     return { message: 'Forms retrieved', data: result };
   }
 

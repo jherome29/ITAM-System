@@ -33,7 +33,7 @@ export default async function PropertyCustodianPage({
   if (segment === 'supplies') return <AssetRegistryList basePath="/property-custodian/supplies" assetType="Supplies" title="Supply Inventory" />;
   if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/assets" formsPath="/property-custodian/reports" />;
   if (segment === 'qr-scanner') return <QrLookup detailBasePath="/property-custodian/assets" />;
-  if (segment === 'reports') return <FormsWorkspaceContent />;
+  if (segment === 'reports') return <FormsWorkspaceContent eyebrow="Property Custodian" />;
   if (segment === 'maintenance') return <RepairQueue eyebrow="Property Custodian" assetBasePath="/property-custodian/assets" openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'returns-incidents') return <AssetRequestQueue eyebrow="Property Custodian" openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'physical-inventory') return <PhysicalInventorySheet eyebrow="Property Custodian" formsPath="/property-custodian/reports" />;

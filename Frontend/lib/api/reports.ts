@@ -12,11 +12,17 @@ export interface ReportMeta {
 export interface FormMeta {
   id: string;
   formType: string;
+  /** Running number of the per-transaction forms, e.g. PAR-2026-0007. */
+  documentNumber: string | null;
   generatedById: string;
   relatedAssetId: string | null;
   relatedRequisitionId: string | null;
   filePath: string;
   generatedAt: string;
+  /** "Dell Latitude (P-001)" - the asset the form is for. */
+  assetLabel: string | null;
+  requisitionNumber: string | null;
+  generatedByName: string | null;
 }
 
 export interface KpiData {
@@ -34,6 +40,9 @@ export interface KpiData {
 export interface GenerateReportDto {
   reportType: string;
   format: 'pdf' | 'excel';
+  /** Period (YYYY-MM-DD, inclusive) for the reports that take one: AUDIT_TRAIL. */
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 export interface GenerateFormDto {
@@ -46,6 +55,8 @@ export interface GenerateFormDto {
   purpose?: string;
   requestingDivision?: string;
   returneeId?: string;
+  /** CICC employee ID of whoever handed the item back (receipts). */
+  returneeEmployeeId?: string;
   receiverId?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -55,9 +66,11 @@ export const reportsApi = {
   list: () =>
     client.get<ApiResponse<PaginatedResponse<ReportMeta>>>('/v1/reports').then((r) => r.data),
 
-  forms: (page = 1, limit = 20) =>
+  forms: (page = 1, limit = 20, filter: { formType?: string; search?: string } = {}) =>
     client
-      .get<ApiResponse<PaginatedResponse<FormMeta>>>(`/v1/reports/forms?page=${page}&limit=${limit}`)
+      .get<ApiResponse<PaginatedResponse<FormMeta>>>('/v1/reports/forms', {
+        params: { page, limit, ...(filter.formType ? { formType: filter.formType } : {}), ...(filter.search ? { search: filter.search } : {}) },
+      })
       .then((r) => r.data),
 
   /** Download a previously stored form PDF by its record ID. */
@@ -75,9 +88,10 @@ export const reportsApi = {
       .post('/v1/reports/generate', dto, { responseType: 'blob' })
       .then((r) => r.data as Blob),
 
-  /** Generates a COA official form PDF and returns it as a Blob for direct download. */
-  generateFormBlob: (dto: GenerateFormDto): Promise<Blob> =>
-    client
-      .post('/v1/reports/forms/generate', dto, { responseType: 'blob' })
-      .then((r) => r.data as Blob),
+  /** Generates a COA official form PDF: the file, and the document number it was filed under (null for an unnumbered report). */
+  generateFormBlob: (dto: GenerateFormDto): Promise<{ blob: Blob; documentNumber: string | null }> =>
+    client.post('/v1/reports/forms/generate', dto, { responseType: 'blob' }).then((r) => ({
+      blob: r.data as Blob,
+      documentNumber: (r.headers['x-document-number'] as string | undefined) ?? null,
+    })),
 };

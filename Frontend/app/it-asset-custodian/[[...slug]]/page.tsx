@@ -30,10 +30,10 @@ export default async function ItAssetCustodianPage({
   if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/it-asset-custodian/assets" formsPath="/it-asset-custodian/reports" />;
   if (segment === 'assets') return <AssetRegistryList basePath="/it-asset-custodian/assets" />;
   if (segment === 'qr-scanner') return <QrLookup detailBasePath="/it-asset-custodian/assets" />;
-  if (segment === 'reports') return <FormsWorkspaceContent />;
+  if (segment === 'reports') return <FormsWorkspaceContent eyebrow="IT Asset Custodian" />;
   // The management reports (Asset Master List, Requisition History, issuance, returns,
   // repair history, physical count, disposal) - the old /it-personnel/reports page.
-  if (segment === 'management-reports') return <ReportsContent />;
+  if (segment === 'management-reports') return <ReportsContent eyebrow="IT Asset Custodian" />;
   if (segment === 'maintenance') return <RepairQueue eyebrow="IT Asset Custodian" assetBasePath="/it-asset-custodian/assets" openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'returns-incidents') return <AssetRequestQueue eyebrow="IT Asset Custodian" openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'physical-inventory') return <PhysicalInventorySheet eyebrow="IT Asset Custodian" formsPath="/it-asset-custodian/reports" />;

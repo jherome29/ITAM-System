@@ -5,7 +5,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { Not } from 'typeorm';
+import { ILike, Not } from 'typeorm';
 import { ReportsService } from './reports.service';
 import { GeneratedReportEntity } from './entities/generated-report.entity';
 import { GeneratedFormEntity } from './entities/generated-form.entity';
@@ -229,6 +229,50 @@ describe('ReportsService', () => {
         requisitionNumber: null,
         generatedByName: null,
       });
+    });
+
+    // The archive is searched by form type and by the number written on the
+    // paper copy; filtering only the rows already on screen would miss the rest.
+    it('filters by form type and by document number on the server', async () => {
+      mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAllForms(2, 15, {
+        formType: OfficialFormType.PAR,
+        search: 'PAR-2026',
+      });
+
+      expect(mockFormRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 15,
+          take: 15,
+          where: {
+            formType: OfficialFormType.PAR,
+            documentNumber: ILike('%PAR-2026%'),
+          },
+        }),
+      );
+    });
+
+    it('treats % and _ in the search as text, not wildcards', async () => {
+      mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAllForms(1, 15, { search: '50%_off' });
+
+      expect(mockFormRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { documentNumber: ILike('%50\\%\\_off%') },
+        }),
+      );
+    });
+
+    it('applies no filter when none is given', async () => {
+      mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAllForms();
+
+      expect(mockFormRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({ where: {} }),
+      );
     });
 
     it('does not look anything up for an empty page', async () => {

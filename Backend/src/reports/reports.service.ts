@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, In, Not, Repository } from 'typeorm';
+import { Between, ILike, In, Not, Repository } from 'typeorm';
 import PDFDocument from 'pdfkit';
 import ExcelJS from 'exceljs';
 import { GeneratedReportEntity } from './entities/generated-report.entity';
@@ -112,8 +112,20 @@ export class ReportsService {
     return { data, total, page, limit };
   }
 
-  async findAllForms(page = 1, limit = 50) {
+  async findAllForms(
+    page = 1,
+    limit = 50,
+    filter: { formType?: OfficialFormType; search?: string } = {},
+  ) {
+    const search = filter.search?.trim();
     const [forms, total] = await this.formRepo.findAndCount({
+      where: {
+        ...(filter.formType ? { formType: filter.formType } : {}),
+        // % and _ are typed as text, not wildcards.
+        ...(search
+          ? { documentNumber: ILike(`%${search.replace(/[\\%_]/g, '\\$&')}%`) }
+          : {}),
+      },
       order: { generatedAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,

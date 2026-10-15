@@ -6,6 +6,9 @@ import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
+import { reportsApi } from '@/lib/api/reports';
+import { apiErrorMessage } from '@/lib/api/error-message';
+import { downloadBlob } from '@/lib/download';
 import {
   systemConfigApi,
   buildUpdateSystemConfigPayload,
@@ -287,6 +290,7 @@ export function AuditLogPage({ eyebrow }: Readonly<{ eyebrow?: string }> = {}) {
   const [to, setTo] = useState('');
   const [selected, setSelected] = useState<AuditLog | null>(null);
   const [toast, setToast] = useState('');
+  const [reporting, setReporting] = useState(false);
 
   // The date range is applied server-side (GET /v1/audit?startDate&endDate);
   // the text box below still filters the returned window client-side.
@@ -330,7 +334,23 @@ export function AuditLogPage({ eyebrow }: Readonly<{ eyebrow?: string }> = {}) {
     setToast('Filtered audit log downloaded as CSV.');
   };
 
-  return <div className="space-y-4"><AdminPageHeader eyebrow={eyebrow} title="Audit Log" detail="Inspect append-only evidence of authentication, authorization, asset, requisition, report, and administrative activity." action={<SecondaryButton icon={Download} onClick={handleExport}>Export log</SecondaryButton>} />
+  // The official Audit Trail Report (CLAUDE.md 7.1): the same period as the
+  // filter above, named users, up to 10,000 entries - unlike the CSV, which is
+  // only the rows on screen.
+  const handleReport = async (format: 'pdf' | 'excel') => {
+    setReporting(true);
+    try {
+      const blob = await reportsApi.generate({ reportType: 'AUDIT_TRAIL', format, dateFrom: from || undefined, dateTo: to || undefined });
+      downloadBlob(blob, `audit-trail-${new Date().toISOString().slice(0, 10)}.${format === 'excel' ? 'xlsx' : 'pdf'}`);
+      setToast('Audit Trail Report downloaded.');
+    } catch (err) {
+      setToast(await apiErrorMessage(err, 'Could not generate the Audit Trail Report.'));
+    } finally {
+      setReporting(false);
+    }
+  };
+
+  return <div className="space-y-4"><AdminPageHeader eyebrow={eyebrow} title="Audit Log" detail="Inspect append-only evidence of authentication, authorization, asset, requisition, report, and administrative activity." action={<div className="flex flex-wrap gap-2"><SecondaryButton icon={Download} onClick={handleExport}>Export CSV</SecondaryButton><SecondaryButton icon={Download} onClick={() => void handleReport('pdf')} disabled={reporting}>Report (PDF)</SecondaryButton><SecondaryButton icon={Download} onClick={() => void handleReport('excel')} disabled={reporting}>Report (Excel)</SecondaryButton></div>} />
     <div className="flex items-start gap-3 border border-blue-200 bg-blue-50 px-4 py-3"><Archive className="mt-0.5 h-5 w-5 flex-none text-blue-700" /><div><p className="text-sm font-bold text-blue-950">Immutable audit evidence</p><p className="mt-0.5 text-xs text-blue-800">Audit records cannot be edited or deleted. Every logged action succeeded by definition; timestamps are recorded in UTC.</p></div></div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><MetricCard label="Events loaded" value={String(logs.length)} detail={from || to ? 'Within the selected date range' : 'Most recent audit records from the API'} tone="blue" icon={Activity} /><MetricCard label="Unique users" value={String(uniqueUsers)} detail="Distinct accounts represented" tone="blue" icon={KeyRound} /><MetricCard label="Unique actions" value={String(uniqueActions)} detail="Distinct action types represented" tone="blue" icon={FileClock} /></div>
     <SearchToolbar value={search} onChange={setSearch} filterLabel="User, role, action, or record">
