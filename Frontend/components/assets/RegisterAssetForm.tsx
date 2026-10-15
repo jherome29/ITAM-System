@@ -90,13 +90,14 @@ function Field({
   children,
 }: Readonly<{ label: string; required?: boolean; children: ReactNode }>) {
   return (
-    <div>
-      <label className="block text-xs font-semibold text-gray-600 mb-1">
+    // The label wraps its control, so the two are associated without ids.
+    <label className="block">
+      <span className="block text-xs font-semibold text-gray-600 mb-1">
         {label}
         {required && <span className="text-red-500 ml-0.5">*</span>}
-      </label>
+      </span>
       {children}
-    </div>
+    </label>
   );
 }
 

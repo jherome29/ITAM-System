@@ -59,12 +59,13 @@ function EditableDetail({
       <dt className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</dt>
       {edit ? (
         options ? (
-          <select value={editValue ?? ''} onChange={(e) => onChange(field, e.target.value)} className={cls}>
+          <select aria-label={label} value={editValue ?? ''} onChange={(e) => onChange(field, e.target.value)} className={cls}>
             <option value="">— select —</option>
             {options.map((o) => <option key={o} value={o}>{optionLabel(o)}</option>)}
           </select>
         ) : (
           <input
+            aria-label={label}
             type={type}
             value={editValue ?? ''}
             onChange={(e) => onChange(field, e.target.value)}
@@ -466,10 +467,10 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
             <div className="space-y-4">
               {/* Status selector */}
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                <label htmlFor="asset-field-1" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                   New Status
                 </label>
-                <select
+                <select id="asset-field-1"
                   value={targetStatus}
                   onChange={(e) => {
                     setTargetStatus(e.target.value);
@@ -497,10 +498,10 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
               {/* ISSUED: Employee ID input */}
               {targetStatus === 'issued' && !handBack && (
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  <label htmlFor="asset-field-2" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                     Recipient Employee ID <span className="text-red-500">*</span>
                   </label>
-                  <input
+                  <input id="asset-field-2"
                     type="text"
                     placeholder="e.g. CICC-0042"
                     value={lifecycleEmployeeId}
@@ -514,10 +515,10 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
               {/* ISSUED: optional expected return date — arms the overdue-return watcher */}
               {targetStatus === 'issued' && (
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  <label htmlFor="asset-field-3" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                     Expected return date (optional)
                   </label>
-                  <input
+                  <input id="asset-field-3"
                     type="date"
                     value={lifecycleExpectedReturnDate}
                     onChange={(e) => setLifecycleExpectedReturnDate(e.target.value)}
@@ -529,10 +530,10 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
               {/* TRANSFERRED: To Location input */}
               {targetStatus === 'transferred' && (
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  <label htmlFor="asset-field-4" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                     Receiving Office / Section <span className="text-red-500">*</span>
                   </label>
-                  <input
+                  <input id="asset-field-4"
                     type="text"
                     placeholder="e.g. Cybercrime Operations Division"
                     value={lifecycleToLocation}
@@ -579,10 +580,10 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
 
               {/* Notes field — required for FLAGGED_FOR_DISPOSAL, optional for others */}
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                <label htmlFor="asset-field-5" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                   Notes {notesRequired && <span className="text-red-500">* (required — {restoring ? 'say why it is being restored' : 'justify disposal'})</span>}
                 </label>
-                <textarea
+                <textarea id="asset-field-5"
                   rows={3}
                   value={lifecycleNotes}
                   onChange={(e) => setLifecycleNotes(e.target.value)}

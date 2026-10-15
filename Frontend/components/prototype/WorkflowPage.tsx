@@ -580,7 +580,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       <ConfirmDialog
         open={Boolean(confirmAction)}
         title={`${confirmAction} record`}
-        detail="This updates the real record and is written to the audit trail."
+        detail="The change is saved immediately and written to the audit trail."
         confirmLabel={actionSubmitting ? 'Processing…' : (confirmAction ?? 'Confirm')}
         confirmDisabled={actionSubmitting || (supplyLines.length > 0 && (supplyOptions === null || Boolean(supplyBlockedReason)))}
         onConfirm={() => {

@@ -59,6 +59,7 @@ export function QrLookup({ detailBasePath }: Readonly<{ detailBasePath: string }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="QR code value or property number..."
+            aria-label="QR code value or property number"
             className={inputClass}
           />
           <button
