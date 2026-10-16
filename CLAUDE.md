@@ -611,7 +611,7 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 - **Critical-path pass rate:** 100% — no exceptions
 - Tests run automatically in CI on every push; failing tests block merges to `main`
 - Key test areas: asset status transitions, requisition approval routing, RBAC enforcement, audit log generation, QR code utility functions, database interaction layers
-- **Where it stands (2026-10-16):** backend 800 unit tests in 40 suites (96.3% statements, 88.6% branches, 95.2% functions; gate is 65 / 55 / 55 / 65), 94 e2e tests in 12 suites on a real Postgres, frontend 327 vitest tests in 41 files. A request-routing or guard change needs an e2e test, because the unit tests mock the database
+- **Where it stands (2026-10-16):** backend 800 unit tests in 40 suites (96.3% statements, 88.6% branches, 95.2% functions; gate is 65 / 55 / 55 / 65), 94 e2e tests in 12 suites on a real Postgres, frontend 333 vitest tests in 42 files. A request-routing or guard change needs an e2e test, because the unit tests mock the database
 
 ### Integration Testing (Jest)
 - API endpoint behavior across service boundaries

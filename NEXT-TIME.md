@@ -21,7 +21,7 @@ properly, see `RUN-LOCAL.md` §11. Update this file at the end of every session.
   value stays in the Postgres and shared enums (deprecated: old audit rows carry it); no
   route grants it and the API refuses to assign it; Replacement Validation and Disposal
   Review are now in the Property Custodian's menu.
-- Health: backend 800 unit + 94 e2e tests, frontend 327, every `CHECKS.md` item clean.
+- Health: backend 800 unit + 94 e2e tests, frontend 333, every `CHECKS.md` item clean.
 - **The shared Supabase dev DB is at schema 017** (applied 2026-10-16: it moved the one Property Officer account to Property Custodian; that account was renamed `property.custodian2@cicc.gov.ph` the same day).
 
 ## 2. Do first

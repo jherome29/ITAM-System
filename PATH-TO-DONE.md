@@ -10,7 +10,7 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 > data. What remains is: `develop` → `main`, the rest of the COA form fidelity, a handful
 > of product decisions, Phase 5 testing, and the production / handover work that is
 > blocked on CICC. Health on the Property-Officer-merge branch: backend 800 unit + 94 e2e
-> tests, frontend 327 tests, every `CHECKS.md` item clean.
+> tests, frontend 333 tests, every `CHECKS.md` item clean.
 
 ---
 
@@ -92,7 +92,7 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
       `Backend/test/security.e2e-spec.ts`, gating CI. Per-module privilege-escalation cases are
       added as modules land (e.g. `property-requisitions.e2e-spec.ts`). `docs/guides/SECURITY.md`.
 - [x] **Coverage ≥ 70% on backend services** — 96.3% statements / 88.6% branches (gate: 65 / 55 / 55 / 65).
-- [ ] Frontend test coverage — no coverage gate on `Frontend/` yet (327 tests exist).
+- [ ] Frontend test coverage — no coverage gate on `Frontend/` yet (333 tests exist).
 - [ ] **OWASP ZAP scan** — run ZAP against the running system, save the PDF, fix HIGH findings
       (`PHASE-5-TESTING.md` §5.3–5.4).
 - [ ] **JMeter load test** — 362 users, 60 s ramp, the hot endpoints. Needs a **production build**,
