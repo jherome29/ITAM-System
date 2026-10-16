@@ -10,6 +10,10 @@ export interface AuditLog {
   ipAddress: string;
   metadata: Record<string, unknown> | null;
   timestamp: string;
+  /** Who did it, by name; null when the account no longer resolves. */
+  userName?: string | null;
+  /** What it was done to, in words ("AR-2026-0014"); null when the API cannot describe it. */
+  recordLabel?: string | null;
 }
 
 interface PaginatedAuditLogs {

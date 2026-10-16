@@ -12,3 +12,20 @@ export function auditEventLabel(log: Pick<AuditLog, 'action' | 'metadata'>): str
   }
   return log.action.replace(/_/g, ' ');
 }
+
+const shortId = (id: string) => `${id.slice(0, 8)}…`;
+
+/** Who did it: their name, or a short id when the account no longer resolves. */
+export function auditUserText(log: Pick<AuditLog, 'userId'> & { userName?: string | null }): string {
+  return log.userName || shortId(log.userId);
+}
+
+/** What it was done to: the record's own label ("AR-2026-0014"), or its type and a short id. */
+export function auditRecordText(
+  log: Pick<AuditLog, 'affectedRecordType' | 'affectedRecordId'> & { recordLabel?: string | null },
+): string {
+  if (log.recordLabel) return log.recordLabel;
+  if (!log.affectedRecordId) return log.affectedRecordType ?? '—';
+  return `${log.affectedRecordType ?? 'record'} ${shortId(log.affectedRecordId)}`;
+}
+

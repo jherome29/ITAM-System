@@ -5,6 +5,9 @@ import { In } from 'typeorm';
 import { AuditService } from './audit.service';
 import { AuditLogEntity } from './entities/audit-log.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
+import { UserEntity } from '../users/entities/user.entity';
+import { AssetRequestEntity } from '../asset-requests/entities/asset-request.entity';
+import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import {
   AssetType,
   AuditAction,
@@ -31,7 +34,10 @@ describe('AuditService', () => {
     createQueryBuilder: jest.fn(() => mockQb),
   };
 
-  const mockAssetRepo = { findOne: jest.fn() };
+  const mockAssetRepo = { findOne: jest.fn(), find: jest.fn() };
+  const mockUserRepo = { find: jest.fn() };
+  const mockRequestRepo = { find: jest.fn() };
+  const mockRequisitionRepo = { find: jest.fn() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -39,6 +45,15 @@ describe('AuditService', () => {
         AuditService,
         { provide: getRepositoryToken(AuditLogEntity), useValue: mockRepo },
         { provide: getRepositoryToken(AssetEntity), useValue: mockAssetRepo },
+        { provide: getRepositoryToken(UserEntity), useValue: mockUserRepo },
+        {
+          provide: getRepositoryToken(AssetRequestEntity),
+          useValue: mockRequestRepo,
+        },
+        {
+          provide: getRepositoryToken(RequisitionEntity),
+          useValue: mockRequisitionRepo,
+        },
       ],
     }).compile();
 
@@ -134,6 +149,96 @@ describe('AuditService', () => {
         'a.timestamp >= :startDate',
         expect.anything(),
       );
+    });
+  });
+
+  // The audit screens printed "User ID 54a576d7-..." and "asset_request
+  // 017fa908…": true, and useless to someone reading them. Entries are now
+  // handed out with the person's name and a label for the record.
+  describe('withNames()', () => {
+    const entry = (over: Record<string, unknown> = {}) => ({
+      id: 'e-1',
+      userId: 'u-1',
+      action: AuditAction.USER_LOGIN,
+      affectedRecordType: 'users',
+      affectedRecordId: 'u-1',
+      ...over,
+    });
+
+    beforeEach(() => {
+      mockUserRepo.find.mockResolvedValue([
+        {
+          id: 'u-1',
+          firstName: 'Ana',
+          lastName: 'Reyes',
+          employeeId: 'CICC-IT-001',
+        },
+      ]);
+      mockRequestRepo.find.mockResolvedValue([
+        { id: 'r-1', requestNumber: 'AR-2026-0014' },
+      ]);
+      mockRequisitionRepo.find.mockResolvedValue([
+        { id: 'q-1', requestNumber: 'REQ-2026-0003' },
+      ]);
+      mockAssetRepo.find.mockResolvedValue([
+        {
+          id: 'a-1',
+          itemDescription: 'Dell Latitude 5440 Laptop',
+          propertyNumber: 'DEMO-ICT-0003',
+        },
+      ]);
+    });
+
+    it('names whoever did it', async () => {
+      const [out] = await service.withNames([entry() as never]);
+
+      expect(out).toMatchObject({ id: 'e-1', userName: 'Ana Reyes' });
+    });
+
+    it('leaves the name empty for an account that no longer resolves', async () => {
+      const [out] = await service.withNames([
+        entry({ userId: 'u-gone' }) as never,
+      ]);
+
+      expect(out.userName).toBeNull();
+    });
+
+    it.each([
+      ['asset_request', 'r-1', 'AR-2026-0014'],
+      ['requisition', 'q-1', 'REQ-2026-0003'],
+      ['asset', 'a-1', 'Dell Latitude 5440 Laptop (DEMO-ICT-0003)'],
+      ['users', 'u-1', 'Ana Reyes (CICC-IT-001)'],
+    ])('labels a %s record', async (type, id, label) => {
+      const [out] = await service.withNames([
+        entry({ affectedRecordType: type, affectedRecordId: id }) as never,
+      ]);
+
+      expect(out.recordLabel).toBe(label);
+    });
+
+    it('has no label for a record it cannot describe', async () => {
+      const [out] = await service.withNames([
+        entry({ affectedRecordType: 'form', affectedRecordId: 'f-1' }) as never,
+      ]);
+
+      expect(out.recordLabel).toBeNull();
+    });
+
+    it('looks each kind up once for the whole page, and nothing for an empty one', async () => {
+      await service.withNames([
+        entry({ affectedRecordType: 'asset_request', affectedRecordId: 'r-1' }),
+        entry({ affectedRecordType: 'asset_request', affectedRecordId: 'r-1' }),
+        entry({ affectedRecordType: 'requisition', affectedRecordId: 'q-1' }),
+      ] as never);
+
+      expect(mockUserRepo.find).toHaveBeenCalledTimes(1);
+      expect(mockRequestRepo.find).toHaveBeenCalledTimes(1);
+      expect(mockRequisitionRepo.find).toHaveBeenCalledTimes(1);
+      expect(mockAssetRepo.find).not.toHaveBeenCalled();
+
+      jest.clearAllMocks();
+      expect(await service.withNames([])).toEqual([]);
+      expect(mockUserRepo.find).not.toHaveBeenCalled();
     });
   });
 

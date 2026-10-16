@@ -8,7 +8,7 @@ import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { usersApi, type CreateUserDto, type UpdateUserDto, type User } from '@/lib/api/users';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
-import { auditEventLabel } from '@/lib/audit-label';
+import { auditEventLabel, auditRecordText } from '@/lib/audit-label';
 import { alternateApproverOptions, buildAvailabilityPayload } from '@/lib/users/availability';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
 
@@ -85,8 +85,7 @@ function UserAuditHistory({ userId }: Readonly<{ userId: string }>) {
                 <span className="whitespace-nowrap text-xs text-slate-500">{new Date(log.timestamp).toLocaleString()}</span>
               </div>
               <p className="mt-1 text-xs text-slate-500">
-                {log.affectedRecordType ?? 'record'}
-                {log.affectedRecordId ? ` ${log.affectedRecordId.slice(0, 8)}…` : ''} · {log.ipAddress || 'no-ip'}
+                {auditRecordText(log)} · {log.ipAddress || 'no-ip'}
               </p>
             </div>
           ))}

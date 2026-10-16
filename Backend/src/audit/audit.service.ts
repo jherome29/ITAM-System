@@ -3,6 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { AuditLogEntity } from './entities/audit-log.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
+import { UserEntity } from '../users/entities/user.entity';
+import { AssetRequestEntity } from '../asset-requests/entities/asset-request.entity';
+import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
 
@@ -51,6 +54,13 @@ export class AuditService {
     // Only to check that a record is an asset inside the caller's scope.
     @InjectRepository(AssetEntity)
     private readonly assetRepo: Repository<AssetEntity>,
+    // Only to name people and records in what the screens show (withNames).
+    @InjectRepository(UserEntity)
+    private readonly userRepo: Repository<UserEntity>,
+    @InjectRepository(AssetRequestEntity)
+    private readonly requestRepo: Repository<AssetRequestEntity>,
+    @InjectRepository(RequisitionEntity)
+    private readonly requisitionRepo: Repository<RequisitionEntity>,
   ) {}
 
   /**
@@ -105,6 +115,95 @@ export class AuditService {
       take: limit,
     });
     return { data, total, page, limit };
+  }
+
+  /**
+   * Entries as the screens show them: with who did it (userName) and what it was
+   * done to (recordLabel - "AR-2026-0014", "Dell Latitude (DEMO-ICT-0003)"), not
+   * just the two UUIDs. Name only for people (CLAUDE.md 8.4). One lookup per kind
+   * for the whole page; a record it cannot describe has no label and the screen
+   * falls back to the id. Kept out of findAll() so the audit report, which
+   * resolves names itself for up to 10,000 rows, does not pay for it twice.
+   */
+  async withNames(entries: AuditLogEntity[]) {
+    if (entries.length === 0) return [];
+
+    const idsOf = (type: string) => [
+      ...new Set(
+        entries
+          .filter((e) => e.affectedRecordType === type)
+          .map((e) => e.affectedRecordId),
+      ),
+    ];
+    const userIds = [
+      ...new Set([...entries.map((e) => e.userId), ...idsOf('users')]),
+    ];
+    const requestIds = idsOf('asset_request');
+    const requisitionIds = idsOf('requisition');
+    const assetIds = idsOf('asset');
+
+    const [users, requests, requisitions, assets] = await Promise.all([
+      this.userRepo.find({
+        where: { id: In(userIds) },
+        select: { id: true, firstName: true, lastName: true, employeeId: true },
+      }),
+      requestIds.length
+        ? this.requestRepo.find({
+            where: { id: In(requestIds) },
+            select: { id: true, requestNumber: true },
+          })
+        : [],
+      requisitionIds.length
+        ? this.requisitionRepo.find({
+            where: { id: In(requisitionIds) },
+            select: { id: true, requestNumber: true },
+          })
+        : [],
+      assetIds.length
+        ? this.assetRepo.find({
+            where: { id: In(assetIds) },
+            select: { id: true, itemDescription: true, propertyNumber: true },
+          })
+        : [],
+    ]);
+
+    const person = new Map(users.map((u) => [u.id, u]));
+    const requestNumber = new Map(requests.map((r) => [r.id, r.requestNumber]));
+    const requisitionNumber = new Map(
+      requisitions.map((r) => [r.id, r.requestNumber]),
+    );
+    const asset = new Map(assets.map((a) => [a.id, a]));
+    const fullName = (u: UserEntity) => `${u.firstName} ${u.lastName}`.trim();
+
+    const labelOf = (e: AuditLogEntity): string | null => {
+      switch (e.affectedRecordType) {
+        case 'asset_request':
+          return requestNumber.get(e.affectedRecordId) ?? null;
+        case 'requisition':
+          return requisitionNumber.get(e.affectedRecordId) ?? null;
+        case 'asset': {
+          const a = asset.get(e.affectedRecordId);
+          return a
+            ? `${a.itemDescription}${a.propertyNumber ? ` (${a.propertyNumber})` : ''}`
+            : null;
+        }
+        case 'users': {
+          const u = person.get(e.affectedRecordId);
+          return u ? `${fullName(u)} (${u.employeeId})` : null;
+        }
+        default:
+          return null;
+      }
+    };
+
+    return entries.map((e) => {
+      const who = person.get(e.userId);
+      return {
+        ...e,
+        userName: who ? fullName(who) : null,
+        recordLabel: labelOf(e),
+      };
+    });
   }
 
   /** Entries of one action for several records, oldest first. */
