@@ -147,6 +147,8 @@ export function drawRepublicHeader(doc: PDFKit.PDFDocument): number {
   return y;
 }
 
+const REFERENCE_FONT_SIZE = 9;
+
 /**
  * Draws a centered form title in bold and the form reference number on the right.
  * Returns Y after the title block.
@@ -164,19 +166,29 @@ export function drawFormTitle(
     align: 'center',
   });
 
-  doc.font(FONT_REGULAR).fontSize(8);
-  const rx = PAGE.width - PAGE.margin - 118;
-  doc.text(`${formRefLabel}:`, rx, y, { width: 118 });
-  y += 11;
+  // The reference box has two lines - the label, then the value on top of the
+  // rule. They used to be drawn 2pt apart, so the number printed over its label.
+  const boxWidth = 118;
+  const rx = PAGE.width - PAGE.margin - boxWidth;
+  doc.font(FONT_REGULAR).fontSize(7).fillColor(BLACK);
+  doc.text(`${formRefLabel}:`, rx, y, { width: boxWidth, lineBreak: false });
+
+  // A long reference ("SS-02 / MOF-2026-0001") shrinks to stay inside the box.
+  doc.font(FONT_BOLD).fontSize(REFERENCE_FONT_SIZE);
+  const valueWidth = doc.widthOfString(formRefValue);
+  if (valueWidth > boxWidth) {
+    doc.fontSize(Math.max(6, (REFERENCE_FONT_SIZE * boxWidth) / valueWidth));
+  }
+  doc.text(formRefValue, rx, y + 10, { width: boxWidth, lineBreak: false });
+
+  y += 22;
   doc
     .moveTo(rx, y)
     .lineTo(PAGE.width - PAGE.margin, y)
     .strokeColor(BLACK)
     .lineWidth(0.5)
     .stroke();
-  doc.font(FONT_BOLD).fontSize(9).fillColor(BLACK);
-  doc.text(formRefValue, rx, y - 9, { width: 118 });
-  y += 10;
+  y += 4;
 
   doc
     .moveTo(PAGE.margin, y)
@@ -208,7 +220,8 @@ export function drawMetaFields(
       .font(FONT_REGULAR)
       .fontSize(7.5)
       .text(` ${left.value}`, { width: half - 10 });
-    if (right) {
+    // An empty label is a filler that keeps the pairs aligned: draw nothing.
+    if (right?.label) {
       doc.font(FONT_BOLD).fontSize(7.5).fillColor(BLACK);
       doc.text(`${right.label}:`, PAGE.margin + half, y, { continued: true });
       doc
@@ -221,19 +234,113 @@ export function drawMetaFields(
   return y;
 }
 
+/**
+ * Widths for a table's columns that add up to exactly `total`: the caller's
+ * proportions, except that no column goes below its minimum (the width of its
+ * longest unbreakable word). A column held at its minimum is taken out of the
+ * sharing and the rest are scaled again until every column fits. When even the
+ * minimums do not fit, they are shrunk evenly - a word may then break.
+ */
+export function fitColumnWidths(
+  desired: number[],
+  mins: number[],
+  total: number,
+): number[] {
+  const sumOf = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const minTotal = sumOf(mins);
+  if (minTotal >= total) return mins.map((m) => (m * total) / minTotal);
+
+  const wanted = desired.map((w) => (w > 0 ? w : 1));
+  const held = new Set<number>();
+  let widths: number[] = [];
+  for (let pass = 0; pass <= wanted.length; pass++) {
+    const sharedWanted = sumOf(wanted.filter((_, i) => !held.has(i)));
+    const sharedTotal = total - sumOf(mins.filter((_, i) => held.has(i)));
+    widths = wanted.map((w, i) =>
+      held.has(i) ? mins[i] : (w * sharedTotal) / sharedWanted,
+    );
+    const short = widths
+      .map((w, i) => (!held.has(i) && w < mins[i] ? i : -1))
+      .filter((i) => i >= 0);
+    if (short.length === 0) break;
+    short.forEach((i) => held.add(i));
+  }
+  return widths;
+}
+
+/** Room a column needs beside its longest word: 3pt padding each side plus slack. */
+const COLUMN_SIDE_ROOM = 8;
+/** A longer unbroken value (a URL, say) wraps instead of starving its neighbours. */
+const MAX_WORD_ROOM = 90;
+
+function longestWord(text: string): string {
+  let longest = '';
+  for (const word of text.split(/\s+/)) {
+    if (word.length > longest.length) longest = word;
+  }
+  return longest;
+}
+
+/**
+ * The columns scaled to the content width, so a table neither runs past the
+ * right margin nor stops short of the rules above and below it, and no column
+ * is so narrow that its header or a value breaks in the middle of a word
+ * ("REM/ARK/S", "Serviceabl/e"). Callers give proportions; this makes them fit.
+ */
+function fitColumns(
+  doc: PDFKit.PDFDocument,
+  cols: { header: string; width: number }[],
+  rows: string[][],
+): { header: string; width: number }[] {
+  const mins = cols.map((col, i) => {
+    doc.font(FONT_BOLD).fontSize(7);
+    const header = doc.widthOfString(longestWord(col.header));
+    let widest = '';
+    for (const row of rows) {
+      const word = longestWord(String(row[i] ?? ''));
+      if (word.length > widest.length) widest = word;
+    }
+    doc.font(FONT_REGULAR).fontSize(7);
+    const body = doc.widthOfString(widest);
+    return Math.min(Math.max(header, body) + COLUMN_SIDE_ROOM, MAX_WORD_ROOM);
+  });
+  const widths = fitColumnWidths(
+    cols.map((c) => c.width),
+    mins,
+    CONTENT_WIDTH,
+  );
+  return cols.map((col, i) => ({ ...col, width: widths[i] }));
+}
+
 const TABLE_HEADER_HEIGHT = 20;
 /** Room a row's text needs above and below it inside its cell. */
 const CELL_PADDING = 8;
+
+/** The header row grows with its tallest header, so a wrapped one stays inside it. */
+function tableHeaderHeight(
+  doc: PDFKit.PDFDocument,
+  cols: { header: string; width: number }[],
+): number {
+  doc.font(FONT_BOLD).fontSize(7);
+  const tallest = Math.max(
+    ...cols.map((c) =>
+      doc.heightOfString(c.header, { width: c.width - 4, align: 'center' }),
+    ),
+  );
+  // 4pt above the text (where it is drawn) and the same below it.
+  return Math.max(TABLE_HEADER_HEIGHT, tallest + 8);
+}
 
 /** Draws the shaded column-header row at `y`; returns the y below it. */
 function drawTableHeader(
   doc: PDFKit.PDFDocument,
   cols: { header: string; width: number }[],
   y: number,
+  height: number,
 ): number {
   const tableWidth = cols.reduce((s, c) => s + c.width, 0);
   doc
-    .rect(PAGE.margin, y, tableWidth, TABLE_HEADER_HEIGHT)
+    .rect(PAGE.margin, y, tableWidth, height)
     .fillAndStroke(GRAY_LIGHT, GRAY_BORDER);
 
   let cx = PAGE.margin;
@@ -245,7 +352,7 @@ function drawTableHeader(
     });
     cx += col.width;
   }
-  return y + TABLE_HEADER_HEIGHT;
+  return y + height;
 }
 
 /**
@@ -261,21 +368,23 @@ function drawTableHeader(
  */
 export function drawTable(
   doc: PDFKit.PDFDocument,
-  cols: { header: string; width: number }[],
+  columns: { header: string; width: number }[],
   rows: string[][],
   y: number,
   rowHeight = 18,
 ): number {
-  const tableWidth = cols.reduce((s, c) => s + c.width, 0);
+  const cols = fitColumns(doc, columns, rows);
+  const headerHeight = tableHeaderHeight(doc, cols);
+  const tableWidth = CONTENT_WIDTH;
   const startX = PAGE.margin;
 
   // The header never sits alone at the foot of a page: it needs room for itself
   // and a first row.
-  if (y + TABLE_HEADER_HEIGHT + rowHeight > CONTENT_BOTTOM) {
+  if (y + headerHeight + rowHeight > CONTENT_BOTTOM) {
     doc.addPage();
     y = PAGE.margin;
   }
-  y = drawTableHeader(doc, cols, y);
+  y = drawTableHeader(doc, cols, y, headerHeight);
 
   for (const row of rows) {
     const cells = cols.map((_, i) => (row[i] ?? '').toString());
@@ -290,7 +399,7 @@ export function drawTable(
 
     if (y + height > CONTENT_BOTTOM) {
       doc.addPage();
-      y = drawTableHeader(doc, cols, PAGE.margin);
+      y = drawTableHeader(doc, cols, PAGE.margin, headerHeight);
     }
 
     // Row border
@@ -456,6 +565,8 @@ export function roleDisplay(role: string): string {
     supervisor: 'Division Supervisor',
     employee: 'End User',
     management: 'Management',
+    property_custodian: 'Property Custodian',
+    property_officer: 'Property Officer',
   };
   return map[role] ?? role;
 }
