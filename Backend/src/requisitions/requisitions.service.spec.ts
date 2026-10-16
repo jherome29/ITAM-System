@@ -1,3 +1,4 @@
+import { IsNull, Not } from 'typeorm';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import {
@@ -2326,6 +2327,36 @@ describe('RequisitionsService', () => {
           }),
         }),
       );
+      expect(result.data[0].requester).toEqual(expectedSummary);
+      expect(result.data[0].approver).toEqual(expectedApprover);
+      expectMinimal(result.data[0]);
+    });
+
+    // findAll() gives a supervisor only the PENDING queue, so a requisition
+    // vanished from every list they could read the moment they decided it, and
+    // the Approval History page had nothing real to show.
+    it('findDecidedBy() lists what this approver decided, newest decision first, with the requester summary', async () => {
+      mockReqRepo.findAndCount.mockResolvedValue([
+        [makeReq({ requestedBy: requester, supervisor: approver } as any)],
+        1,
+      ]);
+
+      const result = await service.findDecidedBy('sup-1', 2, 10);
+
+      expect(mockReqRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { supervisorId: 'sup-1', supervisorDecidedAt: Not(IsNull()) },
+          order: { supervisorDecidedAt: 'DESC' },
+          skip: 10,
+          take: 10,
+        }),
+      );
+      expect(result).toMatchObject({
+        total: 1,
+        page: 2,
+        limit: 10,
+        totalPages: 1,
+      });
       expect(result.data[0].requester).toEqual(expectedSummary);
       expect(result.data[0].approver).toEqual(expectedApprover);
       expectMinimal(result.data[0]);

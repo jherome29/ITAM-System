@@ -6,10 +6,14 @@ import { AssetRegistryList } from '@/components/assets/AssetRegistryList';
 import { QrLookup } from '@/components/assets/QrLookup';
 import { RegisterAssetForm } from '@/components/assets/RegisterAssetForm';
 import { ItAssetCustodianDashboard } from '@/components/it-asset-custodian/ItAssetCustodianDashboard';
+import { PhysicalInventorySheet } from '@/components/assets/PhysicalInventorySheet';
+import { notFound } from 'next/navigation';
 import { WorkflowPage } from '@/components/prototype/WorkflowPage';
 import { FormsWorkspaceContent } from '@/components/shared/FormsWorkspaceContent';
+import { ReportsContent } from '@/components/shared/ReportsContent';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
+import { isLiveWorkflowPage } from '@/lib/workflow/live-pages';
 
 export default async function ItAssetCustodianPage({
   params,
@@ -27,7 +31,14 @@ export default async function ItAssetCustodianPage({
   if (segment === 'assets') return <AssetRegistryList basePath="/it-asset-custodian/assets" />;
   if (segment === 'qr-scanner') return <QrLookup detailBasePath="/it-asset-custodian/assets" />;
   if (segment === 'reports') return <FormsWorkspaceContent />;
+  // The management reports (Asset Master List, Requisition History, issuance, returns,
+  // repair history, physical count, disposal) - the old /it-personnel/reports page.
+  if (segment === 'management-reports') return <ReportsContent />;
   if (segment === 'maintenance') return <RepairQueue eyebrow="IT Asset Custodian" assetBasePath="/it-asset-custodian/assets" openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'returns-incidents') return <AssetRequestQueue eyebrow="IT Asset Custodian" openId={typeof open === 'string' ? open : undefined} />;
+  if (segment === 'physical-inventory') return <PhysicalInventorySheet eyebrow="IT Asset Custodian" formsPath="/it-asset-custodian/reports" />;
+  // Only pages wired to real records may reach WorkflowPage; anything else is sample
+  // data, so it is not found (see lib/workflow/live-pages.ts).
+  if (!isLiveWorkflowPage(ProposedUserRole.IT_ASSET_CUSTODIAN, segment)) notFound();
   return <WorkflowPage role={ProposedUserRole.IT_ASSET_CUSTODIAN} slug={segment} openId={typeof open === 'string' ? open : undefined} />;
 }

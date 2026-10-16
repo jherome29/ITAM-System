@@ -10,7 +10,7 @@ import { Repository } from 'typeorm';
 import { AssetEntity } from './entities/asset.entity';
 import { AssetTransactionEntity } from './entities/asset-transaction.entity';
 import { AuditService } from '../audit/audit.service';
-import { UsersService } from '../users/users.service';
+import { HolderSummary, UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
@@ -247,8 +247,30 @@ export class AssetsService {
       );
     }
 
-    const [data, total] = await qb.getManyAndCount();
+    const [rows, total] = await qb.getManyAndCount();
+    const data = await this.withHolders(rows);
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  // Custody & Issuance has to say who holds each asset, but the list only has the
+  // holder's id. One batched lookup (name + employee ID only) rather than a join,
+  // so the entity stays free of a user relation and nothing else about the person
+  // leaves the service.
+  private async withHolders<T extends { custodianId: string | null }>(
+    assets: T[],
+  ): Promise<Array<T & { custodian: HolderSummary | null }>> {
+    const heldBy = assets
+      .map((a) => a.custodianId)
+      .filter((id): id is string => id !== null);
+    const found =
+      heldBy.length > 0
+        ? await this.usersService.findHolderSummaries(heldBy)
+        : [];
+    const holders = new Map(found.map((h) => [h.id, h]));
+    return assets.map((a) => ({
+      ...a,
+      custodian: a.custodianId ? (holders.get(a.custodianId) ?? null) : null,
+    }));
   }
 
   // ── Catalogue — available assets for employee/supervisor browse ───────────
@@ -785,6 +807,20 @@ export class AssetsService {
       throw new BadRequestException(
         `Invalid lifecycle transition: "${asset.status}" → "${targetStatus}". ` +
           `Allowed transitions from "${asset.status}": [${allowedTargets.join(', ') || 'none'}]`,
+      );
+    }
+
+    // ── Business rule: a supply line is stock, not a unit ──────────────────
+    // Supplies (IES) leave stock through requisition fulfilment, which draws the
+    // quantity down. Issuing the whole line here would flip its status with the
+    // stock untouched — 120 reams "held" by one person.
+    if (
+      asset.assetClass === AssetClass.IES &&
+      (targetStatus === AssetStatus.ISSUED ||
+        targetStatus === AssetStatus.TRANSFERRED)
+    ) {
+      throw new BadRequestException(
+        'A supply line cannot be issued or transferred as a unit. Supplies are issued from stock through a requisition — fulfil it and the quantity is drawn down.',
       );
     }
 

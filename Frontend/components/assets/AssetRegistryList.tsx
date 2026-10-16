@@ -105,7 +105,6 @@ function AssetIcon({
 }
 
 function scanPath(basePath: string): string {
-  if (basePath.startsWith("/it-personnel")) return "/it-personnel/qr-scan";
   if (basePath.startsWith("/property")) return "/property-custodian/qr-scanner";
   return "/it-asset-custodian/qr-scanner";
 }

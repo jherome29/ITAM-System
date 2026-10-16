@@ -3,8 +3,10 @@ import { ReportsContent } from '@/components/shared/ReportsContent';
 import { FormsArchiveContent } from '@/components/shared/FormsArchiveContent';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
 import { ManagementAuditDashboard } from '@/components/management-audit/ManagementAuditDashboard';
-import { WorkflowPage } from '@/components/prototype/WorkflowPage';
-import { ProposedUserRole } from '@/lib/roles/proposed-roles';
+import { AuditLogPage } from '@/components/admin/AdminPlatformPages';
+import { notFound } from 'next/navigation';
+import { normalizeWorkflowSlug } from '@/lib/workflow/live-pages';
+import { ProposedUserRole, proposedRoleLabels } from '@/lib/roles/proposed-roles';
 
 export default async function ManagementAuditPage({
   params,
@@ -21,6 +23,8 @@ export default async function ManagementAuditPage({
   if (segment === 'maintenance-disposal') return <ReportsContent reportTypes={['REPAIR_HISTORY', 'DISPOSAL']} pageTitle="Maintenance & Disposal Reports" panelTitle="Repair & Disposal Reports" />;
   if (segment === 'physical-count') return <ReportsContent reportTypes={['PHYSICAL_COUNT']} pageTitle="Physical Count Reports" panelTitle="Physical Count Summary" />;
   if (segment === 'forms') return <FormsArchiveContent />;
-  return <WorkflowPage role={ProposedUserRole.MANAGEMENT_AUDIT_VIEWER} slug={segment} />;
+  // Read-only evidence: the same append-only audit viewer the Master Admin uses.
+  if (normalizeWorkflowSlug(segment) === 'audit') return <AuditLogPage eyebrow={proposedRoleLabels[ProposedUserRole.MANAGEMENT_AUDIT_VIEWER]} />;
+  notFound();
 }
 

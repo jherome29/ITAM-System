@@ -1,8 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { ActivityTimeline } from '@/components/ui/ActivityTimeline';
+import Link from 'next/link';
 import { CenteredModal } from '@/components/ui/CenteredModal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { RequisitionForm } from '@/components/requisitions/RequisitionForm';
@@ -10,209 +9,47 @@ import { RequisitionDetailView, SlaBadge } from '@/components/requisitions/Requi
 import { requisitionItemsLabel } from '@/lib/requisitions/catalogue-items';
 import { formatDate, requesterLabel, requisitionStatusLabel } from '@/lib/requisitions/requisition-view';
 import { rowActionMode } from '@/lib/workflow/row-action';
+import { detailActions, rowActionLabel } from '@/lib/workflow/actions';
+import { assetApiToRow, humanize, unitAssets, type AssetRow } from '@/lib/workflow/asset-rows';
 import { DEFAULT_REQUISITION_SORT, REQUISITION_SORT_OPTIONS, compareRequisitionRows } from '@/lib/workflow/requisition-sort';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { FilterBar } from '@/components/ui/FilterBar';
-import { FormDialog } from '@/components/ui/FormDialog';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
-import { InventoryLabelPrinter } from '@/components/inventory/InventoryLabelPrinter';
 import { assetsApi, type Asset } from '@/lib/api/assets';
-import { ASSET_LIFECYCLE_TRANSITIONS } from '@/lib/assets/lifecycle-transitions';
-import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';
-import { assetMockRows } from '@/lib/mock/assets.mock';
-import type { MockAsset } from '@/lib/mock/assets.mock';
-import { auditMockRows } from '@/lib/mock/audit.mock';
-import { disposalMockRows } from '@/lib/mock/disposal.mock';
-import { inventoryMockRows } from '@/lib/mock/inventory.mock';
-import { notificationMockRows } from '@/lib/mock/notifications.mock';
-import { reportMockRows } from '@/lib/mock/reports.mock';
-import { requisitionMockRows } from '@/lib/mock/requisitions.mock';
-import type { MockRequisition } from '@/lib/mock/requisitions.mock';
-import { mockUsers } from '@/lib/mock/users.mock';
+import { normalizeWorkflowSlug } from '@/lib/workflow/live-pages';
 import { ProposedUserRole, proposedRoleLabels } from '@/lib/roles/proposed-roles';
-import type { UiPermission } from '@/lib/roles/role-permissions';
 import { useAuth } from '@/lib/auth/use-auth';
 
-type Row = Record<string, string | number | boolean | string[] | undefined>;
+type Row = AssetRow;
 
-const employeeId = 'EMP-001';
-const approvingOfficerId = 'EMP-003';
-
+// The pages this component serves - exactly the ones lib/workflow/live-pages.ts lets
+// the role routers hand it. Every one reads real records and every action saves.
 const pageCopy: Record<string, { title: string; detail: string; action?: string }> = {
-  catalogue: { title: 'Asset Catalogue', detail: 'Search requestable assets and supplies, inspect availability, and submit a mock requisition.', action: 'Request Asset' },
-  requisitions: { title: 'My Requisitions', detail: 'Track request status, timelines, forms, and available lifecycle actions.', action: 'Create Requisition' },
-  'assigned-assets': { title: 'My Assigned Assets', detail: 'View assigned assets and submit acknowledgement, return, repair, damage, loss, or theft requests.' },
-  'returns-incidents': { title: 'Returns & Incidents', detail: 'Create return requests, damage reports, lost/stolen reports, and repair requests.', action: 'File Report' },
-  notifications: { title: 'Notifications', detail: 'Review and manage local mock alerts by category.' },
-  approvals: { title: 'Approval Queue', detail: 'Review assigned requests, approve, reject, or return them for revision.' },
-  'approval-history': { title: 'Approval History', detail: 'View previous approval decisions, remarks, and turnaround time.' },
-  assets: { title: 'Asset Registry', detail: 'Role-scoped asset registry with mock create, edit, QR, and lifecycle actions.', action: 'Register Asset' },
-  fulfillment: { title: 'Requisition Fulfillment', detail: 'Reserve, hold, and fulfill approved requests with frontend validation.', action: 'Fulfill Request' },
-  custody: { title: 'Custody & Issuance', detail: 'Issue, collect, acknowledge, return, transfer, and print mock accountability forms.', action: 'Issue Asset' },
-  'qr-scanner': { title: 'QR Scanner', detail: 'Scan or manually enter a mock QR code and run permitted role-specific actions.', action: 'Scan QR' },
-  'physical-inventory': { title: 'Physical Inventory', detail: 'Create scan sessions and track found, missing, wrong-location, duplicate, and unregistered items.', action: 'Start Physical Count' },
-  disposal: { title: 'Disposal Recommendations', detail: 'Recommend or review disposal with assessments and deferred-backend warnings.', action: 'Recommend Disposal' },
-  reports: { title: 'Reports & Forms', detail: 'Search, filter, export, and print mock reports and forms.', action: 'Export Report' },
-  'fixed-assets': { title: 'Fixed Asset Registry', detail: 'Manage non-ICT fixed property records in mock mode.', action: 'Add Property' },
-  supplies: { title: 'Supply Inventory', detail: 'Track stock, reorder levels, issuances, receipts, and stock-card previews.', action: 'Record Stock Movement' },
-  corrections: { title: 'Inventory Corrections', detail: 'Review proposed corrections and approve, reject, or return for clarification.', action: 'Approve Correction' },
-  reconciliation: { title: 'Reconciliation', detail: 'Compare system count against physical count and resolve discrepancies.', action: 'Generate Reconciliation Report' },
-  users: { title: 'User Management', detail: 'Create users, edit profiles, activate, deactivate, unlock, and reset mock passwords.', action: 'Create User' },
-  roles: { title: 'Role Assignment', detail: 'Preview role assignments without changing backend RBAC.', action: 'Assign Role' },
-  'organizational-units': { title: 'Organizational Units', detail: 'Manage offices, divisions, sections, regions, and reporting relationships.', action: 'Add Unit' },
-  'approval-configuration': { title: 'Approval Configuration', detail: 'Configure mock approvers, alternates, SLA hours, and escalation settings.', action: 'Add Rule' },
-  'custodian-assignments': { title: 'Custodian Assignments', detail: 'Assign custodians by office, location, and asset family.', action: 'Assign Custodian' },
-  'reference-data': { title: 'Reference Data', detail: 'Maintain frontend-only categories, statuses, and form references.', action: 'Add Reference' },
-  configuration: { title: 'System Configuration', detail: 'Adjust prototype settings and reset demo state.', action: 'Reset Demo Data' },
-  'technical-logs': { title: 'Technical Logs', detail: 'Read mock service health and technical events.' },
-  security: { title: 'Security Settings', detail: 'Preview lockout, session, and security policy settings.', action: 'Save Policy' },
-  'asset-reports': { title: 'Asset Reports', detail: 'Read-only asset reporting with filters and mock exports.', action: 'Export Report' },
-  'requisition-reports': { title: 'Requisition Reports', detail: 'Read-only requisition reporting with turnaround metrics.', action: 'Export Report' },
-  'maintenance-disposal': { title: 'Maintenance & Disposal Reports', detail: 'Read-only maintenance and disposal reporting.', action: 'Export Report' },
-  'physical-count': { title: 'Physical Count Reports', detail: 'Read-only physical count reports and exception lists.', action: 'Export Report' },
-  audit: { title: 'Audit Log', detail: 'Read-only audit event viewer.' },
-  forms: { title: 'Forms Archive', detail: 'Read-only generated-form archive with mock print/export actions.', action: 'Export Archive' },
+  requisitions: {
+    title: 'My Requisitions',
+    detail: 'Track the status, timeline and documents of the requisitions you have submitted.',
+    action: 'Create Requisition',
+  },
+  approvals: {
+    title: 'Approval Queue',
+    detail: 'Review the requests routed to you and approve or reject them. Each decision is saved and recorded in the audit trail.',
+  },
+  fulfillment: {
+    title: 'Requisition Fulfillment',
+    detail: 'Fulfil approved requests, or put them on hold when the item is unavailable. Each action is saved and recorded in the audit trail.',
+  },
+  custody: {
+    title: 'Custody & Issuance',
+    detail: 'See who holds each asset, then issue it, transfer it or take it back. Every change is saved and recorded in the audit trail. Supplies are not listed here — they are issued from stock through Requisition Fulfillment.',
+  },
+  disposal: {
+    title: 'Disposal Recommendations',
+    detail: 'Flag an asset for disposal with a documented justification. The Property Officer reviews it; the disposal itself is carried out through the manual COA process.',
+  },
 };
-
-function normalizeSlug(slug: string) {
-  const aliases: Record<string, string> = {
-    queue: 'approvals',
-    history: 'approval-history',
-    'custody-issuance': 'custody',
-    inventory: 'physical-inventory',
-    'reports-forms': 'reports',
-    'registry-overview': 'assets',
-    'disposal-review': 'disposal',
-    'audit-history': 'audit',
-    'audit-log': 'audit',
-    'forms-archive': 'forms',
-    'maintenance-disposal-reports': 'maintenance-disposal',
-    'physical-count-reports': 'physical-count',
-    'org-units': 'organizational-units',
-    'approval-config': 'approval-configuration',
-  };
-  return aliases[slug] ?? slug;
-}
-
-// Slugs whose rows don't depend on `role` — dispatched via lookup instead of
-// an if-chain to keep rowsFor's cognitive complexity low (typescript:S3776).
-// 'forms' is handled by the report branch in rowsFor, not here.
-const SIMPLE_SLUG_HANDLERS: Record<string, () => Row[]> = {
-  notifications: () => notificationMockRows.map((item) => ({ ...item, status: item.unread ? 'Unread' : 'Read' })),
-  audit: () => auditMockRows.map((item) => ({ ...item, status: item.severity })),
-  'technical-logs': () => auditMockRows.map((item) => ({ ...item, status: item.severity })),
-  'physical-inventory': () => inventoryMockRows.map((item) => ({ ...item, status: item.status })),
-  reconciliation: () => inventoryMockRows.map((item) => ({ ...item, status: item.status })),
-  disposal: () => disposalMockRows.map((item) => ({ ...item, status: item.status })),
-  users: () => mockUsers.map((item) => ({ ...item, status: 'Active', role: item.role })),
-  roles: () => mockUsers.map((item) => ({ ...item, status: 'Active', role: item.role })),
-  catalogue: () => assetMockRows.filter((asset) => asset.status === 'Available' || asset.scope === 'SUPPLY').map(assetToRow),
-  'assigned-assets': () => assetMockRows.filter((asset) => asset.assignedEmployeeId === employeeId).map(assetToRow),
-  'fixed-assets': () => assetMockRows.filter((asset) => asset.scope === 'PROPERTY').map(assetToRow),
-  supplies: () => assetMockRows.filter((asset) => asset.scope === 'SUPPLY').map(assetToRow),
-  approvals: () =>
-    requisitionMockRows
-      .filter((request) => request.status === 'Pending Approval' && request.requesterId !== approvingOfficerId)
-      .map(requisitionToRow),
-  'approval-history': () =>
-    requisitionMockRows
-      .filter((request) => ['Approved', 'Rejected', 'Returned for Revision'].includes(request.status))
-      .map(requisitionToRow),
-};
-
-function assetsForRole(role: ProposedUserRole): Row[] {
-  if (role === ProposedUserRole.IT_ASSET_CUSTODIAN) return assetMockRows.filter((asset) => asset.scope === 'ICT').map(assetToRow);
-  if (role === ProposedUserRole.PROPERTY_OFFICER) return assetMockRows.map(assetToRow);
-  return assetMockRows.filter((asset) => asset.scope !== 'ICT').map(assetToRow);
-}
-
-function fulfillmentForRole(role: ProposedUserRole): Row[] {
-  return requisitionMockRows
-    .filter((request) => ['Approved', 'Pending Fulfillment'].includes(request.status))
-    .filter((request) => role !== ProposedUserRole.IT_ASSET_CUSTODIAN || request.scope === 'ICT')
-    .filter((request) => role !== ProposedUserRole.PROPERTY_CUSTODIAN || request.scope !== 'ICT')
-    .map(requisitionToRow);
-}
-
-function requisitionsForRole(role: ProposedUserRole): Row[] {
-  const own = role === ProposedUserRole.APPROVING_OFFICER ? 'EMP-003' : employeeId;
-  return requisitionMockRows.filter((request) => request.requesterId === own || role === ProposedUserRole.EMPLOYEE).map(requisitionToRow);
-}
-
-function rowsFor(role: ProposedUserRole, slug: string): Row[] {
-  if (slug.includes('report') || slug === 'forms') return reportMockRows.map((item) => ({ ...item, status: item.status }));
-
-  const handler = SIMPLE_SLUG_HANDLERS[slug];
-  if (handler) return handler();
-
-  if (slug === 'assets') return assetsForRole(role);
-  if (slug === 'fulfillment') return fulfillmentForRole(role);
-  if (slug === 'requisitions') return requisitionsForRole(role);
-
-  return requisitionMockRows.map(requisitionToRow);
-}
-
-function assetDivision(asset: MockAsset): string {
-  if (asset.assignedTo === 'Ana Reyes') return 'Digital Forensics';
-  if (asset.assignedTo === 'Operations Division') return 'Operations';
-  if (asset.scope === 'ICT') return 'ICT Unit';
-  return 'Property Unit';
-}
-
-function assetAccountabilityForm(asset: MockAsset): string {
-  if (asset.scope === 'ICT') return 'ICS/PAR-Preview';
-  if (asset.scope === 'PROPERTY') return 'PAR-Preview';
-  return 'RIS-Preview';
-}
-
-function assetToRow(asset: MockAsset): Row {
-  return {
-    id: asset.id,
-    name: asset.name,
-    category: asset.category,
-    type: asset.type,
-    serialNumber: asset.serialNumber,
-    location: asset.location,
-    assignedTo: asset.assignedTo ?? 'Unassigned',
-    division: assetDivision(asset),
-    officeOrSection: asset.assignedTo === 'Ana Reyes' ? 'Evidence Processing' : asset.location,
-    dateIssued: asset.issuedDate ?? '-',
-    accountabilityForm: assetAccountabilityForm(asset),
-    expectedReturnDate: asset.returnDate ?? '-',
-    condition: asset.condition,
-    status: asset.status,
-    issuedDate: asset.issuedDate ?? '-',
-    returnDate: asset.returnDate ?? '-',
-    acknowledgmentStatus: asset.acknowledgmentStatus,
-    notes: asset.notes,
-  };
-}
-
-function requisitionToRow(request: MockRequisition): Row {
-  return {
-    id: request.id,
-    requesterId: request.requesterId,
-    requester: request.requester,
-    office: request.office,
-    item: request.item,
-    scope: request.scope,
-    requestType: request.requestType,
-    quantity: request.quantity,
-    priority: request.priority,
-    status: request.status,
-    submittedDate: request.submittedDate,
-    requiredDate: request.requiredDate,
-    approvingOfficer: request.approvingOfficer,
-    lastUpdate: request.lastUpdate,
-    justification: request.justification,
-    remarks: request.remarks,
-    timeline: request.timeline,
-    attachments: request.attachments,
-  };
-}
 
 function requisitionApiToRow(request: Requisition): Row {
   return {
@@ -231,89 +68,35 @@ function requisitionApiToRow(request: Requisition): Row {
   };
 }
 
-function assetApiToRow(asset: Asset): Row {
-  return {
-    id: asset.id,
-    item: asset.itemDescription,
-    serialNumber: asset.serialNumber,
-    propertyNumber: asset.propertyNumber,
-    status: asset.status,
-    condition: asset.condition,
-    location: asset.officeOrSection,
-    custodianId: asset.custodianId ?? 'Unassigned',
-  };
-}
-
-function auditApiToRow(log: AuditLog): Row {
-  return {
-    id: log.id,
-    action: log.action,
-    actor: log.userId,
-    date: new Date(log.timestamp).toLocaleDateString(),
-    severity: log.userRole,
-  };
-}
-
-function actionPermissionFor(role: ProposedUserRole): UiPermission {
-  if (role === ProposedUserRole.MASTER_ADMIN) return 'manage_users';
-  if (role === ProposedUserRole.APPROVING_OFFICER) return 'approve_requisition';
-  if (role === ProposedUserRole.IT_ASSET_CUSTODIAN) return 'issue_ict_assets';
-  if (role === ProposedUserRole.PROPERTY_CUSTODIAN) return 'issue_property';
-  if (role === ProposedUserRole.PROPERTY_OFFICER) return 'reconcile_inventory';
-  return 'create_requisition';
-}
-
-// `openId` — a requisition to open in the detail drawer on arrival (the page's
+// `openId` - a requisition to open in the detail drawer on arrival (the page's
 // `?open=` param), used when a notification deep-links into a queue.
 export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUserRole; slug: string; openId?: string }>) {
   const { user: currentUser } = useAuth();
-  const router = useRouter();
-  const normalizedSlug = normalizeSlug(slug);
-  const content = pageCopy[normalizedSlug] ?? { title: 'Workspace', detail: 'Frontend-only operational prototype.', action: 'Run Action' };
-  const readOnly = role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER;
-  const isInventoryAccountabilityPage = ['assets', 'assigned-assets', 'physical-inventory', 'custody'].includes(normalizedSlug);
-  // Single source of truth for which role+slug combinations fetch real data instead of
-  // mock rows. Referenced by the rows/loading initializers and the effect guard below —
-  // extending this to another role+slug pair only needs a change here, not three
-  // synchronized edits.
-  const isLiveFetchPage =
-    (role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')) ||
-    (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') ||
-    (role === ProposedUserRole.IT_ASSET_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody' || normalizedSlug === 'disposal' || normalizedSlug === 'requisitions')) ||
-    (role === ProposedUserRole.PROPERTY_CUSTODIAN && (normalizedSlug === 'fulfillment' || normalizedSlug === 'custody' || normalizedSlug === 'disposal'));
-  // The Approving Officer's own approvals queue is the one confirm-action flow in this
-  // shared component that must persist for real — see submitApprovalDecision below.
-  // Every other role/slug (including this same officer's 'requisitions' tab, which has
-  // no real cancel/submit endpoint) keeps using the generic mock runAction path.
-  const isApprovingOfficerLiveApprovals =
-    isLiveFetchPage && role === ProposedUserRole.APPROVING_OFFICER && normalizedSlug === 'approvals';
-  const isItAssetCustodianLiveFulfillment =
-    isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'fulfillment';
-  const isItAssetCustodianLiveCustody =
-    isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'custody';
-  const isItAssetCustodianLiveDisposal =
-    isLiveFetchPage && role === ProposedUserRole.IT_ASSET_CUSTODIAN && normalizedSlug === 'disposal';
-  const isPropertyCustodianLiveFulfillment =
-    isLiveFetchPage && role === ProposedUserRole.PROPERTY_CUSTODIAN && normalizedSlug === 'fulfillment';
-  const isPropertyCustodianLiveCustody =
-    isLiveFetchPage && role === ProposedUserRole.PROPERTY_CUSTODIAN && normalizedSlug === 'custody';
-  const isPropertyCustodianLiveDisposal =
-    isLiveFetchPage && role === ProposedUserRole.PROPERTY_CUSTODIAN && normalizedSlug === 'disposal';
-  // Approving Officer / IT Asset Custodian "My Requisitions": the header button
-  // opens the real shared RequisitionForm (POST /v1/requisitions), not the mock
-  // FormDialog that only injected a fake row.
-  const isLiveMyRequisitions = isLiveFetchPage && normalizedSlug === 'requisitions';
+  const normalizedSlug = normalizeWorkflowSlug(slug);
+  const content = pageCopy[normalizedSlug] ?? { title: 'Workspace', detail: '' };
+  const isCustodian = role === ProposedUserRole.IT_ASSET_CUSTODIAN || role === ProposedUserRole.PROPERTY_CUSTODIAN;
+  const isApprovalsPage = role === ProposedUserRole.APPROVING_OFFICER && normalizedSlug === 'approvals';
+  const isFulfillmentPage = isCustodian && normalizedSlug === 'fulfillment';
+  const isCustodyPage = isCustodian && normalizedSlug === 'custody';
+  const isDisposalPage = isCustodian && normalizedSlug === 'disposal';
+  // "My Requisitions": the header button opens the shared RequisitionForm
+  // (POST /v1/requisitions).
+  const isMyRequisitions = normalizedSlug === 'requisitions';
+  const isRequisitionPage = isApprovalsPage || isFulfillmentPage || isMyRequisitions;
+  const isAssetPage = isCustodyPage || isDisposalPage;
+  // Where an asset's full record (details, lifecycle, QR, history) lives for this role.
+  const assetRecordBase = role === ProposedUserRole.IT_ASSET_CUSTODIAN ? '/it-asset-custodian/assets' : '/property-custodian/assets';
+
   const [creatingRequisition, setCreatingRequisition] = useState(false);
-  // Live requisition pages keep the full API objects so the table and drawer
-  // can show REQ numbers, people, SLA and the real timeline — the flat Row
-  // shape only carries what search/sort need.
-  const isLiveRequisitionPage = isLiveFetchPage && ['approvals', 'fulfillment', 'requisitions'].includes(normalizedSlug);
+  // Requisition pages keep the full API objects so the table and drawer can show
+  // REQ numbers, people, SLA and the real timeline - the flat Row shape only
+  // carries what search/sort need.
   const [requisitionById, setRequisitionById] = useState<Record<string, Requisition>>({});
-  const [rows, setRows] = useState<Row[]>(() => (isLiveFetchPage ? [] : rowsFor(role, normalizedSlug)));
-  const [loading, setLoading] = useState(isLiveFetchPage);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // This component does client-side search/sort/filter over `rows`, which requires the
-  // full matching working set in memory — a single server page wouldn't search/sort
+  // full matching working set in memory - a single server page wouldn't search/sort
   // correctly against data it doesn't have. Fetching a large single page (rather than
   // defaulting to the API's page size of 15) is the pragmatic fix here; true server-side
   // pagination would need this component's search/sort to move server-side too.
@@ -321,19 +104,13 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   const [liveFetchTruncated, setLiveFetchTruncated] = useState(false);
 
   const fetchLiveRows = useCallback((): Promise<void> => {
-    if (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') {
-      return auditApi.list(1, LIVE_FETCH_LIMIT).then((res) => {
-        setRows(res.data.data.map(auditApiToRow));
-        setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
-      });
-    }
-    if ((role === ProposedUserRole.IT_ASSET_CUSTODIAN || role === ProposedUserRole.PROPERTY_CUSTODIAN) && normalizedSlug === 'custody') {
+    if (isCustodyPage) {
       return assetsApi.list(1, LIVE_FETCH_LIMIT).then((res) => {
-        setRows(res.data.data.map(assetApiToRow));
+        setRows(unitAssets(res.data.data).map(assetApiToRow));
         setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
       });
     }
-    if ((role === ProposedUserRole.IT_ASSET_CUSTODIAN || role === ProposedUserRole.PROPERTY_CUSTODIAN) && normalizedSlug === 'disposal') {
+    if (isDisposalPage) {
       return assetsApi.list(1, LIVE_FETCH_LIMIT, undefined, 'available').then((res) => {
         setRows(res.data.data.map(assetApiToRow));
         setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
@@ -342,7 +119,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     // Fulfillment is not narrowed to 'pending_fulfillment': the backend already
     // scopes custodians to pending_fulfillment + on_hold, and filtering further
     // made on-hold requests vanish from the only page that can fulfil them.
-    const fetcher = normalizedSlug === 'fulfillment' || normalizedSlug === 'approvals'
+    const fetcher = isFulfillmentPage || isApprovalsPage
       ? requisitionsApi.list(1, LIVE_FETCH_LIMIT)
       : requisitionsApi.mine(1, LIVE_FETCH_LIMIT);
     return fetcher.then((res) => {
@@ -350,32 +127,31 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       setRows(res.data.data.map(requisitionApiToRow));
       setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
     });
-  }, [normalizedSlug, role]);
+  }, [isCustodyPage, isDisposalPage, isFulfillmentPage, isApprovalsPage]);
 
   const [liveFetchError, setLiveFetchError] = useState('');
 
   useEffect(() => {
-    if (!isLiveFetchPage) return;
     fetchLiveRows()
       .then(() => setLiveFetchError(''))
       .catch(() => setLiveFetchError('Failed to load data. Please refresh the page.'))
       .finally(() => setLoading(false));
-  }, [isLiveFetchPage, fetchLiveRows]);
+  }, [fetchLiveRows]);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
-  const [sortKey, setSortKey] = useState<string>(isLiveRequisitionPage ? DEFAULT_REQUISITION_SORT : 'id');
+  const [sortKey, setSortKey] = useState<string>(isRequisitionPage ? DEFAULT_REQUISITION_SORT : 'item');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Row | null>(null);
 
   // Notification deep-link: once the queue has loaded, fetch the requested
   // record and open its drawer. Fetching by id (rather than only looking in the
   // loaded queue) means the click still lands when the request is no longer in
-  // this queue — already decided, or the user's own — and the drawer's actions
+  // this queue - already decided, or the user's own - and the drawer's actions
   // are status-gated, so nothing stale is offered.
   const handledOpenId = useRef<string | null>(null);
   useEffect(() => {
-    if (!openId || !isLiveRequisitionPage || loading || handledOpenId.current === openId) return;
+    if (!openId || !isRequisitionPage || loading || handledOpenId.current === openId) return;
     handledOpenId.current = openId;
     requisitionsApi
       .getOne(openId)
@@ -384,9 +160,8 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
         setSelected(requisitionApiToRow(res.data));
       })
       .catch(() => setLiveFetchError('That request could not be found, or you no longer have access to it.'));
-  }, [openId, isLiveRequisitionPage, loading]);
+  }, [openId, isRequisitionPage, loading]);
   const [confirmAction, setConfirmAction] = useState<string | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [remarks, setRemarks] = useState('');
   const [issueEmployeeId, setIssueEmployeeId] = useState('');
@@ -398,9 +173,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   const [replacementUnitList, setReplacementUnitList] = useState<{ requisitionId: string; units: Asset[] } | null>(null);
   const [replacementUnitId, setReplacementUnitId] = useState('');
   const [actionSubmitting, setActionSubmitting] = useState(false);
-  const [form, setForm] = useState({ item: '', quantity: '1', requiredDate: '', justification: '', reason: '', attachment: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [scanValue, setScanValue] = useState('');
   const statuses = ['All', ...Array.from(new Set(rows.map((row) => String(row.status ?? 'Open'))))];
   const pageSize = 6;
 
@@ -409,10 +182,10 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     return rows
       .filter((row) => statusFilter === 'All' || String(row.status) === statusFilter)
       .filter((row) => Object.values(row).join(' ').toLowerCase().includes(q))
-      .sort((a, b) => isLiveRequisitionPage
+      .sort((a, b) => isRequisitionPage
         ? compareRequisitionRows(sortKey, a, b)
         : String(a[sortKey] ?? '').localeCompare(String(b[sortKey] ?? '')));
-  }, [rows, search, statusFilter, sortKey, isLiveRequisitionPage]);
+  }, [rows, search, statusFilter, sortKey, isRequisitionPage]);
 
   const visibleRows = filteredRows.slice((page - 1) * pageSize, page * pageSize);
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
@@ -422,57 +195,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     window.setTimeout(() => setToast(''), 2600);
   };
 
-  const updateSelectedStatus = (status: string) => {
-    if (!selected) return;
-    setRows((current) => current.map((row) => row.id === selected.id ? { ...row, status, lastUpdate: 'Just now' } : row));
-    setSelected((current) => current ? { ...current, status, lastUpdate: 'Just now' } : current);
-  };
 
-  const updateRowStatus = (rowId: string, status: string) => {
-    setRows((current) => current.map((row) => row.id === rowId ? { ...row, status, unread: false, lastUpdate: 'Just now' } : row));
-    setSelected((current) => current?.id === rowId ? { ...current, status, unread: false, lastUpdate: 'Just now' } : current);
-  };
-
-  const runAction = (action: string) => {
-    if (readOnly && !action.startsWith('Export') && !action.startsWith('Print') && action !== 'View') {
-      notify('Read-only viewer: action hidden in production role presentation.');
-      return;
-    }
-    if (action === 'Reject' && !remarks.trim()) {
-      setErrors({ remarks: 'Rejection reason is required.' });
-      return;
-    }
-    if (action === 'Return for Revision' && !remarks.trim()) {
-      setErrors({ remarks: 'Revision instructions are required.' });
-      return;
-    }
-      const nextStatus: Record<string, string> = {
-      Approve: 'Approved',
-      Reject: 'Rejected',
-      'Return for Revision': 'Returned for Revision',
-      Cancel: 'Cancelled',
-      Submit: 'Pending Approval',
-      Delete: 'Cancelled',
-      Reserve: 'Reserved',
-      Fulfill: 'Fulfilled',
-      Issue: 'Issued',
-      Transfer: 'Transferred',
-      Return: 'Returned',
-      'Recommend Disposal': 'For Disposal Review',
-      'Approve Correction': 'Approved',
-      'Mark Read': 'Read',
-      'Mark All Read': 'Read',
-    };
-    if (nextStatus[action]) updateSelectedStatus(nextStatus[action]);
-    setConfirmAction(null);
-    setRemarks('');
-    setErrors({});
-    notify(`${action} completed in frontend mock mode.`);
-  };
-
-  // Real, persisted counterpart to runAction — used ONLY for the Approving Officer's
-  // live approvals queue (see isApprovingOfficerLiveApprovals). Calls the actual
-  // requisitions API instead of mutating local mock state.
   const submitApprovalDecision = async (action: 'Approve' | 'Reject') => {
     if (!selected || actionSubmitting) return;
     const trimmedRemarks = remarks.trim();
@@ -503,7 +226,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
 
   const selectedRequisition = selected ? requisitionById[String(selected.id)] : undefined;
   const replacementLine = selectedRequisition?.requisitionType === 'replacement' ? selectedRequisition.items[0] : undefined;
-  const pickingReplacementUnit = confirmAction === 'Fulfill' && (isItAssetCustodianLiveFulfillment || isPropertyCustodianLiveFulfillment) && Boolean(replacementLine);
+  const pickingReplacementUnit = confirmAction === 'Fulfill' && isFulfillmentPage && Boolean(replacementLine);
 
   const pickingForId = pickingReplacementUnit ? selectedRequisition?.id : undefined;
   const replacementUnits = pickingForId && replacementUnitList?.requisitionId === pickingForId ? replacementUnitList.units : null;
@@ -519,9 +242,8 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     return () => { live = false; };
   }, [pickingForId, replacementLine, selectedRequisition?.replacedAsset?.id]);
 
-  // Real, persisted counterpart to runAction for IT Asset Custodian's live fulfillment
-  // queue — see isItAssetCustodianLiveFulfillment above. Calls the actual requisitions
-  // API instead of mutating local mock state.
+  // Custodian fulfilment queue: fulfil (optionally issuing the replacement unit) or hold,
+  // through the requisitions API.
   const submitFulfillmentDecision = async (action: 'Fulfill' | 'On Hold') => {
     if (!selected || actionSubmitting) return;
     const trimmedRemarks = remarks.trim();
@@ -553,9 +275,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     }
   };
 
-  // Real, persisted counterpart to runAction for IT Asset Custodian's live custody
-  // page — see isItAssetCustodianLiveCustody above. Calls the actual asset lifecycle
-  // API instead of mutating local mock state. Unlike Fulfillment, two of the three
+  // Custody & Issuance: moves the asset through the lifecycle API. Two of the three
   // actions need a real input value, not just an optional remarks box.
   const submitCustodyDecision = async (action: 'Issue' | 'Transfer' | 'Return') => {
     if (!selected || actionSubmitting) return;
@@ -594,10 +314,9 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     }
   };
 
-  // Real, persisted counterpart to runAction for the custodians' live disposal
-  // pages (isItAssetCustodianLiveDisposal / isPropertyCustodianLiveDisposal).
-  // Reuses the remarks textarea — a disposal flag needs a documented
-  // justification (CLAUDE.md §6 Module 1). Repairs are closed from the
+  // Disposal recommendation: flags the asset through the lifecycle API. Reuses the
+  // remarks textarea - a disposal flag needs a documented justification (CLAUDE.md §6
+  // Module 1). Repairs are closed from the
   // Maintenance & Repair queue (RepairQueue), not here.
   const submitDisposalRecommendation = async () => {
     if (!selected || actionSubmitting) return;
@@ -623,56 +342,12 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     }
   };
 
-  const validateForm = () => {
-    const next: Record<string, string> = {};
-    if (!form.item.trim()) next.item = 'Item is required.';
-    if (!form.requiredDate && ['catalogue', 'requisitions', 'returns-incidents'].includes(normalizedSlug)) next.requiredDate = 'Required date is required.';
-    if (!form.justification.trim()) next.justification = 'Justification or remarks are required.';
-    if (Number(form.quantity) < 1) next.quantity = 'Quantity must be at least 1.';
-    setErrors(next);
-    return Object.keys(next).length === 0;
-  };
-
-  const submitForm = () => {
-    if (!validateForm()) return;
-    const id = normalizedSlug === 'returns-incidents' ? `INC-${Date.now().toString().slice(-5)}` : `REQ-${Date.now().toString().slice(-5)}`;
-    const newRow: Row = {
-      id,
-      requester: 'Ana Reyes',
-      office: 'Digital Forensics',
-      item: form.item,
-      requestType: normalizedSlug === 'returns-incidents' ? 'Return' : 'New',
-      quantity: Number(form.quantity),
-      priority: 'Normal',
-      status: normalizedSlug === 'returns-incidents' ? 'Submitted' : 'Pending Approval',
-      submittedDate: new Date().toISOString().slice(0, 10),
-      requiredDate: form.requiredDate,
-      approvingOfficer: 'Mila Santos',
-      lastUpdate: 'Just now',
-      justification: form.justification,
-      timeline: ['Created in frontend mock mode', 'Notification added'],
-      attachments: form.attachment ? [form.attachment] : [],
-    };
-    setRows((current) => [newRow, ...current]);
-    setFormOpen(false);
-    setForm({ item: '', quantity: '1', requiredDate: '', justification: '', reason: '', attachment: '' });
-    setErrors({});
-    notify(`${content.action ?? 'Action'} saved. Dashboard counts and notifications updated in mock state.`);
-  };
-
-  // Fulfillment/custody/disposal have no real "create new" backend action —
-  // once live, the header button only ever opened the mock FormDialog and injected a
-  // synthetic row into real data. Hide it on these three pages; the other live pages
-  // (approvals, audit) never had a header action to begin with.
-  const canPrimaryAct = !readOnly && content.action &&
-    !(isItAssetCustodianLiveFulfillment || isItAssetCustodianLiveCustody || isItAssetCustodianLiveDisposal || isPropertyCustodianLiveFulfillment || isPropertyCustodianLiveCustody || isPropertyCustodianLiveDisposal);
-  const primaryPermission = actionPermissionFor(role);
-  // Live-fetched rows carry a real requester UUID, not the mock 'EMP-003' id — compare
-  // against the actual logged-in user's id on the live approvals page.
-  const selfId = isApprovingOfficerLiveApprovals ? currentUser?.id : approvingOfficerId;
-  const selectedIsSelfApproval = role === ProposedUserRole.APPROVING_OFFICER && selected?.requesterId === selfId;
+  // Nobody approves their own request - the backend refuses it, so don't offer it.
+  const selectedIsSelfApproval = isApprovalsPage && selected?.requesterId === currentUser?.id;
 
   if (loading) return <LoadingSkeleton rows={8} />;
+
+  const selectedRequisitionDetail = isRequisitionPage && selected ? requisitionById[String(selected.id)] : undefined;
 
   return (
     <div className="space-y-5">
@@ -683,26 +358,11 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
           <h1 className="text-2xl font-bold text-slate-950">{content.title}</h1>
           <p className="mt-1 max-w-3xl text-sm text-slate-600">{content.detail}</p>
         </div>
-        {canPrimaryAct && (
+        {isMyRequisitions && content.action && (
           <button
             type="button"
-            onClick={() => {
-              if (normalizedSlug === 'assets' && role === ProposedUserRole.IT_ASSET_CUSTODIAN) {
-                router.push('/it-asset-custodian/assets/new');
-                return;
-              }
-              if (isLiveMyRequisitions) {
-                setCreatingRequisition(true);
-                return;
-              }
-              if (content.action?.startsWith('Export') || content.action?.startsWith('Reset')) {
-                notify(`${content.action} completed in mock mode.`);
-                return;
-              }
-              setFormOpen(true);
-            }}
+            onClick={() => setCreatingRequisition(true)}
             className="rounded-md bg-blue-700 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-800"
-            data-permission={primaryPermission}
           >
             {content.action}
           </button>
@@ -721,155 +381,6 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
         </div>
       )}
 
-      {readOnly && (
-        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
-          Read-only controls are active. Add, edit, approve, issue, transfer, dispose, assign role, and delete actions are hidden.
-        </div>
-      )}
-
-      {normalizedSlug === 'notifications' && (
-        <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          {['All', 'Unread', 'Requisitions', 'Assets', 'Returns', 'Incidents'].map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => {
-                setStatusFilter(tab === 'Unread' ? 'Unread' : 'All');
-                setSearch(tab === 'All' || tab === 'Unread' ? '' : tab);
-                setPage(1);
-              }}
-              className="rounded-md border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
-            >
-              {tab}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => {
-              setRows((current) => current.map((row) => ({ ...row, status: 'Read', unread: false })));
-              notify('All notifications marked as read.');
-            }}
-            className="ml-auto rounded-md bg-blue-700 px-3 py-2 text-sm font-bold text-white hover:bg-blue-800"
-          >
-            Mark all as read
-          </button>
-        </div>
-      )}
-
-      {normalizedSlug === 'roles' && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-          Frontend prototype only. Backend role persistence is not yet implemented.
-        </div>
-      )}
-
-      {normalizedSlug === 'disposal' && role === ProposedUserRole.PROPERTY_OFFICER && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-          Disposal review is frontend-only. Backend authorization and disposal persistence are deferred.
-        </div>
-      )}
-
-      {normalizedSlug === 'qr-scanner' && (
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-bold text-slate-950">Mock QR Scanner</h2>
-          <div className="mt-3 flex flex-wrap gap-3">
-            <input
-              value={scanValue}
-              onChange={(event) => setScanValue(event.target.value)}
-              placeholder="Enter asset ID, e.g. ICT-00091"
-              className="h-10 min-w-72 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                const asset = assetMockRows.find((item) => item.id.toLowerCase() === scanValue.toLowerCase());
-                if (!asset) {
-                  notify('No mock asset found for that QR code.');
-                  return;
-                }
-                if (role === ProposedUserRole.IT_ASSET_CUSTODIAN && asset.scope !== 'ICT') {
-                  notify('Access denied: This asset is managed by the Property Custodian.');
-                  return;
-                }
-                if (role === ProposedUserRole.PROPERTY_CUSTODIAN && asset.scope === 'ICT') {
-                  notify('Access denied: This ICT asset is managed by the IT Asset Custodian.');
-                  return;
-                }
-                setSelected(assetToRow(asset));
-              }}
-              className="rounded-md bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800"
-            >
-              Resolve QR
-            </button>
-            <button type="button" onClick={() => setScanValue(role === ProposedUserRole.IT_ASSET_CUSTODIAN ? 'ICT-00091' : 'PPE-00120')} className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
-              Use Demo QR
-            </button>
-          </div>
-        </section>
-      )}
-
-      {['physical-inventory', 'assets', 'fixed-assets'].includes(normalizedSlug) && (
-        <InventoryLabelPrinter
-          assets={assetMockRows.filter((asset) => {
-            if (role === ProposedUserRole.IT_ASSET_CUSTODIAN) return asset.scope === 'ICT';
-            if (role === ProposedUserRole.PROPERTY_CUSTODIAN) return asset.scope !== 'ICT';
-            return true;
-          })}
-        />
-      )}
-
-      {isInventoryAccountabilityPage && (
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-base font-bold text-slate-950">Inventory Accountability Tracking</h2>
-              <p className="mt-1 text-sm text-slate-600">
-                Tracks who the laptop or asset is issued to, when it was issued, their division/office, location, and acknowledgment status.
-              </p>
-            </div>
-            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">Frontend mock accountability ledger</span>
-          </div>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-                <tr>
-                  <th className="px-3 py-2">Asset</th>
-                  <th className="px-3 py-2">Issued To</th>
-                  <th className="px-3 py-2">Division / Office</th>
-                  <th className="px-3 py-2">Date Issued</th>
-                  <th className="px-3 py-2">Location</th>
-                  <th className="px-3 py-2">Form</th>
-                  <th className="px-3 py-2">Acknowledgment</th>
-                  <th className="px-3 py-2">Expected Return</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {rows
-                  .filter((row) => String(row.assignedTo ?? 'Unassigned') !== 'Unassigned' || normalizedSlug === 'physical-inventory')
-                  .slice(0, 6)
-                  .map((row) => (
-                    <tr key={`accountability-${String(row.id)}`}>
-                      <td className="px-3 py-2">
-                        <p className="font-bold text-slate-950">{String(row.name ?? row.item ?? row.id)}</p>
-                        <p className="text-xs text-slate-500">{String(row.id)}</p>
-                      </td>
-                      <td className="px-3 py-2 text-slate-700">{String(row.assignedTo ?? 'Unassigned')}</td>
-                      <td className="px-3 py-2 text-slate-700">
-                        <p>{String(row.division ?? '-')}</p>
-                        <p className="text-xs text-slate-500">{String(row.officeOrSection ?? '-')}</p>
-                      </td>
-                      <td className="px-3 py-2 text-slate-700">{String(row.dateIssued ?? row.issuedDate ?? '-')}</td>
-                      <td className="px-3 py-2 text-slate-700">{String(row.location ?? '-')}</td>
-                      <td className="px-3 py-2 text-slate-700">{String(row.accountabilityForm ?? '-')}</td>
-                      <td className="px-3 py-2"><StatusBadge status={String(row.acknowledgmentStatus ?? 'Pending')} /></td>
-                      <td className="px-3 py-2 text-slate-700">{String(row.expectedReturnDate ?? '-')}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
       <FilterBar
         search={search}
         onSearch={(value) => { setSearch(value); setPage(1); }}
@@ -878,7 +389,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
           {
             label: 'Sort',
             value: sortKey,
-            options: isLiveRequisitionPage ? [...REQUISITION_SORT_OPTIONS] : ['id', 'status', 'item', 'name', 'category', 'date'],
+            options: isRequisitionPage ? [...REQUISITION_SORT_OPTIONS] : ['item', 'status', 'heldBy', 'location'],
             onChange: (value) => { setSortKey(value); setPage(1); },
           },
         ]}
@@ -889,59 +400,56 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-3">{isLiveRequisitionPage ? 'Request' : 'Record'}</th>
-                <th className="px-4 py-3">{isLiveRequisitionPage ? 'Requested by' : 'Type / Owner'}</th>
-                <th className="px-4 py-3">{isLiveRequisitionPage ? 'Required by' : 'Date / Location'}</th>
+                <th className="px-4 py-3">{isRequisitionPage ? 'Request' : 'Asset'}</th>
+                <th className="px-4 py-3">{isRequisitionPage ? 'Requested by' : 'Held by'}</th>
+                <th className="px-4 py-3">{isRequisitionPage ? 'Required by' : 'Location'}</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {visibleRows.map((row) => {
-                const liveReq = isLiveRequisitionPage ? requisitionById[String(row.id)] : undefined;
+                const liveReq = isRequisitionPage ? requisitionById[String(row.id)] : undefined;
                 return (
                 <tr key={String(row.id)} className="hover:bg-blue-50/40">
                   <td className="px-4 py-3">
-                    <p className="font-bold text-slate-950">{String(row.item ?? row.name ?? row.title ?? row.action ?? row.id)}</p>
-                    <p className="text-xs text-slate-500">{String(row.requestNumber ?? row.id)}</p>
+                    <p className="font-bold text-slate-950">{String(row.item ?? row.id)}</p>
+                    <p className="text-xs text-slate-500">
+                      {isAssetPage
+                        ? [row.propertyNumber, row.serialNumber && `S/N ${String(row.serialNumber)}`].filter(Boolean).join(' · ')
+                        : String(row.requestNumber ?? row.id)}
+                    </p>
                   </td>
-                  {liveReq ? (
+                  {isAssetPage && (
                     <td className="px-4 py-3">
-                      <p className="font-semibold text-slate-800">{liveReq.requester?.name ?? 'Unknown requester'}</p>
-                      <p className="text-xs text-slate-500">{[liveReq.requester?.employeeId, liveReq.requester?.officeOrSection, liveReq.requisitionType].filter(Boolean).join(' · ')}</p>
+                      <p className="font-semibold text-slate-800">{String(row.heldBy)}</p>
+                      {row.dueBack ? (
+                        <p className={`text-xs ${row.overdue ? 'font-bold text-red-600' : 'text-slate-500'}`}>
+                          {String(row.dueBack)}{row.overdue ? ' · overdue' : ''}
+                        </p>
+                      ) : null}
                     </td>
-                  ) : (
-                    <td className="px-4 py-3 text-slate-600">{String(row.requestType ?? row.category ?? row.type ?? row.actor ?? row.requester ?? row.office ?? '-')}</td>
                   )}
-                  {liveReq ? (
-                    <td className="px-4 py-3 text-slate-600">
-                      <p>{formatDate(liveReq.requiredDate)}</p>
-                      <SlaBadge request={liveReq} />
-                    </td>
-                  ) : (
-                    <td className="px-4 py-3 text-slate-600">{String(row.requiredDate ?? row.submittedDate ?? row.date ?? row.location ?? row.period ?? '-')}</td>
+                  {isAssetPage && <td className="px-4 py-3 text-slate-600">{String(row.location ?? '-')}</td>}
+                  {liveReq && (
+                    <>
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-slate-800">{liveReq.requester?.name ?? 'Unknown requester'}</p>
+                        <p className="text-xs text-slate-500">{[liveReq.requester?.employeeId, liveReq.requester?.officeOrSection, liveReq.requisitionType].filter(Boolean).join(' · ')}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        <p>{formatDate(liveReq.requiredDate)}</p>
+                        <SlaBadge request={liveReq} />
+                      </td>
+                    </>
                   )}
                   <td className="px-4 py-3"><StatusBadge status={String(row.status ?? 'Open')} label={liveReq ? requisitionStatusLabel(liveReq.status) : undefined} /></td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
                       <button type="button" onClick={() => setSelected(row)} className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">View</button>
-                      {!readOnly && normalizedSlug !== 'notifications' && (
-                        <button type="button" onClick={() => { setSelected(row); if (rowActionMode(normalizedSlug, isLiveFetchPage) === 'confirm') setConfirmAction(actionLabel(normalizedSlug, role)); }} className="rounded-md bg-blue-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-800">
-                          {actionLabel(normalizedSlug, role)}
-                        </button>
-                      )}
-                      {normalizedSlug === 'notifications' && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            updateRowStatus(String(row.id), 'Read');
-                            notify('Notification marked as read.');
-                          }}
-                          className="rounded-md bg-blue-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-800"
-                        >
-                          Mark Read
-                        </button>
-                      )}
+                      <button type="button" onClick={() => { setSelected(row); if (rowActionMode(normalizedSlug) === 'confirm') setConfirmAction(rowActionLabel(normalizedSlug)); }} className="rounded-md bg-blue-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-800">
+                        {rowActionLabel(normalizedSlug)}
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -964,33 +472,41 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
         </div>
       </section>
 
-      <DetailDrawer open={Boolean(selected)} title={String((selected && requisitionById[String(selected.id)]?.requestNumber) ?? selected?.item ?? selected?.name ?? selected?.title ?? selected?.id ?? 'Record')} onClose={() => setSelected(null)}>
+      <DetailDrawer open={Boolean(selected)} title={String(selectedRequisitionDetail?.requestNumber ?? selected?.item ?? 'Record')} onClose={() => setSelected(null)}>
         {selected && (
           <div className="space-y-4">
-            {isLiveRequisitionPage && requisitionById[String(selected.id)] ? (
-              <RequisitionDetailView request={requisitionById[String(selected.id)]} />
-            ) : (<>
-            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {Object.entries(selected).filter(([, value]) => !Array.isArray(value)).map(([key, value]) => (
-                <div key={key} className="rounded-lg bg-slate-50 p-3">
-                  <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">{key}</dt>
-                  <dd className="mt-1 text-sm text-slate-900">{String(value ?? '-')}</dd>
-                </div>
-              ))}
-            </dl>
-            <div>
-              <h3 className="mb-2 text-sm font-bold text-slate-950">Timeline</h3>
-              <ActivityTimeline items={Array.isArray(selected.timeline) ? selected.timeline : ['Opened in frontend prototype', 'No backend persistence performed']} />
-            </div>
-            </>)}
+            {selectedRequisitionDetail && <RequisitionDetailView request={selectedRequisitionDetail} />}
+            {isAssetPage && (
+              <>
+                <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {([
+                    ['Property no.', selected.propertyNumber],
+                    ['Serial no.', selected.serialNumber],
+                    ['Status', humanize(String(selected.status))],
+                    ['Condition', humanize(String(selected.condition))],
+                    ['Held by', selected.heldBy],
+                    ['Due back', selected.returnDate ? `${String(selected.returnDate)}${selected.overdue ? ' — overdue' : ''}` : '—'],
+                    ['Location', selected.location],
+                  ] as const).map(([label, value]) => (
+                    <div key={label} className="rounded-lg bg-slate-50 p-3">
+                      <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</dt>
+                      <dd className="mt-1 text-sm text-slate-900">{String(value ?? '-')}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <Link href={`${assetRecordBase}/${String(selected.id)}`} className="inline-block text-sm font-bold text-blue-700 hover:underline">
+                  Open the full asset record — history, QR code and lifecycle
+                </Link>
+              </>
+            )}
             {selectedIsSelfApproval && (
               <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
                 This is your own request, so you can&apos;t approve or reject it. It is routed to another approver.
               </p>
             )}
-            {!readOnly && !selectedIsSelfApproval && (
+            {!selectedIsSelfApproval && (
               <div className="flex flex-wrap gap-2">
-                {detailActions(normalizedSlug, role, isLiveFetchPage, String(selected.status ?? '')).map((action) => (
+                {detailActions(normalizedSlug, String(selected.status ?? '')).map((action) => (
                   <button key={action} type="button" onClick={() => setConfirmAction(action)} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-bold text-white hover:bg-blue-800">
                     {action}
                   </button>
@@ -1004,49 +520,19 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       <ConfirmDialog
         open={Boolean(confirmAction)}
         title={`${confirmAction} record`}
-        detail={
-          (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) ||
-          (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) ||
-          (isItAssetCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) ||
-          (isItAssetCustodianLiveDisposal && confirmAction === 'Recommend Disposal') ||
-          (isPropertyCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) ||
-          (isPropertyCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) ||
-          (isPropertyCustodianLiveDisposal && confirmAction === 'Recommend Disposal')
-            ? 'This calls the live backend API and updates the real record.'
-            : 'This updates frontend mock state only. Backend authorization and persistence will be implemented later.'
-        }
+        detail="This updates the real record and is written to the audit trail."
         confirmLabel={actionSubmitting ? 'Processing…' : (confirmAction ?? 'Confirm')}
         onConfirm={() => {
           if (!confirmAction) return;
-          if (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) {
+          if (isApprovalsPage && (confirmAction === 'Approve' || confirmAction === 'Reject')) {
             void submitApprovalDecision(confirmAction);
-            return;
-          }
-          if (isItAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) {
+          } else if (isFulfillmentPage && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) {
             void submitFulfillmentDecision(confirmAction);
-            return;
-          }
-          if (isItAssetCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) {
+          } else if (isCustodyPage && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) {
             void submitCustodyDecision(confirmAction);
-            return;
-          }
-          if (isItAssetCustodianLiveDisposal && confirmAction === 'Recommend Disposal') {
+          } else if (isDisposalPage && confirmAction === 'Recommend Disposal') {
             void submitDisposalRecommendation();
-            return;
           }
-          if (isPropertyCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) {
-            void submitFulfillmentDecision(confirmAction);
-            return;
-          }
-          if (isPropertyCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) {
-            void submitCustodyDecision(confirmAction);
-            return;
-          }
-          if (isPropertyCustodianLiveDisposal && confirmAction === 'Recommend Disposal') {
-            void submitDisposalRecommendation();
-            return;
-          }
-          runAction(confirmAction);
         }}
         onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setIssueExpectedReturnDate(''); setTransferToLocation(''); setReplacementUnitId(''); }}
       >
@@ -1066,31 +552,29 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
             </span>
           </label>
         )}
-        {(['Reject', 'Return for Revision'].includes(confirmAction ?? '') ||
-          (isItAssetCustodianLiveFulfillment && confirmAction === 'On Hold') ||
-          (isItAssetCustodianLiveDisposal && confirmAction === 'Recommend Disposal') ||
-          (isPropertyCustodianLiveFulfillment && confirmAction === 'On Hold') ||
-          (isPropertyCustodianLiveDisposal && confirmAction === 'Recommend Disposal')) && (
+        {((isApprovalsPage && confirmAction === 'Reject') ||
+          (isFulfillmentPage && confirmAction === 'On Hold') ||
+          (isDisposalPage && confirmAction === 'Recommend Disposal')) && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Remarks</span>
             <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
             {errors.remarks && <span className="mt-1 block text-xs text-red-600">{errors.remarks}</span>}
           </label>
         )}
-        {(isItAssetCustodianLiveCustody || isPropertyCustodianLiveCustody) && confirmAction === 'Issue' && (
+        {isCustodyPage && confirmAction === 'Issue' && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Recipient Employee ID</span>
             <input type="text" value={issueEmployeeId} onChange={(event) => setIssueEmployeeId(event.target.value)} placeholder="e.g. CICC-0042" className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
             {errors.employeeId && <span className="mt-1 block text-xs text-red-600">{errors.employeeId}</span>}
           </label>
         )}
-        {(isItAssetCustodianLiveCustody || isPropertyCustodianLiveCustody) && confirmAction === 'Issue' && (
+        {isCustodyPage && confirmAction === 'Issue' && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Expected return date (optional)</span>
             <input type="date" value={issueExpectedReturnDate} onChange={(event) => setIssueExpectedReturnDate(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
           </label>
         )}
-        {(isItAssetCustodianLiveCustody || isPropertyCustodianLiveCustody) && confirmAction === 'Transfer' && (
+        {isCustodyPage && confirmAction === 'Transfer' && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Receiving Office / Section</span>
             <input type="text" value={transferToLocation} onChange={(event) => setTransferToLocation(event.target.value)} placeholder="e.g. Cybercrime Operations Division" className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
@@ -1110,102 +594,6 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
           />
         )}
       </CenteredModal>
-
-      <FormDialog open={formOpen} title={content.action ?? 'Mock Action'} submitLabel="Submit" onSubmit={submitForm} onClose={() => setFormOpen(false)}>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Item" value={form.item} error={errors.item} onChange={(value) => setForm((current) => ({ ...current, item: value }))} />
-          <Field label="Quantity" value={form.quantity} error={errors.quantity} type="number" onChange={(value) => setForm((current) => ({ ...current, quantity: value }))} />
-          <Field label="Required date" value={form.requiredDate} error={errors.requiredDate} type="date" onChange={(value) => setForm((current) => ({ ...current, requiredDate: value }))} />
-          <Field label="Mock attachment" value={form.attachment} onChange={(value) => setForm((current) => ({ ...current, attachment: value }))} placeholder="filename.pdf" />
-          <label className="sm:col-span-2 text-sm font-semibold text-slate-700">
-            <span>Justification / remarks</span>
-            <textarea value={form.justification} onChange={(event) => setForm((current) => ({ ...current, justification: event.target.value }))} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
-            {errors.justification && <span className="mt-1 block text-xs text-red-600">{errors.justification}</span>}
-          </label>
-          <label className="sm:col-span-2 flex items-start gap-2 text-sm text-slate-700">
-            <input type="checkbox" className="mt-1" />
-            <span>I certify that this frontend mock submission is accurate for demonstration purposes.</span>
-          </label>
-        </div>
-      </FormDialog>
     </div>
   );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  error,
-  type = 'text',
-  placeholder,
-}: Readonly<{
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  error?: string;
-  type?: string;
-  placeholder?: string;
-}>) {
-  return (
-    <label className="text-sm font-semibold text-slate-700">
-      {label}
-      <input
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-      />
-      {error && <span className="mt-1 block text-xs text-red-600">{error}</span>}
-    </label>
-  );
-}
-
-function actionLabel(slug: string, role: ProposedUserRole) {
-  if (slug === 'approvals') return 'Review';
-  if (slug === 'fulfillment') return 'Fulfill';
-  if (slug === 'custody') return 'Issue';
-  if (slug === 'physical-inventory') return 'Verify';
-  if (slug === 'disposal') return role === ProposedUserRole.PROPERTY_OFFICER ? 'Approve' : 'Recommend Disposal';
-  if (slug === 'corrections') return 'Approve Correction';
-  if (slug === 'reports' || slug.includes('report') || slug === 'forms') return 'Export';
-  return 'Open';
-}
-
-function detailActions(slug: string, role: ProposedUserRole, isLive: boolean, selectedStatus?: string) {
-  // 'Return for Revision' has no backend endpoint — offer it only in mock mode.
-  // Live decisions are offered only while the request is in a state the backend
-  // will accept them for — a deep-linked, already-decided request is view-only.
-  if (slug === 'approvals') {
-    if (!isLive) return ['Approve', 'Reject', 'Return for Revision'];
-    return selectedStatus === 'pending_supervisor' ? ['Approve', 'Reject'] : [];
-  }
-  // Live "My Requisitions" is view-only: there is no cancel endpoint, and an
-  // already-submitted requisition has nothing left to submit.
-  if (slug === 'requisitions') return isLive ? [] : ['Cancel', 'Submit'];
-  if (slug === 'assigned-assets') return ['Acknowledge', 'Return', 'Report Damage', 'Request Repair'];
-  // Live fulfillment only supports the two real backend actions — 'Reserve' has no
-  // requisitionsApi equivalent, so it stays mock-only and is dropped once this is real.
-  if (slug === 'fulfillment') {
-    if (!isLive) return ['Reserve', 'Fulfill', 'On Hold'];
-    if (selectedStatus === 'pending_fulfillment') return ['Fulfill', 'On Hold'];
-    return selectedStatus === 'on_hold' ? ['Fulfill'] : [];
-  }
-  if (slug === 'custody') {
-    // Live custody gates by the asset's actual status via the same transition map the
-    // asset detail page's lifecycle dropdown uses — offering 'Issue' on an already-issued
-    // asset used to succeed in the UI and fail with a 400 from the backend state machine.
-    if (isLive && selectedStatus) {
-      const custodyActionForNextStatus: Record<string, string> = { issued: 'Issue', transferred: 'Transfer', returned: 'Return' };
-      const allowed = ASSET_LIFECYCLE_TRANSITIONS[selectedStatus] ?? [];
-      return allowed.map((next) => custodyActionForNextStatus[next]).filter((action): action is string => Boolean(action));
-    }
-    return ['Issue', 'Transfer', 'Return'];
-  }
-  if (slug === 'physical-inventory') return ['Verify', 'Mark Reconciled'];
-  if (slug === 'disposal') return role === ProposedUserRole.PROPERTY_OFFICER ? ['Approve', 'Reject', 'Return for Revision'] : ['Recommend Disposal'];
-  if (slug === 'users') return ['Unlock', 'Reset Password', 'Deactivate'];
-  if (slug === 'roles') return ['Assign Role'];
-  return ['Open'];
 }

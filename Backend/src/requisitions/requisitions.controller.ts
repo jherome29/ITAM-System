@@ -96,6 +96,23 @@ export class RequisitionsController {
   }
 
   /**
+   * GET /api/v1/requisitions/decided
+   * The requisitions this approver has approved or rejected, newest decision
+   * first — the history that GET / (pending only) does not return.
+   * Declared before `:id` so the literal path is not parsed as a UUID.
+   */
+  @Get('decided')
+  @Roles(UserRole.SUPERVISOR, UserRole.SYSTEM_ADMIN)
+  async findDecided(
+    @Req() req: AuthReq,
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+  ) {
+    const result = await this.svc.findDecidedBy(req.user.id, +page, +limit);
+    return { message: 'Decided requisitions retrieved', data: result };
+  }
+
+  /**
    * GET /api/v1/requisitions/stats
    * Per-user counts by status + role-specific extras.
    * Employee → own counts. Supervisor → + pending queue. IT → + fulfillment queue.

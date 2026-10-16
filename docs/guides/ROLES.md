@@ -49,7 +49,7 @@ The service requester. Employees submit asset or supply requisitions and track t
 ---
 
 ### Supervisor
-**Dashboard:** `/supervisor/dashboard`
+**Dashboard:** `/approving-officer/dashboard`
 
 The first-level approver. Supervisors review and act on requisitions submitted by employees in their section.
 
@@ -74,7 +74,7 @@ The first-level approver. Supervisors review and act on requisitions submitted b
 ---
 
 ### IT Personnel
-**Dashboard:** `/it-personnel/dashboard`
+**Dashboard:** `/it-asset-custodian/dashboard`
 
 The asset custodian and primary operational role. IT Personnel manages the entire asset registry, handles requisition fulfillment, and generates all official COA forms.
 
@@ -125,7 +125,7 @@ The asset custodian and primary operational role. IT Personnel manages the entir
 ---
 
 ### System Administrator
-**Dashboard:** `/admin/dashboard`
+**Dashboard:** `/master-admin/dashboard`
 
 Full system access. Manages user accounts, roles, and system configuration. Also has access to the audit trail and can generate reports.
 
@@ -153,7 +153,7 @@ Full system access. Manages user accounts, roles, and system configuration. Also
 ---
 
 ### Management
-**Dashboard:** `/management/dashboard`
+**Dashboard:** `/management-audit/dashboard`
 
 Read-only oversight role. Management accesses dashboards and reports for monitoring and audit-readiness but cannot perform any operational actions.
 
@@ -210,7 +210,9 @@ Read-only oversight role. Management accesses dashboards and reports for monitor
 | Role | Pages |
 |---|---|
 | **Employee** | `/login`, `/employee/dashboard`, `/employee/requisitions/new`, `/employee/requisitions`, `/employee/requisitions/[id]`, `/employee/catalogue`, `/employee/notifications` |
-| **Supervisor** | `/login`, `/supervisor/dashboard`, `/supervisor/approvals`, `/supervisor/approvals/[id]`, `/supervisor/history`, `/supervisor/notifications` |
-| **IT Personnel** | `/login`, `/it-personnel/dashboard`, `/it-personnel/assets`, `/it-personnel/assets/new`, `/it-personnel/assets/[id]`, `/it-personnel/qr-scan`, `/it-personnel/requisitions`, `/it-personnel/forms`, `/it-personnel/reports`, `/it-personnel/notifications` |
-| **System Admin** | `/login`, `/admin/dashboard`, `/admin/users`, `/admin/users/[id]/role`, `/admin/audit-trail`, `/admin/config`, `/admin/notifications` |
-| **Management** | `/login`, `/management/dashboard`, `/management/reports`, `/management/audit-trail` |
+| **Supervisor** (Approving Officer) | `/login`, `/approving-officer/{dashboard, approvals, approval-history, requisitions, assigned-assets, notifications}` |
+| **IT Personnel** (IT Asset Custodian) | `/login`, `/it-asset-custodian/{dashboard, assets, assets/new, assets/[id], fulfillment, custody, returns-incidents, qr-scanner, maintenance, physical-inventory, disposal, reports, management-reports, requisitions, assigned-assets, notifications}` |
+| **System Admin** (Master Administrator) | `/login`, `/master-admin/{dashboard, users, roles, configuration, audit, returns-incidents, repairs, assigned-assets, notifications}` |
+| **Management** (Management & Audit Viewer) | `/login`, `/management-audit/{dashboard, asset-reports, requisition-reports, maintenance-disposal, physical-count, audit, forms, assigned-assets, notifications}` |
+| **Property Custodian** | `/login`, `/property-custodian/{dashboard, fixed-assets, supplies, fulfillment, custody, returns-incidents, maintenance, qr-scanner, physical-inventory, disposal, reports, assigned-assets, notifications}` |
+| **Property Officer** | `/login`, `/property-officer/{dashboard, assets, replacements, disposal, reports, assigned-assets, notifications}` |

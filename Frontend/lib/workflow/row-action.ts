@@ -1,11 +1,13 @@
 // What the blue per-row action button does on a WorkflowPage table.
 //   'confirm' — open the confirm dialog for that action directly.
 //   'drawer'  — just open the record's detail drawer.
-// On live pages where the row button's label ('Review', 'Open') has no backend
-// action, a confirm dialog would only run the mock handler and save nothing,
-// so the button opens the drawer, where the real decisions live.
-const LIVE_DRAWER_SLUGS = new Set(['approvals', 'requisitions']);
+// On pages where the row button's label ('Review', 'Open') has no backend action
+// of its own, a confirm dialog would have nothing real to run, so the button
+// opens the drawer, where the real decisions live.
+// Custody is here too: which actions apply depends on the asset's status, and the
+// row button used to offer Issue on an asset that was already issued.
+const DRAWER_SLUGS = new Set(['approvals', 'requisitions', 'custody']);
 
-export function rowActionMode(slug: string, isLive: boolean): 'confirm' | 'drawer' {
-  return isLive && LIVE_DRAWER_SLUGS.has(slug) ? 'drawer' : 'confirm';
+export function rowActionMode(slug: string): 'confirm' | 'drawer' {
+  return DRAWER_SLUGS.has(slug) ? 'drawer' : 'confirm';
 }

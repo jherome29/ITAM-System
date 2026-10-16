@@ -6,10 +6,13 @@ import { AssetRegistryList } from '@/components/assets/AssetRegistryList';
 import { QrLookup } from '@/components/assets/QrLookup';
 import { RegisterAssetForm } from '@/components/assets/RegisterAssetForm';
 import { PropertyCustodianDashboard } from '@/components/property-custodian/PropertyCustodianDashboard';
+import { PhysicalInventorySheet } from '@/components/assets/PhysicalInventorySheet';
+import { notFound } from 'next/navigation';
 import { WorkflowPage } from '@/components/prototype/WorkflowPage';
 import { FormsWorkspaceContent } from '@/components/shared/FormsWorkspaceContent';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
+import { isLiveWorkflowPage } from '@/lib/workflow/live-pages';
 
 export default async function PropertyCustodianPage({
   params,
@@ -33,5 +36,9 @@ export default async function PropertyCustodianPage({
   if (segment === 'reports') return <FormsWorkspaceContent />;
   if (segment === 'maintenance') return <RepairQueue eyebrow="Property Custodian" assetBasePath="/property-custodian/assets" openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'returns-incidents') return <AssetRequestQueue eyebrow="Property Custodian" openId={typeof open === 'string' ? open : undefined} />;
+  if (segment === 'physical-inventory') return <PhysicalInventorySheet eyebrow="Property Custodian" formsPath="/property-custodian/reports" />;
+  // Only pages wired to real records may reach WorkflowPage; anything else is sample
+  // data, so it is not found (see lib/workflow/live-pages.ts).
+  if (!isLiveWorkflowPage(ProposedUserRole.PROPERTY_CUSTODIAN, segment)) notFound();
   return <WorkflowPage role={ProposedUserRole.PROPERTY_CUSTODIAN} slug={segment} openId={typeof open === 'string' ? open : undefined} />;
 }
