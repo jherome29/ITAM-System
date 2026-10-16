@@ -2,7 +2,7 @@
 
 > **For:** Nelson James Casambros · Andrei Fredrick Montaniel · Jairus Nathan Valenton
 > **Target Completion:** October 2026
-> **Last updated:** October 11, 2026
+> **Last updated:** October 16, 2026
 
 Read this file first, then **CLAUDE.md** (the single source of truth for the whole project). Everything else is linked from one of these two.
 
@@ -35,9 +35,20 @@ If you have an old local clone with a branch called `FE-Updated-not-finished`: t
 - **PR #96** — `fix/admin-shell-ui`: dead `/` breadcrumb crumb removed + acronym labels, slim custom scrollbars app-wide, collapsed-sidebar overlap fix, **`PATCH /users/:id/activate`** (reactivate a deactivated account) + an in-app `PasswordResetDialog` (replaces `window.prompt`), Toast auto-dismiss, `TRUST_PROXY` so audit entries log the real client IP behind a proxy, CLAUDE.md §14 date table trimmed.
 - **PR #98** — `feature/master-admin-dashboard`: Master Admin governance/platform mock pages + `admin.mock.ts` **cut as out of scope** (2026-09-09); dashboard rebuilt on live data (`GET /api/v1/admin/dashboard-stats`). Then an admin-hardening pass: **force sign-out** (`PATCH /users/:id/revoke-sessions` — bumps `tokenVersion` only), **unlock** wired into the directory + live **Locked** status + role filter, **per-account activity** panel (`GET /audit/user/:id`), **audit date range** (`startDate`/`endDate` on `GET /audit`), **config provenance** (`meta` on `GET /system-config`), **watcher heartbeat** (`GET /notifications/watcher-status`). Backend test-first, +~40 tests (303 total). No schema change.
 
-**Open PR (2026-10-11): #102 `feature/returns-incidents-and-workflow-fixes` → `develop`**, all CI checks green, needs 1 review. Returns & Incidents (schemas 010–012), Maintenance & Repair (schema 013), derived request types + replacement flow, self-approval routing fix, notification deep-links, catalogue item picker (008–009), next 16.4.0. **After it merges, apply schemas 008–013 to every database that predates them** (shared Supabase + your local Docker Postgres) — `008`, `010` and `013` contain `ALTER TYPE … ADD VALUE`, so run them statement by statement in the Supabase SQL editor (not as one transaction). All of them are safe to re-run. Without them the backend fails on `asset_requests` / `asset_repairs` queries and the new enum values.
+**Merged to `develop` (2026-10-14): PR #102 and #103** — Returns & Incidents (schemas 010–012), Maintenance & Repair with loaner units (013–014), derived request types + the replacement flow (repeat repairs qualify, the new unit is issued on fulfilment, the requester gets the receipt), self-approval routing fix, notification deep-links, catalogue item picker (008–009), per-watcher status, next 16.4.0. `develop` is 27 commits ahead of `main`.
 
-**Previously open branches:** none with code. Only `docs/admin-dashboard-plan` (2 superseded planning-doc commits). Health on `main` (2026-09-10): backend `tsc` clean + 303/303 unit tests; frontend `tsc` clean + 40/40 tests + production build clean. Not re-run this pass: ESLint (both), backend webpack build, coverage %, `audit:check` (both), `secretlint`, backend e2e (Docker), Docker image builds.
+**Open against `develop` (2026-10-16), all mergeable, CI green:**
+
+| PR | Branch | What |
+|---|---|---|
+| #105 | `fix/audit-findings-2026-10-14` | access control, audit integrity, requisition numbering, TZ, KPIs, real client IP, `GET /users` admin-only (schema 015) |
+| #106 | `feat/pilot-demo-data` | removes every mock screen; real disposal review, physical-inventory count sheet, approval history, management dashboard (contains #105) |
+| #107 | `feat/demo-data-seed` | `npm run seed:demo`: repeatable pilot data through the real API |
+| #108 | `fix/ui-audit-findings` | the 12 UI/export audit defects, forms redesign, running document numbers (schema 016), **Property Custodian / Officer file requisitions**, PDF layout fixes. **Stacked on #106** |
+
+Merge in that order and **retarget #108 to `develop`** once #106 merges. `develop` needs 1 review per PR. **Schemas 008–016 must be applied to every database that predates them** (shared Supabase is already at 016; your local Docker Postgres may not be) — `Database/README.md` has the table. Several contain `ALTER TYPE … ADD VALUE`, so run them with plain `psql -f`, not one transaction; all are safe to re-run.
+
+**Health on #108 (2026-10-16):** every `CHECKS.md` item clean; backend 728 unit tests (96% statements) and 89 e2e tests on a real Postgres; frontend 320 tests. Screens and all 18 PDFs were also driven/rendered against a throwaway database.
 
 For a one-screen state map see **`FEATURE-STATUS.md`** (✅ / 🟡 / 🔴 mock / ⬜); for the full path to CICC handover see **`PATH-TO-DONE.md`**; for the plain-language gap list see **`SYSTEM-STATUS.md`**; for a screen-by-screen mock inventory see **`MOCK-DATA-WIRING.md`** — all at the repo root.
 
@@ -46,7 +57,7 @@ For a one-screen state map see **`FEATURE-STATUS.md`** (✅ / 🟡 / 🔴 mock /
 ## 2. Local Setup
 
 ### Prerequisites
-- Node.js 18+ (LTS), npm 9+, Git
+- Node.js 20.9+ (Next 16's minimum; the Docker images use Node 22), npm 10+, Git. Docker Desktop for the local database and the e2e suite
 
 ### Install dependencies
 ```bash
@@ -118,12 +129,17 @@ cd Frontend && npm run dev
 | Management | management@cicc.gov.ph | Management@CICC2026! |
 | Property Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
 | Property Officer | property.officer@cicc.gov.ph | PropertyOfficer@2026! |
+| Supervisor (Approving Officer, Property and Supply Management) | psm.approver@cicc.gov.ph | PSMApprover@2026! |
 
 The 2 Property role accounts, scoped to Fixed + Supplies assets, already existed in the shared dev DB but had no known-working password until 2026-08-21, when they were reset via the real `PATCH /api/v1/users/:id/reset-password` endpoint and verified with a live login. If these no longer work, someone has reset them again since — check with the team rather than assuming this doc is wrong.
 
 > If an account is locked (too many failed logins), a System Admin can unlock it: `PATCH /api/v1/users/:id/unlock`, or force a password reset: `PATCH /api/v1/users/:id/reset-password`. To end a suspect session without changing the password: `PATCH /api/v1/users/:id/revoke-sessions` (`feature/master-admin-dashboard`).
 
-Full role details and page routes: **`docs/guides/ROLES.md`**
+The last account (`CICC-SUP-002`, alternate approver `CICC-ALT01`) was created on 2026-10-16 so the Property Custodian and Property Officer, who now file requisitions, have an approver: requests route to the Approving Officer of the requester's section, then division, and both property users are in the *Property and Supply Management* division. `supervisor@cicc.gov.ph` (Maria Santos, Operations / Field Operations) is unchanged.
+
+> **These are dev credentials in a public repo.** They are listed here, in `ROLES.md`, `RUN-LOCAL.md` and the `CHECKS.md` smoke tests, and nowhere else: do not copy them into code, issues or chat. Rotate them before handover (`PATH-TO-DONE.md` §F).
+
+Full role details, the permission matrix and page routes: **`docs/guides/ROLES.md`**
 
 ---
 
@@ -138,11 +154,19 @@ Full role details and page routes: **`docs/guides/ROLES.md`**
 - **Master Admin dashboard rebuilt on live data** + admin-hardening pass (force sign-out, unlock wired, per-account activity, audit date range, config `meta`, watcher heartbeat) — merged, PR #98.
 - **Docker/deploy pass** (merged, PR #95) + `fix/admin-shell-ui` (merged, PR #96).
 
-### In PR #102 (open against `develop`, 2026-10-11)
-- **Requisitions** — request type derived (`supply` / `new` / `replacement`), `repair` refused; items picked from live inventory with a "Not in inventory" flag; replacement starts from My Assigned Assets after an eligibility check and fulfilling it takes the old unit back with a Receipt; a requisition is never routed to or decided by its own requester.
+### On `develop` (PR #102 / #103)
+- **Requisitions** — request type derived (`supply` / `new` / `replacement`), `repair` refused; items picked from live inventory with a "Not in inventory" flag; replacement starts from My Assigned Assets after an eligibility check; fulfilling takes the old unit back with a Receipt and can issue the new unit in the same step; a requisition is never routed to or decided by its own requester.
 - **Returns & Incidents** (CLAUDE.md Module 6) — return / repair / damage / loss / theft with attachments, two-step custodian decision, one open case per item, auto-generated COA documents the requester can download; System Admin decides a custodian's own request.
-- **Maintenance & Repair** (CLAUDE.md Module 7) — `asset_repairs` record per repair stay, queue for both custodians, outcome repaired / not repairable, condition follows the lifecycle, overdue-repair watcher, Repair History report.
+- **Maintenance & Repair** (Module 7) — `asset_repairs` record per repair stay, queue for both custodians, loaner unit, outcome repaired / not repairable, condition follows the lifecycle, overdue-repair watcher, Repair History report.
 - **My Assigned Assets** for every role; notification clicks deep-link to the record's drawer.
+
+### In the open PR stack (#105 – #108)
+- **No mock data left** (#106): every reachable screen reads real records and every button saves through the API; the pre-redesign shells are deleted. Real Disposal Review, Physical Inventory count sheet (read-only), Approval History and Management dashboard.
+- **Audit and access fixes** (#105): record-history scope, requisition-number race, CICC time (Asia/Manila), SLA KPI, real client IP from `req.ip`, `GET /users` admin-only, restore-from-flagged.
+- **Forms** (#108): real running document numbers per transaction (`PAR-2026-0001`), entity name and Fund Cluster as System Settings, a forms archive searchable by number, the **Reports & Forms** redesign, the Audit Trail Report, tables that paginate and fit the page, RSMI / RPCI that no longer print guesses, a form number that no longer prints over its label.
+- **Property roles file requisitions** (#108): Property Custodian and Property Officer file requisitions and replacements. A custodian never fulfils their own; the System Administrator is the fallback (Master Admin → Requisition Fulfilment). Management and the System Administrator do not file.
+- **UI polish** (#108): Manila-day dates, a real reason (10+ characters) and a confirmation to reject, a server-side date rule for incidents, supply stock draw-down on fulfilment, audit screens that name people and records.
+- **Demo data** (#107): `npm run seed:demo` loads pilot data through the real API.
 
 ### Solid, all on `main`
 - Auth: JWT + httpOnly refresh tokens, bcrypt, account lockout, RBAC guards, real login for all 7 roles — no mock accounts anywhere in the codebase anymore
@@ -157,11 +181,11 @@ Full role details and page routes: **`docs/guides/ROLES.md`**
 - Asset registration: a real, reachable, working page now exists in navigation for IT Asset Custodian and Property Custodian
 - Report generation, asset lifecycle updates, user creation, and role assignment — all previously *wired but silently broken* by uppercase-vs-lowercase-enum mismatches — fixed on `main`.
 
-### Known-fake despite looking real — no backend exists yet (see `FEATURE-STATUS.md` 🔴 / `MOCK-DATA-WIRING.md` for the full list)
-- Master Admin `reference-data` page — no backend; discloses "...in frontend mock state". (The governance/platform mock pages — approval workflows, custodian coverage, master data, system health, org units, access reviews — were **cut as out of scope** and deleted, PR #98. System Settings itself is **real** — PR #87.)
-- `physical-inventory` slugs, Property Officer corrections / reconciliation — no physical-count backend. (Replacement-validation backend now exists — PR #86 — but the standalone Property Officer `replacements` screen is still the mock list.)
-- Employee dashboard tiles marked "PREVIEW DATA" (Returns & Incidents and My Assigned Assets are real since PR #102)
-- Two "Preview data"-labeled chart panels on the Management / Management&Audit dashboards
+### Not built (so not offered)
+There are no mock screens any more; these simply do not exist (`MOCK-DATA-WIRING.md`, `FEATURE-STATUS.md` ⬜):
+- Recording a physical count / reconciliation (the count sheet is read-only) and Property Officer inventory corrections.
+- Trends / utilisation reporting and the Asset Utilization Summary report.
+- Master Admin governance pages (cut as out of scope, PR #98); the Stock Card (Appendix 58).
 
 ---
 
@@ -171,18 +195,15 @@ Don't duplicate the gap list here — **`PATH-TO-DONE.md`** (everything between 
 
 | Priority | Item |
 |---|---|
-| ~~1~~ | ~~Notifications + SLA cron job~~ — **merged, PR #84** |
-| ~~2~~ | ~~System-config backend~~ — **merged, PR #87** (Master Admin → System Settings) |
-| ~~3~~ | ~~Replacement requisition validation~~ — **merged, PR #86** |
-| 4 | Disposal workflow (currently just a status flag, no required fields) |
-| 5 | Fix the 18 COA form templates against their references (`docs/guides/COA-FORMS-AUDIT.md`) — incl. Move-In/Move-Out property-type bug, RSMI zeroed cost, WMR/IIRUP missing sections |
-| ~~6~~ | ~~Alternate approver designation~~ — **merged, PR #89 / #90** |
-| ~~7~~ | ~~Master Admin governance backend~~ — **cut as out of scope (PR #98)**; dashboard rebuilt on live data |
-| 8 | Physical count / reconciliation workflow + 2 missing management reports (Asset Utilization Summary, Audit Trail export) |
-| 9 | Small wiring leftovers (`MOCK-DATA-WIRING.md` Parts B–C) — Approving Officer `approval-history`, Property Officer `disposal`/`audit`, trends/utilisation endpoint, dead-mock-code deletion. (Assigned assets + Returns/Incidents: **done, PR #102**) |
-| 10 | Replacement / repair follow-ups — repeat repairs as a replacement reason, loaner unit during repair, issue the new unit on replacement fulfilment, requester download of the replacement receipt (`NEXT-TIME.md` §3) |
+| 1 | **Review and merge the PR stack** (#105 → #106 → #107 → #108), then `develop` → `main` |
+| 2 | Period reports: an end date is treated as midnight, so items created later that day are left out (small, real bug) |
+| 3 | COA form fidelity (`docs/guides/COA-FORMS-AUDIT.md`): Move-In / Move-Out "Property Type: Office" always, WMR and IIRUP missing sections, the extra unofficial signatory, Sticker Card vs Stock Card; then compare against `FORMS/` |
+| 4 | Physical count recording / reconciliation; trends / utilisation and the Asset Utilization Summary |
+| 5 | Product questions: Annex A.4 scope, asset history by person, PAR / ICS Office/Section (`SYSTEM-STATUS.md`) |
+| 6 | Phase 5: JMeter at 362 users, OWASP ZAP, UAT with CICC, the ASVS report, a Frontend coverage gate |
+| 7 | Production readiness, data onboarding, handover (blocked on CICC); rotate the dev passwords first |
 
-Phase 5 (`docs/phases/PHASE-5-TESTING.md`): the **formal Jest security suite is merged (PR #92)** and gates CI; JMeter load test, OWASP ZAP scan, and UAT with CICC are still open and are best run once the build above is functionally complete — see `PATH-TO-DONE.md` §C for the rationale. Still open beyond the table: a `Frontend/` coverage gate, plus production readiness (§D), data onboarding (§E), and compliance/handover (§F) in `PATH-TO-DONE.md`. Tooling not yet added (Husky, MFA/TOTP, idle session timeout, Playwright e2e): `docs/guides/FUTURE-TOOLING.md`.
+Phase 5 (`docs/phases/PHASE-5-TESTING.md`): the formal Jest security suite and a k6 baseline are done; JMeter, ZAP and UAT are best run once the stack above is merged. Tooling not yet added (Husky, MFA/TOTP, idle session timeout, committed Playwright e2e): `docs/guides/FUTURE-TOOLING.md`.
 
 ---
 
@@ -191,7 +212,7 @@ Phase 5 (`docs/phases/PHASE-5-TESTING.md`): the **formal Jest security suite is 
 | # | File | Why |
 |---|---|---|
 | 1 | **`CLAUDE.md`** | Single source of truth. Read every section before writing code. |
-| 2 | **`FEATURE-STATUS.md`** | One-screen ✅ / 🟡 / 🔴 mock / ⬜ map of the whole system. |
+| 2 | **`FEATURE-STATUS.md`** | One-screen ✅ / 🟡 / ⬜ map of the whole system. |
 | 3 | **`SYSTEM-STATUS.md`** | Plain-language gap list + suggested order of work. |
 | 4 | **`PATH-TO-DONE.md`** | Everything between feature-complete and CICC handover, checklist form. |
 | 5 | **`CHECKS.md`** | Run every check before marking any task done. Non-negotiable. |
@@ -199,6 +220,10 @@ Phase 5 (`docs/phases/PHASE-5-TESTING.md`): the **formal Jest security suite is 
 | 7 | **`docs/guides/SECURITY.md`** | Canonical security spec — wins over CLAUDE.md on security specifics if they ever disagree. |
 | 8 | **`packages/shared/src/enums/index.ts`** | All shared enums (UserRole, AssetStatus, RequisitionStatus, etc.) — use these, never hardcode strings. |
 | 9 | **`docs/phases/PHASE-5-TESTING.md`** | Testing & Evaluation phase guide (Jest security tests, ZAP, JMeter). |
+| 10 | **`NEXT-TIME.md`** | Where the last session stopped and what to do next. |
+| 11 | **`RUN-LOCAL.md`** | Local runbook, troubleshooting, and how to verify screens and PDFs on a throwaway database. |
+
+CLAUDE.md §18 maps every md file to the change that should update it.
 
 ---
 
@@ -249,17 +274,18 @@ Before opening any PR, run every check in **`CHECKS.md`** in order — or tell C
 ## 10. Database Notes
 
 - **Dev database:** Shared Supabase instance — do not drop tables, other teammates are using it live.
-- **Schema changes:** write a `.sql` file in `Database/schemas/` (or `Database/migrations/` for post-launch changes) and run it manually in the Supabase SQL Editor. `synchronize: false` means nothing happens automatically. Migrations through **`007_alternate_approver.sql`** are applied to dev Supabase as of 2026-08-30 (006 = system_config, 007 = alternate approver).
+- **Schema changes:** write a `.sql` file in `Database/schemas/` (or `Database/migrations/` for post-launch changes) and run it manually in the Supabase SQL Editor. `synchronize: false` means nothing happens automatically. Schemas **001–016** are applied to dev Supabase as of 2026-10-15 (008–014 on 2026-10-11, 015 on 2026-10-14, 016 on 2026-10-15). Not yet applied to any production database (there is none). `Database/README.md` lists every file.
 - **Production:** raw PostgreSQL managed by CICC IT. No Supabase SDK features in application code — see `Database/README.md`.
-- The `user_role` enum includes `property_custodian` / `property_officer`; the `audit_action` enum now also has `system_config_updated` (migration 006) and `requisition_reassigned` (migration 007).
+- The `user_role` enum includes `property_custodian` / `property_officer`; the `audit_action` enum has 34 values (e.g. `system_config_updated`, `requisition_reassigned`, `asset_request_*`, `repair_*`, `form_generated`), so a new audit action needs a schema file too.
+- **Do not run the pilot on the shared Supabase dev DB**: it caps at 15 connections (run the backend with `DB_POOL_MAX=8`), and it holds test rows (`[VERIFY-2026-10-14]`) and demo rows (`DEMO-`).
 
 ---
 
 ## 11. Docker Notes (read before you touch `docker-compose build`)
 
-Two things worth knowing, found the hard way on 2026-08-19:
+Two things worth knowing (the first was found the hard way on 2026-08-19 and corrected in PR #95):
 
-1. **There are two separate dependency trees in this repo.** Local dev, tests, and CI all install through the **root npm workspace** — `npm install`/`npm ci` at the repo root, which is what §2 above tells you to run. But `Backend/Dockerfile` and `Frontend/Dockerfile` each do their own **standalone** `COPY package*.json ./` + `npm ci`, using `Backend/package-lock.json` / `Frontend/package-lock.json` directly — completely separate from the root lockfile, and npm workspaces doesn't touch them. These two lockfiles can silently drift out of sync with their own `package.json` if nobody's actually building the Docker images regularly. If `docker-compose build` ever fails with `npm ci` complaining the lockfile is out of sync, that's why — regenerate the specific lockfile (`cd Backend && rm package-lock.json && npm install`, twice if the first pass doesn't round-trip cleanly through `npm ci`) rather than assuming something's wrong with your machine.
+1. **The Docker build context is the repo root, and there is one lockfile.** This is an npm-workspaces monorepo and both apps import `packages/shared`, so `docker build -f Backend/Dockerfile .` (context `.`) copies `packages/shared` beside the app. Reverting to `context: ./Backend` breaks the build (the `../../../packages/shared` import escapes the context). There is a single root `package-lock.json`; there are no per-workspace lockfiles. If `docker compose build` fails on `npm ci` saying the lockfile is out of sync, regenerate the **root** lockfile (`npm install` at the repo root) and commit it (CLAUDE.md §11 #18; fixed in PR #95 — before that, both images failed to build at all).
 2. **If `npm ci` fails inside the container with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`** on every registry fetch: that's TLS interception on your network (proxy, antivirus, campus/office network filtering) whose root CA your Windows host trusts but the container's own minimal certificate store doesn't. Not a code problem — it'll happen on any machine behind that kind of network, regardless of what's in the lockfile. No fix from inside this repo; either build from a network without that interception, or add the intercepting CA to the image's trust store (out of scope for now, nobody's needed to build the actual container image day-to-day yet).
 
 ---
