@@ -285,6 +285,8 @@ Key screens (matching Figma mockup):
 
 **SLA Target:** 24-hour requisition approval turnaround
 
+**Who files, and who may not fulfil their own (2026-10-16):** `POST /api/v1/requisitions` takes Employee, Supervisor, IT Personnel, **Property Custodian and Property Officer** (they hold property like anyone, so they request and replace like anyone; the catalogue endpoints allow them too). Management and the System Administrator do not file (403). Routing is unchanged — the active Approving Officer of the requester's section, else division — so each division that files needs an Approving Officer; the Property and Supply Management division's is `CICC-SUP-002` (alternate `CICC-ALT01`; credentials in `docs/guides/ROLES.md`). **Segregation of duties:** a custodian never fulfils or holds a requisition they filed — `isCustodianOwnRequisition()` (requester is IT Personnel / Property Custodian and every line is in their own asset-type scope) hides it from their own queue and `assertMayFulfil()` refuses it (403). Another custodian fulfils it, or — for exactly those requests — the System Administrator, via `GET /api/v1/requisitions/fulfilment-fallback` (Master Admin → Requisition Fulfilment); the admin is refused on any other requisition. Mirrors the Returns & Incidents fallback (§Module 6).
+
 **Request type is derived, never picked:** `supply` for an IES item, `new` otherwise, `replacement` only when started from My Assigned Assets. A `repair` requisition is refused (400) — repairs go through Returns & Incidents (Module 6); the enum value stays for historical rows.
 
 **Replacement flow (§17):** holder clicks "Request replacement" on an asset that qualifies — `GET /api/v1/assets/mine` returns `replacement: { eligible, basis, reason, openRequestNumber }` per asset (`Backend/src/assets/replacement-eligibility.ts`: not serviceable → `condition`, repaired ≥ `repeat_repair_limit` times (system config, default 3, min 2) in the last 12 months → `repeat_repair`, past useful life → `useful_life`, held while flagged for disposal → `loss_or_damage`). The holder's button and the requisition guard both go through `AssetsService.replacementEligibilityFor`, so they never disagree. The server re-checks: requester must hold it, one unit of the same `assetType`, one open replacement per asset (409). Approver and custodian see `replacedAsset` on the requisition. **Replacement Validation** (`GET /api/v1/requisitions/replacement-review`, Property Officer / Property Custodian / IT / Admin / Management, scoped by asset type; `/property-officer/replacements`) lists every replacement request with the basis it was justified on at submission (read from its `requisition_submitted` audit entry) and the old unit's repairs in 12 months, plus held items that already qualify but have no open request. **Fulfilling takes the old unit back** — an issued old unit becomes `returned` (custodian cleared) and its Receipt of Returned Property/SEP is generated, linked via `related_requisition_id`; a lost/stolen unit has nothing to collect and stays on the holder. **…and can issue the new one in the same step:** when the custodian picks a unit on Fulfil (`fulfilledItems` for the single line), it must be `available`, the same `assetType`, not IES and not the old unit — checked before anything is written — and it is issued to the requester right after the fulfilment commits (an issue failure is logged and audited as `issued: false`; the custodian can still issue from Custody & Issuance). No pick = the old behaviour. **Requester documents:** `GET /api/v1/requisitions/:id` carries `documents` (forms with `related_requisition_id`), and `GET /api/v1/requisitions/:id/documents/:formId` downloads one with the same read access as the requisition — the receipt shows on the requisition detail for the requester too.
@@ -522,15 +524,17 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 ### Property Custodian (`/property-custodian/`)
 - `dashboard`, `fixed-assets`, `supplies` (+ `/new`, `assets/[id]`), `qr-scanner`
 - `fulfillment`, `custody`, `returns-incidents`, `maintenance`, `physical-inventory`, `disposal`
+- `requisitions` — My own requisitions (their own are fulfilled by another custodian or the System Administrator)
 - `reports` — Generate official COA forms
 
 ### Property Officer (`/property-officer/`)
 - `dashboard`, `assets` (consolidated registry), `replacements` (replacement validation), `disposal` (disposal review, read-only), `reports` (forms archive)
+- `requisitions` — My own requisitions
 
 ### Master Administrator (`/master-admin/`)
 - `dashboard` — System health, user activity, audit summary
 - `users`, `roles` — Accounts, role assignment; `configuration` — System settings (thresholds, SLA); `audit` — Full audit log (filterable, exportable)
-- `returns-incidents`, `repairs` — Fallback decider for custodians' own requests
+- `returns-incidents`, `repairs`, `fulfillment` — Fallback decider for custodians' own requests (returns/incidents, repairs, and requisitions they filed themselves)
 
 ### Management & Audit Viewer (`/management-audit/`) — read-only
 - `dashboard` — Executive dashboard (KPIs, requisition and asset status breakdowns)

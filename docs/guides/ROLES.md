@@ -17,6 +17,7 @@
 | Property Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
 | Property Officer | property.officer@cicc.gov.ph | PropertyOfficer@2026! |
 
+
 > **Note:** If an account gets locked after too many failed login attempts, a System Administrator can unlock it via `PATCH /api/v1/users/:id/unlock` or reset the password via `PATCH /api/v1/users/:id/reset-password`. To end a possibly-compromised session without changing the password, use `PATCH /api/v1/users/:id/revoke-sessions`.
 >
 > The 2 Property role passwords above were reset 2026-08-21 via the real `PATCH /api/v1/users/:id/reset-password` endpoint and verified with a live login (both accounts existed with no known-working password before this). If you find these no longer work, someone has reset them again since — check with the team rather than assuming this doc is wrong.
@@ -141,12 +142,15 @@ Full system access. Manages user accounts, roles, and system configuration. Also
 - Filter the user directory by role; open an account to see its recent activity (`GET /api/v1/audit/user/:userId`)
 - View the full immutable audit trail (all system actions; filter by action type and by date range; exportable)
 - Approve or reject requisitions
+- Fulfil or hold a requisition **filed by a custodian** (Master Admin → Requisition Fulfilment, `GET /api/v1/requisitions/fulfilment-fallback`) — a custodian may not fulfil their own, and this is the fallback when no other custodian can
 - View all inventory dashboards
 - Generate reports and official COA forms
 - Configure system settings (thresholds, SLA targets, approval routes)
 - Receive all system notifications
 
 **Cannot do:**
+- File a requisition (403)
+- Fulfil or hold any requisition filed by someone other than a custodian
 - Delete audit log entries (audit logs are append-only by design — COA compliance)
 - Delete user accounts (deactivation only)
 
@@ -173,6 +177,29 @@ Read-only oversight role. Management accesses dashboards and reports for monitor
 - Manage users or roles
 - Generate official COA forms
 - Modify any system data or configuration
+
+---
+
+### Property Custodian and Property Officer — requisitions
+**Workspaces:** `/property-custodian/dashboard`, `/property-officer/dashboard`
+
+Both roles hold property like anyone else, so as of 2026-10-16 they **file requisitions and replacement requests** (menu: *My Requests → My Requisitions*; *Request replacement* on *My Assigned Assets*). Their requests route like an employee's: to the active Approving Officer of their section, otherwise of their division (here, `psm.approver@cicc.gov.ph`). If the division has none, submitting fails with "No supervisor is configured for your section".
+
+- A **Property Custodian never fulfils what they filed themselves.** Their own requisitions are left out of their fulfilment queue and fulfil/hold on them is refused (403); another custodian does it, or — only for a custodian's own request — the System Administrator.
+- **Management and the System Administrator do not file** requisitions.
+
+---
+
+## Who Files, Approves and Fulfils a Requisition
+
+| Requester | Routes to (approver) | Fulfilled by |
+|---|---|---|
+| Employee | Approving Officer of their section, else their division | IT Personnel (ICT items) / Property Custodian (Fixed assets, Supplies) |
+| Supervisor (Approving Officer) | Their designated alternate approver | Same custodian split |
+| IT Personnel | Approving Officer of their section, else division | **Another** IT Personnel; the System Administrator if the request is theirs and there is no other |
+| Property Custodian | Approving Officer of their section, else division | **Another** Property Custodian; the System Administrator as fallback |
+| Property Officer | Approving Officer of their section, else division | The custodian for the item type (Property Officer is not a fulfiller) |
+| Management, System Administrator | — cannot file — | — |
 
 ---
 
@@ -212,7 +239,7 @@ Read-only oversight role. Management accesses dashboards and reports for monitor
 | **Employee** | `/login`, `/employee/dashboard`, `/employee/requisitions/new`, `/employee/requisitions`, `/employee/requisitions/[id]`, `/employee/catalogue`, `/employee/notifications` |
 | **Supervisor** (Approving Officer) | `/login`, `/approving-officer/{dashboard, approvals, approval-history, requisitions, assigned-assets, notifications}` |
 | **IT Personnel** (IT Asset Custodian) | `/login`, `/it-asset-custodian/{dashboard, assets, assets/new, assets/[id], fulfillment, custody, returns-incidents, qr-scanner, maintenance, physical-inventory, disposal, reports, management-reports, requisitions, assigned-assets, notifications}` |
-| **System Admin** (Master Administrator) | `/login`, `/master-admin/{dashboard, users, roles, configuration, audit, returns-incidents, repairs, assigned-assets, notifications}` |
+| **System Admin** (Master Administrator) | `/login`, `/master-admin/{dashboard, users, roles, configuration, audit, returns-incidents, repairs, fulfillment, assigned-assets, notifications}` |
 | **Management** (Management & Audit Viewer) | `/login`, `/management-audit/{dashboard, asset-reports, requisition-reports, maintenance-disposal, physical-count, audit, forms, assigned-assets, notifications}` |
-| **Property Custodian** | `/login`, `/property-custodian/{dashboard, fixed-assets, supplies, fulfillment, custody, returns-incidents, maintenance, qr-scanner, physical-inventory, disposal, reports, assigned-assets, notifications}` |
-| **Property Officer** | `/login`, `/property-officer/{dashboard, assets, replacements, disposal, reports, assigned-assets, notifications}` |
+| **Property Custodian** | `/login`, `/property-custodian/{dashboard, fixed-assets, supplies, fulfillment, custody, returns-incidents, maintenance, qr-scanner, physical-inventory, disposal, reports, requisitions, assigned-assets, notifications}` |
+| **Property Officer** | `/login`, `/property-officer/{dashboard, assets, replacements, disposal, reports, requisitions, assigned-assets, notifications}` |
