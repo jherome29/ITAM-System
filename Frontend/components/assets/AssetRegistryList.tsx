@@ -433,14 +433,14 @@ function AssetCard({ asset, href }: Readonly<{ asset: Asset; href: string }>) {
           <span className="line-clamp-2 text-base font-bold leading-5 text-slate-950">
             {asset.itemDescription}
           </span>
-          <span className="mt-1 block text-xs text-slate-500">
+          <span className="mt-1 line-clamp-2 text-xs text-slate-500">
             {displayId(asset)}
           </span>
           <span className="mt-2 flex items-center gap-1.5 text-xs text-slate-600">
             <i
-              className={`h-1.5 w-1.5 rounded-full ${attention ? "bg-red-500" : "bg-emerald-500"}`}
+              className={`h-1.5 w-1.5 flex-none rounded-full ${attention ? "bg-red-500" : "bg-emerald-500"}`}
             />
-            {asset.brand || asset.assetClass} · {formatLabel(asset.status)}
+            <span className="line-clamp-1">{asset.brand || asset.assetClass} · {formatLabel(asset.status)}</span>
           </span>
           <span className="mt-auto block pt-4">
             <span className="flex items-start gap-1.5 text-xs text-slate-600">

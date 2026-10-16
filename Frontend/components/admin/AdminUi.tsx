@@ -109,7 +109,7 @@ export function TableWrap({ children }: Readonly<{ children: ReactNode }>) {
 
 // Table cells and headers may wrap. A no-wrap default pushed 16 tables wider than their
 // panel once the text got bigger, hiding the Actions column off the right edge.
-export const thClass = 'bg-slate-50 px-4 py-3 text-left text-xs font-bold uppercase text-slate-500';
+export const thClass = 'break-normal bg-slate-50 px-4 py-3 text-left text-xs font-bold uppercase text-slate-500';
 export const tdClass = 'border-t border-slate-100 px-4 py-3 text-sm text-slate-700';
 /** For a column that must stay on one line: a time, a count. */
 export const tdNoWrapClass = `whitespace-nowrap ${tdClass}`;

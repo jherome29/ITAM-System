@@ -19,6 +19,13 @@ import { CenteredModal } from '@/components/ui/CenteredModal';
 import { labelClass } from '@/components/ui/controls';
 import { Notice } from '@/components/ui/Notice';
 import { roleLabel } from '@/lib/assets/asset-history';
+import { Pager } from '@/components/ui/Pager';
+import { collectAllPages } from '@/lib/api/collect-pages';
+import { usePaged } from '@/lib/use-paged';
+
+// The directory is paged by the server (search and role filter run there too), so 362 accounts
+// are one click apart instead of the first 50 being all there is.
+const USERS_PAGE_SIZE = 50;
 
 type IdentitySlug = 'users' | 'roles';
 
@@ -103,6 +110,8 @@ function UserAuditHistory({ userId }: Readonly<{ userId: string }>) {
 
 function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
@@ -115,11 +124,14 @@ function UsersPage() {
   // one per keystroke, and a slow early answer must not replace a later one.
   const latestFetch = useRef(0);
 
-  const fetchUsers = useCallback((q?: string, role?: string) => {
+  const fetchUsers = useCallback((q?: string, role?: string, pageNo = 1) => {
     const ticket = ++latestFetch.current;
-    usersApi.list(1, 50, q, role)
+    usersApi.list(pageNo, USERS_PAGE_SIZE, q, role)
       .then((res) => {
-        if (ticket === latestFetch.current) setUsers(res.data.data);
+        if (ticket !== latestFetch.current) return;
+        setUsers(res.data.data);
+        setTotal(res.data.total);
+        setPage(pageNo);
       })
       .catch(() => setToast('Could not load users.'))
       .finally(() => {
@@ -137,15 +149,20 @@ function UsersPage() {
   // the front, and on demand.
   useEffect(() => {
     const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') fetchUsers(search || undefined, roleParam);
+      if (document.visibilityState === 'visible') fetchUsers(search || undefined, roleParam, page);
     };
     document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => document.removeEventListener('visibilitychange', refreshWhenVisible);
-  }, [fetchUsers, search, roleParam]);
+  }, [fetchUsers, search, roleParam, page]);
 
   const handleRefresh = () => {
     setLoading(true);
-    fetchUsers(search || undefined, roleParam);
+    fetchUsers(search || undefined, roleParam, page);
+  };
+
+  const handlePage = (next: number) => {
+    setLoading(true);
+    fetchUsers(search || undefined, roleParam, next);
   };
 
   const handleSearchChange = (value: string) => {
@@ -205,9 +222,9 @@ function UsersPage() {
   return <div className="space-y-5">
     <AdminPageHeader title="Users & Accounts" detail="Manage the identity data required for AIMRS access and account lifecycle." action={<div className="flex flex-wrap gap-2"><SecondaryButton icon={RefreshCw} onClick={handleRefresh}>Refresh</SecondaryButton><PrimaryButton icon={Plus} onClick={() => setCreating(true)}>Create account</PrimaryButton></div>} />
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      <MetricCard label="Total accounts" value={String(users.length)} detail="" tone="blue" icon={Users} />
-      <MetricCard label="Active" value={String(users.filter((user) => user.isActive).length)} detail="" tone="green" icon={UserCheck} />
-      <MetricCard label="Inactive" value={String(users.filter((user) => !user.isActive).length)} detail="" tone="red" icon={ShieldCheck} />
+      <MetricCard label="Total accounts" value={String(total)} detail={roleFilter === 'All' && !search ? '' : 'Matching the filter'} tone="blue" icon={Users} />
+      <MetricCard label="Active" value={String(users.filter((user) => user.isActive).length)} detail={total > USERS_PAGE_SIZE ? 'On this page' : ''} tone="green" icon={UserCheck} />
+      <MetricCard label="Inactive" value={String(users.filter((user) => !user.isActive).length)} detail={total > USERS_PAGE_SIZE ? 'On this page' : ''} tone="red" icon={ShieldCheck} />
     </div>
     <SearchToolbar
       value={search}
@@ -217,11 +234,12 @@ function UsersPage() {
       filterOptions={ROLE_FILTER_OPTIONS}
       onFilterChange={handleRoleFilterChange}
     />
-    <Panel title="Account Directory" detail={`${users.length} accounts shown - deactivation preserves audit history`}>
+    <Panel title="Account Directory" detail={`${users.length} of ${total} accounts shown - deactivation preserves audit history`}>
       {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>User</th><th className={thClass}>Office</th><th className={thClass}>Role</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{users.length === 0 ? <EmptyRow colSpan={5}>No accounts found.</EmptyRow> : users.map((user) => <tr key={user.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelectedId(user.id)} className="text-left"><span className="block font-bold text-slate-950">{userName(user)}</span><span className="text-xs text-slate-500">{user.employeeId} - {user.email}</span></button></td><td className={tdClass}>{user.division} / {user.officeOrSection}</td><td className={tdClass}>{roleLabel(user.role)}</td><td className={tdClass}><AccountStatusChip user={user} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View account', onClick: () => setSelectedId(user.id) }, { label: 'Reset password', onClick: () => setResetTarget(user) }, ...(isLockedNow(user) ? [{ label: 'Unlock account', onClick: () => handleUnlock(user.id, userName(user)) }] : []), ...(user.isActive ? [{ label: 'Force sign-out', onClick: () => setSignOutTarget(user) }] : []), user.isActive ? { label: 'Deactivate account', danger: true, onClick: () => handleDeactivate(user.id, userName(user)) } : { label: 'Reactivate account', onClick: () => handleReactivate(user.id, userName(user)) }]} /></td></tr>)}</tbody></table></TableWrap>}
+      <Pager page={page} total={total} pageSize={USERS_PAGE_SIZE} onPage={handlePage} noun="accounts" />
     </Panel>
     <DetailDrawer open={Boolean(selected)} title={selected ? userName(selected) : 'Account details'} onClose={() => setSelectedId(null)}>{selected && <div className="space-y-5"><div className="grid grid-cols-2 gap-3">{[['Employee ID', selected.employeeId], ['Account ID', selected.id], ['Email', selected.email], ['Role', selected.role], ['Division', selected.division], ['Office / Section', selected.officeOrSection]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>)}</div><Panel title="Account status"><div className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Status</span><AccountStatusChip user={selected} /></div>{isLockedNow(selected) && <div className="flex items-center justify-between"><span className="text-sm text-slate-600">Locked until</span><span className="text-sm font-semibold text-slate-900">{formatDateTime(selected.lockedUntil as string)}</span></div>}{selected.failedLoginAttempts > 0 && <div className="flex items-center justify-between"><span className="text-sm text-slate-600">Failed sign-ins</span><span className="text-sm font-semibold text-slate-900">{selected.failedLoginAttempts}</span></div>}</div></Panel>{selected.role === 'supervisor' && <ApprovalRoutingPanel key={selected.id} user={selected} onSaved={(u) => setUsers((prev) => prev.map((x) => (x.id === u.id ? u : x)))} />}<UserAuditHistory key={selected.id} userId={selected.id} /><div className="flex flex-wrap gap-2">{isLockedNow(selected) && <SecondaryButton onClick={() => handleUnlock(selected.id, userName(selected))}>Unlock account</SecondaryButton>}<SecondaryButton onClick={() => setResetTarget(selected)}>Reset password</SecondaryButton>{selected.isActive && <SecondaryButton onClick={() => setSignOutTarget(selected)}>Force sign-out</SecondaryButton>}{selected.isActive ? <SecondaryButton onClick={() => handleDeactivate(selected.id, userName(selected))}>Deactivate account</SecondaryButton> : <SecondaryButton onClick={() => handleReactivate(selected.id, userName(selected))}>Reactivate account</SecondaryButton>}</div><p className="text-xs text-slate-500">Actions call the live users API and create append-only audit events.</p></div>}</DetailDrawer>
-    <DetailDrawer open={creating} title="Create account" onClose={() => setCreating(false)}><AccountForm onSave={(user) => { setUsers((current) => [user, ...current]); setCreating(false); setToast(`${userName(user)} was added to the account directory.`); }} /></DetailDrawer>
+    <DetailDrawer open={creating} title="Create account" onClose={() => setCreating(false)}><AccountForm onSave={(user) => { setUsers((current) => [user, ...current]); setTotal((count) => count + 1); setCreating(false); setToast(`${userName(user)} was added to the account directory.`); }} /></DetailDrawer>
     <ConfirmDialog
       open={Boolean(signOutTarget)}
       title={signOutTarget ? `Sign ${userName(signOutTarget)} out?` : 'Sign out'}
@@ -462,8 +480,9 @@ function RolesPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
 
   useEffect(() => {
-    usersApi.list(1, 100)
-      .then((res) => setUsers(res.data.data))
+    // Every account: with only the first 100 loaded, anyone after them could not be given a role.
+    collectAllPages<User>((page, limit) => usersApi.list(page, limit).then((res) => ({ data: res.data.data, total: res.data.total })))
+      .then(setUsers)
       .catch(() => setToast('Could not load users.'))
       .finally(() => setLoading(false));
   }, []);
@@ -471,6 +490,7 @@ function RolesPage() {
   const rows = users.filter((user) =>
     `${user.firstName} ${user.lastName} ${user.email} ${user.role}`.toLowerCase().includes(search.toLowerCase()),
   );
+  const paged = usePaged(rows, search);
 
   const saveRole = async (user: User) => {
     const newRole = pendingRoleById[user.id];
@@ -493,7 +513,7 @@ function RolesPage() {
     <Panel title="User Role Assignment" detail={`${rows.length} accounts shown`}>
       {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="w-full"><thead><tr>
         <th className={thClass}>User</th><th className={thClass}>Current role</th><th className={thClass}>New role</th><th className={`${thClass} text-right`}>Action</th>
-      </tr></thead><tbody>{rows.length === 0 ? <EmptyRow colSpan={4}>No accounts found.</EmptyRow> : rows.map((user) => <tr key={user.id}>
+      </tr></thead><tbody>{rows.length === 0 ? <EmptyRow colSpan={4}>No accounts found.</EmptyRow> : paged.pageItems.map((user) => <tr key={user.id}>
         <td className={tdClass}>{user.firstName} {user.lastName}<span className="block text-xs text-slate-500">{user.employeeId}</span></td>
         <td className={tdClass}>{roleLabel(user.role)}</td>
         <td className={tdClass}>
@@ -507,6 +527,7 @@ function RolesPage() {
         </td>
         <td className={`${tdClass} text-right`}><SecondaryButton onClick={() => saveRole(user)}>{savingId === user.id ? 'Saving…' : 'Save'}</SecondaryButton></td>
       </tr>)}</tbody></table></TableWrap>}
+      <Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="accounts" />
     </Panel>
     <Toast message={toast} />
   </div>;

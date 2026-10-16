@@ -7,6 +7,8 @@ import { AdminPageHeader, MetricCard, Panel, TableWrap, tdClass, thClass } from 
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { assetsApi, type Asset } from '@/lib/api/assets';
 import { collectAllPages } from '@/lib/api/collect-pages';
+import { Pager } from '@/components/ui/Pager';
+import { usePaged } from '@/lib/use-paged';
 import { buildCountSheet } from '@/lib/assets/count-sheet';
 import { buttonClass } from '@/components/ui/buttons';
 import { Notice } from '@/components/ui/Notice';
@@ -31,9 +33,10 @@ export function PhysicalInventorySheet({ eyebrow, formsPath }: Readonly<{ eyebro
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <LoadingSkeleton rows={8} />;
-
   const { rows, totals } = buildCountSheet(assets);
+  const paged = usePaged(rows);
+
+  if (loading) return <LoadingSkeleton rows={8} />;
 
   return (
     <div className="space-y-5">
@@ -70,7 +73,7 @@ export function PhysicalInventorySheet({ eyebrow, formsPath }: Readonly<{ eyebro
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {paged.pageItems.map((r) => (
                   <tr key={r.location} className="hover:bg-blue-50/40">
                     <td className={`${tdClass} font-bold text-slate-950`}>{r.location}</td>
                     <td className={`${tdClass} text-right`}>{r.items}</td>
@@ -94,6 +97,7 @@ export function PhysicalInventorySheet({ eyebrow, formsPath }: Readonly<{ eyebro
             </table>
           </TableWrap>
         )}
+        <Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="locations" />
       </Panel>
     </div>
   );

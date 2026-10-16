@@ -11,6 +11,10 @@ import { formatDateTime } from '@/lib/requisitions/requisition-view';
 import { Notice } from '@/components/ui/Notice';
 import { EmptyMessage } from '@/components/ui/EmptyRow';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { ClampText } from '@/components/ui/ClampText';
+import { Pager } from '@/components/ui/Pager';
+import { collectAllPages } from '@/lib/api/collect-pages';
+import { usePaged } from '@/lib/use-paged';
 
 /**
  * Disposal Review (Property Custodian, read-only): every asset in the custodian's
@@ -25,12 +29,14 @@ export function DisposalReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow: s
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    assetsApi
-      .list(1, 500, undefined, 'flagged_for_disposal')
-      .then((res) => setAssets(res.data.data))
+    // Every page: the totals above the table are counted from this list, so a cap would understate them.
+    collectAllPages<Asset>((page, limit) => assetsApi.list(page, limit, undefined, 'flagged_for_disposal').then((res) => ({ data: res.data.data, total: res.data.total })))
+      .then(setAssets)
       .catch(() => setLoadError('Could not load the disposal list. Please refresh the page.'))
       .finally(() => setLoading(false));
   }, []);
+
+  const paged = usePaged(assets);
 
   if (loading) return <LoadingSkeleton rows={8} />;
 
@@ -67,10 +73,10 @@ export function DisposalReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow: s
                 </tr>
               </thead>
               <tbody>
-                {assets.map((a) => (
+                {paged.pageItems.map((a) => (
                   <tr key={a.id} className="hover:bg-blue-50/40">
                     <td className={tdClass}>
-                      <Link href={`${assetBasePath}/${a.id}`} className="font-bold text-slate-950 hover:text-blue-700 hover:underline">{a.itemDescription}</Link>
+                      <Link href={`${assetBasePath}/${a.id}`} className="font-bold text-slate-950 hover:text-blue-700 hover:underline"><ClampText lines={2}>{a.itemDescription}</ClampText></Link>
                     </td>
                     <td className={tdClass}>{a.propertyNumber || '—'}</td>
                     <td className={tdClass}>{a.assetClass} · {a.assetType}</td>
@@ -86,6 +92,7 @@ export function DisposalReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow: s
             </table>
           </TableWrap>
         )}
+        <Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="assets" />
       </Panel>
     </div>
   );

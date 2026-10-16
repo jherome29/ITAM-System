@@ -20,6 +20,12 @@ import { humanize } from '@/lib/text';
 import { Notice } from '@/components/ui/Notice';
 import { EmptyRow } from '@/components/ui/EmptyRow';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { ClampText } from '@/components/ui/ClampText';
+import { Pager } from '@/components/ui/Pager';
+import { usePaged } from '@/lib/use-paged';
+
+// Two columns of cards, so an even number keeps the last row full.
+const CARDS_PER_PAGE = 12;
 
 // Why a non-issued asset is still on the holder's list.
 const HOLDING_NOTE: Record<string, string> = {
@@ -103,6 +109,9 @@ export function MyAssignedAssets({
     }
   };
 
+  const pagedAssets = usePaged(assets, '', CARDS_PER_PAGE);
+  const pagedRequests = usePaged(requests);
+
   return <div className="space-y-5">
     <AdminPageHeader eyebrow={eyebrow} title="My Assigned Assets" detail={`Property currently issued to you. Request a return or repair, report damage, loss or theft${canRequestReplacement ? ', or request a replacement once an asset qualifies' : ''} — the responsible custodian is notified.`} />
     {error && <Notice tone="red">{error}</Notice>}
@@ -113,7 +122,7 @@ export function MyAssignedAssets({
     </div>
     {loading ? <Panel title="Assigned assets" detail="Loading…"><div className="p-4"><LoadingSkeleton rows={4} /></div></Panel>
       : assets.length === 0 ? <Panel title="Assigned assets" detail="Nothing is issued to you right now."><p className="p-4 text-sm text-slate-500">When a custodian issues an asset to you, it will appear here.</p></Panel>
-      : <div className="grid gap-4 lg:grid-cols-2">{assets.map((asset) => (
+      : <div className="space-y-4"><div className="grid gap-4 lg:grid-cols-2">{pagedAssets.pageItems.map((asset) => (
         <AssetCard
           key={asset.id}
           asset={asset}
@@ -124,20 +133,21 @@ export function MyAssignedAssets({
           onView={setViewing}
           onCancel={setCancelling}
         />
-      ))}</div>}
+      ))}</div><Pager page={pagedAssets.page} total={pagedAssets.total} pageSize={pagedAssets.size} onPage={pagedAssets.setPage} noun="assets" /></div>}
 
     {showRequestHistory && !loading && <Panel title="My return & incident requests" detail={`${requests.length} request${requests.length === 1 ? '' : 's'}`}>
       <TableWrap><table className="w-full min-w-[720px]"><thead><tr><th className={thClass}>Request</th><th className={thClass}>Type</th><th className={thClass}>Asset</th><th className={thClass}>Filed</th><th className={thClass}>Status</th><th className={thClass} /></tr></thead><tbody>
-        {requests.map((r) => <tr key={r.id}>
+        {pagedRequests.pageItems.map((r) => <tr key={r.id}>
           <td className={`${tdNoWrapClass} font-bold text-slate-950`}>{r.requestNumber}</td>
           <td className={tdClass}>{REQUEST_TYPE_LABEL[r.type]}</td>
-          <td className={tdClass}>{r.asset?.itemDescription ?? '—'}</td>
+          <td className={tdClass}><ClampText>{r.asset?.itemDescription}</ClampText></td>
           <td className={tdNoWrapClass}>{formatDateTime(r.createdAt)}</td>
           <td className={tdClass}><StatusChip status={REQUEST_STATUS_LABEL[r.status]} tone={REQUEST_STATUS_TONE[r.status]} /></td>
           <td className={`${tdClass} text-right`}><SecondaryButton onClick={() => setViewing(r)}>View</SecondaryButton></td>
         </tr>)}
         {requests.length === 0 && <EmptyRow colSpan={6}>You have not filed any return or incident requests.</EmptyRow>}
       </tbody></table></TableWrap>
+      <Pager page={pagedRequests.page} total={pagedRequests.total} pageSize={pagedRequests.size} onPage={pagedRequests.setPage} noun="requests" />
     </Panel>}
 
     <DetailDrawer open={Boolean(filing)} title={filing ? `${REQUEST_TYPE_LABEL[filing.type]} — ${filing.asset.itemDescription}` : ''} onClose={() => setFiling(null)}>
@@ -189,7 +199,7 @@ function AssetCard({
     : (replacement.eligible ? undefined : replacement.reason);
 
   return <article className="border border-slate-200 bg-white p-4 shadow-sm">
-    <div className="flex items-start justify-between gap-3"><div><p className="text-base font-bold text-slate-950">{asset.itemDescription}</p><p className="mt-1 text-xs text-slate-500">{[asset.propertyNumber, asset.serialNumber && `Serial ${asset.serialNumber}`].filter(Boolean).join(' · ') || asset.assetType}</p></div><StatusBadge status={asset.condition} /></div>
+    <div className="flex items-start justify-between gap-3"><div><p className="text-base font-bold text-slate-950"><ClampText lines={2}>{asset.itemDescription}</ClampText></p><p className="mt-1 text-xs text-slate-500">{[asset.propertyNumber, asset.serialNumber && `Serial ${asset.serialNumber}`].filter(Boolean).join(' · ') || asset.assetType}</p></div><StatusBadge status={asset.condition} /></div>
     <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">{[['Status', humanize(asset.status)], ['Expected return', asset.expectedReturnDate ? formatDate(asset.expectedReturnDate) : 'No fixed date'], ['Type', `${asset.assetType} · ${asset.assetClass}`], ['Location', locationLabel(asset)]].map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 font-semibold text-slate-800">{value}</dd></div>)}</dl>
     {open.map((r) => <div key={r.id} className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
       <span><span className="font-bold text-amber-900">{REQUEST_TYPE_LABEL[r.type]}</span> <span className="text-amber-800">· {r.requestNumber} · {REQUEST_STATUS_LABEL[r.status]}{r.handoverDate ? ` · bring it in ${formatDate(r.handoverDate)}` : ''}</span></span>

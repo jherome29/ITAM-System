@@ -31,6 +31,10 @@ body {
   font-family: "DM Sans", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* A serial number, a URL or a name with no spaces breaks where it has to instead of
+   * stretching its table or card past the page. "anywhere" (not "break-word") also lowers
+   * the minimum width a table column needs, which is what stops a table growing. */
+  overflow-wrap: anywhere;
 }
 
 /*

@@ -12,6 +12,7 @@ import { FORM_CATALOG, formByType, formTypeLabel } from '@/lib/forms/form-catalo
 import { formatDateTime } from '@/lib/dates';
 import { Notice } from '@/components/ui/Notice';
 import { EmptyRow } from '@/components/ui/EmptyRow';
+import { Pager } from '@/components/ui/Pager';
 
 const PAGE_SIZE = 15;
 const TYPE_OPTIONS = [{ value: 'All', label: 'All form types' }, ...FORM_CATALOG.map((f) => ({ value: f.type, label: `${f.abbr} — ${f.name}` }))];
@@ -79,7 +80,6 @@ export function FormsArchive({ refreshKey }: Readonly<{ refreshKey: number }>) {
     setPage(next);
   };
 
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const filtered = formType !== 'All' || debounced !== '';
 
   return (
@@ -143,15 +143,7 @@ export function FormsArchive({ refreshKey }: Readonly<{ refreshKey: number }>) {
             </table>
           </TableWrap>
         )}
-        {total > PAGE_SIZE && (
-          <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3">
-            <p className="text-xs text-slate-500">Page {page} of {pages}</p>
-            <div className="flex gap-2">
-              <SecondaryButton onClick={() => goTo(page - 1)} disabled={page <= 1}>Previous</SecondaryButton>
-              <SecondaryButton onClick={() => goTo(page + 1)} disabled={page >= pages}>Next</SecondaryButton>
-            </div>
-          </div>
-        )}
+        <Pager page={page} total={total} pageSize={PAGE_SIZE} onPage={goTo} noun="forms" />
       </Panel>
       <Toast message={toast} />
     </div>

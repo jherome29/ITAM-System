@@ -42,6 +42,10 @@ describe('the rules themselves', () => {
     expect('text-[11px] font-bold').toMatch(/\btext-\[[\d.]+px\]/);
     expect('text-slate-400').toMatch(/\btext-(slate|gray)-[34]00\b/);
     expect('text-gray-300 ').toMatch(/\btext-(slate|gray)-[34]00\b/);
+    expect('rows.slice((page - 1) * pageSize, page * pageSize)').toMatch(/\.slice\(\(page - 1\)/);
+    expect('<button>Previous</button>').toMatch(/>\s*Previous\s*</);
+    expect('class="block line-clamp-3"').toMatch(/\b(block|flex|grid|inline-block|inline-flex)\b[^"`]*line-clamp-\d/);
+    expect('class="line-clamp-2 flex"').toMatch(/line-clamp-\d[^"`]*\b(block|flex|grid|inline-block|inline-flex)\b/);
   });
 });
 
@@ -135,6 +139,37 @@ describe('cards, labels and messages', () => {
 });
 
 describe('layout', () => {
+  // A 90-character serial number, an unbroken URL or a name with no spaces used to stretch
+  // a table (by up to 1,446px) or a card past the page and be cut off. A long word now
+  // breaks anywhere it has to, in every table, card and drawer.
+  it('lets a long unbroken word wrap instead of widening its box', () => {
+    const css = readFileSync(path.join(ROOT, 'app/globals.css'), 'utf8');
+    expect(css).toMatch(/body\s*\{[^}]*overflow-wrap:\s*anywhere/);
+  });
+
+  // With overflow-wrap: anywhere a column can shrink to one letter, so a header read
+  // "R-E-Q-U-E-S-T-E-D B-Y" down the page beside a long description. A header word never breaks;
+  // that also gives every column a floor as wide as its longest header word.
+  it('keeps a table header word whole, so no column can collapse to a letter', () => {
+    const adminUi = FILES.find((f) => f.rel === 'components/admin/AdminUi.tsx')?.text ?? '';
+    expect(adminUi).toMatch(/export const thClass = '[^']*\bbreak-normal\b/);
+  });
+
+  // A few hundred rows in one table stalled the browser for one to two seconds and buried the
+  // page. A long list pages through lib/pagination (usePaged + Pager), with one set of buttons.
+  it('pages a long list through the shared Pager, not a hand-built one', () => {
+    expect(offenders(/>\s*Previous\s*</, ['components/ui/Pager.tsx'])).toEqual([]);
+    expect(offenders(/\.slice\(\(page - 1\)/, ['lib/pagination.ts'])).toEqual([]);
+  });
+
+  // line-clamp works by setting display: -webkit-box. Put block, flex or grid next to it and
+  // whichever Tailwind writes last wins: `block line-clamp-2` computed to display: block, so a
+  // 500-character description ran 11 lines instead of 2 and the clamp did nothing at all.
+  it('never pairs line-clamp with a display class that switches it off', () => {
+    expect(offenders(/line-clamp-\d[^"`]*\b(block|flex|grid|inline-block|inline-flex)\b/)).toEqual([]);
+    expect(offenders(/\b(block|flex|grid|inline-block|inline-flex)\b[^"`]*line-clamp-\d/)).toEqual([]);
+  });
+
   it('sets the page width once, in the shell, so every page starts at the same place', () => {
     expect(offenders(/max-w-\[1[45]00px\]/, ['components/shell/AppShell.tsx'])).toEqual([]);
   });

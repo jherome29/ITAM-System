@@ -16,6 +16,9 @@ import { humanize } from '@/lib/text';
 import { DateField } from '@/components/ui/DateField';
 import { Notice } from '@/components/ui/Notice';
 import { EmptyRow } from '@/components/ui/EmptyRow';
+import { ClampText } from '@/components/ui/ClampText';
+import { Pager } from '@/components/ui/Pager';
+import { usePaged } from '@/lib/use-paged';
 
 const FILTERS = [
   { value: 'open', label: 'Under repair' },
@@ -265,6 +268,7 @@ export function RepairQueue({
       return true;
     })
     .filter((r) => [r.asset?.itemDescription, r.asset?.propertyNumber, r.holder?.name, r.holder?.employeeId, r.serviceProvider].join(' ').toLowerCase().includes(q));
+  const paged = usePaged(visible, `${search}|${filter}`);
   const openRows = rows.filter((r) => !r.completedAt);
 
   if (loading) return <LoadingSkeleton rows={8} />;
@@ -296,10 +300,10 @@ export function RepairQueue({
           <table className="w-full min-w-[900px]">
             <thead><tr><th className={thClass}>Asset</th><th className={thClass}>Holder</th><th className={thClass}>Service</th><th className={thClass}>Opened</th><th className={thClass}>Due back</th><th className={thClass}>Status</th><th className={thClass} /></tr></thead>
             <tbody>
-              {visible.map((r) => {
+              {paged.pageItems.map((r) => {
                 const status = statusOf(r);
                 return <tr key={r.id} className="hover:bg-blue-50/40">
-                  <td className={tdClass}><p className="font-bold text-slate-950">{r.asset?.itemDescription ?? '—'}</p><p className="text-xs text-slate-500">{[r.asset?.propertyNumber, r.asset && `${r.asset.assetType} · ${r.asset.assetClass}`].filter(Boolean).join(' · ')}</p></td>
+                  <td className={tdClass}><p className="font-bold text-slate-950"><ClampText lines={2}>{r.asset?.itemDescription}</ClampText></p><p className="text-xs text-slate-500">{[r.asset?.propertyNumber, r.asset && `${r.asset.assetType} · ${r.asset.assetClass}`].filter(Boolean).join(' · ')}</p></td>
                   <td className={tdClass}>{r.holder ? <><p>{r.holder.name}</p><p className="text-xs text-slate-500">{r.holder.employeeId}</p></> : <span className="text-slate-500">In stock</span>}</td>
                   <td className={tdClass}>{SERVICE_TYPE_LABEL[r.serviceType]}{r.serviceProvider ? <p className="text-xs text-slate-500">{r.serviceProvider}</p> : null}</td>
                   <td className={tdNoWrapClass}>{formatDate(r.openedAt)}</td>
@@ -312,6 +316,7 @@ export function RepairQueue({
             </tbody>
           </table>
         </TableWrap>
+        <Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="repairs" />
       </Panel>
 
       <DetailDrawer open={Boolean(selected)} title={selected?.asset?.itemDescription ?? 'Repair'} onClose={() => open(null)}>

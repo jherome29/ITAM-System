@@ -9,6 +9,10 @@ import { approvalHistorySummary, decidedRequisitions, turnaroundHours } from '@/
 import { formatDateTime, requesterLabel } from '@/lib/requisitions/requisition-view';
 import { Notice } from '@/components/ui/Notice';
 import { EmptyMessage } from '@/components/ui/EmptyRow';
+import { ClampText } from '@/components/ui/ClampText';
+import { Pager } from '@/components/ui/Pager';
+import { collectAllPages } from '@/lib/api/collect-pages';
+import { usePaged } from '@/lib/use-paged';
 
 function itemsLabel(r: Requisition): string {
   const [first, ...rest] = r.items ?? [];
@@ -27,12 +31,15 @@ export function ApprovalHistory({ eyebrow }: Readonly<{ eyebrow: string }>) {
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    requisitionsApi
-      .decided(1, 200)
-      .then((res) => setRows(decidedRequisitions(res.data.data)))
+    // Every page: an approver with more than 200 decisions used to see only the newest 200, and the
+    // totals above the table were worked out from that slice.
+    collectAllPages<Requisition>((page, limit) => requisitionsApi.decided(page, limit).then((res) => ({ data: res.data.data, total: res.data.total })))
+      .then((all) => setRows(decidedRequisitions(all)))
       .catch(() => setLoadError('Could not load your approval history. Please refresh the page.'))
       .finally(() => setLoading(false));
   }, []);
+
+  const paged = usePaged(rows);
 
   if (loading) return <LoadingSkeleton rows={8} />;
 
@@ -57,7 +64,7 @@ export function ApprovalHistory({ eyebrow }: Readonly<{ eyebrow: string }>) {
           icon={Clock}
         />
       </div>
-      <Panel title="Your decisions" detail={`${rows.length} shown`}>
+      <Panel title="Your decisions" detail={`${rows.length} in all`}>
         {rows.length === 0 ? (
           <EmptyMessage>No decisions yet — requisitions you approve or reject will appear here.</EmptyMessage>
         ) : (
@@ -75,23 +82,24 @@ export function ApprovalHistory({ eyebrow }: Readonly<{ eyebrow: string }>) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {paged.pageItems.map((r) => (
                   <tr key={r.id} className="hover:bg-blue-50/40">
                     <td className={`${tdNoWrapClass} font-bold text-slate-950`}>{r.requestNumber}</td>
                     <td className={tdClass}>{requesterLabel(r.requester)}</td>
-                    <td className={tdClass}>{itemsLabel(r)}</td>
+                    <td className={tdClass}><ClampText lines={2}>{itemsLabel(r)}</ClampText></td>
                     <td className={tdClass}>
                       <StatusChip status={r.supervisorDecision === 'approved' ? 'Approved' : 'Rejected'} tone={r.supervisorDecision === 'approved' ? 'green' : 'red'} />
                     </td>
                     <td className={tdNoWrapClass}>{formatDateTime(r.supervisorDecidedAt)}</td>
                     <td className={tdClass}>{turnaroundHours(r) === null ? '—' : `${turnaroundHours(r)} h`}</td>
-                    <td className={`${tdClass} max-w-xs`} title={r.supervisorComments ?? ''}>{r.supervisorComments?.trim() || '—'}</td>
+                    <td className={`${tdClass} max-w-xs`}><ClampText>{r.supervisorComments?.trim()}</ClampText></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </TableWrap>
         )}
+        <Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="decisions" />
       </Panel>
     </div>
   );

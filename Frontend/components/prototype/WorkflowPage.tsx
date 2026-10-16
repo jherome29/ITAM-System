@@ -37,6 +37,9 @@ import { PrimaryButton, tdClass, thClass } from '@/components/admin/AdminUi';
 import { buttonClass } from '@/components/ui/buttons';
 import { Notice } from '@/components/ui/Notice';
 import { EmptyRow } from '@/components/ui/EmptyRow';
+import { ClampText } from '@/components/ui/ClampText';
+import { Pager } from '@/components/ui/Pager';
+import { DEFAULT_PAGE_SIZE, clampPage, pageSlice } from '@/lib/pagination';
 
 // The custody pages sort asset rows by one of these keys; the requisition pages have their own list.
 const ASSET_SORT_KEYS = ['item', 'status', 'heldBy', 'location'] as const;
@@ -212,7 +215,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const statuses = ['All', ...Array.from(new Set(rows.map((row) => String(row.status ?? 'Open'))))];
-  const pageSize = 6;
+  const pageSize = DEFAULT_PAGE_SIZE;
 
   const filteredRows = useMemo(() => {
     const q = search.toLowerCase();
@@ -224,8 +227,9 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
         : String(a[sortKey] ?? '').localeCompare(String(b[sortKey] ?? '')));
   }, [rows, search, statusFilter, sortKey, isRequisitionPage]);
 
-  const visibleRows = filteredRows.slice((page - 1) * pageSize, page * pageSize);
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  // Kept inside the list: finishing the last row of a page must not leave you on an empty one.
+  const pageNo = clampPage(page, filteredRows.length, pageSize);
+  const visibleRows = pageSlice(filteredRows, pageNo, pageSize);
 
   const notify = (message: string) => {
     setToast(message);
@@ -487,7 +491,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                 return (
                 <tr key={String(row.id)} className="hover:bg-blue-50/40">
                   <td className={tdClass}>
-                    <p className="font-bold text-slate-950">{String(row.item ?? row.id)}</p>
+                    <p className="font-bold text-slate-950"><ClampText lines={2}>{String(row.item ?? row.id)}</ClampText></p>
                     <p className="text-xs text-slate-500">
                       {isAssetPage
                         ? [row.propertyNumber, row.serialNumber && `S/N ${String(row.serialNumber)}`].filter(Boolean).join(' · ')
@@ -520,7 +524,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                   <td className={tdClass}><StatusBadge status={String(row.status ?? 'Open')} label={liveReq ? requisitionStatusLabel(liveReq.status) : undefined} /></td>
                   <td className={tdClass}>
                     <div className="flex justify-end gap-2">
-                      <button type="button" onClick={() => setSelected(row)} className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">View</button>
+                      <button type="button" onClick={() => setSelected(row)} className={buttonClass({ variant: 'secondary', size: 'sm' })}>View</button>
                       <button type="button" onClick={() => { setSelected(row); if (rowActionMode(normalizedSlug) === 'confirm') setConfirmAction(rowActionLabel(normalizedSlug)); }} className={buttonClass({ size: 'sm' })}>
                         {rowActionLabel(normalizedSlug)}
                       </button>
@@ -535,13 +539,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
             </tbody>
           </table>
         </div>
-        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-600">
-          <span>Page {page} of {totalPages} • {filteredRows.length} records</span>
-          <div className="flex gap-2">
-            <button type="button" disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="rounded-md border border-slate-200 px-3 py-1.5 font-bold disabled:opacity-40">Previous</button>
-            <button type="button" disabled={page === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} className="rounded-md border border-slate-200 px-3 py-1.5 font-bold disabled:opacity-40">Next</button>
-          </div>
-        </div>
+        <Pager page={pageNo} total={filteredRows.length} pageSize={pageSize} onPage={setPage} noun="records" />
       </section>
 
       <DetailDrawer open={Boolean(selected)} title={String(selectedRequisitionDetail?.requestNumber ?? selected?.item ?? 'Record')} onClose={() => setSelected(null)}>

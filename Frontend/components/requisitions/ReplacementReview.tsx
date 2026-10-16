@@ -9,6 +9,9 @@ import { REPLACEMENT_BASIS_LABEL, requisitionsApi, type ReplacementReview as Rev
 import { formatDate, requisitionStatusLabel } from '@/lib/requisitions/requisition-view';
 import { Notice } from '@/components/ui/Notice';
 import { EmptyRow } from '@/components/ui/EmptyRow';
+import { ClampText } from '@/components/ui/ClampText';
+import { Pager } from '@/components/ui/Pager';
+import { usePaged } from '@/lib/use-paged';
 
 const OPEN = new Set(['pending_supervisor', 'pending_fulfillment', 'on_hold']);
 
@@ -53,16 +56,19 @@ export function ReplacementReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <LoadingSkeleton rows={8} />;
-
   const requests = data?.requests ?? [];
   const candidates = data?.candidates ?? [];
   const q = search.toLowerCase();
   const visible = requests
     .filter((r) => (filter === 'open' ? OPEN.has(r.status) : filter === 'closed' ? !OPEN.has(r.status) : true))
     .filter((r) => [r.requestNumber, r.replacedAsset?.itemDescription, r.replacedAsset?.propertyNumber, r.requester?.name, r.requester?.employeeId].join(' ').toLowerCase().includes(q));
+  const pagedRequests = usePaged(visible, `${search}|${filter}`);
+  const pagedCandidates = usePaged(candidates);
+
+  if (loading) return <LoadingSkeleton rows={8} />;
+
   const assetLink = (id: string, label: string) =>
-    assetBasePath ? <Link href={`${assetBasePath}/${id}`} className="font-bold text-slate-950 hover:text-blue-700 hover:underline">{label}</Link> : <span className="font-bold text-slate-950">{label}</span>;
+    assetBasePath ? <Link href={`${assetBasePath}/${id}`} className="font-bold text-slate-950 hover:text-blue-700 hover:underline"><ClampText lines={2}>{label}</ClampText></Link> : <span className="font-bold text-slate-950"><ClampText lines={2}>{label}</ClampText></span>;
 
   return (
     <div className="space-y-5">
@@ -84,7 +90,7 @@ export function ReplacementReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow
           <table className="w-full min-w-[960px]">
             <thead><tr><th className={thClass}>Request</th><th className={thClass}>Replaces</th><th className={thClass}>Requester</th><th className={thClass}>Justified by</th><th className={thClass}>Repairs (12 mo)</th><th className={thClass}>Submitted</th><th className={thClass}>Status</th></tr></thead>
             <tbody>
-              {visible.map((r) => (
+              {pagedRequests.pageItems.map((r) => (
                 <tr key={r.id} className="hover:bg-blue-50/40">
                   <td className={`${tdNoWrapClass} font-semibold text-slate-950`}>{r.requestNumber}</td>
                   <td className={tdClass}>{r.replacedAsset ? <>{assetLink(r.replacedAsset.id, r.replacedAsset.itemDescription)}<p className="text-xs text-slate-500">{[r.replacedAsset.propertyNumber, `${r.replacedAsset.assetType} · ${r.replacedAsset.assetClass}`].filter(Boolean).join(' · ')}</p></> : '—'}</td>
@@ -99,6 +105,7 @@ export function ReplacementReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow
             </tbody>
           </table>
         </TableWrap>
+        <Pager page={pagedRequests.page} total={pagedRequests.total} pageSize={pagedRequests.size} onPage={pagedRequests.setPage} noun="requests" />
       </Panel>
 
       <Panel title="Due for replacement" detail="Held items that meet a replacement criterion but have no open request. The holder can request one from My Assigned Assets.">
@@ -106,7 +113,7 @@ export function ReplacementReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow
           <table className="w-full min-w-[900px]">
             <thead><tr><th className={thClass}>Asset</th><th className={thClass}>Holder</th><th className={thClass}>Criterion</th><th className={thClass}>Repairs (12 mo)</th><th className={thClass}>Acquired</th><th className={thClass}>Why</th></tr></thead>
             <tbody>
-              {candidates.map((a) => (
+              {pagedCandidates.pageItems.map((a) => (
                 <tr key={a.id} className="hover:bg-blue-50/40">
                   <td className={tdClass}>{assetLink(a.id, a.itemDescription)}<p className="text-xs text-slate-500">{[a.propertyNumber, `${a.assetType} · ${a.assetClass}`].filter(Boolean).join(' · ')}</p></td>
                   <td className={tdClass}>{a.holder ? <><p>{a.holder.name}</p><p className="text-xs text-slate-500">{a.holder.employeeId}</p></> : '—'}</td>
@@ -120,6 +127,7 @@ export function ReplacementReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow
             </tbody>
           </table>
         </TableWrap>
+        <Pager page={pagedCandidates.page} total={pagedCandidates.total} pageSize={pagedCandidates.size} onPage={pagedCandidates.setPage} noun="assets" />
       </Panel>
     </div>
   );

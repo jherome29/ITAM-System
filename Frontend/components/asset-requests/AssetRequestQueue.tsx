@@ -24,6 +24,9 @@ import { localToday } from '@/lib/dates';
 import { DateField } from '@/components/ui/DateField';
 import { Notice } from '@/components/ui/Notice';
 import { EmptyRow } from '@/components/ui/EmptyRow';
+import { ClampText } from '@/components/ui/ClampText';
+import { Pager } from '@/components/ui/Pager';
+import { usePaged } from '@/lib/use-paged';
 
 const FILTERS = [
   { value: 'open', label: 'Open (needs action)' },
@@ -143,6 +146,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
         .toLowerCase()
         .includes(q),
     );
+  const paged = usePaged(visible, `${search}|${filter}`);
   const openCount = rows.filter(isOpen).length;
 
   if (loading) return <LoadingSkeleton rows={8} />;
@@ -175,13 +179,13 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
               </tr>
             </thead>
             <tbody>
-              {visible.map((r) => (
+              {paged.pageItems.map((r) => (
                 <tr key={r.id} className="hover:bg-blue-50/40">
                   <td className={tdClass}>
                     <p className="font-bold text-slate-950">{REQUEST_TYPE_LABEL[r.type]}</p>
                     <p className="whitespace-nowrap text-xs text-slate-500">{r.requestNumber}{attachmentCount(r.attachments.length)}</p>
                   </td>
-                  <td className={tdClass}>{r.asset?.itemDescription ?? '—'}</td>
+                  <td className={tdClass}><ClampText>{r.asset?.itemDescription}</ClampText></td>
                   <td className={tdClass}>
                     <p>{r.requester?.name ?? '—'}</p>
                     <p className="text-xs text-slate-500">{r.requester?.employeeId}</p>
@@ -199,6 +203,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
             </tbody>
           </table>
         </TableWrap>
+        <Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="requests" />
       </Panel>
 
       <DetailDrawer open={Boolean(selected)} title={selected?.requestNumber ?? 'Request'} onClose={() => open(null)}>
