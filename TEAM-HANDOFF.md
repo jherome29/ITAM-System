@@ -46,9 +46,9 @@ If you have an old local clone with a branch called `FE-Updated-not-finished`: t
 | #107 | `npm run seed:demo`: repeatable pilot data through the real API |
 | #108 / #109 | the 12 UI/export audit defects, forms redesign, running document numbers (schema 016), Property Custodian files requisitions, PDF layout fixes. **#108 was merged into the already-merged `feat/pilot-demo-data` branch by mistake** (its base was not retargeted after #106 merged), so #109 delivered it into `develop`. When you stack PRs, check the base reads `develop` before you merge |
 
-`main` is still behind `develop`; `develop` → `main` needs 2 reviews and every check green. **Schemas 008–017 must be applied to every database that predates them** (shared Supabase is at 016, with **017 not yet applied**; your local Docker Postgres may be older) — `Database/README.md` has the table. Several contain `ALTER TYPE … ADD VALUE`, so run them with plain `psql -f`, not one transaction; all are safe to re-run.
+`main` is still behind `develop`; `develop` → `main` needs 2 reviews and every check green. **Schemas 008–017 must be applied to every database that predates them** (shared Supabase is at 017; your local Docker Postgres may be older) — `Database/README.md` has the table. Several contain `ALTER TYPE … ADD VALUE`, so run them with plain `psql -f`, not one transaction; all are safe to re-run.
 
-**Property Officer merged into Property Custodian (2026-10-16).** The Property Officer was a read-only subset of the Property Custodian, so the role was retired: schema `017` turns existing Property Officer accounts into Property Custodians (and invalidates their sessions); the `property_officer` value stays in the Postgres and shared `UserRole` enums, deprecated, because old audit rows carry it; no route grants it and the API refuses to assign it. The Replacement Validation and Disposal Review screens moved into the Property Custodian's menu. **Run `017` on Supabase dev before starting a backend that includes it**, or `property.officer@cicc.gov.ph` is refused everywhere.
+**Property Officer merged into Property Custodian (2026-10-16).** The Property Officer was a read-only subset of the Property Custodian, so the role was retired: schema `017` turns existing Property Officer accounts into Property Custodians (and invalidates their sessions); the `property_officer` value stays in the Postgres and shared `UserRole` enums, deprecated, because old audit rows carry it; no route grants it and the API refuses to assign it. The Replacement Validation and Disposal Review screens moved into the Property Custodian's menu. **`017` was applied to Supabase dev on 2026-10-16** and moved the one Property Officer account (`property.officer@cicc.gov.ph`) to Property Custodian. Any other database needs it before a backend that includes this change runs against it, or a leftover Property Officer account is refused everywhere.
 
 **Open items:** SonarCloud's quality gate fails ("C Reliability Rating on New Code") and the issue is not yet identified; see `NEXT-TIME.md`.
 
@@ -132,6 +132,7 @@ cd Frontend && npm run dev
 | Employee | employee@cicc.gov.ph | Employee@CICC2026! |
 | Management | management@cicc.gov.ph | Management@CICC2026! |
 | Property Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
+| Property Custodian (second account, formerly the Property Officer) | property.officer@cicc.gov.ph | PropertyOfficer@2026! |
 | Supervisor (Approving Officer, Property and Supply Management) | psm.approver@cicc.gov.ph | PSMApprover@2026! |
 
 The 2 Property role accounts, scoped to Fixed + Supplies assets, already existed in the shared dev DB but had no known-working password until 2026-08-21, when they were reset via the real `PATCH /api/v1/users/:id/reset-password` endpoint and verified with a live login. If these no longer work, someone has reset them again since — check with the team rather than assuming this doc is wrong.
@@ -198,7 +199,7 @@ Don't duplicate the gap list here — **`PATH-TO-DONE.md`** (everything between 
 
 | Priority | Item |
 |---|---|
-| 1 | `develop` → `main` (2 reviews, all checks); apply schema `017` to Supabase dev first; look at SonarCloud's failing gate |
+| 1 | `develop` → `main` (2 reviews, all checks); look at SonarCloud's failing gate |
 | 2 | Period reports: an end date is treated as midnight, so items created later that day are left out (small, real bug) |
 | 3 | COA form fidelity (`docs/guides/COA-FORMS-AUDIT.md`): Move-In / Move-Out "Property Type: Office" always, WMR and IIRUP missing sections, the extra unofficial signatory, Sticker Card vs Stock Card; then compare against `FORMS/` |
 | 4 | Physical count recording / reconciliation; trends / utilisation and the Asset Utilization Summary |
@@ -277,7 +278,7 @@ Before opening any PR, run every check in **`CHECKS.md`** in order — or tell C
 ## 10. Database Notes
 
 - **Dev database:** Shared Supabase instance — do not drop tables, other teammates are using it live.
-- **Schema changes:** write a `.sql` file in `Database/schemas/` (or `Database/migrations/` for post-launch changes) and run it manually in the Supabase SQL Editor. `synchronize: false` means nothing happens automatically. Schemas **001–016** are applied to dev Supabase as of 2026-10-15 (`017`, which retires the Property Officer role, is not applied yet; 008–014 on 2026-10-11, 015 on 2026-10-14, 016 on 2026-10-15). Not yet applied to any production database (there is none). `Database/README.md` lists every file.
+- **Schema changes:** write a `.sql` file in `Database/schemas/` (or `Database/migrations/` for post-launch changes) and run it manually in the Supabase SQL Editor. `synchronize: false` means nothing happens automatically. Schemas **001–017** are applied to dev Supabase as of 2026-10-16 (008–014 on 2026-10-11, 015 on 2026-10-14, 016 on 2026-10-15, 017 on 2026-10-16). Not yet applied to any production database (there is none). `Database/README.md` lists every file.
 - **Production:** raw PostgreSQL managed by CICC IT. No Supabase SDK features in application code — see `Database/README.md`.
 - The `user_role` enum includes `property_custodian` and the retired `property_officer` (kept for old audit rows; never assigned); the `audit_action` enum has 34 values (e.g. `system_config_updated`, `requisition_reassigned`, `asset_request_*`, `repair_*`, `form_generated`), so a new audit action needs a schema file too.
 - **Do not run the pilot on the shared Supabase dev DB**: it caps at 15 connections (run the backend with `DB_POOL_MAX=8`), and it holds test rows (`[VERIFY-2026-10-14]`) and demo rows (`DEMO-`).

@@ -22,17 +22,14 @@ properly, see `RUN-LOCAL.md` §11. Update this file at the end of every session.
   route grants it and the API refuses to assign it; Replacement Validation and Disposal
   Review are now in the Property Custodian's menu.
 - Health: backend 800 unit + 94 e2e tests, frontend 327, every `CHECKS.md` item clean.
-- **The shared Supabase dev DB is at schema 016.** `017` is **not applied yet**; see §2.
+- **The shared Supabase dev DB is at schema 017** (applied 2026-10-16: it moved the one Property Officer account, `property.officer@cicc.gov.ph`, to Property Custodian).
 
 ## 2. Do first
 
-- [ ] **Apply `Database/schemas/017_retire_property_officer.sql` to the shared Supabase dev
-      database** before running a backend that includes it against that database. It is a
-      plain `UPDATE` (idempotent), and it turns `property.officer@cicc.gov.ph` into a
-      Property Custodian and invalidates its sessions. Until it is applied, that account is
-      refused by every route. Ask before applying: it writes to the shared database.
-- [ ] Restart the local backend (`:3001`, `DB_POOL_MAX=8`) on the new build once 017 is applied.
-      It is still running the pre-merge build.
+- [x] Schema 017 applied to the shared Supabase dev database (2026-10-16) and the local backend
+      (`:3001`, `DB_POOL_MAX=8`) restarted on the new build. Check it yourself: sign in as
+      `property.officer@cicc.gov.ph` and you should land on the Property Custodian dashboard.
+      Any other database still needs 017 before it runs this backend.
 - [ ] **Look at SonarCloud's failing quality gate** ("C Reliability Rating on New Code",
       required ≥ A; it failed on #106, #107 and #108, passed on #105). The issue is not
       identified: SonarCloud's API refuses non-main branches for this organisation, so open

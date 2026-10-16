@@ -28,9 +28,9 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
       #109 re-delivered the same branch into `develop`. When a PR is stacked, check its base is
       `develop` before merging.
 - [x] Merge the Property Officer role into the Property Custodian (schema `017`; the role stays
-      in the Postgres enum). **Apply `017` to the shared Supabase dev database** before running
-      a backend that includes it against that database, or the old Property Officer account
-      is refused everywhere.
+      in the Postgres enum). Schema `017` is applied to the shared Supabase dev database
+      (2026-10-16); any other database needs it before it runs this backend, or a leftover
+      Property Officer account is refused everywhere.
 - [ ] SonarCloud's quality gate fails on the merged work ("C Reliability Rating on New Code"); the
       issue itself is not identified yet (SonarCloud's API blocks non-main branches: open the
       dashboard and read it).

@@ -10,9 +10,9 @@ frontend contains no sample data, see below.)
 
 > **As of 2026-10-16.** Everything below is in `develop` (PRs #102, #103, #105, #106,
 > #107 and #109), plus the Property Officer → Property Custodian role merge on the
-> `refactor/merge-property-officer-into-custodian` branch. `main` is still behind
+> `refactor/merge-property-officer-into-custodian` PR. `main` is still behind
 > `develop`. Schemas 001–017 must be applied to any database that predates them
-> (`Database/README.md`); the shared Supabase dev database is at 016, so 017 is pending.
+> (`Database/README.md`); the shared Supabase dev database is at 017.
 
 ---
 

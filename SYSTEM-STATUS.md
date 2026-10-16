@@ -72,8 +72,8 @@ condition); dates print MM/DD/YYYY.
 **Delivery**
 - **`develop` → `main`** (2 reviews, every check green). #105, #106, #107 and #109 are in
   `develop`; **#108 had been merged into a dead branch by mistake**, so #109 delivered
-  it. Apply schema `017` to the shared Supabase dev database (it retires the Property
-  Officer role) before running the new backend against it.
+  it. Schema `017` (it retires the Property Officer role) was applied to the shared
+  Supabase dev database on 2026-10-16.
 - **SonarCloud's quality gate fails** on the merged work ("C Reliability Rating on New
   Code"). Its API blocks non-main branches, so the issue has to be read in the
   SonarCloud dashboard.
@@ -92,8 +92,7 @@ checklist report for the paper. The Jest security suite and a k6 baseline are do
 
 ## Suggested order of next work
 
-1. **Apply schema `017` to Supabase dev, then promote `develop` → `main`**; read the
-   SonarCloud issue.
+1. **Promote `develop` → `main`**; read the SonarCloud issue.
 2. **Fix the end-date bug in the period reports**; decide the other flagged
    questions above (Annex A.4 scope, asset history by person).
 3. **Compare the generated PDFs against the official templates in `FORMS/`**
