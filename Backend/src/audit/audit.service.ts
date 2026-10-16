@@ -6,6 +6,7 @@ import { AssetEntity } from '../assets/entities/asset.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { AssetRequestEntity } from '../asset-requests/entities/asset-request.entity';
 import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
+import { GeneratedFormEntity } from '../reports/entities/generated-form.entity';
 import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
 
@@ -61,6 +62,8 @@ export class AuditService {
     private readonly requestRepo: Repository<AssetRequestEntity>,
     @InjectRepository(RequisitionEntity)
     private readonly requisitionRepo: Repository<RequisitionEntity>,
+    @InjectRepository(GeneratedFormEntity)
+    private readonly formRepo: Repository<GeneratedFormEntity>,
   ) {}
 
   /**
@@ -141,8 +144,9 @@ export class AuditService {
     const requestIds = idsOf('asset_request');
     const requisitionIds = idsOf('requisition');
     const assetIds = idsOf('asset');
+    const formIds = idsOf('form');
 
-    const [users, requests, requisitions, assets] = await Promise.all([
+    const [users, requests, requisitions, assets, forms] = await Promise.all([
       this.userRepo.find({
         where: { id: In(userIds) },
         select: { id: true, firstName: true, lastName: true, employeeId: true },
@@ -165,6 +169,13 @@ export class AuditService {
             select: { id: true, itemDescription: true, propertyNumber: true },
           })
         : [],
+      // The PDF itself is select:false; only the number and type are wanted.
+      formIds.length
+        ? this.formRepo.find({
+            where: { id: In(formIds) },
+            select: { id: true, formType: true, documentNumber: true },
+          })
+        : [],
     ]);
 
     const person = new Map(users.map((u) => [u.id, u]));
@@ -173,6 +184,7 @@ export class AuditService {
       requisitions.map((r) => [r.id, r.requestNumber]),
     );
     const asset = new Map(assets.map((a) => [a.id, a]));
+    const form = new Map(forms.map((f) => [f.id, f]));
     const fullName = (u: UserEntity) => `${u.firstName} ${u.lastName}`.trim();
 
     const labelOf = (e: AuditLogEntity): string | null => {
@@ -190,6 +202,12 @@ export class AuditService {
         case 'users': {
           const u = person.get(e.affectedRecordId);
           return u ? `${fullName(u)} (${u.employeeId})` : null;
+        }
+        case 'form': {
+          // A numbered form is quoted by its number; a periodic report (RPCI,
+          // RSMI...) has none, so it is named by its type.
+          const f = form.get(e.affectedRecordId);
+          return f ? (f.documentNumber ?? f.formType) : null;
         }
         default:
           return null;

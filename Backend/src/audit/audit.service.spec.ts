@@ -8,6 +8,7 @@ import { AssetEntity } from '../assets/entities/asset.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { AssetRequestEntity } from '../asset-requests/entities/asset-request.entity';
 import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
+import { GeneratedFormEntity } from '../reports/entities/generated-form.entity';
 import {
   AssetType,
   AuditAction,
@@ -38,6 +39,7 @@ describe('AuditService', () => {
   const mockUserRepo = { find: jest.fn() };
   const mockRequestRepo = { find: jest.fn() };
   const mockRequisitionRepo = { find: jest.fn() };
+  const mockFormRepo = { find: jest.fn() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -53,6 +55,10 @@ describe('AuditService', () => {
         {
           provide: getRepositoryToken(RequisitionEntity),
           useValue: mockRequisitionRepo,
+        },
+        {
+          provide: getRepositoryToken(GeneratedFormEntity),
+          useValue: mockFormRepo,
         },
       ],
     }).compile();
@@ -180,6 +186,10 @@ describe('AuditService', () => {
       mockRequisitionRepo.find.mockResolvedValue([
         { id: 'q-1', requestNumber: 'REQ-2026-0003' },
       ]);
+      mockFormRepo.find.mockResolvedValue([
+        { id: 'f-1', formType: 'PAR', documentNumber: 'PAR-2026-0007' },
+        { id: 'f-2', formType: 'RPCI', documentNumber: null },
+      ]);
       mockAssetRepo.find.mockResolvedValue([
         {
           id: 'a-1',
@@ -208,6 +218,8 @@ describe('AuditService', () => {
       ['requisition', 'q-1', 'REQ-2026-0003'],
       ['asset', 'a-1', 'Dell Latitude 5440 Laptop (DEMO-ICT-0003)'],
       ['users', 'u-1', 'Ana Reyes (CICC-IT-001)'],
+      ['form', 'f-1', 'PAR-2026-0007'],
+      ['form', 'f-2', 'RPCI'],
     ])('labels a %s record', async (type, id, label) => {
       const [out] = await service.withNames([
         entry({ affectedRecordType: type, affectedRecordId: id }) as never,
@@ -218,7 +230,10 @@ describe('AuditService', () => {
 
     it('has no label for a record it cannot describe', async () => {
       const [out] = await service.withNames([
-        entry({ affectedRecordType: 'form', affectedRecordId: 'f-1' }) as never,
+        entry({
+          affectedRecordType: 'system_config',
+          affectedRecordId: 'c-1',
+        }) as never,
       ]);
 
       expect(out.recordLabel).toBeNull();
@@ -235,6 +250,7 @@ describe('AuditService', () => {
       expect(mockRequestRepo.find).toHaveBeenCalledTimes(1);
       expect(mockRequisitionRepo.find).toHaveBeenCalledTimes(1);
       expect(mockAssetRepo.find).not.toHaveBeenCalled();
+      expect(mockFormRepo.find).not.toHaveBeenCalled();
 
       jest.clearAllMocks();
       expect(await service.withNames([])).toEqual([]);

@@ -7,6 +7,7 @@ import { AssetEntity } from '../assets/entities/asset.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { AssetRequestEntity } from '../asset-requests/entities/asset-request.entity';
 import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
+import { GeneratedFormEntity } from '../reports/entities/generated-form.entity';
 
 // SVC: Improve — immutable audit trail for all system transactions
 // CRITICAL: audit_logs table is APPEND-ONLY — no UPDATE or DELETE endpoints.
@@ -20,6 +21,7 @@ import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
       UserEntity,
       AssetRequestEntity,
       RequisitionEntity,
+      GeneratedFormEntity,
     ]),
   ],
   controllers: [AuditController],
