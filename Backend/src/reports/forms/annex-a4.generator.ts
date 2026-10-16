@@ -20,6 +20,8 @@ interface AssetIssuanceLike {
   acquisitionCost: number;
   acquisitionDate: Date | string | null;
   custodianName?: string;
+  /** The number of the ICS the item was issued under; none until one was generated. */
+  icsNumber?: string | null;
   officeOrSection?: string | null;
 }
 
@@ -53,7 +55,8 @@ export async function generateAnnexA4(
 
   const rows = assets.map((a) => [
     fmtDate(a.acquisitionDate),
-    `ICS-${a.propertyNumber ?? '—'}`,
+    // Never made up from the property number: an item with no ICS gets a line to fill in.
+    a.icsNumber ?? '_______________',
     a.itemDescription + (a.serialNumber ? `\nS/N: ${a.serialNumber}` : ''),
     a.propertyNumber ?? '—',
     '1',

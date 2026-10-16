@@ -68,6 +68,7 @@ describe('ReportsService', () => {
   };
 
   const mockFormRepo = {
+    find: jest.fn(),
     findAndCount: jest.fn(),
     create: jest.fn(),
     save: jest.fn(),
@@ -1052,6 +1053,108 @@ describe('ReportsService', () => {
       expect(
         text.mock.calls.some(([t]) => String(t).includes(`PAR-${year}-0007`)),
       ).toBe(true);
+      text.mockRestore();
+    });
+
+    it('names the holder - not the person generating it - as the accountable officer on an RLSDDP', async () => {
+      const issuer = {
+        ...user,
+        id: 'it-1',
+        firstName: 'Ian',
+        lastName: 'Torres',
+        role: UserRole.IT_PERSONNEL,
+      };
+      const holder = { ...user, id: 'emp-1' };
+      mockUserRepo.findOne.mockImplementation(
+        ({ where }: { where: { id?: string } }) =>
+          Promise.resolve(where.id === 'emp-1' ? holder : issuer),
+      );
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+
+      await generate(OfficialFormType.RLSDDP, {
+        lossType: 'Damaged',
+        circumstances: 'Dropped during a field operation.',
+      });
+
+      const printed = text.mock.calls.map(([t]) => String(t));
+      expect(printed).toContain(' Juan dela Cruz');
+      expect(printed).not.toContain(' Ian Torres');
+      text.mockRestore();
+    });
+
+    it('names the requester on an RLSDDP generated after custody was cleared', async () => {
+      const issuer = {
+        ...user,
+        id: 'it-1',
+        firstName: 'Ian',
+        lastName: 'Torres',
+      };
+      const requester = {
+        ...user,
+        id: 'emp-9',
+        firstName: 'Ana',
+        lastName: 'Lim',
+      };
+      mockAssetRepo.findOne.mockResolvedValue(makeAsset({ custodianId: null }));
+      mockUserRepo.findOne.mockImplementation(
+        ({ where }: { where: { id?: string } }) =>
+          Promise.resolve(where.id === 'emp-9' ? requester : issuer),
+      );
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+
+      await generate(OfficialFormType.RLSDDP, {
+        lossType: 'Damaged',
+        returneeId: 'emp-9',
+      });
+
+      const printed = text.mock.calls.map(([t]) => String(t));
+      expect(printed).toContain(' Ana Lim');
+      expect(printed).not.toContain(' Ian Torres');
+      text.mockRestore();
+    });
+
+    it('falls back to the person generating an RLSDDP when the asset has no holder', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(makeAsset({ custodianId: null }));
+      mockUserRepo.findOne.mockResolvedValue({
+        ...user,
+        id: 'it-1',
+        firstName: 'Ian',
+        lastName: 'Torres',
+      });
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+
+      await generate(OfficialFormType.RLSDDP, { lossType: 'Lost' });
+
+      expect(text.mock.calls.map(([t]) => String(t))).toContain(' Ian Torres');
+      text.mockRestore();
+    });
+
+    it('prints on the Annex A.4 the ICS number each item was really issued under', async () => {
+      mockAssetRepo.find.mockResolvedValue([
+        makeAsset({
+          id: 'a-1',
+          assetClass: AssetClass.SEP,
+          createdAt: new Date('2026-06-01T00:00:00Z'),
+        }),
+      ]);
+      mockFormRepo.find.mockResolvedValue([
+        { relatedAssetId: 'a-1', documentNumber: 'ICS-2026-0003' },
+      ]);
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+
+      await generate(OfficialFormType.ANNEX_A4, {
+        dateFrom: '2026-01-01',
+        dateTo: '2026-12-31',
+      });
+
+      expect(mockFormRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ formType: OfficialFormType.ICS }),
+        }),
+      );
+      expect(text.mock.calls.map(([t]) => String(t))).toContain(
+        'ICS-2026-0003',
+      );
       text.mockRestore();
     });
 

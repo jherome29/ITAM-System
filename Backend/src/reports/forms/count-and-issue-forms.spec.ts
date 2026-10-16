@@ -1,5 +1,6 @@
 import PDFDocument from 'pdfkit';
 import { conditionLabel, phpFormat } from './base-form.generator';
+import { generateAnnexA4 } from './annex-a4.generator';
 import { generateRPCI } from './rpci.generator';
 import { generateRSMI } from './rsmi.generator';
 
@@ -116,5 +117,34 @@ describe('RSMI issuance report', () => {
     );
 
     expect(drawn).toContain('TOTAL AMOUNT: ' + phpFormat(750));
+  });
+});
+
+describe('Annex A.4 registry', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  const monitor = {
+    propertyNumber: '2026-05-01-0024',
+    itemDescription: 'LG 24" IPS monitor',
+    serialNumber: 'SBXICT1024',
+    acquisitionCost: 11500,
+    acquisitionDate: '2025-06-15',
+  };
+  const period = [new Date('2026-01-01'), new Date('2026-12-31')] as const;
+
+  it('prints the ICS number the item was issued under', async () => {
+    const drawn = await drawnBy(() =>
+      generateAnnexA4([{ ...monitor, icsNumber: 'ICS-2026-0003' }], ...period),
+    );
+
+    expect(drawn).toContain('ICS-2026-0003');
+  });
+
+  it('leaves a fill-in line - not an invented number - for an item never issued', async () => {
+    const drawn = await drawnBy(() => generateAnnexA4([monitor], ...period));
+
+    // It used to print "ICS-" plus the property number: a reference that never existed.
+    expect(drawn.some((t) => t.startsWith('ICS-'))).toBe(false);
+    expect(drawn).toContain('_______________');
   });
 });

@@ -991,7 +991,15 @@ export class ReportsService {
 
       case OfficialFormType.RLSDDP: {
         const asset = await getAsset(input.assetId);
-        const officer = await getIssuer();
+        // The accountable officer is whoever holds the property (the requester,
+        // when Returns & Incidents generates it after custody was cleared), not
+        // the custodian who happens to be generating the report.
+        const officer =
+          input.returneeId || input.returneeEmployeeId
+            ? await getReturnee(asset)
+            : asset.custodianId
+              ? await getCustodian(asset)
+              : await getIssuer();
         buffer = await generateRLSSDDP(
           asset,
           officer,
@@ -1185,6 +1193,21 @@ export class ReportsService {
           const d = a.createdAt ? new Date(a.createdAt) : null;
           return d && d >= from && d <= to;
         });
+        // The ICS an item was issued under is the one stored with it, oldest
+        // first so a re-issue's later number wins.
+        const icsForms = filtered.length
+          ? await this.formRepo.find({
+              where: {
+                formType: OfficialFormType.ICS,
+                relatedAssetId: In(filtered.map((a) => a.id)),
+              },
+              select: { relatedAssetId: true, documentNumber: true },
+              order: { generatedAt: 'ASC' },
+            })
+          : [];
+        const icsNumber = new Map(
+          icsForms.map((f) => [f.relatedAssetId, f.documentNumber]),
+        );
         const enriched = await Promise.all(
           filtered.map(async (a) => {
             const custodian = a.custodianId
@@ -1195,6 +1218,7 @@ export class ReportsService {
               custodianName: custodian
                 ? `${custodian.firstName} ${custodian.lastName}`
                 : undefined,
+              icsNumber: icsNumber.get(a.id) ?? null,
             };
           }),
         );
