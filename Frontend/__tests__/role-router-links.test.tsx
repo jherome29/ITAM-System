@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import ItAssetCustodianPage from '@/app/it-asset-custodian/[[...slug]]/page';
-import PropertyOfficerPage from '@/app/property-officer/[[...slug]]/page';
+import PropertyCustodianPage from '@/app/property-custodian/[[...slug]]/page';
 import { roleNavigation } from '@/lib/roles/role-navigation';
 
 // The pre-redesign shells (/admin, /supervisor, /it-personnel, /management) are gone, so
@@ -39,12 +39,32 @@ describe('IT Asset Custodian workspace', () => {
   });
 });
 
-describe('Property Officer workspace', () => {
+describe('Property Custodian workspace', () => {
   it('sends "Go to Forms" to its own Reports & Forms page, not an IT page', async () => {
-    const element = (await render(PropertyOfficerPage as RouterPage, ['assets', 'some-asset-id'])) as {
+    const element = (await render(PropertyCustodianPage as RouterPage, ['assets', 'some-asset-id'])) as {
       props: { formsPath: string };
     };
-    expect(element.props.formsPath).toBe('/property-officer/reports');
+    expect(element.props.formsPath).toBe('/property-custodian/reports');
+  });
+
+  // The Property Officer's two screens that read real records moved here when the
+  // role was merged into the custodian.
+  it.each([
+    ['replacements', 'ReplacementReview'],
+    ['replacement-validation', 'ReplacementReview'],
+    ['disposal-review', 'DisposalReview'],
+  ])('serves /%s with the %s screen, linking assets into its own registry', async (slug, component) => {
+    const element = (await render(PropertyCustodianPage as RouterPage, [slug])) as {
+      type: { name: string };
+      props: { assetBasePath: string; eyebrow: string };
+    };
+    expect(element.type.name).toBe(component);
+    expect(element.props.assetBasePath).toBe('/property-custodian/assets');
+    expect(element.props.eyebrow).toBe('Property Custodian');
+  });
+
+  it('still answers an address with no screen with not-found', async () => {
+    expect(await notFoundDigest(PropertyCustodianPage as RouterPage, ['no-such-page'])).toContain('404');
   });
 });
 

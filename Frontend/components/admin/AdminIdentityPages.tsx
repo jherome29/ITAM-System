@@ -29,7 +29,6 @@ const USER_ROLE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'system_admin', label: 'System Administrator' },
   { value: 'management', label: 'Management' },
   { value: 'property_custodian', label: 'Property Custodian' },
-  { value: 'property_officer', label: 'Property Officer' },
 ];
 
 const ROLE_FILTER_OPTIONS = [{ value: 'All', label: 'All roles' }, ...USER_ROLE_OPTIONS];

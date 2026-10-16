@@ -7,36 +7,50 @@ const hrefsOf = (role: ProposedUserRole) => roleNavigation[role].map((item) => i
 // Menu entries that opened screens with no backend behind them: hard-coded
 // sample rows and buttons that saved nothing. They are removed until the
 // feature (and its business rules) exist.
-describe('Property Officer menu', () => {
+describe('Property Custodian menu', () => {
   it('does not offer screens that have no backend', () => {
-    const hrefs = hrefsOf(ProposedUserRole.PROPERTY_OFFICER);
-    expect(hrefs).not.toContain('/property-officer/corrections');
-    expect(hrefs).not.toContain('/property-officer/reconciliation');
-    expect(hrefs).not.toContain('/property-officer/audit');
+    const hrefs = hrefsOf(ProposedUserRole.PROPERTY_CUSTODIAN);
+    expect(hrefs).not.toContain('/property-custodian/corrections');
+    expect(hrefs).not.toContain('/property-custodian/reconciliation');
+    expect(hrefs).not.toContain('/property-custodian/audit');
   });
 
-  it('keeps every screen that reads real records', () => {
-    expect(hrefsOf(ProposedUserRole.PROPERTY_OFFICER)).toEqual(
+  // The Property Officer was merged into the custodian: its two screens that read
+  // real records (replacement validation, disposal review) moved here.
+  it('has the two review screens the Property Officer used to have', () => {
+    expect(hrefsOf(ProposedUserRole.PROPERTY_CUSTODIAN)).toEqual(
       expect.arrayContaining([
-        '/property-officer/dashboard',
-        '/property-officer/assets',
-        '/property-officer/replacements',
-        '/property-officer/disposal', // Disposal Review — now the real list of flagged assets
-        '/property-officer/reports',
-        '/property-officer/assigned-assets',
-        '/property-officer/notifications',
+        '/property-custodian/replacements',
+        '/property-custodian/disposal-review',
+        '/property-custodian/disposal', // the recommend-for-disposal screen stays
+        '/property-custodian/reports',
+        '/property-custodian/assigned-assets',
+        '/property-custodian/notifications',
       ]),
     );
   });
 });
 
+// The Property Officer was a read-only subset of the Property Custodian, so it was
+// merged into it. The role has no workspace, menu or label left.
+describe('the retired Property Officer role', () => {
+  it('is no longer a role of the frontend', () => {
+    expect(Object.values(ProposedUserRole)).not.toContain('property_officer');
+    expect(Object.keys(roleNavigation)).not.toContain('property_officer');
+  });
+
+  it('has no menu entry in any workspace', () => {
+    const hrefs = Object.values(roleNavigation).flatMap((items) => items.map((i) => i.href));
+    expect(hrefs.filter((h) => h.startsWith('/property-officer'))).toEqual([]);
+  });
+});
+
 // Holding property does not make someone a requester, but the Property Custodian
-// and Property Officer file requisitions like the employees they are. Management
-// (read-only oversight) and the System Administrator do not.
+// files requisitions like the employee they are. Management (read-only oversight)
+// and the System Administrator do not.
 describe('who can file a requisition, by menu', () => {
-  it('gives the two property roles My Requisitions', () => {
+  it('gives the Property Custodian My Requisitions', () => {
     expect(hrefsOf(ProposedUserRole.PROPERTY_CUSTODIAN)).toContain('/property-custodian/requisitions');
-    expect(hrefsOf(ProposedUserRole.PROPERTY_OFFICER)).toContain('/property-officer/requisitions');
   });
 
   it('keeps Management and the Master Admin from filing', () => {

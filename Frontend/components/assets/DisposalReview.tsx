@@ -10,7 +10,7 @@ import { disposalReviewSummary } from '@/lib/assets/disposal-review';
 import { formatDateTime } from '@/lib/requisitions/requisition-view';
 
 /**
- * Disposal Review (Property Officer, read-only): every asset in the Officer's
+ * Disposal Review (Property Custodian, read-only): every asset in the custodian's
  * scope that is flagged for disposal, and whether the person it was issued to
  * is still carrying the accountability (a lost or stolen item stays on their
  * record until COA grants relief). The custodian records the disposal itself;

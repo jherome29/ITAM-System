@@ -22,7 +22,7 @@ const shortDate = (iso: string) => new Date(iso).toLocaleDateString('en-PH', { y
 /**
  * Reports & Forms: the official COA / CICC forms. Custodians generate them from
  * the catalogue and find every form already on file in the archive; the
- * oversight roles (Property Officer, Management) get the archive alone.
+ * oversight role (Management) gets the archive alone.
  */
 export function FormsWorkspaceContent({ eyebrow, canGenerate = true }: Readonly<{ eyebrow: string; canGenerate?: boolean }>) {
   const [tab, setTab] = useState<Tab>(canGenerate ? 'generate' : 'archive');
