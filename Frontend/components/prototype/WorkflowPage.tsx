@@ -33,9 +33,18 @@ import { useAuth } from '@/lib/auth/use-auth';
 
 type Row = AssetRow;
 
+type PageCopy = { title: string; detail: string; action?: string };
+
+// The System Administrator's version of Requisition Fulfillment: only what a
+// custodian filed themselves, which segregation of duties keeps out of their queue.
+const ADMIN_FULFILMENT_COPY: PageCopy = {
+  title: 'Requisition Fulfilment (fallback)',
+  detail: 'Requisitions filed by the custodian who would fulfil them. They cannot fulfil their own, so you do - fulfil it, or put it on hold when the item is unavailable. Each action is saved and recorded in the audit trail.',
+};
+
 // The pages this component serves - exactly the ones lib/workflow/live-pages.ts lets
 // the role routers hand it. Every one reads real records and every action saves.
-const pageCopy: Record<string, { title: string; detail: string; action?: string }> = {
+const pageCopy: Record<string, PageCopy> = {
   requisitions: {
     title: 'My Requisitions',
     detail: 'Track the status, timeline and documents of the requisitions you have submitted.',
@@ -81,10 +90,13 @@ function requisitionApiToRow(request: Requisition): Row {
 export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUserRole; slug: string; openId?: string }>) {
   const { user: currentUser } = useAuth();
   const normalizedSlug = normalizeWorkflowSlug(slug);
-  const content = pageCopy[normalizedSlug] ?? { title: 'Workspace', detail: '' };
+  const isAdminFulfilment = role === ProposedUserRole.MASTER_ADMIN && normalizedSlug === 'fulfillment';
+  const content = isAdminFulfilment
+    ? ADMIN_FULFILMENT_COPY
+    : (pageCopy[normalizedSlug] ?? { title: 'Workspace', detail: '' });
   const isCustodian = role === ProposedUserRole.IT_ASSET_CUSTODIAN || role === ProposedUserRole.PROPERTY_CUSTODIAN;
   const isApprovalsPage = role === ProposedUserRole.APPROVING_OFFICER && normalizedSlug === 'approvals';
-  const isFulfillmentPage = isCustodian && normalizedSlug === 'fulfillment';
+  const isFulfillmentPage = (isCustodian || isAdminFulfilment) && normalizedSlug === 'fulfillment';
   const isCustodyPage = isCustodian && normalizedSlug === 'custody';
   const isDisposalPage = isCustodian && normalizedSlug === 'disposal';
   // "My Requisitions": the header button opens the shared RequisitionForm
@@ -127,15 +139,17 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     // Fulfillment is not narrowed to 'pending_fulfillment': the backend already
     // scopes custodians to pending_fulfillment + on_hold, and filtering further
     // made on-hold requests vanish from the only page that can fulfil them.
-    const fetcher = isFulfillmentPage || isApprovalsPage
-      ? requisitionsApi.list(1, LIVE_FETCH_LIMIT)
-      : requisitionsApi.mine(1, LIVE_FETCH_LIMIT);
+    const fetcher = isAdminFulfilment
+      ? requisitionsApi.fulfilmentFallback()
+      : isFulfillmentPage || isApprovalsPage
+        ? requisitionsApi.list(1, LIVE_FETCH_LIMIT)
+        : requisitionsApi.mine(1, LIVE_FETCH_LIMIT);
     return fetcher.then((res) => {
       setRequisitionById(Object.fromEntries(res.data.data.map((r) => [r.id, r])));
       setRows(res.data.data.map(requisitionApiToRow));
       setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
     });
-  }, [isCustodyPage, isDisposalPage, isFulfillmentPage, isApprovalsPage]);
+  }, [isCustodyPage, isDisposalPage, isFulfillmentPage, isApprovalsPage, isAdminFulfilment]);
 
   const [liveFetchError, setLiveFetchError] = useState('');
 

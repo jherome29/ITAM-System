@@ -6,6 +6,8 @@ import { NotificationsContent } from '@/components/shared/NotificationsContent';
 import { AssetRequestQueue } from '@/components/asset-requests/AssetRequestQueue';
 import { MyAssignedAssets } from '@/components/assets/MyAssignedAssets';
 import { RepairQueue } from '@/components/repairs/RepairQueue';
+import { WorkflowPage } from '@/components/prototype/WorkflowPage';
+import { ProposedUserRole } from '@/lib/roles/proposed-roles';
 
 const identitySlugs = ['users', 'roles'] as const;
 const platformSlugs = ['configuration', 'audit'] as const;
@@ -18,6 +20,8 @@ export function AdminWorkspace({ slug, openId }: Readonly<{ slug: string; openId
   // duties): every request is visible, only those are actionable.
   if (slug === 'returns-incidents') return <AssetRequestQueue eyebrow="Master Administrator" adminFallback openId={openId} />;
   if (slug === 'repairs') return <RepairQueue eyebrow="Master Administrator" adminFallback openId={openId} />;
+  // A custodian's own requisition (they cannot fulfil it): the administrator does.
+  if (slug === 'fulfillment') return <WorkflowPage role={ProposedUserRole.MASTER_ADMIN} slug="fulfillment" openId={openId} />;
   if (identitySlugs.includes(slug as (typeof identitySlugs)[number])) {
     return <AdminIdentityPages slug={slug as (typeof identitySlugs)[number]} />;
   }

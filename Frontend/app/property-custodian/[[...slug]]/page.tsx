@@ -24,7 +24,7 @@ export default async function PropertyCustodianPage({
   const child = slug?.[1];
   if (segment === 'dashboard') return <PropertyCustodianDashboard />;
   if (segment === 'notifications') return <NotificationsContent />;
-  if (segment === 'assigned-assets') return <MyAssignedAssets eyebrow="Property Custodian" canRequestReplacement={false} showRequestHistory openId={typeof open === 'string' ? open : undefined} />;
+  if (segment === 'assigned-assets') return <MyAssignedAssets eyebrow="Property Custodian" canRequestReplacement showRequestHistory openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'fixed-assets' && child === 'new') return <RegisterAssetForm basePath="/property-custodian/fixed-assets" />;
   if (segment === 'fixed-assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/fixed-assets" formsPath="/property-custodian/reports" />;
   if (segment === 'fixed-assets') return <AssetRegistryList basePath="/property-custodian/fixed-assets" assetType="Fixed" title="Fixed Asset Registry" />;

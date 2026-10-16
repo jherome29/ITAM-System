@@ -128,6 +128,12 @@ export const requisitionsApi = {
   mine: (page = 1, limit = 15) =>
     client.get<ApiResponse<PaginatedResponse<Requisition>>>('/v1/requisitions/mine', { params: { page, limit } }).then((r) => r.data),
 
+  /** Open requisitions filed by the custodian who would fulfil them - the System Administrator's fallback queue. */
+  fulfilmentFallback: () =>
+    client
+      .get<ApiResponse<{ data: Requisition[]; total: number }>>('/v1/requisitions/fulfilment-fallback')
+      .then((r) => r.data),
+
   /** Requisitions this approver has decided, newest decision first (the pending queue is `list`). */
   decided: (page = 1, limit = 200) =>
     client
