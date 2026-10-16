@@ -284,12 +284,12 @@ clean — run from PowerShell:
 cd Backend;  npx tsc --noEmit
 cd Backend;  npx eslint "{src,apps,libs,test}/**/*.ts" --max-warnings 0
 cd Backend;  npm run build
-cd Backend;  npm run test:cov        # 800 tests (2026-10-16), coverage gate 65%
+cd Backend;  npm run test:cov        # 900 tests (2026-10-17), coverage gate 65%
 cd Backend;  npm run audit:check
 cd Frontend; npx tsc --noEmit
 cd Frontend; npx eslint . --max-warnings 0
 cd Frontend; npm run build
-cd Frontend; npm test                # 456 vitest tests (2026-10-16)
+cd Frontend; npm test                # 494 vitest tests (2026-10-17)
 cd Frontend; npm run audit:check
 cd ..;       npm run secretlint
 ```
@@ -441,3 +441,21 @@ useful objective check: the rightmost ink on every page must stay within 555.3 p
 Tear down: stop the :3100 and :3101 processes, run
 `docker compose -p aimrs-e2e -f docker-compose.e2e.yml down -v`, restart
 `npm run dev`, and confirm `http://localhost:3001/api/health`.
+
+**Large and awkward data (added 2026-10-17).** A screen that is right with ten tidy rows can be wrong with hundreds of long ones, and nothing but driving it shows that. Fill the throwaway database with about 350 users, 800 assets, a few hundred requisitions and requests and a few thousand audit rows (there is no repo script for this yet: insert users with SQL, one shared bcrypt hash, and create the rest through the API six at a time with `THROTTLE_LIMIT` raised). Include "monster" records at the real column limits: a 600-character description, brand / serial / property number of exactly 100 characters (unbroken), supplier and office of 200, `components` of 2,000, a 196-character name, and strings like `<img src=x onerror="window.__xss=1">`, `{{7*7}}`, `${7*7}`, quotes and emoji in every text field. Then, per role and page, record: page overflow, scroll containers hiding columns (snippet above), clipped text, anything under 14px, "undefined" / "NaN", console errors and 4xx / 5xx, `window.__xss`, long tasks (`PerformanceObserver` on `longtask`) and **squeezed cells** (a `td` narrower than 56px holding six or more characters, or a button taller than two lines with no space in its label). Open the drawers of the monster records. **Look at the screenshots anyway:** every probe passed on a screen whose "Requested by" column had been squeezed to one letter wide.
+
+**Check the API against the real schema, not only the entity-built one.** The sandbox and e2e databases build their tables from the entities (`synchronize` under `NODE_ENV=test`), so every text column is unbounded and the `VARCHAR(100)` limits of `Database/schemas/001_initial_schema.sql` never bite. Build a second database the way production is built and run a backend over it:
+
+```powershell
+docker exec aimrs_e2e_postgres psql -U aimrs_test -d postgres -c "create database aimrs_real"
+Get-ChildItem Database\schemas\*.sql | Sort-Object Name | ForEach-Object { Get-Content $_ -Raw | docker exec -i aimrs_e2e_postgres psql -U aimrs_test -d aimrs_real -v ON_ERROR_STOP=1 -q }
+Get-Content Database\seeds\001_dev_seed.sql -Raw | docker exec -i aimrs_e2e_postgres psql -U aimrs_test -d aimrs_real -q
+# Set the dev-seed users' password_hash to a hash you know, then start a backend as in step 2 but with
+# PORT=3102, DATABASE_URL pointing at aimrs_real and NODE_ENV=development (NOT test: under test the
+# backend synchronises the entities over this schema and the limits disappear).
+```
+
+Send it a value one character over each limit, an oversized body and a duplicate property number / employee ID (`POST /v1/assets`, `/v1/users`, `/v1/reports/forms/generate`): each must be a 400 that names the field, a 413 or a 409, never a 500. For the PDFs, generate every form and report against the volume data and check the page count, any text past the right margin and any page with fewer than three words (a row that spilled over its page); then render and look at the first and a middle page.
+
+Two more traps: a rebuilt `Backend\dist` is not picked up by a backend that is already running (restart it; a sandbox, never your `:3001` unless you mean to), and a backend started from the repo folder reads `Backend\.env` (the Supabase string), so start sandboxes from `$env:TEMP`.
+

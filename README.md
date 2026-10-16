@@ -106,7 +106,7 @@ cd Frontend && npm run dev           # http://localhost:3000
 | Database (Dev) | Supabase (managed PostgreSQL) |
 | Database (Prod) | CICC-managed PostgreSQL (raw) |
 | Containerization | Docker + Docker Compose |
-| Testing | Jest (800 backend unit + 94 e2e on a real Postgres), vitest (456 frontend) — as of 2026-10-16 — plus a k6 baseline; JMeter is the formal run still to do |
+| Testing | Jest (900 backend unit + 94 e2e on a real Postgres), vitest (494 frontend) — as of 2026-10-17 — plus a k6 baseline; JMeter is the formal run still to do |
 | Report Generation | pdfkit (PDF) + exceljs (Excel/XLSX) |
 
 ## API Endpoints
