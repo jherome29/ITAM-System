@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, ILike, In, Not, Repository } from 'typeorm';
-import PDFDocument from 'pdfkit';
 import ExcelJS from 'exceljs';
 import { GeneratedReportEntity } from './entities/generated-report.entity';
 import { GeneratedFormEntity } from './entities/generated-form.entity';
@@ -15,7 +14,15 @@ import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { AuditService } from '../audit/audit.service';
 import { SystemConfigService } from '../system-config/system-config.service';
-import { withFormIdentity } from './forms/base-form.generator';
+import {
+  bufferize,
+  columnProportions,
+  createReportDoc,
+  drawTable,
+  ensureSpace,
+  phpFormat,
+  withFormIdentity,
+} from './forms/base-form.generator';
 import { DOCUMENT_SERIES, allocateDocumentNumber } from './document-numbers';
 import {
   OfficialFormType,
@@ -317,84 +324,48 @@ export class ReportsService {
       range,
     );
 
-    return new Promise<Buffer>((resolve, reject) => {
-      const doc = new PDFDocument({
-        margin: 40,
-        size: 'LETTER',
-        layout: 'landscape',
-      });
-      const chunks: Buffer[] = [];
-      doc.on('data', (c: Buffer) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
+    const doc = createReportDoc();
 
-      // Header bar
-      doc.rect(40, 40, doc.page.width - 80, 36).fill('#1a4d7a');
-      doc
-        .fillColor('white')
-        .font('Helvetica-Bold')
-        .fontSize(14)
-        .text('AIMRS — ' + title, 50, 52, { width: doc.page.width - 100 });
-      doc
-        .fillColor('#555')
-        .font('Helvetica')
-        .fontSize(8)
-        .text(
-          `Generated: ${new Date().toLocaleString('en-PH')}  |  ${this.systemConfig.getEntityName()}`,
-          50,
-          85,
-        );
+    // Header bar
+    doc.rect(40, 40, doc.page.width - 80, 36).fill('#1a4d7a');
+    doc
+      .fillColor('white')
+      .font('Helvetica-Bold')
+      .fontSize(14)
+      .text('AIMRS — ' + title, 50, 52, { width: doc.page.width - 100 });
+    doc
+      .fillColor('#555')
+      .font('Helvetica')
+      .fontSize(8)
+      .text(
+        `Generated: ${new Date().toLocaleString('en-PH')}  |  ${this.systemConfig.getEntityName()}`,
+        50,
+        85,
+      );
 
-      // Column layout
-      const colCount = headers.length;
-      const colW = Math.floor((doc.page.width - 80) / colCount);
-      let y = 100;
+    // The same table the COA forms use: it measures each row (a description that wraps gets the
+    // height it needs, instead of printing over the next row), repeats the column header on every
+    // page and never draws below the margin, where pdfkit would answer with a stray page.
+    const cells = rows.map((row) => row.map((cell) => String(cell ?? '—')));
+    const widths = columnProportions(headers.map(String), cells);
+    const y = drawTable(
+      doc,
+      headers.map((header, i) => ({
+        header: String(header),
+        width: widths[i],
+      })),
+      cells,
+      100,
+    );
 
-      // Table header row
-      doc.rect(40, y, doc.page.width - 80, 18).fill('#e8f0f7');
-      headers.forEach((h, i) => {
-        doc
-          .fillColor('#1a4d7a')
-          .font('Helvetica-Bold')
-          .fontSize(7)
-          .text(String(h), 44 + i * colW, y + 5, {
-            width: colW - 4,
-            ellipsis: true,
-          });
-      });
-      y += 18;
+    const footerY = ensureSpace(doc, y, 12);
+    doc
+      .fillColor('#555')
+      .font('Helvetica')
+      .fontSize(7)
+      .text(`Total records: ${rows.length}`, 40, footerY, { lineBreak: false });
 
-      // Data rows
-      rows.forEach((row, ri) => {
-        if (y > doc.page.height - 60) {
-          doc.addPage({ layout: 'landscape', size: 'LETTER', margin: 40 });
-          y = 40;
-        }
-        if (ri % 2 === 0) {
-          doc.rect(40, y, doc.page.width - 80, 16).fill('#f8fafc');
-        }
-        row.forEach((cell, i) => {
-          doc
-            .fillColor('#333')
-            .font('Helvetica')
-            .fontSize(7)
-            .text(String(cell ?? '—'), 44 + i * colW, y + 4, {
-              width: colW - 4,
-              ellipsis: true,
-            });
-        });
-        y += 16;
-      });
-
-      // Footer
-      doc
-        .fillColor('#aaa')
-        .font('Helvetica')
-        .fontSize(7)
-        .text(`Total records: ${rows.length}`, 40, doc.page.height - 30);
-
-      doc.end();
-    });
+    return bufferize(doc);
   }
 
   // ── Excel report builder ───────────────────────────────────────────────────
@@ -514,9 +485,7 @@ export class ReportsService {
             (a.condition ?? '—').replaceAll('_', ' '),
             a.status.replaceAll('_', ' '),
             `${a.division ?? '—'} / ${a.officeOrSection ?? '—'}`,
-            a.acquisitionCost == null
-              ? '—'
-              : `₱${Number(a.acquisitionCost).toLocaleString('en-PH')}`,
+            a.acquisitionCost == null ? '—' : phpFormat(a.acquisitionCost),
             a.acquisitionDate
               ? new Date(a.acquisitionDate).toLocaleDateString('en-PH')
               : '—',
@@ -711,9 +680,7 @@ export class ReportsService {
             a.assetClass,
             (a.condition ?? '—').replaceAll('_', ' '),
             a.status.replaceAll('_', ' '),
-            a.acquisitionCost == null
-              ? '—'
-              : `₱${Number(a.acquisitionCost).toLocaleString('en-PH')}`,
+            a.acquisitionCost == null ? '—' : phpFormat(a.acquisitionCost),
           ]),
         };
       }

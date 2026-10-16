@@ -533,6 +533,55 @@ describe('ReportsService', () => {
       );
       expect(result.buffer.length).toBeGreaterThan(100);
     }, 15000);
+
+    // The report builder drew every row 16pt tall. A description that wrapped in its column printed
+    // its second line over the next row, and a wrapped line near the foot of the page made pdfkit add
+    // a page holding two words: the Audit Trail report came out 171 pages long with 84 of them stray.
+    it('lays out wrapped cells without overprinting a row or drawing below the margin', async () => {
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+      try {
+        mockAssetRepo.find.mockResolvedValue(
+          Array.from({ length: 40 }, (_, i) =>
+            makeAsset({
+              propertyNumber: `P-${String(i).padStart(3, '0')}`,
+              itemDescription: 'forensic mobile rack calibration writeblocker '
+                .repeat(12)
+                .trim(),
+            }),
+          ),
+        );
+        await service.generate(
+          'ASSET_MASTER_LIST',
+          'PDF',
+          'u-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        );
+
+        const drawn = text.mock.calls.map(([t, , y]) => ({
+          text: String(t),
+          y: typeof y === 'number' ? y : undefined,
+        }));
+        const LANDSCAPE_FOOT = 612 - 40;
+        const body = drawn.filter((d) => !/^Page \d+ of \d+$/.test(d.text));
+        expect(
+          body.every((d) => d.y === undefined || d.y <= LANDSCAPE_FOOT),
+        ).toBe(true);
+
+        // Row 1 starts further down than row 0 by more than the old fixed 16pt.
+        const rowStarts = drawn
+          .filter((d) => /^P-00[01]$/.test(d.text))
+          .map((d) => d.y as number);
+        expect(rowStarts).toHaveLength(2);
+        expect(rowStarts[1] - rowStarts[0]).toBeGreaterThan(24);
+
+        expect(
+          drawn.filter((d) => /^Page \d+ of \d+$/.test(d.text)).length,
+        ).toBeGreaterThan(1);
+      } finally {
+        text.mockRestore();
+      }
+    }, 15000);
   });
 
   // ── fetchReportData() — private, tested via direct access ─────────────────
@@ -578,7 +627,8 @@ describe('ReportsService', () => {
       expect(r.title).toBe('Asset Master List');
       expect(r.rows).toHaveLength(2);
       expect(r.rows[0][9]).toBe('—'); // null cost → fallback
-      expect(r.rows[1][9]).toContain('₱'); // non-null cost → formatted
+      // "PHP", as the COA forms print it: the PDF font has no peso sign and drew "±50,000".
+      expect(r.rows[1][9]).toBe('PHP 50,000.00');
       expect(r.rows[0][10]).toBe('—'); // null date → fallback
     });
 
@@ -661,7 +711,7 @@ describe('ReportsService', () => {
 
       expect(r.title).toBe('Disposal Documentation Report');
       expect(r.rows[0][7]).toBe('—'); // null cost
-      expect(r.rows[1][7]).toContain('₱'); // formatted cost
+      expect(r.rows[1][7]).toBe('PHP 25,000.00'); // not "₱": the PDF font prints it as "±"
     });
 
     it('REPAIR_HISTORY lists each repair with service, outcome and turnaround', async () => {
