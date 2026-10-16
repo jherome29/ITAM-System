@@ -1,4 +1,41 @@
-# COA Form Template Fidelity Audit — 2026-08-19
+# COA Form Template Fidelity Audit — 2026-08-19 (status updated 2026-10-16)
+
+## Status update — 2026-10-16
+
+The audit below is kept as written on 2026-08-19: it is the structural comparison against `FORMS/`. This block says what has happened since. Each "Fixed" was checked in the code and, for layout, in rendered PDFs.
+
+| Finding (2026-08-19) | Status | Notes |
+|---|---|---|
+| RSMI hardcodes every cost to ₱0.00 | **Fixed** | Supplies are priced from the stock they were issued from (`fulfilledAssetId`); a line with no stock link prints a dash and is left out of the total |
+| RPCI fakes the count columns (`'1'`, blank shortage) | **Fixed** | `QTY PER CARD` shows the quantity on record, the physical count and shortage/overage are left blank to fill in by hand. A *real* reconciliation still needs physical-count recording, which is not built |
+| RPCPPE is a plain asset listing | Open | Same dependency on physical-count recording; its third signatory is still an internal officer, not the COA Representative the official form requires |
+| Move-In / Move-Out "Property Type" always `[x] Office` | **Open** | Still hardcoded in `move-in.generator.ts` / `move-out.generator.ts`. Misrepresents real data: fix first |
+| WMR has no Certificate of Inspection | Open | |
+| IIRUP drops the accounting columns and the Witness | Open | |
+| Extra unofficial third signatory on PAR, ICS, IAR, both receipts, RLSDDP | Open | The shared template still defaults to three signature slots |
+| Sticker Card is an asset tag, not Appendix 58's Stock Card | Open | Needs a decision: rename it, or build a real Stock Card |
+| Annex A.4 is a flat per-period list, not a running-balance ledger | Open | It now prints the *real* ICS number of an item (see below) |
+| RLSDDP: no police-notified field, no notarisation block | Open | The notarisation block is deliberately left to a live notary |
+| RIS / RSMI: no Responsibility Center Code | Open (minor) | |
+
+**Fixed in the shared machinery since the audit (applies to all 18 forms):**
+- The seven per-transaction forms (PAR, ICS, PTR, IAR, Receipt of Returned Property / SEP, RLSDDP, Move-Out) carry a **real running number** `<SERIES>-<YYYY>-<NNNN>`, allocated in the same transaction that stores the form (no gaps, no duplicates). The series is a placeholder until CICC's property office gives its own. Entity name and Fund Cluster are System Settings, not fixed text.
+- Tables paginate and **fit the page**: `drawTable` scales columns to the content width, never below the longest word in a column, and grows its header row to the tallest header.
+- The form number no longer prints over its own label (`drawFormTitle` stacks them).
+
+**Found by rendering and reading all 18 PDFs on 2026-10-16 (and fixed):** the form number overprinted its label on every numbered form; the Annex A.4, RPCPPE and IIRUP tables ran past the right margin (the RPCPPE's Accountable Officer column was entirely off the page); headers and values broke mid-word (`REM/ARK/S`, `Serviceabl/e`); a 3-line header spilled over the first row (ICS); a stray `:` on the RIS; the IIRUP printed the raw role `property_custodian`; the RLSDDP named whoever generated it, not the holder, as Accountable Officer; the Annex A.4 printed an invented `ICS-<property number>`.
+
+**Raised the same day, needs a decision (not changed):**
+- The Annex A.4 is titled "Issued" but lists every SEP asset created in the period, including stock that was never issued.
+- PAR, ICS and RLSDDP print the asset's registered section as Office/Section, not the end user's.
+- The Receipt of Returned Property prints a blank line for Date Acquired.
+- An IIRUP can show Condition "Serviceable" for an asset flagged for disposal through the lifecycle endpoint (the flag does not change the condition).
+- Dates print MM/DD/YYYY; period reports treat an end date as midnight.
+
+**Still not done:** a comparison of each generated PDF with its reference in `FORMS/` (layout and content have been read; the paper forms have not been laid next to them). When a generator changes, run `CHECKS.md` check 13.
+
+---
+
 
 All 18 generators in `Backend/src/reports/forms/` checked against their actual
 reference files in `FORMS/`. Method: extracted each reference `.xls`/`.xlsx`/`.docx`

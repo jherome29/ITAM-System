@@ -2,6 +2,7 @@
 
 > **System:** Asset Inventory Management and Requisition System (AIMRS)
 > **Client:** Cybercrime Investigation and Coordinating Center (CICC)
+> **Last reviewed against the controllers:** 2026-10-16. Seven roles. The permission matrix below is read from each controller's `@Roles(...)` list and is the same table as CLAUDE.md §4: change both together.
 
 ---
 
@@ -35,8 +36,10 @@ The service requester. Employees submit asset or supply requisitions and track t
 
 **Can do:**
 - Log in and view their own dashboard
-- Submit new requisitions (asset, supply, or replacement)
-- View the status of their own requests (timeline view)
+- Submit new requisitions (new item or supply; the type is derived from the item, never picked by hand)
+- Ask for a **replacement** of an asset they hold once it qualifies (My Assigned Assets → Request replacement)
+- See the assets they hold (**My Assigned Assets**) and file a **return, repair, damage, loss or theft** request for one (**Returns & Incidents**, with up to 3 photo/PDF attachments)
+- View the status of their own requests (timeline view) and download the documents generated for them
 - Browse the asset catalogue
 - Receive notifications about their requests
 
@@ -61,8 +64,9 @@ The first-level approver. Supervisors review and act on requisitions submitted b
 - View all pending requisitions assigned to them for approval
 - Approve or reject requisitions (with comments)
 - View the approval history log
-- Submit their own requisitions (as a requester)
-- Track the status of their own requests
+- Submit their own requisitions (as a requester); these go to their designated alternate approver
+- Mark themselves unavailable (with an optional end date) and designate an alternate approver
+- Track the status of their own requests, and see/file requests for assets they hold
 - Browse the asset catalogue
 - Receive notifications (pending approvals, SLA breach alerts)
 
@@ -116,10 +120,15 @@ The asset custodian and primary operational role. IT Personnel manages the entir
   - Annex A.4 (Registry of Semi-Expendable Property Issued)
 - Re-download previously generated forms from the database
 - Generate management reports (Asset Master List, Issuance Records, etc.)
-- Receive notifications (low stock, overdue returns, SLA alerts)
-- Submit their own requisitions
+- Decide return / repair / damage / loss / theft requests for ICT assets (approve, reject with a reason of 10+ characters, mark received); completing one drives the lifecycle and generates its COA documents
+- Run the Maintenance & Repair queue: repair records, loaner units, outcome repaired / not repairable
+- Recommend disposal with a documented justification (documentation only; the actual disposal is a manual COA process)
+- Receive notifications (low stock, overdue returns, overdue repairs, SLA alerts)
+- Submit their own requisitions (another IT custodian, or the System Administrator, fulfils those)
+- **Only ICT assets**: any other asset type is out of scope for every read and write
 
 **Cannot do:**
+- Fulfil, hold or decide anything they filed themselves
 - Approve or reject requisitions (that is Supervisor's role)
 - Manage user accounts or assign roles
 - View the full audit trail list (can only view per-asset transaction history)
@@ -151,7 +160,7 @@ Full system access. Manages user accounts, roles, and system configuration. Also
 - Receive all system notifications
 
 **Cannot do:**
-- File a requisition (403)
+- File a requisition (403), or register / edit assets: the System Administrator has no operational asset role
 - Fulfil or hold any requisition filed by someone other than a custodian
 - Delete audit log entries (audit logs are append-only by design — COA compliance)
 - Delete user accounts (deactivation only)
@@ -170,7 +179,8 @@ Read-only oversight role. Management accesses dashboards and reports for monitor
   - SLA compliance rate
   - Total assets and requisitions
 - View the full audit trail (read-only)
-- Generate and download management reports
+- Generate and download management reports, and the Audit Trail Report (PDF / Excel)
+- View the forms archive and the read-only Returns & Incidents / repair lists
 - Receive system notifications
 
 **Cannot do:**
@@ -182,13 +192,42 @@ Read-only oversight role. Management accesses dashboards and reports for monitor
 
 ---
 
-### Property Custodian and Property Officer — requisitions
-**Workspaces:** `/property-custodian/dashboard`, `/property-officer/dashboard`
+### Property Custodian
+**Dashboard:** `/property-custodian/dashboard`
 
-Both roles hold property like anyone else, so as of 2026-10-16 they **file requisitions and replacement requests** (menu: *My Requests → My Requisitions*; *Request replacement* on *My Assigned Assets*). Their requests route like an employee's: to the active Approving Officer of their section, otherwise of their division (here, `psm.approver@cicc.gov.ph`). If the division has none, submitting fails with "No supervisor is configured for your section".
+The custodian of **Fixed assets and Supplies** (furniture, vehicles, office equipment, consumables). Everything IT Personnel do for ICT, for these two asset types.
 
-- A **Property Custodian never fulfils what they filed themselves.** Their own requisitions are left out of their fulfilment queue and fulfil/hold on them is refused (403); another custodian does it, or — only for a custodian's own request — the System Administrator.
-- **Management and the System Administrator do not file** requisitions.
+**Can do:**
+- Register Fixed assets and Supplies; for a supply, set its quantity and reorder level (a low-stock alert fires when it drops below)
+- Edit non-status fields, update the lifecycle (issue, return, transfer, repair, flag for disposal, restore a flagged asset), generate and scan QR codes
+- Fulfil or hold approved Fixed / Supplies requisitions (fulfilling a supply draws the stock down in the same transaction)
+- Decide Returns & Incidents requests for Fixed / Supplies, and run the Maintenance & Repair queue (including loaner units)
+- See the Physical Inventory count sheet, and recommend disposal with a documented justification
+- Generate official COA forms and view the forms archive; receive notifications (low stock, overdue returns, repairs)
+- **File requisitions and replacements** (My Requisitions, Request replacement) like any other holder, and see **My Assigned Assets**
+
+**Cannot do:**
+- Touch ICT assets (403), or fulfil, hold or decide anything they filed themselves: another Property Custodian, or the System Administrator, does
+- Approve requisitions, manage users or roles, configure the system, view the full audit trail
+
+---
+
+### Property Officer
+**Dashboard:** `/property-officer/dashboard`
+
+Oversight of Fixed assets and Supplies. Mostly read-only.
+
+**Can do:**
+- View the consolidated asset registry, an asset's transaction history, and the Disposal Review (assets recommended for disposal)
+- **Replacement Validation**: every replacement request with the basis it was justified on and the old unit's repairs in the last 12 months, plus held items that already qualify but have no open request
+- View and download the forms archive; receive notifications
+- **File requisitions and replacements** and see **My Assigned Assets**
+
+**Cannot do:**
+- Register or change assets, update lifecycles, generate forms (archive only), fulfil, approve, or decide returns & incidents
+- Touch ICT assets
+
+> Both property roles file requisitions like any employee: the request routes to the active Approving Officer of their section, otherwise their division (here, `psm.approver@cicc.gov.ph`, whose own requests go to its alternate). If the division has none, submitting fails with "No supervisor is configured for your section".
 
 ---
 
@@ -207,30 +246,33 @@ Both roles hold property like anyone else, so as of 2026-10-16 they **file requi
 
 ## Quick Reference — Feature Access Matrix
 
-| Feature | Employee | Supervisor | IT Personnel | System Admin | Management |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Login | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Submit requisition | ✓ | ✓ | ✓ | — | — |
-| Track own requests | ✓ | ✓ | ✓ | — | — |
-| Browse asset catalogue | ✓ | ✓ | ✓ | — | — |
-| Approve / reject requisitions | — | ✓ | — | ✓ | — |
-| View approval history | — | ✓ | ✓ | ✓ | ✓ |
-| Register new assets | — | — | ✓ | — | — |
-| Edit asset details (non-status fields) | — | — | ✓ | — | — |
-| Update asset lifecycle | — | — | ✓ | — | — |
-| Generate QR / barcodes | — | — | ✓ | — | — |
-| Scan QR / barcodes | — | — | ✓ | — | — |
-| Issue / return / transfer assets | — | — | ✓ | — | — |
-| Flag assets for repair / disposal | — | — | ✓ | — | — |
-| View asset transaction history | — | — | ✓ | ✓ | ✓ |
-| Generate official COA forms | — | — | ✓ | ✓ | — |
-| View full inventory dashboard | — | — | ✓ | ✓ | ✓ |
-| User account management | — | — | — | ✓ | — |
-| Role assignment | — | — | — | ✓ | — |
-| View full audit trail (all records) | — | — | — | ✓ | ✓ |
-| System configuration | — | — | — | ✓ | — |
-| Generate management reports | — | — | ✓ | ✓ | ✓ |
-| Receive notifications | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Feature | Employee | Supervisor | IT Personnel | Property Custodian | Property Officer | System Admin | Management |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Login | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Submit requisition / replacement | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| Track own requests | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| Browse the asset catalogue (requisition picker) | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| See assets I hold; file return / repair / damage / loss / theft on them | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Receive notifications | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Approve / reject requisitions | — | ✓ | — | — | — | ✓ | — |
+| Approval history (decisions I made) | — | ✓ | — | — | — | ✓ | — |
+| Fulfil / hold requisitions | — | — | ✓ ¹ | ✓ ¹ | — | ✓ ² | — |
+| Decide returns & incidents requests | — | — | ✓ ¹ | ✓ ¹ | — | ✓ ² | — |
+| Run maintenance & repair (incl. loaner) | — | — | ✓ ¹ | ✓ ¹ | — | ✓ ² | — |
+| Register assets, edit non-status fields | — | — | ✓ ³ | ✓ ³ | — | — | — |
+| Update asset lifecycle (issue / return / transfer / repair / flag for disposal) | — | — | ✓ ³ | ✓ ³ | — | — | — |
+| Generate / scan QR and barcodes | — | — | ✓ ³ | ✓ ³ | — | — | — |
+| View the asset registry and inventory dashboard | — | — | ✓ ³ | ✓ ³ | ✓ ³ | ✓ | ✓ |
+| View an asset's transaction history | — | — | ✓ ³ | ✓ ³ | ✓ ³ | ✓ | ✓ |
+| See the replacement-validation list and assets flagged for disposal (read-only) | — | — | ✓ ³ | ✓ ³ | ✓ ³ | ✓ | ✓ |
+| Generate official forms (PAR, ICS, RIS…) | — | — | ✓ | ✓ | — | ✓ | — |
+| View / download the forms archive | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Generate management reports | — | — | ✓ | ✓ | — | ✓ | ✓ |
+| User accounts, role assignment, system configuration | — | — | — | — | — | ✓ | — |
+| View the full audit trail (all records) | — | — | — | — | — | ✓ | ✓ |
+| Executive KPI dashboard | — | — | — | — | — | ✓ | ✓ |
+
+¹ Never for a requisition or request they filed themselves. ² Only for a custodian's own request or requisition (the fallback). ³ Inside the role's own asset-type scope: IT Personnel see and change **ICT** only; Property Custodian and Property Officer see **Fixed** and **Supplies** only. Enforced in the service layer on every read and write (`resolveAssetTypeScope`), not just in the menu.
 
 ---
 
@@ -238,10 +280,12 @@ Both roles hold property like anyone else, so as of 2026-10-16 they **file requi
 
 | Role | Pages |
 |---|---|
-| **Employee** | `/login`, `/employee/dashboard`, `/employee/requisitions/new`, `/employee/requisitions`, `/employee/requisitions/[id]`, `/employee/catalogue`, `/employee/notifications` |
+| **Employee** | `/login`, `/employee/{dashboard, catalogue, requisitions, requisitions/new, requisitions/[id], assigned-assets, returns-incidents, notifications}` |
 | **Supervisor** (Approving Officer) | `/login`, `/approving-officer/{dashboard, approvals, approval-history, requisitions, assigned-assets, notifications}` |
 | **IT Personnel** (IT Asset Custodian) | `/login`, `/it-asset-custodian/{dashboard, assets, assets/new, assets/[id], fulfillment, custody, returns-incidents, qr-scanner, maintenance, physical-inventory, disposal, reports, management-reports, requisitions, assigned-assets, notifications}` |
 | **System Admin** (Master Administrator) | `/login`, `/master-admin/{dashboard, users, roles, configuration, audit, returns-incidents, repairs, fulfillment, assigned-assets, notifications}` |
 | **Management** (Management & Audit Viewer) | `/login`, `/management-audit/{dashboard, asset-reports, requisition-reports, maintenance-disposal, physical-count, audit, forms, assigned-assets, notifications}` |
 | **Property Custodian** | `/login`, `/property-custodian/{dashboard, fixed-assets, supplies, fulfillment, custody, returns-incidents, maintenance, qr-scanner, physical-inventory, disposal, reports, requisitions, assigned-assets, notifications}` |
 | **Property Officer** | `/login`, `/property-officer/{dashboard, assets, replacements, disposal, reports, requisitions, assigned-assets, notifications}` |
+
+Every role also has **My Assigned Assets** and **Notifications**. The menu for each role is `Frontend/lib/roles/role-navigation.ts`; an address with no screen behind it is a 404.
