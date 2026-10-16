@@ -9,6 +9,7 @@ import { SystemConfigService } from '../system-config/system-config.service';
 import { AUDIT_REASON_REFRESH_TOKEN_REUSE } from '../audit/audit-reasons';
 import {
   AssetClass,
+  ASSIGNABLE_USER_ROLES,
   AssetStatus,
   AuditAction,
   RequisitionStatus,
@@ -21,7 +22,7 @@ export interface AdminDashboardStats {
     active: number;
     inactive: number;
     locked: number;
-    byRole: Record<UserRole, number>;
+    byRole: Partial<Record<UserRole, number>>;
   };
   requisitions: {
     pendingSupervisor: number;
@@ -125,9 +126,10 @@ export class AdminService {
       .getCount();
   }
 
-  // Every role starts at 0 so the dashboard renders a complete legend even for
-  // roles that have no accounts yet.
-  private async countUsersByRole(): Promise<Record<UserRole, number>> {
+  // Every assignable role starts at 0 so the dashboard renders a complete legend
+  // even for roles that have no accounts yet. The retired Property Officer role
+  // appears only while an account still holds it: that is a leftover to migrate.
+  private async countUsersByRole(): Promise<Partial<Record<UserRole, number>>> {
     const rows = await this.users
       .createQueryBuilder('u')
       .select('u.role', 'role')
@@ -135,9 +137,9 @@ export class AdminService {
       .groupBy('u.role')
       .getRawMany<{ role: UserRole; count: string }>();
 
-    const byRole = Object.values(UserRole).reduce(
+    const byRole = ASSIGNABLE_USER_ROLES.reduce(
       (acc, role) => ({ ...acc, [role]: 0 }),
-      {} as Record<UserRole, number>,
+      {} as Partial<Record<UserRole, number>>,
     );
     for (const { role, count } of rows) {
       byRole[role] = Number(count);

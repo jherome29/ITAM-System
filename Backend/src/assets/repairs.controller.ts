@@ -33,7 +33,6 @@ interface AuthenticatedRequest {
 const READERS = [
   UserRole.IT_PERSONNEL,
   UserRole.PROPERTY_CUSTODIAN,
-  UserRole.PROPERTY_OFFICER,
   UserRole.SYSTEM_ADMIN,
   UserRole.MANAGEMENT,
 ];

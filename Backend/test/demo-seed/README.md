@@ -3,7 +3,7 @@
 Fills a fresh AIMRS with believable, **clearly fictional** sample data so every
 role has something to look at or act on during the employee pilot — requisitions
 to approve, items to fulfil, returns and repairs to process, a lost laptop for
-the Property Officer to review, low-stock and overdue-loan alerts.
+the Property Custodian to review, low-stock and overdue-loan alerts.
 
 It does this by **replaying a scenario through the real API as the real roles**
 (`scenario.ts`), not by writing SQL. So numbering (`REQ-…`, `AR-…`), the audit
@@ -34,7 +34,7 @@ the API as the real roles.
 | | |
 |---|---|
 | Assets | 33 — 20 ICT, 13 Fixed (`DEMO-P-…`), spread over 8 offices for the physical count |
-| Held by | every role: the Approving Officer, IT, Property Custodian, Property Officer, Management and the Master Admin each hold items; the demo employee holds 12 |
+| Held by | every role: the Approving Officer, IT, Property Custodian, Management and the Master Admin each hold items; the demo employee holds 12 |
 | Maintenance & Repair | 5 ICT + 1 Fixed repairs open — in-house, external, one **overdue** with a loaner lent out — and a history of 5 repaired and 1 written off, plus one item repaired three times (the "repeated repairs" replacement reason) |
 | My Requisitions | the Approving Officer files 2 and IT files 1 of their own |
 | Replacement Validation | one completed replacement per custodian domain (the old unit is taken back and its receipt generated) |
@@ -55,9 +55,9 @@ Run the first round first. Two things differ from it:
   stops before writing. Unless someone signs in as that backup account, the
   Approving Officer's own requisitions simply stay pending, which is what My
   Requisitions should show.
-* **The Property Officer and Management only hold assets.** Their accounts are
-  looked up in the directory (there must be exactly one active account of each
-  role, or it stops before writing). Everything is resolved before the first write.
+* **Management only holds assets.** Its account is looked up in the directory
+  (there must be exactly one active account of that role, or it stops before
+  writing). Everything is resolved before the first write.
 
 ### Everything is tagged
 

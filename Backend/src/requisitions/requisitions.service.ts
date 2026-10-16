@@ -260,12 +260,6 @@ export class RequisitionsService {
           )
           .andWhere('r.requestedById != :me', { me: requestingUserId });
         break;
-      case UserRole.PROPERTY_OFFICER:
-        qb.andWhere(
-          'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...poScope))',
-          { poScope: resolveAssetTypeScope(UserRole.PROPERTY_OFFICER) },
-        );
-        break;
       // SYSTEM_ADMIN and MANAGEMENT see all
     }
 
@@ -353,7 +347,7 @@ export class RequisitionsService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  // ── Replacement review (Property Officer watch list) ──────────────────────
+  // ── Replacement review (the custodians' watch list) ───────────────────────
   /**
    * Replacement requisitions (newest 200) with the criterion they were
    * justified on at submission — read from the immutable audit entry, since
@@ -477,7 +471,7 @@ export class RequisitionsService {
 
     // Scope to the caller's asset-type custody, mirroring findAll()'s
     // EXISTS-subquery pattern (same join shape used there for
-    // IT_PERSONNEL/PROPERTY_CUSTODIAN/PROPERTY_OFFICER). SYSTEM_ADMIN and
+    // IT_PERSONNEL/PROPERTY_CUSTODIAN). SYSTEM_ADMIN and
     // MANAGEMENT get undefined back from resolveAssetTypeScope and stay
     // unscoped, matching findAll()'s "see all" behavior for those roles.
     const assetTypeScope = resolveAssetTypeScope(userRole);

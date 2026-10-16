@@ -15,7 +15,7 @@ describe('resolveAssetTypeScope', () => {
     ]);
   });
 
-  it('scopes PROPERTY_OFFICER to Fixed and Supplies', () => {
+  it('keeps the retired PROPERTY_OFFICER role scoped to Fixed and Supplies, never unscoped', () => {
     expect(resolveAssetTypeScope(UserRole.PROPERTY_OFFICER)).toEqual([
       AssetType.FIXED,
       AssetType.SUPPLIES,

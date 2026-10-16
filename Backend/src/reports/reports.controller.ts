@@ -99,7 +99,6 @@ export class ReportsController {
     UserRole.MANAGEMENT,
     UserRole.IT_PERSONNEL,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findAll(@Query('page') page = 1, @Query('limit') limit = 50) {
     const result = await this.svc.findAll(+page, +limit);
@@ -116,7 +115,6 @@ export class ReportsController {
     UserRole.MANAGEMENT,
     UserRole.IT_PERSONNEL,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findAllForms(
     @Query('page') page = 1,
@@ -201,7 +199,6 @@ export class ReportsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async downloadForm(
     @Param('id', ParseUUIDPipe) id: string,

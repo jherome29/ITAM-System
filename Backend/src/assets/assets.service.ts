@@ -662,7 +662,7 @@ export class AssetsService {
 
   /**
    * Held assets that already qualify for a replacement but have no open
-   * replacement requisition — the Property Officer's watch list.
+   * replacement requisition — the custodians' watch list.
    * SVC: Improve — surfaces items that keep failing or have aged out.
    */
   async replacementCandidates(assetTypeScope?: AssetType[]) {

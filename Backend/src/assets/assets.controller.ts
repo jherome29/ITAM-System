@@ -39,7 +39,7 @@ export class AssetsController {
   /**
    * GET /api/v1/assets
    * Full inventory list — paginated.
-   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
+   * Roles: IT Personnel, System Admin, Management, Property Custodian
    */
   @Get()
   @Roles(
@@ -47,7 +47,6 @@ export class AssetsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findAll(
     @Query('page') page = 1,
@@ -84,7 +83,6 @@ export class AssetsController {
     UserRole.SUPERVISOR,
     UserRole.IT_PERSONNEL,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findCatalogue(@Query('page') page = 1, @Query('limit') limit = 20) {
     const result = await this.assetsService.findCatalogue(+page, +limit);
@@ -104,7 +102,6 @@ export class AssetsController {
     UserRole.SUPERVISOR,
     UserRole.IT_PERSONNEL,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findCatalogueItems(
     @Query('search') search?: string,
@@ -125,7 +122,7 @@ export class AssetsController {
    * GET /api/v1/assets/stats
    * Grouped asset counts by status, class, and type.
    * Powers the IT Personnel and Management dashboards.
-   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
+   * Roles: IT Personnel, System Admin, Management, Property Custodian
    */
   @Get('stats')
   @Roles(
@@ -133,7 +130,6 @@ export class AssetsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async getStats(@Req() req: AuthenticatedRequest) {
     const assetTypeScope = resolveAssetTypeScope(req.user.role);
@@ -153,7 +149,6 @@ export class AssetsController {
     UserRole.SUPERVISOR,
     UserRole.IT_PERSONNEL,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
   )
@@ -165,7 +160,7 @@ export class AssetsController {
   /**
    * GET /api/v1/assets/:id
    * Single asset with full lifecycle history.
-   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
+   * Roles: IT Personnel, System Admin, Management, Property Custodian
    */
   @Get(':id')
   @Roles(
@@ -173,7 +168,6 @@ export class AssetsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,

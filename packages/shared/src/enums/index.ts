@@ -7,8 +7,19 @@ export enum UserRole {
   SYSTEM_ADMIN = 'system_admin',
   MANAGEMENT = 'management',
   PROPERTY_CUSTODIAN = 'property_custodian',
+  /**
+   * @deprecated Retired: merged into PROPERTY_CUSTODIAN (the Officer was a
+   * read-only subset of it). The value stays because the Postgres enum cannot drop
+   * it and old audit rows still carry it. No route grants it and no account may be
+   * given it: assign from ASSIGNABLE_USER_ROLES.
+   */
   PROPERTY_OFFICER = 'property_officer',
 }
+
+/** Every role an account can be given today (all of UserRole except the retired one). */
+export const ASSIGNABLE_USER_ROLES: readonly UserRole[] = Object.values(
+  UserRole,
+).filter((role) => role !== UserRole.PROPERTY_OFFICER);
 
 export enum AssetClass {
   PPE = 'PPE', // Property, Plant & Equipment — useful life >1yr, cost >= PHP 50,000

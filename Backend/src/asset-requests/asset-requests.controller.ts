@@ -48,7 +48,6 @@ const ALL_ROLES = [
   UserRole.SUPERVISOR,
   UserRole.IT_PERSONNEL,
   UserRole.PROPERTY_CUSTODIAN,
-  UserRole.PROPERTY_OFFICER,
   UserRole.SYSTEM_ADMIN,
   UserRole.MANAGEMENT,
 ];
@@ -99,7 +98,6 @@ export class AssetRequestsController {
   @Roles(
     UserRole.IT_PERSONNEL,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
   )

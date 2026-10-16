@@ -219,9 +219,9 @@ function printPlan(opts: Options) {
       `${c.pcFulfilment} to fulfil, ${c.pcAssetRequests} return/repair/incident request(s)`,
     ],
     [
-      'Property Officer',
-      `replacement: ${c.po.replacementRequests} request(s), ${c.po.replacementCandidates} candidate(s); ` +
-        `${c.po.disposalCandidates} item(s) in disposal review`,
+      'Property Custodian review pages',
+      `replacement: ${c.pc.replacementRequests} request(s), ${c.pc.replacementCandidates} candidate(s); ` +
+        `${c.pc.disposalCandidates} item(s) in disposal review`,
     ],
     [
       'Alerts',

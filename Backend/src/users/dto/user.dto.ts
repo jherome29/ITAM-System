@@ -2,7 +2,7 @@ import {
   IsString,
   IsNotEmpty,
   IsEmail,
-  IsEnum,
+  IsIn,
   IsOptional,
   IsBoolean,
   IsUUID,
@@ -11,7 +11,10 @@ import {
   MaxLength,
   Matches,
 } from 'class-validator';
-import { UserRole } from '../../../../packages/shared/src/enums';
+import {
+  ASSIGNABLE_USER_ROLES,
+  UserRole,
+} from '../../../../packages/shared/src/enums';
 
 export class CreateUserDto {
   @IsString()
@@ -38,7 +41,9 @@ export class CreateUserDto {
   })
   password!: string;
 
-  @IsEnum(UserRole)
+  @IsIn(ASSIGNABLE_USER_ROLES, {
+    message: `role must be one of: ${ASSIGNABLE_USER_ROLES.join(', ')}`,
+  })
   role!: UserRole;
 
   @IsString()
@@ -76,8 +81,8 @@ export class ResetPasswordDto {
 }
 
 export class AssignRoleDto {
-  @IsEnum(UserRole, {
-    message: `role must be one of: ${Object.values(UserRole).join(', ')}`,
+  @IsIn(ASSIGNABLE_USER_ROLES, {
+    message: `role must be one of: ${ASSIGNABLE_USER_ROLES.join(', ')}`,
   })
   role!: UserRole;
 }

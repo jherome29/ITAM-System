@@ -317,7 +317,7 @@ describe('AuditService', () => {
       );
     });
 
-    it.each([UserRole.PROPERTY_CUSTODIAN, UserRole.PROPERTY_OFFICER])(
+    it.each([UserRole.PROPERTY_CUSTODIAN])(
       '%s is looked up against Fixed + Supplies only',
       async (role) => {
         mockAssetRepo.findOne.mockResolvedValue({ id: 'rec-1' });
