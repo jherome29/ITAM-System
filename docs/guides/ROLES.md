@@ -16,7 +16,9 @@
 | Management | management@cicc.gov.ph | Management@CICC2026! |
 | Property Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
 | Property Officer | property.officer@cicc.gov.ph | PropertyOfficer@2026! |
+| Supervisor (Approving Officer, Property and Supply Management) | psm.approver@cicc.gov.ph | PSMApprover@2026! |
 
+> **The last row is the approver for the Property Custodian and Property Officer.** Both sit in the *Property and Supply Management* division (sections *Property Custody Unit* and *Property Governance*); requisitions route to the active Approving Officer of the requester's section, then their division, so this account (employee ID `CICC-SUP-002`, section *Property and Supply Approving Office*) receives theirs. Its own requisitions go to its alternate approver, `alt.supervisor@cicc.gov.ph` (`CICC-ALT01`). Created 2026-10-16 through `POST /api/v1/users` and verified with a live login. The `supervisor@cicc.gov.ph` account (Maria Santos, *Operations / Field Operations*) is unchanged and approves for that section only.
 
 > **Note:** If an account gets locked after too many failed login attempts, a System Administrator can unlock it via `PATCH /api/v1/users/:id/unlock` or reset the password via `PATCH /api/v1/users/:id/reset-password`. To end a possibly-compromised session without changing the password, use `PATCH /api/v1/users/:id/revoke-sessions`.
 >
