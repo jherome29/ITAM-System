@@ -7,7 +7,10 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { RequisitionsService } from './requisitions.service';
+import {
+  RequisitionsService,
+  isCustodianOwnRequisition,
+} from './requisitions.service';
 import { RequisitionEntity } from './entities/requisition.entity';
 import { RequisitionItemEntity } from './entities/requisition-item.entity';
 import { RequisitionApprovalEntity } from './entities/requisition-approval.entity';
@@ -2234,6 +2237,205 @@ describe('RequisitionsService', () => {
         ),
       ).rejects.toThrow(ForbiddenException);
       expect(mockReqRepo.save).not.toHaveBeenCalled();
+    });
+  });
+
+  // A custodian can now file requisitions (the IT custodian always could), and
+  // fulfilling is the custodian's job - so without a rule they would approve-then-
+  // issue to themselves. Returns and incidents already bar this; requisitions now do
+  // too, with the System Administrator as the fallback for exactly those requests.
+  describe('isCustodianOwnRequisition()', () => {
+    const ict = [{ assetType: AssetType.ICT }];
+    const fixed = [{ assetType: AssetType.FIXED }];
+    const supplies = [{ assetType: AssetType.SUPPLIES }];
+
+    it.each([
+      [UserRole.IT_PERSONNEL, ict, true],
+      [UserRole.PROPERTY_CUSTODIAN, fixed, true],
+      [UserRole.PROPERTY_CUSTODIAN, supplies, true],
+      // Someone else's kind of item: another custodian fulfils it.
+      [UserRole.IT_PERSONNEL, fixed, false],
+      [UserRole.PROPERTY_CUSTODIAN, ict, false],
+      // Not a custodian at all.
+      [UserRole.EMPLOYEE, ict, false],
+      [UserRole.SUPERVISOR, fixed, false],
+      [UserRole.PROPERTY_OFFICER, fixed, false],
+    ])('requester %s asking for %j -> %s', (role, items, expected) => {
+      expect(isCustodianOwnRequisition(role, items as never)).toBe(expected);
+    });
+  });
+
+  describe('fulfil / hold - a custodian does not fulfil their own requisition', () => {
+    const ictItem = [
+      { itemDescription: 'Laptop', assetType: AssetType.ICT },
+    ] as unknown as RequisitionItemEntity[];
+    const fixedItem = [
+      { itemDescription: 'Chair', assetType: AssetType.FIXED },
+    ] as unknown as RequisitionItemEntity[];
+
+    const arm = (over: Partial<RequisitionEntity>) => {
+      const req = makeReq({
+        status: RequisitionStatus.PENDING_FULFILLMENT,
+        ...over,
+      });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+      mockReqRepo.save.mockImplementation((r: object) => Promise.resolve(r));
+      return req;
+    };
+    const requesterIs = (role: UserRole) =>
+      mockUsersService.findOne.mockResolvedValue({
+        id: 'requester-1',
+        role,
+        firstName: 'Re',
+        lastName: 'Quester',
+      });
+
+    it('refuses the IT custodian fulfilling a requisition they filed', async () => {
+      const req = arm({ requestedById: 'it-1', items: ictItem });
+
+      await expect(
+        service.fulfill(req.id, 'it-1', UserRole.IT_PERSONNEL, {}, 'ip'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockReqRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('refuses the Property Custodian holding a requisition they filed', async () => {
+      const req = arm({ requestedById: 'pc-1', items: fixedItem });
+
+      await expect(
+        service.putOnHold(
+          req.id,
+          'pc-1',
+          UserRole.PROPERTY_CUSTODIAN,
+          'No stock',
+          'ip',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockReqRepo.save).not.toHaveBeenCalled();
+    });
+
+    it("lets the System Administrator fulfil a custodian's own requisition", async () => {
+      const req = arm({ requestedById: 'requester-1', items: ictItem });
+      requesterIs(UserRole.IT_PERSONNEL);
+
+      const done = await service.fulfill(
+        req.id,
+        'admin-1',
+        UserRole.SYSTEM_ADMIN,
+        {},
+        'ip',
+      );
+
+      expect(done.status).toBe(RequisitionStatus.FULFILLED);
+    });
+
+    it("lets the System Administrator hold a custodian's own requisition", async () => {
+      const req = arm({ requestedById: 'requester-1', items: fixedItem });
+      requesterIs(UserRole.PROPERTY_CUSTODIAN);
+
+      const held = await service.putOnHold(
+        req.id,
+        'admin-1',
+        UserRole.SYSTEM_ADMIN,
+        'Awaiting delivery',
+        'ip',
+      );
+
+      expect(held.status).toBe(RequisitionStatus.ON_HOLD);
+    });
+
+    it.each([
+      ['an employee', UserRole.EMPLOYEE, ictItem],
+      [
+        'an IT custodian asking for a Fixed item',
+        UserRole.IT_PERSONNEL,
+        fixedItem,
+      ],
+    ])(
+      'refuses the System Administrator on the requisition of %s - another custodian handles it',
+      async (_who, role, items) => {
+        const req = arm({ requestedById: 'requester-1', items });
+        requesterIs(role);
+
+        await expect(
+          service.fulfill(req.id, 'admin-1', UserRole.SYSTEM_ADMIN, {}, 'ip'),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockReqRepo.save).not.toHaveBeenCalled();
+      },
+    );
+
+    it('still lets another custodian fulfil it', async () => {
+      const req = arm({ requestedById: 'it-1', items: ictItem });
+
+      const done = await service.fulfill(
+        req.id,
+        'it-2',
+        UserRole.IT_PERSONNEL,
+        {},
+        'ip',
+      );
+
+      expect(done.status).toBe(RequisitionStatus.FULFILLED);
+    });
+  });
+
+  describe("the custodians' fulfilment queue", () => {
+    const makeQb = () => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+    });
+
+    it.each([
+      [UserRole.IT_PERSONNEL, 'it-1'],
+      [UserRole.PROPERTY_CUSTODIAN, 'pc-1'],
+    ])('leaves out what %s filed themselves', async (role, id) => {
+      const qb = makeQb();
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findAll(id, role);
+
+      expect(qb.andWhere).toHaveBeenCalledWith('r.requestedById != :me', {
+        me: id,
+      });
+    });
+  });
+
+  describe('fulfilmentFallback() - what only the System Administrator can fulfil', () => {
+    const entry = (
+      id: string,
+      requesterRole: UserRole,
+      type: AssetType,
+      status = RequisitionStatus.PENDING_FULFILLMENT,
+    ) =>
+      makeReq({
+        id,
+        status,
+        items: [{ assetType: type }] as unknown as RequisitionItemEntity[],
+        requestedBy: { id: `u-${id}`, role: requesterRole } as never,
+      });
+
+    it("lists a custodian's own open requisitions and nothing else", async () => {
+      mockReqRepo.find.mockResolvedValue([
+        entry('it-own', UserRole.IT_PERSONNEL, AssetType.ICT),
+        entry(
+          'pc-own',
+          UserRole.PROPERTY_CUSTODIAN,
+          AssetType.SUPPLIES,
+          RequisitionStatus.ON_HOLD,
+        ),
+        entry('employee', UserRole.EMPLOYEE, AssetType.ICT),
+        entry('it-for-fixed', UserRole.IT_PERSONNEL, AssetType.FIXED),
+      ]);
+
+      const { data } = await service.fulfilmentFallback();
+
+      expect(data.map((r) => r.id)).toEqual(['it-own', 'pc-own']);
     });
   });
 
