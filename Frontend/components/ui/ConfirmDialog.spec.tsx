@@ -26,3 +26,32 @@ describe('ConfirmDialog', () => {
     expect(html).toContain(`id="${describedBy}"`);
   });
 });
+
+// "Cancel" next to "Cancel request" reads as the same button twice. The button
+// that backs out of the dialog can be named for what it keeps.
+describe('ConfirmDialog cancel label', () => {
+  const render = (cancelLabel?: string) =>
+    renderToStaticMarkup(
+      <ConfirmDialog
+        open
+        title="Cancel AR-2026-0001?"
+        detail="The custodian will be told."
+        confirmLabel="Cancel request"
+        cancelLabel={cancelLabel}
+        onConfirm={() => undefined}
+        onCancel={() => undefined}
+      />,
+    );
+
+  it('says "Cancel" unless told otherwise', () => {
+    expect(render()).toContain('>Cancel</button>');
+  });
+
+  it('shows the label it is given', () => {
+    const html = render('Keep request');
+
+    expect(html).toContain('>Keep request</button>');
+    expect(html).toContain('>Cancel request</button>');
+    expect(html).not.toContain('>Cancel</button>');
+  });
+});

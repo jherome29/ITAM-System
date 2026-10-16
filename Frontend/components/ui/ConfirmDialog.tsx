@@ -8,6 +8,7 @@ export function ConfirmDialog({
   title,
   detail,
   confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
   confirmDisabled = false,
   children,
   onConfirm,
@@ -17,6 +18,8 @@ export function ConfirmDialog({
   title: string;
   detail: string;
   confirmLabel?: string;
+  /** Name for the button that backs out, e.g. "Keep request" beside a "Cancel request" confirm. */
+  cancelLabel?: string;
   /** Blocks the confirm button, e.g. while the dialog's own input says the action cannot succeed. */
   confirmDisabled?: boolean;
   children?: ReactNode;
@@ -59,7 +62,7 @@ export function ConfirmDialog({
         {children && <div className="mt-4">{children}</div>}
         <div className="mt-5 flex justify-end gap-2">
           <button ref={cancelRef} type="button" onClick={onCancel} className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
-            Cancel
+            {cancelLabel}
           </button>
           <button type="button" onClick={onConfirm} disabled={confirmDisabled} className="rounded-md bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:hover:bg-slate-300">
             {confirmLabel}
