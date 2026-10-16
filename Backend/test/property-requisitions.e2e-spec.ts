@@ -107,6 +107,8 @@ describe('Property roles file requisitions (e2e)', () => {
     await makeUser('MGMT', UserRole.MANAGEMENT, psm, hash);
     await makeUser('ADMIN', UserRole.SYSTEM_ADMIN, psm, hash);
     await makeUser('EMP', UserRole.EMPLOYEE, psm, hash);
+    await makeUser('IT1', UserRole.IT_PERSONNEL, psm, hash);
+    await makeUser('IT2', UserRole.IT_PERSONNEL, psm, hash);
     for (const key of Object.keys(users)) {
       const res = await request(server())
         .post('/api/v1/auth/login')
@@ -261,6 +263,114 @@ describe('Property roles file requisitions (e2e)', () => {
         .expect(200);
 
       expect(res.body.data.status).toBe('fulfilled');
+    });
+  });
+
+  // The same segregation of duties holds for IT Personnel, who fulfil the ICT items
+  // the Property Custodian cannot touch: IT never fulfils their own ICT request.
+  describe('fulfilling what IT Personnel filed (ICT items)', () => {
+    let ownId: string;
+    let employeeId: string;
+
+    const fileIct = (who: string, what: string) =>
+      request(server())
+        .post('/api/v1/requisitions')
+        .set(auth(who))
+        .send({
+          ...fixedBody(what),
+          items: [
+            {
+              assetType: AssetType.ICT,
+              assetClass: AssetClass.SEP,
+              itemDescription: `${what} ${tag}`,
+              quantity: 1,
+            },
+          ],
+        });
+
+    const queueOf = async (who: string) =>
+      (
+        (
+          await request(server())
+            .get('/api/v1/requisitions?limit=200')
+            .set(auth(who))
+            .expect(200)
+        ).body.data.data as Array<{ id: string }>
+      ).map((r) => r.id);
+
+    beforeAll(async () => {
+      ownId = (await fileIct('IT1', 'own laptop').expect(201)).body.data
+        .id as string;
+      employeeId = (await fileIct('EMP', 'employee laptop').expect(201)).body
+        .data.id as string;
+      await approve(ownId);
+      await approve(employeeId);
+    });
+
+    it("leaves it out of the IT custodian's own queue, and keeps the employee's in", async () => {
+      const own = await queueOf('IT1');
+      expect(own).toContain(employeeId);
+      expect(own).not.toContain(ownId);
+
+      expect(await queueOf('IT2')).toContain(ownId); // another IT sees it
+    });
+
+    it('refuses the IT custodian fulfilling or holding their own requisition (403)', async () => {
+      await request(server())
+        .post(`/api/v1/requisitions/${ownId}/fulfill`)
+        .set(auth('IT1'))
+        .send({})
+        .expect(403);
+      await request(server())
+        .post(`/api/v1/requisitions/${ownId}/hold`)
+        .set(auth('IT1'))
+        .send({ reason: 'No stock at the moment' })
+        .expect(403);
+    });
+
+    it('lists it for the System Administrator, and not the employee ICT requisition', async () => {
+      const res = await request(server())
+        .get('/api/v1/requisitions/fulfilment-fallback')
+        .set(auth('ADMIN'))
+        .expect(200);
+      const ids = (res.body.data.data as Array<{ id: string }>).map(
+        (r) => r.id,
+      );
+
+      expect(ids).toContain(ownId);
+      expect(ids).not.toContain(employeeId);
+      await request(server())
+        .post(`/api/v1/requisitions/${employeeId}/fulfill`)
+        .set(auth('ADMIN'))
+        .send({})
+        .expect(403);
+    });
+
+    it('keeps the Property Custodian out of ICT requisitions, whoever filed them', async () => {
+      await request(server())
+        .post(`/api/v1/requisitions/${ownId}/fulfill`)
+        .set(auth('PC'))
+        .send({})
+        .expect(403);
+    });
+
+    it("lets another IT custodian, then the System Administrator, fulfil an IT custodian's requisition", async () => {
+      const res = await request(server())
+        .post(`/api/v1/requisitions/${ownId}/fulfill`)
+        .set(auth('IT2'))
+        .send({})
+        .expect(200);
+      expect(res.body.data.status).toBe('fulfilled');
+
+      const another = (await fileIct('IT1', 'second laptop').expect(201)).body
+        .data.id as string;
+      await approve(another);
+      const byAdmin = await request(server())
+        .post(`/api/v1/requisitions/${another}/fulfill`)
+        .set(auth('ADMIN'))
+        .send({ notes: 'Issued by the administrator: no second IT custodian' })
+        .expect(200);
+      expect(byAdmin.body.data.status).toBe('fulfilled');
     });
   });
 });
