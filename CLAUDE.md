@@ -716,6 +716,14 @@ cd Backend && npm run test:e2e:local # E2E suite — spins a throwaway postgres:
                                      # Docker running. Plain `npm run test:e2e`
                                      # targets Supabase and will not connect
                                      # from jest — use the :local variant.
+
+# Pilot demo data — replays Backend/test/demo-seed/scenario.ts through the real
+# API as the real roles (so numbering, audit trail, notifications and COA forms
+# are genuine). Dry run by default; --apply writes; non-local hosts need
+# --allow-remote. Credentials come from an untracked accounts.local.json — see
+# Backend/test/demo-seed/README.md. Seed a FRESH pilot DB, not one holding real
+# records: the audit log is append-only, so seeded rows can't be fully removed.
+cd Backend && npm run seed:demo
 ```
 
 ---

@@ -12,6 +12,9 @@
 # ─── Local test-account notes (plaintext dev passwords) ──────
 users.md
 
+# ─── Demo-seed credentials (real logins — never commit) ──────
+Backend/test/demo-seed/accounts.local.json
+
 # ─── MCP server config (contains API tokens) ─────────────────
 .mcp.json
 
