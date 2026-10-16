@@ -186,7 +186,7 @@ async hashPassword(plaintext: string): Promise<string> {
 
 ### 4.2 Account Lockout
 
-Track failed attempts in the `users` table. Lock after 5 failures. Unlock after 30 minutes automatically.
+Track failed attempts in the `users` table. Lock after N failures (default 5; the limit is the `max_login_attempts` System Setting, read live by `auth.service`). Unlock after 30 minutes automatically, or an administrator unlocks it (`PATCH /api/v1/users/:id/unlock`). The code below is illustrative.
 
 ```typescript
 // Required columns on the users table
@@ -675,7 +675,9 @@ export class AuditService {
   }
 }
 
-// Required audit events — log ALL of these.
+// Required audit events — log ALL of these. The enum below is copied from the source (34 values as of
+// 2026-10-16); the file wins if they ever differ. A new value is also a Postgres enum change: it needs a
+// schema file in Database/schemas/ (CLAUDE.md §11 #11).
 // IMPORTANT: the real enum (packages/shared/src/enums/index.ts) is lowercase
 // snake_case, not the illustrative UPPER_CASE shown in early drafts of this
 // doc. audit_logs.action is a native Postgres enum column — an uppercase
@@ -685,31 +687,47 @@ export class AuditService {
 // casing (audit-trail filters, notification-type checks) — copy the real
 // enum below, never retype these values by hand.
 export enum AuditAction {
-  USER_LOGIN = 'user_login',
-  USER_LOGOUT = 'user_logout',
-  USER_LOGIN_FAILED = 'user_login_failed',
-  USER_LOCKED = 'user_locked',
-  ASSET_CREATED = 'asset_created',
-  ASSET_UPDATED = 'asset_updated',
-  ASSET_ISSUED = 'asset_issued',
-  ASSET_RETURNED = 'asset_returned',
-  ASSET_TRANSFERRED = 'asset_transferred',
-  ASSET_FLAGGED_REPAIR = 'asset_flagged_repair',
-  ASSET_FLAGGED_DISPOSAL = 'asset_flagged_disposal',
-  ASSET_DISPOSED = 'asset_disposed',
-  QR_GENERATED = 'qr_generated',
+  // Asset actions
+  ASSET_CREATED         = 'asset_created',
+  ASSET_UPDATED         = 'asset_updated',
+  ASSET_ISSUED          = 'asset_issued',
+  ASSET_RETURNED        = 'asset_returned',
+  ASSET_TRANSFERRED     = 'asset_transferred',
+  ASSET_FLAGGED_REPAIR  = 'asset_flagged_repair',
+  ASSET_FLAGGED_DISPOSAL= 'asset_flagged_disposal',
+  ASSET_DISPOSED        = 'asset_disposed',
+  QR_GENERATED          = 'qr_generated',
+  // Requisition actions
   REQUISITION_SUBMITTED = 'requisition_submitted',
-  REQUISITION_APPROVED = 'requisition_approved',
-  REQUISITION_REJECTED = 'requisition_rejected',
-  REQUISITION_ON_HOLD = 'requisition_on_hold',
+  REQUISITION_APPROVED  = 'requisition_approved',
+  REQUISITION_REJECTED  = 'requisition_rejected',
+  REQUISITION_ON_HOLD   = 'requisition_on_hold',
   REQUISITION_FULFILLED = 'requisition_fulfilled',
   REQUISITION_CANCELLED = 'requisition_cancelled',
-  USER_CREATED = 'user_created',
-  USER_UPDATED = 'user_updated',
+  // Auth actions
+  USER_LOGIN       = 'user_login',
+  USER_LOGOUT      = 'user_logout',
+  USER_LOGIN_FAILED= 'user_login_failed',
+  USER_LOCKED      = 'user_locked',
+  // Admin actions
+  USER_CREATED     = 'user_created',
+  USER_UPDATED     = 'user_updated',
   USER_DEACTIVATED = 'user_deactivated',
-  ROLE_ASSIGNED = 'role_assigned', // NOT "USER_ROLE_CHANGED" — a stale name that never matched the real enum
+  ROLE_ASSIGNED    = 'role_assigned',
+  // Report actions
   REPORT_GENERATED = 'report_generated',
-  FORM_GENERATED = 'form_generated',
+  FORM_GENERATED   = 'form_generated',
+
+  SYSTEM_CONFIG_UPDATED = 'system_config_updated',
+  REQUISITION_REASSIGNED = 'requisition_reassigned',
+  // Return / incident request actions
+  ASSET_REQUEST_SUBMITTED = 'asset_request_submitted',
+  ASSET_REQUEST_APPROVED  = 'asset_request_approved',
+  ASSET_REQUEST_REJECTED  = 'asset_request_rejected',
+  ASSET_REQUEST_COMPLETED = 'asset_request_completed',
+  ASSET_REQUEST_CANCELLED = 'asset_request_cancelled',
+  REPAIR_UPDATED = 'repair_updated',     // custodian logged progress on an open repair
+  REPAIR_COMPLETED = 'repair_completed', // repaired or found unrepairable
 }
 ```
 
@@ -731,8 +749,10 @@ if (trustProxy && trustProxy !== 'false' && trustProxy !== '0') {
 this.auditService.log({ /* ... */ ipAddress: req.ip });
 ```
 
-The auth endpoints still parse `X-Forwarded-For` manually as a fallback; new
-code should use `req.ip`.
+Every endpoint, **including login, refresh and logout**, uses `req.ip` (fixed
+2026-10-14: the auth endpoints used to take the first entry of the client-supplied
+`X-Forwarded-For`, so anyone could write any address into the audit log). Never
+read that header yourself.
 
 ---
 
@@ -924,6 +944,38 @@ Reference this in your capstone testing chapter.
 | V9.1 — Communications security | HTTPS enforced in production (CICC-managed TLS) |
 | V13.1 — Generic web service security | Helmet headers, CORS restricted to frontend origin |
 | V13.4 — GraphQL / REST | Global ValidationPipe, response envelope, no stack traces |
+| V4.1 — Scope, not just role | Asset-type scope (`resolveAssetTypeScope`) on every asset read and write; `/audit/record/:id` answers only for assets inside the caller's scope (a user's login trail or an out-of-scope asset is 403) |
+| V11.1 — Business logic: segregation of duties | A requisition is never routed to or decided by its requester; a custodian never fulfils or holds their own requisition or request (403), the System Administrator is the fallback for exactly those |
+| V11.1 — Business logic: server-side rules | The server, not the form, enforces request date rules, one open case per asset, replacement eligibility, state-machine transitions and a real reason (10+ characters) to reject |
+| V12.1 — File upload | Returns & Incidents attachments: at most 3 files of 5 MB, JPG / PNG / WEBP / PDF, **type checked by magic bytes** (a renamed file is refused), stored as `bytea` with `select: false` so a list query never loads them |
+| V3.2 — Session binding | `tokenVersion` invalidates every older token on a new login, a password reset or a force sign-out; the client shares one refresh so parallel requests cannot invalidate each other |
+| V7.2 — Log integrity of origin | The audit IP is `req.ip` with `TRUST_PROXY`, never a client-supplied header |
+
+---
+
+## 14. Controls Added Since This Contract Was First Written
+
+The sections above are the original contract. These controls came from later verification passes (2026-10-14 → 2026-10-16) and are implemented and tested; keep them when refactoring.
+
+| Control | Where | Verified by |
+|---|---|---|
+| The audit IP is `req.ip` everywhere, with `TRUST_PROXY` | `auth.controller.ts`, `main.ts` | `auth.controller.spec.ts` |
+| `/audit/record/:recordId` is scoped to the caller's asset types; the admin-only `/audit/user/:id` cannot be reached through it | `audit.service.ts` `findRecordHistory` | `audit-record-scope.e2e-spec.ts` |
+| `GET /users` and `GET /users/:id` are System Administrator only (the directory is not for IT Personnel) | `users.controller.ts` | `users.controller.spec.ts` (pins every route's roles) |
+| The demo RBAC endpoints in the auth controller were removed | `auth.controller.ts` | removal; nothing calls them |
+| Each role's workspace shell renders only for users of that role (an `AppShell` role guard), not just the menu | `Frontend/components/shell/AppShell.tsx` | code review; no dedicated test yet |
+| One shared token refresh: parallel requests no longer invalidate each other and log the user out | `Frontend/lib/api/client.ts`, `single-flight.ts` | `single-flight.spec.ts` |
+| A superseded session's rejected refresh carries its own audit reason and is not counted as a failed login | `audit-reasons.ts`, `admin.service.ts` | `admin.service.spec.ts` |
+| The admin dashboard never shows "all clear" when its statistics failed to load | `AdminWorkspace`, `lib/admin-attention.ts` | `admin-attention.spec.ts` |
+| Requisition numbers are allocated under a lock (six simultaneous submits no longer 500) | `requisitions.service.ts` | `requisitions.service.spec.ts`, `requisition-workflow.e2e-spec.ts` |
+| Form numbers are allocated atomically with the stored form (no duplicates, no gaps) | `document-numbers.ts` | `document-numbers.e2e-spec.ts` |
+| Attachment upload: count, size and **magic-byte** type checks; stored with `select: false` | `asset-requests`, `attachment-files.ts` | `asset-requests.service.spec.ts`, `asset-requests.controller.spec.ts` |
+| Segregation of duties for requisitions and requests (see ASVS V11.1 above) | `requisitions.service.ts`, `asset-requests.service.ts` | `property-requisitions.e2e-spec.ts` (Property Custodian and IT Personnel), `requisition-workflow.e2e-spec.ts` |
+| The server runs on CICC time (Asia/Manila), so day boundaries and the daily jobs are right in a UTC container | `common/app-time-zone.ts`, `main.ts` | `app-time-zone.spec.ts` |
+| Database function `search_path` pinned (Supabase advisor lint 0011) | `015_function_search_path.sql` | applied to dev |
+| Names, not ids, in the audit screens, and only for people (CLAUDE.md §8.4) | `audit.service.ts` `withNames` | `audit.service.spec.ts` |
+
+**Known gaps in this area:** the auth events *failed login, lockout, refresh-token reuse and logout* still use fire-and-forget audit calls (`void this.auditService.log(...)`), so a database blip at that exact moment loses the entry silently; the dev credentials in the docs are in a public repo and must be rotated before handover; no OWASP ZAP scan has been run yet (`docs/phases/PHASE-5-TESTING.md`).
 
 ---
 

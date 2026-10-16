@@ -9,6 +9,7 @@ import {
   today,
   roleDisplay,
   fullName,
+  documentNumber,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — Move-Out Form when asset physically leaves a facility (SS-02)
@@ -38,8 +39,13 @@ export async function generateMoveOut(
   const doc = createDoc();
   let y = drawRepublicHeader(doc);
 
-  const mofNo = `SAP-MOF-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`;
-  y = drawFormTitle(doc, 'MOVE-OUT FORM', 'Form Code', `SS-02 / ${mofNo}`, y);
+  y = drawFormTitle(
+    doc,
+    'MOVE-OUT FORM',
+    'Form Code',
+    `SS-02 / ${documentNumber()}`,
+    y,
+  );
 
   y = drawMetaFields(
     doc,

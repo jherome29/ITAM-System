@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
@@ -16,6 +17,7 @@ import {
   custodianActions,
   fileProblem,
   isOpen,
+  rejectReasonProblem,
 } from '@/lib/asset-requests/asset-request-rules';
 import { formatDate, formatDateTime } from '@/lib/requisitions/requisition-view';
 import { localToday } from '@/lib/dates';
@@ -64,6 +66,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
   const [handoverDate, setHandoverDate] = useState('');
   const [notes, setNotes] = useState('');
   const [reason, setReason] = useState('');
+  const [confirmingReject, setConfirmingReject] = useState(false);
   const [outcome, setOutcome] = useState<'' | 'repair' | 'disposal'>('');
   const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
 
@@ -260,10 +263,8 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
                 <Field label="Reason (sent to the requester)">
                   <textarea className={`${inputClass} h-20 py-2`} value={reason} maxLength={1000} onChange={(e) => setReason(e.target.value)} />
                 </Field>
-                <SecondaryButton
-                  disabled={busy || !reason.trim()}
-                  onClick={() => run('rejected', () => assetRequestsApi.reject(selected.id, reason.trim()))}
-                >
+                <p className="text-xs text-slate-500">{rejectReasonProblem(reason) ?? 'The requester sees this reason.'}</p>
+                <SecondaryButton disabled={busy || Boolean(rejectReasonProblem(reason))} onClick={() => setConfirmingReject(true)}>
                   Reject request
                 </SecondaryButton>
               </section>
@@ -283,6 +284,18 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
           </div>
         )}
       </DetailDrawer>
+      <ConfirmDialog
+        open={confirmingReject}
+        title={`Reject ${selected?.requestNumber ?? 'request'}?`}
+        detail="The requester is told your reason and the request is closed. They can file a new one."
+        confirmLabel="Reject request"
+        cancelLabel="Keep request"
+        onCancel={() => setConfirmingReject(false)}
+        onConfirm={() => {
+          setConfirmingReject(false);
+          if (selected) void run('rejected', () => assetRequestsApi.reject(selected.id, reason.trim()));
+        }}
+      />
       <Toast message={toast} />
     </div>
   );

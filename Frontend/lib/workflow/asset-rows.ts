@@ -1,5 +1,6 @@
 import type { Asset } from '@/lib/api/assets';
 import { formatDate } from '@/lib/requisitions/requisition-view';
+import { locationLabel } from '@/lib/assets/asset-location';
 
 // How an asset from GET /v1/assets reads in the custodians' Custody & Issuance and
 // Disposal tables. The list carries the holder as a small summary (name + employee
@@ -47,7 +48,8 @@ export function assetApiToRow(asset: Asset): AssetRow {
     serialNumber: asset.serialNumber,
     status: asset.status,
     condition: asset.condition,
-    location: asset.officeOrSection,
+    // A transferred asset shows its move ("From → To") until it arrives.
+    location: locationLabel(asset),
     heldBy: heldByLabel(asset),
     dueBack: due?.label ?? '',
     returnDate: due?.date ?? '',

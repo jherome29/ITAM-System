@@ -31,6 +31,14 @@ export const JWT_EXPIRES_IN = '8h';
 /** SLA target: requisition approval must complete within 24 hours */
 export const SLA_APPROVAL_HOURS = 24;
 
+/**
+ * Default for the `entity_name` system-config value: the agency name printed in
+ * the header of every official form. The Fund Cluster has no default on purpose -
+ * it is CICC's own accounting code, so a form prints a fill-in line until the
+ * Master Administrator sets it.
+ */
+export const FORM_ENTITY_NAME = 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER';
+
 /** Fallback low-stock threshold when an IES asset has no per-item reorder_level. */
 export const DEFAULT_REORDER_LEVEL = 10;
 

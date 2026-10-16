@@ -24,7 +24,7 @@ export default async function PropertyCustodianPage({
   const child = slug?.[1];
   if (segment === 'dashboard') return <PropertyCustodianDashboard />;
   if (segment === 'notifications') return <NotificationsContent />;
-  if (segment === 'assigned-assets') return <MyAssignedAssets eyebrow="Property Custodian" canRequestReplacement={false} showRequestHistory openId={typeof open === 'string' ? open : undefined} />;
+  if (segment === 'assigned-assets') return <MyAssignedAssets eyebrow="Property Custodian" canRequestReplacement showRequestHistory openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'fixed-assets' && child === 'new') return <RegisterAssetForm basePath="/property-custodian/fixed-assets" />;
   if (segment === 'fixed-assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/fixed-assets" formsPath="/property-custodian/reports" />;
   if (segment === 'fixed-assets') return <AssetRegistryList basePath="/property-custodian/fixed-assets" assetType="Fixed" title="Fixed Asset Registry" />;
@@ -33,7 +33,7 @@ export default async function PropertyCustodianPage({
   if (segment === 'supplies') return <AssetRegistryList basePath="/property-custodian/supplies" assetType="Supplies" title="Supply Inventory" />;
   if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/assets" formsPath="/property-custodian/reports" />;
   if (segment === 'qr-scanner') return <QrLookup detailBasePath="/property-custodian/assets" />;
-  if (segment === 'reports') return <FormsWorkspaceContent />;
+  if (segment === 'reports') return <FormsWorkspaceContent eyebrow="Property Custodian" />;
   if (segment === 'maintenance') return <RepairQueue eyebrow="Property Custodian" assetBasePath="/property-custodian/assets" openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'returns-incidents') return <AssetRequestQueue eyebrow="Property Custodian" openId={typeof open === 'string' ? open : undefined} />;
   if (segment === 'physical-inventory') return <PhysicalInventorySheet eyebrow="Property Custodian" formsPath="/property-custodian/reports" />;

@@ -9,6 +9,8 @@ import {
   today,
   roleDisplay,
   fullName,
+  identityFields,
+  documentNumber,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — Receipt of Returned Semi-Expendable Property (Annex A.6)
@@ -37,7 +39,6 @@ export async function generateReceiptReturnedSEP(
   const doc = createDoc();
   let y = drawRepublicHeader(doc);
 
-  const rrspNo = `RRSP-${Date.now()}`;
   y = drawFormTitle(
     doc,
     'RECEIPT OF RETURNED SEMI-EXPENDABLE PROPERTY',
@@ -49,11 +50,8 @@ export async function generateReceiptReturnedSEP(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'RRSP No.', value: rrspNo },
+      ...identityFields(),
+      { label: 'RRSP No.', value: documentNumber() },
       { label: 'Date', value: today() },
       { label: 'Office/Section', value: returnee.officeOrSection },
     ],
@@ -62,12 +60,10 @@ export async function generateReceiptReturnedSEP(
 
   y += 4;
 
-  const icsNo = `ICS-${asset.propertyNumber ?? '—'}`;
-
   y = drawTable(
     doc,
     [
-      { header: 'ICS NO.', width: 110 },
+      { header: 'PROPERTY NO.', width: 110 },
       { header: 'ITEM DESCRIPTION', width: 195 },
       { header: 'QTY', width: 40 },
       { header: 'END-USER', width: 110 },
@@ -75,7 +71,7 @@ export async function generateReceiptReturnedSEP(
     ],
     [
       [
-        icsNo,
+        asset.propertyNumber ?? '—',
         `${asset.itemDescription}${asset.brand ? ' / ' + asset.brand : ''}${asset.serialNumber ? '\nS/N: ' + asset.serialNumber : ''}`,
         '1',
         fullName(returnee.firstName, returnee.lastName),

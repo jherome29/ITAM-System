@@ -6,9 +6,13 @@ import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
+import { auditRecordText, auditUserText } from '@/lib/audit-label';
+import { reportsApi } from '@/lib/api/reports';
+import { apiErrorMessage } from '@/lib/api/error-message';
+import { downloadBlob } from '@/lib/download';
 import {
   systemConfigApi,
-  buildUpdateSystemConfigPayload,
+  changedSystemConfigPayload,
   systemConfigToForm,
   CONFIG_META_KEYS,
   type SystemConfigFormValues,
@@ -49,13 +53,15 @@ function ProvenanceLine({
   return (
     <p className="mt-1 text-xs text-slate-400">
       Last changed {entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : 'at an unknown time'}
-      {entry.updatedBy ? ` by ${entry.updatedBy}` : ''}
+      {entry.updatedBy ? ` by ${entry.updatedByName ?? 'a removed account'}` : ''}
     </p>
   );
 }
 
 function SystemSettingsPage() {
   const [form, setForm] = useState<SystemConfigFormValues | null>(null);
+  // As last loaded or saved: Save sends only what differs from it.
+  const [initialForm, setInitialForm] = useState<SystemConfigFormValues | null>(null);
   const [meta, setMeta] = useState<Record<string, SystemConfigMeta> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -66,7 +72,9 @@ function SystemSettingsPage() {
     systemConfigApi
       .get()
       .then((r) => {
-        setForm(systemConfigToForm(r.data));
+        const loaded = systemConfigToForm(r.data);
+        setForm(loaded);
+        setInitialForm(loaded);
         setMeta(r.data.meta ?? null);
         setError('');
       })
@@ -88,13 +96,20 @@ function SystemSettingsPage() {
       setForm((f) => (f ? { ...f, [k]: e.target.value } : f));
 
   const handleSave = async () => {
-    if (!form) return;
+    if (!form || !initialForm) return;
     setError('');
     setSaved(false);
+    const changes = changedSystemConfigPayload(form, initialForm);
+    if (Object.keys(changes).length === 0) {
+      setError('Nothing has changed.');
+      return;
+    }
     setSaving(true);
     try {
-      const r = await systemConfigApi.update(buildUpdateSystemConfigPayload(form));
-      setForm(systemConfigToForm(r.data));
+      const r = await systemConfigApi.update(changes);
+      const reloaded = systemConfigToForm(r.data);
+      setForm(reloaded);
+      setInitialForm(reloaded);
       setMeta(r.data.meta ?? null);
       setSaved(true);
     } catch (err: unknown) {
@@ -150,6 +165,25 @@ function SystemSettingsPage() {
               Settings saved.
             </div>
           )}
+
+          <Panel title="Official forms">
+            <div className="space-y-4 p-5">
+              <div>
+                <Field label="Entity name">
+                  <input value={form.entityName} onChange={set('entityName')} maxLength={150} className={inputClass} />
+                </Field>
+                <p className="mt-1 text-xs text-slate-500">Printed in the header of every official COA form and management report.</p>
+                <ProvenanceLine meta={meta} keyName={CONFIG_META_KEYS.entityName} />
+              </div>
+              <div>
+                <Field label="Fund cluster">
+                  <input value={form.fundCluster} onChange={set('fundCluster')} maxLength={60} placeholder="e.g. 01 Regular Agency Fund" className={inputClass} />
+                </Field>
+                <p className="mt-1 text-xs text-slate-500">Printed on the forms that carry one. Leave empty and the form prints a line to fill in by hand.</p>
+                <ProvenanceLine meta={meta} keyName={CONFIG_META_KEYS.fundCluster} />
+              </div>
+            </div>
+          </Panel>
 
           <Panel title="Requisition SLA">
             <div className="p-5">
@@ -267,8 +301,8 @@ function SystemSettingsPage() {
           </Panel>
 
           <p className="px-1 text-xs text-slate-400">
-            Numbering formats, notification routing, forms &amp; print, data retention, and
-            localization are planned and not yet configurable here.
+            Document-number formats, notification routing, data retention, and localization are not
+            configurable here yet.
           </p>
         </>
       )}
@@ -287,6 +321,7 @@ export function AuditLogPage({ eyebrow }: Readonly<{ eyebrow?: string }> = {}) {
   const [to, setTo] = useState('');
   const [selected, setSelected] = useState<AuditLog | null>(null);
   const [toast, setToast] = useState('');
+  const [reporting, setReporting] = useState(false);
 
   // The date range is applied server-side (GET /v1/audit?startDate&endDate);
   // the text box below still filters the returned window client-side.
@@ -311,7 +346,7 @@ export function AuditLogPage({ eyebrow }: Readonly<{ eyebrow?: string }> = {}) {
   const capped = logs.length === AUDIT_PAGE_SIZE;
 
   const rows = logs.filter((log) =>
-    `${log.userId} ${log.userRole} ${log.action} ${log.affectedRecordType ?? ''} ${log.affectedRecordId ?? ''} ${log.ipAddress}`.toLowerCase().includes(search.toLowerCase()),
+    `${log.userName ?? ''} ${log.userId} ${log.userRole} ${log.action} ${log.affectedRecordType ?? ''} ${log.recordLabel ?? ''} ${log.affectedRecordId ?? ''} ${log.ipAddress}`.toLowerCase().includes(search.toLowerCase()),
   );
 
   const uniqueUsers = new Set(logs.map((log) => log.userId)).size;
@@ -320,17 +355,35 @@ export function AuditLogPage({ eyebrow }: Readonly<{ eyebrow?: string }> = {}) {
   const handleExport = () => {
     downloadCsv('aimrs-audit-log.csv', rows.map((log) => ({
       Timestamp: new Date(log.timestamp).toISOString(),
+      User: log.userName ?? '',
       'User ID': log.userId,
       'Role at time': log.userRole,
       Action: log.action,
       'Record type': log.affectedRecordType ?? '',
+      Record: log.recordLabel ?? '',
       'Record ID': log.affectedRecordId ?? '',
       'IP address': log.ipAddress,
     })));
     setToast('Filtered audit log downloaded as CSV.');
   };
 
-  return <div className="space-y-4"><AdminPageHeader eyebrow={eyebrow} title="Audit Log" detail="Inspect append-only evidence of authentication, authorization, asset, requisition, report, and administrative activity." action={<SecondaryButton icon={Download} onClick={handleExport}>Export log</SecondaryButton>} />
+  // The official Audit Trail Report (CLAUDE.md 7.1): the same period as the
+  // filter above, named users, up to 10,000 entries - unlike the CSV, which is
+  // only the rows on screen.
+  const handleReport = async (format: 'pdf' | 'excel') => {
+    setReporting(true);
+    try {
+      const blob = await reportsApi.generate({ reportType: 'AUDIT_TRAIL', format, dateFrom: from || undefined, dateTo: to || undefined });
+      downloadBlob(blob, `audit-trail-${new Date().toISOString().slice(0, 10)}.${format === 'excel' ? 'xlsx' : 'pdf'}`);
+      setToast('Audit Trail Report downloaded.');
+    } catch (err) {
+      setToast(await apiErrorMessage(err, 'Could not generate the Audit Trail Report.'));
+    } finally {
+      setReporting(false);
+    }
+  };
+
+  return <div className="space-y-4"><AdminPageHeader eyebrow={eyebrow} title="Audit Log" detail="Inspect append-only evidence of authentication, authorization, asset, requisition, report, and administrative activity." action={<div className="flex flex-wrap gap-2"><SecondaryButton icon={Download} onClick={handleExport}>Export CSV</SecondaryButton><SecondaryButton icon={Download} onClick={() => void handleReport('pdf')} disabled={reporting}>Report (PDF)</SecondaryButton><SecondaryButton icon={Download} onClick={() => void handleReport('excel')} disabled={reporting}>Report (Excel)</SecondaryButton></div>} />
     <div className="flex items-start gap-3 border border-blue-200 bg-blue-50 px-4 py-3"><Archive className="mt-0.5 h-5 w-5 flex-none text-blue-700" /><div><p className="text-sm font-bold text-blue-950">Immutable audit evidence</p><p className="mt-0.5 text-xs text-blue-800">Audit records cannot be edited or deleted. Every logged action succeeded by definition; timestamps are recorded in UTC.</p></div></div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><MetricCard label="Events loaded" value={String(logs.length)} detail={from || to ? 'Within the selected date range' : 'Most recent audit records from the API'} tone="blue" icon={Activity} /><MetricCard label="Unique users" value={String(uniqueUsers)} detail="Distinct accounts represented" tone="blue" icon={KeyRound} /><MetricCard label="Unique actions" value={String(uniqueActions)} detail="Distinct action types represented" tone="blue" icon={FileClock} /></div>
     <SearchToolbar value={search} onChange={setSearch} filterLabel="User, role, action, or record">
@@ -338,6 +391,6 @@ export function AuditLogPage({ eyebrow }: Readonly<{ eyebrow?: string }> = {}) {
       <label className="flex items-center gap-2 whitespace-nowrap text-xs font-semibold text-slate-600">To<input type="date" value={to} min={from || undefined} onChange={(event) => handleDateChange('to', event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /></label>
       {(from || to) && <SecondaryButton onClick={() => { setLoading(true); setFrom(''); setTo(''); }}>Clear dates</SecondaryButton>}
     </SearchToolbar>
-    <Panel title="Audit Events" detail={loading ? 'Loading audit events…' : `${rows.length} audit events shown${capped ? ` — first ${AUDIT_PAGE_SIZE}, narrow the date range for more` : ''}`}>{loading ? <div className="p-6"><LoadingSkeleton rows={8} /></div> : <TableWrap><table className="min-w-[960px] w-full"><thead><tr><th className={thClass}>Timestamp</th><th className={thClass}>User ID</th><th className={thClass}>Role at time</th><th className={thClass}>Action</th><th className={thClass}>Affected record</th><th className={thClass}>IP address</th><th className={`${thClass} text-right`}>Inspect</th></tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400">No audit logs found.</td></tr> : rows.map((log) => <tr key={log.id} className="hover:bg-slate-50"><td className={tdClass}>{new Date(log.timestamp).toLocaleString()}<span className="block text-xs text-slate-500">{log.id.slice(0, 8)}…</span></td><td className={`${tdClass} font-semibold text-slate-950`}>{log.userId}</td><td className={tdClass}>{log.userRole}</td><td className={`${tdClass} font-mono text-xs`}>{log.action}</td><td className={`${tdClass} font-mono text-xs`}>{log.affectedRecordType ?? '—'} {log.affectedRecordId ? `${log.affectedRecordId.slice(0, 8)}…` : ''}</td><td className={`${tdClass} font-mono text-xs`}>{log.ipAddress}</td><td className={`${tdClass} text-right`}><button type="button" onClick={() => setSelected(log)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`Inspect ${log.id}`}><FileClock className="h-4 w-4" /></button></td></tr>)}</tbody></table></TableWrap>}</Panel>
-    <DetailDrawer open={Boolean(selected)} title={selected?.action ?? 'Audit event'} onClose={() => setSelected(null)}>{selected && <div className="space-y-4">{[['ID', selected.id], ['Timestamp', new Date(selected.timestamp).toLocaleString()], ['User ID', selected.userId], ['Role at time', selected.userRole], ['Action', selected.action], ['Affected record type', selected.affectedRecordType ?? '—'], ['Affected record ID', selected.affectedRecordId ?? '—'], ['IP address', selected.ipAddress], ['Metadata', selected.metadata ? JSON.stringify(selected.metadata) : '—']].map(([key, value]) => <div key={key} className="flex justify-between gap-4 border-b border-slate-100 pb-3 text-sm"><span className="capitalize text-slate-500">{key}</span><span className="text-right font-mono text-xs font-semibold">{value}</span></div>)}<Panel title="Event integrity"><div className="space-y-2 p-4 text-xs text-slate-600"><p><strong>Write mode:</strong> Append only</p><p><strong>Update:</strong> Not permitted</p><p><strong>Delete:</strong> Not permitted</p><p><strong>Metadata:</strong> Includes UTC timestamp, user ID, role, source IP, record ID, and safe before/after values where applicable.</p></div></Panel></div>}</DetailDrawer><Toast message={toast} /></div>;
+    <Panel title="Audit Events" detail={loading ? 'Loading audit events…' : `${rows.length} audit events shown${capped ? ` — first ${AUDIT_PAGE_SIZE}, narrow the date range for more` : ''}`}>{loading ? <div className="p-6"><LoadingSkeleton rows={8} /></div> : <TableWrap><table className="min-w-[960px] w-full"><thead><tr><th className={thClass}>Timestamp</th><th className={thClass}>User</th><th className={thClass}>Role at time</th><th className={thClass}>Action</th><th className={thClass}>Affected record</th><th className={thClass}>IP address</th><th className={`${thClass} text-right`}>Inspect</th></tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400">No audit logs found.</td></tr> : rows.map((log) => <tr key={log.id} className="hover:bg-slate-50"><td className={tdClass}>{new Date(log.timestamp).toLocaleString()}<span className="block text-xs text-slate-500">{log.id.slice(0, 8)}…</span></td><td className={`${tdClass} font-semibold text-slate-950`} title={log.userId}>{auditUserText(log)}</td><td className={tdClass}>{log.userRole}</td><td className={`${tdClass} font-mono text-xs`}>{log.action}</td><td className={`${tdClass} text-xs`} title={log.affectedRecordId ?? undefined}>{auditRecordText(log)}</td><td className={`${tdClass} font-mono text-xs`}>{log.ipAddress}</td><td className={`${tdClass} text-right`}><button type="button" onClick={() => setSelected(log)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`Inspect ${log.id}`}><FileClock className="h-4 w-4" /></button></td></tr>)}</tbody></table></TableWrap>}</Panel>
+    <DetailDrawer open={Boolean(selected)} title={selected?.action ?? 'Audit event'} onClose={() => setSelected(null)}>{selected && <div className="space-y-4">{[['ID', selected.id], ['Timestamp', new Date(selected.timestamp).toLocaleString()], ['User', selected.userName ?? '—'], ['User ID', selected.userId], ['Role at time', selected.userRole], ['Action', selected.action], ['Affected record', selected.recordLabel ?? '—'], ['Affected record type', selected.affectedRecordType ?? '—'], ['Affected record ID', selected.affectedRecordId ?? '—'], ['IP address', selected.ipAddress], ['Metadata', selected.metadata ? JSON.stringify(selected.metadata) : '—']].map(([key, value]) => <div key={key} className="flex justify-between gap-4 border-b border-slate-100 pb-3 text-sm"><span className="capitalize text-slate-500">{key}</span><span className="text-right font-mono text-xs font-semibold">{value}</span></div>)}<Panel title="Event integrity"><div className="space-y-2 p-4 text-xs text-slate-600"><p><strong>Write mode:</strong> Append only</p><p><strong>Update:</strong> Not permitted</p><p><strong>Delete:</strong> Not permitted</p><p><strong>Metadata:</strong> Includes UTC timestamp, user ID, role, source IP, record ID, and safe before/after values where applicable.</p></div></Panel></div>}</DetailDrawer><Toast message={toast} /></div>;
 }

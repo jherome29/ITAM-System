@@ -6,128 +6,145 @@ Each line links the doc that has the detail.
 
 Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 
-> **2026-09-10 — tracker sync.** Everything that was "PR pending" across the status
-> docs is now **merged to `origin/main`**: notifications/SLA (#84), replacement
-> validation (#86), system config (#87), alternate approver (#89/#90), the formal
-> Jest security suite (#92), asset-registry card layout (#94), the Docker/deploy
-> pass (#95), `fix/admin-shell-ui` (#96), and the Master Admin dashboard rebuild +
-> admin-hardening pass (#98); develop→main via #97/#99. `origin/develop` and
-> `origin/main` are byte-identical. Only unmerged branch: `docs/admin-dashboard-plan`
-> (2 superseded doc commits). Health on that tree (2026-09-10): backend `tsc` clean +
-> 303/303 unit tests; frontend `tsc` clean + 40/40 tests + production build clean.
-> Not re-run this pass: ESLint (both), backend webpack build, coverage %,
-> `audit:check` (both), `secretlint`, backend e2e (Docker), Docker image builds.
->
-> **2026-10-11 — PR #102 open** (`feature/returns-incidents-and-workflow-fixes` → `develop`,
-> all CI checks green): Returns & Incidents (schemas 010–012), Maintenance & Repair
-> (schema 013), derived request types + replacement flow, self-approval routing fix,
-> notification deep-links, catalogue item picker (008–009). Health on that branch: every
-> CHECKS.md item, 460 backend unit, 99 frontend and 57 e2e tests pass. Follow-ups:
-> `NEXT-TIME.md` §3–4.
+> **As of 2026-10-16.** The build is functionally complete for all seven roles on real
+> data. What remains is: merge the open PR stack, the rest of the COA form fidelity,
+> a handful of product decisions, Phase 5 testing, and the production / handover work
+> that is blocked on CICC. Health on the PR #108 branch: backend 728 unit + 89 e2e
+> tests, frontend 320 tests, every `CHECKS.md` item clean, CI green (SonarCloud and
+> Docker Build were still running when this was written).
 
 ---
 
-## A. Finish the build  → `FEATURE-STATUS.md` (🔴 + ⬜)
+## G. Merge the PR stack  → `SYSTEM-STATUS.md` "Where things stand"
 
-- [~] Wire the 3 mock screens whose backend exists — Approving Officer `approval-history`,
-      Property Officer `disposal` + `audit` (`isLiveFetchPage` one-liners). `MOCK-DATA-WIRING.md` task E.
-- [ ] Delete the dead mock code (5 `mock-*.service.ts`, `laptops.mock.ts`, etc.). `MOCK-DATA-WIRING.md` Part A.
-- [ ] **Disposal workflow** — documented flow + COA-required fields. `SYSTEM-STATUS.md` #4.
-- [ ] **Physical count / reconciliation** — unblocks RPCI / RPCPPE / Physical Count Summary. `SYSTEM-STATUS.md` #8.
-- [x] ~~Master Admin governance backend~~ — **cut as out of scope (2026-09-09).** The mock
-      governance/platform pages + `admin.mock.ts` were deleted; the Master Admin dashboard
-      was rebuilt on live data (`GET /api/v1/admin/dashboard-stats`). `MOCK-DATA-WIRING.md` Part D #6.
-- [x] ~~Master Admin admin-hardening pass~~ — **done (2026-09-09, same branch).** Force
-      sign-out (`PATCH /v1/users/:id/revoke-sessions`), unlock wired into the directory +
-      **Locked** status + role filter, per-account activity (`GET /v1/audit/user/:id`),
-      audit `startDate`/`endDate`, `system-config` `meta`, `GET /v1/notifications/watcher-status`.
-      Test-first, +~40 tests. `SYSTEM-STATUS.md` 2026-09-09 follow-up note.
-- [ ] **Trends / utilisation endpoint** — for the Management dashboard chart panels. `MOCK-DATA-WIRING.md` Part D #7.
-- [x] ~~Small wiring leftovers — employee "assigned assets" filter, Returns/Incidents module~~ —
-      **done, PR #102**: `GET /assets/mine` + My Assigned Assets for every role; Returns &
-      Incidents module with COA documents; Maintenance & Repair on top. `MOCK-DATA-WIRING.md` Part B/D.
-- [ ] Replacement / repair follow-ups — repeat repairs as a replacement reason, loaner unit
-      during repair, issue the new unit on replacement fulfilment, requester download of the
-      replacement receipt, per-watcher counts on the admin dashboard. `NEXT-TIME.md` §3.
+`main` is 27 commits behind `develop`, and 63 further commits are open against
+`develop` in four PRs. Reviewing and merging them is the gate for everything else.
+
+- [x] PR #102 / #103 (returns & incidents, repairs, replacement flow) — **merged to `develop`**.
+- [ ] #105 `fix/audit-findings-2026-10-14` — access control, audit integrity, numbering, KPIs.
+- [ ] #106 `feat/pilot-demo-data` — removes every mock screen (contains #105).
+- [ ] #107 `feat/demo-data-seed` — repeatable pilot demo data through the real API.
+- [ ] #108 `fix/ui-audit-findings` — the 12 audit defects, forms redesign, property roles file
+      requisitions, PDF layout fixes. Stacked on #106: **retarget it to `develop` once #106 merges.**
+- [ ] Then `develop` → `main` (2 reviews + all checks, including `secret-scan`, `codeql`,
+      `dependency-audit`, `owasp-dc`).
+- [ ] Promote CI's `docker-build` job to a required check on `main` once it has stayed green.
+
+## A. Finish the build  → `FEATURE-STATUS.md` (🟡 + ⬜)
+
+- [x] ~~Wire the mock screens, delete the dead mock code~~ — **done (PR #106).** The frontend
+      has no sample data; `MOCK-DATA-WIRING.md` is now just the record.
+- [x] ~~Disposal workflow~~ — documented flow (justification, condition, recommended action);
+      Property Officer's Disposal Review; restore-from-flagged with a justification. Documentation
+      only; the disposal itself is a manual COA process.
+- [x] ~~Master Admin governance~~ — cut as out of scope (2026-09-09); admin hardening done.
+- [x] ~~Returns & Incidents, Maintenance & Repair, replacement follow-ups~~ — PR #102 / #103.
+- [x] ~~Property Custodian and Property Officer file requisitions; custodians never fulfil their
+      own; System Administrator fallback~~ — PR #108, proven on Postgres for both custodian roles.
+- [~] **Physical count / reconciliation** — the count sheet exists (read-only). Still to build:
+      *recording* a count, comparing it with the records, and Property Officer corrections.
+      Needed before any real RPCI / RPCPPE reconciliation or audit-readiness claim.
+- [ ] **Trends / utilisation endpoint** and the **Asset Utilization Summary** report — for the
+      Management chart panels and the one management report that does not exist.
+- [ ] **Asset Issuance Record / Asset Return Record** should be built from issuance and return
+      *events*, not the asset's current status.
+- [ ] Await the audit calls for failed login / lockout / refresh-token reuse / logout in
+      `auth.service.ts` (currently `void this.auditService.log(...)`).
+- [ ] Period reports: treat an end date as the whole day (an item created later on the end date
+      is currently left out). `getDateRange` in `reports.service.ts`.
+- [ ] Decide the open product questions (Annex A.4 lists every SEP asset, not only issued ones;
+      asset history by person instead of role; PAR / ICS / RLSDDP Office/Section). `SYSTEM-STATUS.md`.
 
 ## B. COA form correctness  → `docs/guides/COA-FORMS-AUDIT.md`
 
-- [ ] Fix the Move-In / Move-Out hardcoded Property-Type bug (misrepresents real data).
-- [ ] Rebuild the missing sections in WMR and IIRUP.
-- [ ] Fix the RSMI zeroed-cost bug.
-- [ ] Systematic field / signatory correction pass across all 18 forms vs their reference files.
+- [x] ~~RSMI zeroed-cost bug~~ — supplies are priced from the stock they were issued from.
+- [x] ~~RPCI printed guesses~~ — shows the quantity on record, leaves the physical count blank.
+- [x] ~~Made-up form numbers~~ — real running numbers allocated atomically with the form
+      (schema 016); entity name and Fund Cluster are System Settings.
+- [x] ~~Layout~~ — tables paginate and fit the page, the form number no longer overprints its
+      label, headers do not break mid-word (all 18 PDFs rendered and read, 2026-10-16).
+- [x] ~~RLSDDP Accountable Officer~~ is the holder; ~~Annex A.4~~ prints the real ICS number.
+- [ ] Fix the Move-In / Move-Out hardcoded "Property Type: Office" (misrepresents real data).
+- [ ] Rebuild the missing sections: WMR's Certificate of Inspection; IIRUP's accounting columns
+      and Witness.
+- [ ] Remove the unofficial third signatory from PAR, ICS, IAR, both receipts, RLSDDP.
+- [ ] Decide Sticker Card: rename it (it is an asset tag) or build Appendix 58's Stock Card.
+- [ ] Compare each generated PDF with its reference in `FORMS/` (done for layout and content,
+      not against the physical forms).
+- [ ] Replace the placeholder number series with CICC's own (needs CICC's property office).
 
 ## C. Phase 5 — Testing & Evaluation  → `docs/phases/PHASE-5-TESTING.md`
 
 > **Sequencing decision (2026-08-30):** everything here except the security Jest suite
-> tests the *whole system surface*, so running it before the build is functionally
-> complete means re-running / re-triaging it after every new module. Do those **once, at
-> the end**, on prod-like infra. The security suite is the exception — security tests
-> *accumulate*, they don't expire when features are added — so its skeleton is being
-> built **now** as a permanent CI gate.
+> tests the *whole system surface*, so run it **once, at the end**, on prod-like infra. The
+> build is now complete, so the end is near: start once #105–#108 are merged. The security
+> suite is the exception: security tests accumulate, so it was built early as a CI gate.
 
 - [x] **Formal Jest security suite** — all 8 Step-5.1 scenarios in
-      `Backend/test/security.e2e-spec.ts` — **merged to `main` via PR #92**:
-      no-token 401, privilege escalation 403 (+ forged-role JWT still 403), tampered JWT 401,
-      lockout 403 with no timing leak, `@Throttle` limit asserted, audit-log immutability,
-      unknown-field 400 + SQLi bound safely, no `passwordHash`/`refreshTokenHash` in responses.
-      Rate limiting confirmed present (`@nestjs/throttler`, login 10/min). Runs in CI
-      `backend-e2e`. Per-module privilege-escalation cases get added as those modules land.
-      `docs/guides/SECURITY.md`.
-- [ ] Frontend test coverage — no coverage gate on `Frontend/` yet (backend has 70%).
-- [ ] **OWASP ZAP scan** *(after the build)* — you run ZAP against the running system,
-      save the PDF; then paste HIGH findings for fixes (`PHASE-5-TESTING.md` §5.3–5.4).
-- [ ] **JMeter load test** *(after the build)* — 362 users, 60s ramp, the 4 hot endpoints.
-      Needs a **production build**, a **dedicated Postgres** (Supabase dev caps connections
-      ~60), and **realistic data volume**. The `.jmx` plan can be authored earlier.
-  - [x] **k6 baseline done** (`perf/`, `chore/docker-compose-fix`) — 362 VUs on `GET /assets`
-        against a seeded docker Postgres: 0 errors, p95 758 ms on a single contended box.
-        De-risks the formal run; DB query is ~1 ms, the ceiling is the single Node event
-        loop → scale with backend replicas if the formal test confirms it.
-- [ ] **UAT with CICC** *(after the build)* — structured instrument for Employees /
-      Supervisors / IT Personnel; measure requisition time, inventory accuracy,
-      access-control enforcement, audit completeness, satisfaction vs the manual process.
+      `Backend/test/security.e2e-spec.ts`, gating CI. Per-module privilege-escalation cases are
+      added as modules land (e.g. `property-requisitions.e2e-spec.ts`). `docs/guides/SECURITY.md`.
+- [x] **Coverage ≥ 70% on backend services** — 96.3% statements / 88.7% branches (gate: 65 / 55 / 55 / 65).
+- [ ] Frontend test coverage — no coverage gate on `Frontend/` yet (320 tests exist).
+- [ ] **OWASP ZAP scan** — run ZAP against the running system, save the PDF, fix HIGH findings
+      (`PHASE-5-TESTING.md` §5.3–5.4).
+- [ ] **JMeter load test** — 362 users, 60 s ramp, the hot endpoints. Needs a **production build**,
+      a **dedicated Postgres** (Supabase dev caps connections at 15) and **realistic data volume**
+      (`Backend/test/demo-seed` in PR #107 and `perf/seed-volume.sql` help). The `.jmx` plan can be
+      authored now.
+  - [x] **k6 baseline done** (`perf/`) — 362 VUs on `GET /assets`, 0 errors, p95 758 ms on one
+        contended box. De-risks the formal run; the ceiling is the single Node event loop, so scale
+        with backend replicas if the formal test confirms it.
+- [ ] **UAT with CICC** — structured instrument for Employees / Supervisors / IT Personnel;
+      measure requisition time, inventory accuracy, access-control enforcement, audit completeness,
+      satisfaction vs the manual process. The flows verified in the browser on 2026-10-15/16
+      (file → approve → fulfil, returns, repairs, replacement, forms) are the script.
+- [ ] Security testing report (ASVS checklist results) for the capstone paper.
 
 ## D. Production readiness  → CLAUDE.md §2, §13, §15  (blocked on CICC server access)
 
 - [ ] Real PostgreSQL (CICC-managed), not Supabase — verify all code runs against raw PG.
-- [x] The `rejectUnauthorized: false` code hack is gone — `app.module.ts` now reads
-      `DATABASE_SSL` (default = verified TLS; `no-verify` is a `.env`-only dev override).
-      With real CICC certs, just leave `DATABASE_SSL` unset.
-- [ ] Set `TRUST_PROXY=1` on the CICC server (behind their reverse proxy) so audit-log
-      IPs are the real client. CICC IT's proxy must forward `X-Forwarded-For`.
-- [ ] Docker: `docker compose -f docker-compose.prod.yml` — external managed Postgres via
-      `DATABASE_URL`, external TLS/reverse-proxy (CICC IT). Both Dockerfiles + compose
-      verified building/running (merged, PR #95) — the prod-compose shakeout against a
-      real managed PG is still open.
-- [ ] `prod-server` GitHub Environment + manual approval gate; `docker-compose.prod.yml` shakeout.
-- [ ] Environment config (`.env`) for prod — JWT secret, DB URL, etc., via secrets not files.
+- [x] The `rejectUnauthorized: false` code hack is gone — `DATABASE_SSL` (unset = verified TLS).
+- [ ] Set `TRUST_PROXY=1` on the CICC server (behind their reverse proxy) so audit-log IPs are the
+      real client; CICC IT's proxy must forward `X-Forwarded-For`.
+- [ ] Docker: `docker compose -f docker-compose.prod.yml` against a real managed PG via
+      `DATABASE_URL`, external TLS/reverse-proxy. Both images build in CI; the prod-compose
+      shakeout is still open.
+- [ ] `.github/workflows/deploy.yml` is a **placeholder** (it only echoes): write the real deploy,
+      the `prod-server` GitHub Environment and the manual approval gate.
+- [ ] Production `.env` via secrets, not files (JWT secrets ≥ 32 chars, DB URL, `ALLOWED_ORIGIN`,
+      `TRUST_PROXY`; the process runs on Asia/Manila time unless `TZ` is set).
 - [ ] Backup / restore procedure + a tested restore.
-- [ ] Run the full migration set (`Database/schemas/001..013`) against the prod DB, in order.
-      `008`, `010` and `013` use `ALTER TYPE … ADD VALUE`, which cannot run inside a transaction —
-      run them statement by statement (or with plain `psql -f`, no `--single-transaction`).
-- [ ] Bring the shared dev Supabase up to `013` (schemas 008–013 were applied to local
-      Docker Postgres only during the PR #102 work).
+- [ ] Run the full schema set `Database/schemas/001…016` against the prod DB, in order. **Run
+      `003`, `006`, `007`, `008`, `010` and `013` with plain `psql -f` (no `--single-transaction`):**
+      they use `ALTER TYPE … ADD VALUE`, which cannot run inside a transaction. All are safe to re-run.
+- [x] Shared dev Supabase is at `016` (008–014 applied 2026-10-11, 015 on 2026-10-14, 016 on
+      2026-10-15). Any teammate's older local Docker Postgres still needs the missing files.
+- [ ] The pilot must **not** use the shared Supabase dev database: 15-connection cap, and it holds
+      test rows (`[VERIFY-2026-10-14]`) and demo rows (`DEMO-`).
 
 ## E. Data onboarding  (not tracked elsewhere)
 
 - [ ] Import ~362 personnel — employee ID, name, email, division, office/section, role.
 - [ ] Import ~2,000 assets with all required fields (CLAUDE.md §5.3), accountable-officer mapping.
-- [ ] Set initial custodian assignments and per-section supervisors (needed for approval routing
-      *and* the alternate-approver designation).
-- [ ] Seed system-config values if CICC's SLA / thresholds differ from the defaults.
+- [ ] Set initial custodian assignments and **at least one active Approving Officer per
+      section or division** (needed for routing: a division with none cannot submit), each with
+      an alternate approver.
+- [ ] Seed system-config values if CICC's SLA / thresholds / entity name / Fund Cluster differ from
+      the defaults.
 
 ## F. Compliance & handover  → CLAUDE.md §8, §14
 
+- [ ] **Rotate every dev password** listed in `docs/guides/ROLES.md`, `TEAM-HANDOFF.md`,
+      `RUN-LOCAL.md` and the `CHECKS.md` smoke tests, and keep real credentials out of the
+      public repo. No default or shared credentials in production (CLAUDE.md §8.1).
 - [ ] Data-minimisation / privacy review vs RA 10173 + NPC Circular 2023-06; Privacy Impact
       Assessment; confirm no HR/payroll/leave data anywhere.
-- [ ] Security testing report (ASVS checklist results) for the capstone paper.
 - [ ] User manuals per role; System Administrator runbook (reset-password, unlock, config,
       migrations, backup).
-- [ ] Final documentation + CICC acceptance sign-off (timeline: Sep 16 – Oct 5, 2026).
+- [ ] Final documentation + CICC acceptance sign-off.
 
 ---
 
-**Suggested order:** A (finish build) → B (forms) interleaved → C (Phase 5) → D + E (once CICC
-gives server + data access) → F (handover). C's UAT and D/E can't fully start until the build is
-functionally complete.
+**Suggested order:** G (merge the stack) → A / B (the open items, interleaved) → C (Phase 5) →
+D + E once CICC gives server and data access → F (handover). C's UAT and D / E cannot fully start
+until the stack is merged.

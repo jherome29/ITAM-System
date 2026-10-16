@@ -167,3 +167,16 @@ export enum OfficialFormType {
   RLSDDP = 'RLSDDP',                      // Appendix 75
   PTR = 'PTR',                             // Appendix 76
 }
+
+// Management reports (CLAUDE.md 7.1). The API validates against this list, so a
+// misspelt or made-up type is a 400 rather than a silently wrong export.
+export enum ReportType {
+  ASSET_MASTER_LIST = 'ASSET_MASTER_LIST',
+  REQUISITION_HISTORY = 'REQUISITION_HISTORY',
+  ASSET_ISSUANCE = 'ASSET_ISSUANCE',
+  ASSET_RETURN = 'ASSET_RETURN',
+  PHYSICAL_COUNT = 'PHYSICAL_COUNT',
+  REPAIR_HISTORY = 'REPAIR_HISTORY',
+  DISPOSAL = 'DISPOSAL',
+  AUDIT_TRAIL = 'AUDIT_TRAIL',
+}

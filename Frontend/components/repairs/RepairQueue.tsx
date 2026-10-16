@@ -12,6 +12,7 @@ import { assetsApi, type Asset } from '@/lib/api/assets';
 import { OUTCOME_LABEL, SERVICE_TYPE_LABEL, repairsApi, type Repair, type RepairOutcome, type RepairServiceType } from '@/lib/api/repairs';
 import { localToday } from '@/lib/dates';
 import { formatDate, formatDateTime } from '@/lib/requisitions/requisition-view';
+import { humanize } from '@/lib/text';
 
 const FILTERS = [
   { value: 'open', label: 'Under repair' },
@@ -319,9 +320,9 @@ export function RepairQueue({
                 ['Holder', selected.holder ? `${selected.holder.name} · ${selected.holder.employeeId}` : 'In stock'],
                 ['Opened', formatDateTime(selected.openedAt)],
                 [selected.completedAt ? 'Closed' : 'Due back', selected.completedAt ? formatDateTime(selected.completedAt) : formatDate(selected.dueDate)],
-                ['Condition', (selected.asset?.condition ?? '—').replaceAll('_', ' ')],
+                ['Condition', humanize(selected.asset?.condition) || '—'],
                 ['Status', statusOf(selected).label],
-              ] as const).map(([label, value]) => <div key={label} className="rounded-lg bg-slate-50 p-3"><dt className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt><dd className="mt-1 font-semibold capitalize text-slate-900">{value}</dd></div>)}
+              ] as const).map(([label, value]) => <div key={label} className="rounded-lg bg-slate-50 p-3"><dt className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt><dd className="mt-1 font-semibold text-slate-900">{value}</dd></div>)}
             </dl>
             {selected.overdue && <p className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700"><Clock className="h-4 w-4" aria-hidden="true" />Past its expected completion — update the date or record the outcome.</p>}
             <div><p className="text-xs font-bold text-slate-500">Reported problem</p><p className="mt-1 whitespace-pre-line text-sm text-slate-700">{selected.reportedProblem ?? 'No description was recorded when it went in.'}</p></div>
@@ -358,7 +359,7 @@ export function RepairQueue({
                   )}
                   <Field label="Findings (diagnosis)"><textarea className={`${inputClass} h-20 py-2`} value={draft.findings} maxLength={2000} placeholder="What is actually wrong — e.g. faulty DC jack, swollen battery." onChange={(e) => edit({ findings: e.target.value })} /></Field>
                   <Field label="Work done"><textarea className={`${inputClass} h-20 py-2`} value={draft.actionTaken} maxLength={2000} placeholder="Parts replaced, settings changed, tests run." onChange={(e) => edit({ actionTaken: e.target.value })} /></Field>
-                  <p className="text-xs text-slate-500">Without an expected date it is due {formatDate(selected.dueDate)} (default turnaround); the custodian is alerted once it is overdue.</p>
+                  <p className="text-xs text-slate-500">Without an expected date it is due {formatDate(selected.defaultDueDate)} (default turnaround); the custodian is alerted once it is overdue.</p>
                   <SecondaryButton disabled={busy} onClick={() => void saveProgress()}>Save progress</SecondaryButton>
                 </section>
 

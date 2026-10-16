@@ -1,6 +1,6 @@
 import { MyAssignedAssets } from '@/components/assets/MyAssignedAssets';
 import { ReportsContent } from '@/components/shared/ReportsContent';
-import { FormsArchiveContent } from '@/components/shared/FormsArchiveContent';
+import { FormsWorkspaceContent } from '@/components/shared/FormsWorkspaceContent';
 import { NotificationsContent } from '@/components/shared/NotificationsContent';
 import { ManagementAuditDashboard } from '@/components/management-audit/ManagementAuditDashboard';
 import { AuditLogPage } from '@/components/admin/AdminPlatformPages';
@@ -18,11 +18,11 @@ export default async function ManagementAuditPage({
   if (segment === 'dashboard') return <ManagementAuditDashboard />;
   if (segment === 'notifications') return <NotificationsContent />;
   if (segment === 'assigned-assets') return <MyAssignedAssets eyebrow="Management" canRequestReplacement={false} showRequestHistory openId={typeof open === 'string' ? open : undefined} />;
-  if (segment === 'asset-reports') return <ReportsContent reportTypes={['ASSET_MASTER_LIST', 'ASSET_ISSUANCE', 'ASSET_RETURN']} pageTitle="Asset Reports" panelTitle="Asset Reports" />;
-  if (segment === 'requisition-reports') return <ReportsContent reportTypes={['REQUISITION_HISTORY']} pageTitle="Requisition Reports" panelTitle="Requisition Reports" />;
-  if (segment === 'maintenance-disposal') return <ReportsContent reportTypes={['REPAIR_HISTORY', 'DISPOSAL']} pageTitle="Maintenance & Disposal Reports" panelTitle="Repair & Disposal Reports" />;
-  if (segment === 'physical-count') return <ReportsContent reportTypes={['PHYSICAL_COUNT']} pageTitle="Physical Count Reports" panelTitle="Physical Count Summary" />;
-  if (segment === 'forms') return <FormsArchiveContent />;
+  if (segment === 'asset-reports') return <ReportsContent eyebrow="Management" reportTypes={['ASSET_MASTER_LIST', 'ASSET_ISSUANCE', 'ASSET_RETURN']} pageTitle="Asset Reports" panelTitle="Asset Reports" />;
+  if (segment === 'requisition-reports') return <ReportsContent eyebrow="Management" reportTypes={['REQUISITION_HISTORY']} pageTitle="Requisition Reports" panelTitle="Requisition Reports" />;
+  if (segment === 'maintenance-disposal') return <ReportsContent eyebrow="Management" reportTypes={['REPAIR_HISTORY', 'DISPOSAL']} pageTitle="Maintenance & Disposal Reports" panelTitle="Repair & Disposal Reports" />;
+  if (segment === 'physical-count') return <ReportsContent eyebrow="Management" reportTypes={['PHYSICAL_COUNT']} pageTitle="Physical Count Reports" panelTitle="Physical Count Summary" />;
+  if (segment === 'forms') return <FormsWorkspaceContent eyebrow="Management" canGenerate={false} />;
   // Read-only evidence: the same append-only audit viewer the Master Admin uses.
   if (normalizeWorkflowSlug(segment) === 'audit') return <AuditLogPage eyebrow={proposedRoleLabels[ProposedUserRole.MANAGEMENT_AUDIT_VIEWER]} />;
   notFound();

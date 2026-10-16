@@ -79,7 +79,8 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { label: 'Physical Inventory', href: '/property-custodian/physical-inventory', icon: ScanLine },
     { label: 'Property Disposal Recommendations', href: '/property-custodian/disposal', icon: Archive },
     { label: 'Property Reports & Forms', href: '/property-custodian/reports', icon: FileBarChart },
-    { section: 'My Accountability', label: 'My Assigned Assets', href: '/property-custodian/assigned-assets', icon: PackageCheck },
+    { section: 'My Requests', label: 'My Requisitions', href: '/property-custodian/requisitions', icon: ClipboardList },
+    { label: 'My Assigned Assets', href: '/property-custodian/assigned-assets', icon: PackageCheck },
     { label: 'Notifications', href: '/property-custodian/notifications', icon: Bell },
   ],
   [ProposedUserRole.PROPERTY_OFFICER]: [
@@ -88,7 +89,8 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { label: 'Replacement Validation', href: '/property-officer/replacements', icon: ShieldCheck },
     { label: 'Disposal Review', href: '/property-officer/disposal', icon: Archive },
     { label: 'Reports & Forms', href: '/property-officer/reports', icon: FileText },
-    { section: 'My Accountability', label: 'My Assigned Assets', href: '/property-officer/assigned-assets', icon: PackageCheck },
+    { section: 'My Requests', label: 'My Requisitions', href: '/property-officer/requisitions', icon: ClipboardList },
+    { label: 'My Assigned Assets', href: '/property-officer/assigned-assets', icon: PackageCheck },
     { label: 'Notifications', href: '/property-officer/notifications', icon: Bell },
   ],
   [ProposedUserRole.MASTER_ADMIN]: [
@@ -99,6 +101,7 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { section: 'Security & Audit', label: 'Audit Log', href: '/master-admin/audit', icon: FileClock, readOnly: true },
     { section: 'Escalations', label: 'Returns & Incidents', href: '/master-admin/returns-incidents', icon: RefreshCcw },
     { label: 'Repairs', href: '/master-admin/repairs', icon: Wrench },
+    { label: 'Requisition Fulfilment', href: '/master-admin/fulfillment', icon: ListChecks },
     { section: 'My Accountability', label: 'My Assigned Assets', href: '/master-admin/assigned-assets', icon: PackageCheck },
     { section: 'Updates', label: 'Notifications', href: '/master-admin/notifications', icon: Bell },
   ],

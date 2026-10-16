@@ -1,8 +1,138 @@
 # AIMRS — Where Things Actually Stand
 
-A fast-read gap check. Order of work so far: frontend UI/UX redesign → security hardening → backend role/data wiring → automated notifications/SLA → replacement validation → system config → alternate approver (current). This is what's still missing before the system actually *works* end to end, not just looks and logs in correctly.
+A fast-read gap check, kept current. The top half is the present: where things
+stand, what is still open, and the suggested order. Everything under **History**
+is the dated log of how we got here (older entries describe the state *at that
+date* and are kept as a record, not maintained).
 
-> **Quick-read companion:** `FEATURE-STATUS.md` — one-screen ✅ / 🟡 / 🔴 mock / ⬜ map.
+> **Quick-read companions:** `FEATURE-STATUS.md` (one-screen ✅ / 🟡 / ⬜ map) ·
+> `PATH-TO-DONE.md` (checklist to CICC handover) · `NEXT-TIME.md` (where the last
+> session stopped) · `MOCK-DATA-WIRING.md` (which screens are live).
+
+## Where things stand (2026-10-16)
+
+The system now does what the capstone describes, end to end, for all seven roles,
+on real data. The work since the last full status (2026-09-10) landed in three
+waves:
+
+| Wave | What | Where |
+|---|---|---|
+| **Returns, repairs, replacement** (2026-10-09 → 10-14) | Returns & Incidents with attachments and auto-generated COA documents; Maintenance & Repair with loaner units; derived request types; the replacement flow (repeat repairs qualify, the new unit is issued on fulfilment, the requester gets the receipt); catalogue item picker; notification deep-links; self-approval routing fix; per-watcher status | PR #102 / #103, **on `develop`** |
+| **Audit + clean-up** (2026-10-14 → 10-15) | The 2026-10-14 verification's fixes: scope bypass on `/audit/record/:id`, requisition-number race, TZ default, SLA KPI, real client IP, `GET /users` admin-only, restore-from-flagged; **every mock screen removed** (the frontend has no sample data); disposal review, physical-inventory count sheet, real approval history, real management dashboard, the audit log for Management; the demo-data seeder | PR #105, #106, #107 — open against `develop` |
+| **UI + export audit, and the property roles** (2026-10-15 → 10-16) | 12 defects from a button-by-button and PDF-by-PDF audit (supply stock draw-down, real running document numbers, entity name / Fund Cluster as settings, the Audit Trail Report, paginating tables, the Reports & Forms redesign); a second pass (Manila-day dates, server-side request date rules, a real reason to reject, names instead of UUIDs in the audit screens); **Property Custodian and Property Officer file requisitions**, custodians never fulfil their own (the System Administrator is the fallback); a read of all 18 PDFs that fixed overprinted form numbers, tables running off the page, a wrong Accountable Officer on the RLSDDP and an invented ICS number on the Annex A.4 | PR #108 — open, stacked on #106 |
+
+Health on the #108 branch (2026-10-16): backend `tsc` / ESLint / webpack build
+clean, **728 unit tests** (96.3% statements) and **89 e2e tests** on a real
+Postgres passing; frontend `tsc` / ESLint / production build clean and **320
+tests** passing; `secretlint` clean; CI green (Backend CI, Backend E2E, Frontend
+CI, Shared Package; SonarCloud and Docker Build were still running). One
+transient failure of 4 tests in `auth.service.spec` (the lockout threshold) was
+seen once on a coverage run and did not reproduce in four later runs; if it
+recurs, capture the output.
+
+Screens and PDFs were also **driven in a browser against a throwaway Postgres**
+(not Supabase) and every form was rendered to an image and read, which found the
+layout bugs the unit tests could not (see CLAUDE.md §12, `RUN-LOCAL.md` §11).
+
+## Still open
+
+**Product gaps (no backend or no behaviour yet)**
+- **Recording a physical count / reconciliation.** The count sheet is read-only;
+  there is nowhere to enter a count and compare it with the records, so the RPCI /
+  RPCPPE cannot yet support a real reconciliation. Property Officer inventory
+  corrections do not exist either.
+- **Trends / utilisation** — no endpoint, and the **Asset Utilization Summary**
+  report does not exist.
+- **Asset Issuance Record and Asset Return Record** filter on the asset's
+  *current* status, not on issuance/return events, so an asset that was issued and
+  then returned disappears from the Issuance Record.
+- **Fire-and-forget audit logging on auth events** (failed login, lockout,
+  refresh-token reuse, logout): un-awaited, so a database blip at that exact
+  moment loses the entry silently.
+
+**COA form fidelity** (`docs/guides/COA-FORMS-AUDIT.md` has the item-by-item
+status). Data and layout are right; the *design* still differs from the official
+templates: an extra unofficial third signatory on PAR / ICS / IAR / the receipts /
+RLSDDP; WMR has no Certificate of Inspection; IIRUP drops its accounting columns
+and the Witness; Move-In / Move-Out always print "Property Type: Office"; the
+Sticker Card is an asset tag, not Appendix 58's Stock Card. These look fine until
+CICC or COA lays one next to the paper form.
+
+**Questions raised on 2026-10-16 that need a product decision** (nothing was
+changed): the Annex A.4 is titled "Issued" but lists every SEP asset created in the
+period; period reports treat an end date as midnight, so items created later that
+day fall outside a period ending today (a real bug, small to fix); the asset
+history shows who did something by role, not by person; PAR / ICS / RLSDDP print the
+asset's registered section as the Office/Section, not the end user's; the Receipt
+of Returned Property prints a blank Date Acquired; an IIRUP can show "Serviceable"
+for an asset flagged through the lifecycle endpoint (the flag does not change the
+condition); dates print MM/DD/YYYY.
+
+**Delivery**
+- **Review and merge the PR stack** (#105 → #106 → #107 → #108; retarget #108 to
+  `develop` when #106 merges). `develop` needs one review per PR.
+- **CICC inputs:** their property office's real document-number series (ours is a
+  placeholder), and the Fund Cluster value.
+- **Before handover:** rotate the dev passwords in `ROLES.md` (the repo is public);
+  apply schemas 001–016 to CICC's production Postgres; `deploy.yml` is a placeholder
+  (no CICC server access yet); do not run the pilot on the shared Supabase dev
+  database (15-connection cap, test and demo rows in it).
+- **Approver coverage:** every division that files needs an active Approving
+  Officer. Property and Supply Management has exactly one.
+
+**Testing & evaluation** (`docs/phases/PHASE-5-TESTING.md`): formal JMeter run at
+362 users, OWASP ZAP scan, UAT with CICC, a Frontend coverage gate, the ASVS
+checklist report for the paper. The Jest security suite and a k6 baseline are done.
+
+## Suggested order of next work
+
+1. **Get the PR stack reviewed and merged** — everything else piles onto it.
+2. **Fix the end-date bug in the period reports**; decide the other flagged
+   questions above (Annex A.4 scope, asset history by person).
+3. **Compare the generated PDFs against the official templates in `FORMS/`**
+   (checked for layout and content, not against the paper forms), then the form
+   fidelity pass (`COA-FORMS-AUDIT.md`), starting with the Move-In / Move-Out
+   property-type bug, which misrepresents data.
+4. **Physical count recording / reconciliation** and the two missing reports, if
+   CICC wants a real audit-readiness claim.
+5. **Testing & evaluation** once the above is merged: UAT script (the flows
+   verified in the browser are the script), JMeter plan and run, ZAP, ASVS report.
+6. **Production readiness and data onboarding** as soon as CICC gives server and
+   data access (`PATH-TO-DONE.md` §D–F).
+
+## About Phase 5 (Testing & Evaluation)
+
+`docs/phases/PHASE-5-TESTING.md`. The core workflows are built and verified, so
+this phase can start once the PR stack is merged. Status: the **formal Jest
+security suite is done** (8 ASVS scenarios, gating CI); the k6 baseline is done
+(`perf/`); coverage is 96% statements; **still to run:** JMeter at 362 users on
+prod-like infra, OWASP ZAP, UAT with CICC. Run the whole-system tools once, at the
+end, on a production build, not after every module (`PATH-TO-DONE.md` §C).
+
+---
+
+# History
+
+Dated log, oldest entries last in each group. Each entry describes the state *at
+that date*; where a later change superseded it, the top half of this file wins.
+
+## 2026-10-09 → 2026-10-16
+
+- **2026-10-16** — PR #108 second pass and the property roles. Manila-day dates in
+  lists; server-side request date rules; reject needs a 10+ character reason and a
+  confirmation; audit screens name people and records; Property Custodian /
+  Officer file requisitions, custodians never fulfil their own, a new Approving
+  Officer for Property and Supply Management; browser re-test; all 18 PDFs read
+  and fixed; audit labels for forms; IT Personnel version of the segregation rule
+  proven on Postgres.
+- **2026-10-15** — PR #106 / #107 / #108. No mock data left in the frontend; the
+  pre-redesign shells deleted; seeder for realistic pilot data; schema 016
+  (running document numbers) applied to the shared dev database.
+- **2026-10-14** — PR #105 (audit findings); PR #102 / #103 merged to `develop`.
+- **2026-10-11** — Returns & Incidents, Maintenance & Repair, derived request
+  types, the replacement flow; loaner units; per-watcher status; local runbook.
+- **2026-10-09** — Returns & Incidents module with attachments; notification
+  deep-links; catalogue item picker.
 
 > **2026-09-10 — tracker sync.** Every "PR pending" / "not on `main` yet" / "verify
 > against that branch" note below is now **stale**: notifications/SLA (#84),
@@ -27,7 +157,7 @@ A fast-read gap check. Order of work so far: frontend UI/UX redesign → securit
 
 > **2026-09-09 follow-up (same branch):** a small admin-hardening pass on top of the dashboard rebuild — mostly wiring endpoints that already existed but nothing consumed. (1) **Force sign-out** — new `PATCH /v1/users/:id/revoke-sessions` (SYSTEM_ADMIN, audited), bumps `tokenVersion` only; the recoverable middle ground between reset-password and deactivate. (2) **Unlock wired** — `PATCH /v1/users/:id/unlock` existed since `fix/admin-shell-ui` but was reachable from nowhere in the UI; now in the directory with a live **Locked** status + a **role filter**. (3) **Per-account activity** — `GET /v1/audit/user/:userId` (existed, unused) now renders in the user drawer. (4) **Audit date range** — `GET /v1/audit` gains `startDate`/`endDate` (was silently dropping the params the frontend already sent). (5) **Config provenance** — `GET /v1/system-config` returns a per-key `meta` (`updatedAt`/`updatedBy`). (6) **Watcher heartbeat** — `GET /v1/notifications/watcher-status` reports the last scheduler sweep on the dashboard. Backend went test-first (+~40 tests, 303 total, 91.6% coverage). No schema change.
 
-## Solid
+## Solid (as of 2026-09-10)
 
 - **Login and roles are real.** All 7 roles (5 original + Property Custodian/Officer, added this round) authenticate against the real backend and database. No mock login path exists anymore.
 - **The requisition workflow now works end to end, API and real UI both.** Submit → approve/reject → fulfill → asset issued. Fixed 2026-08-19: `supervisorId` is resolved server-side on submit (was always `NULL`, so a Supervisor's queue was always empty), the frontend's status comparisons were fixed to match the backend's real lowercase values (were comparing against uppercase literals that could never match), and a `comment`/`comments` field-name mismatch that made every reject fail with a 400 is fixed. Verified independently, not just taken on report.
@@ -37,7 +167,9 @@ A fast-read gap check. Order of work so far: frontend UI/UX redesign → securit
 - **Most redesigned pages are now real (2026-08-27, on `main`).** All 5 porting phases merged: IT Asset Custodian (all screens), Approving Officer dashboard + queues, Property Custodian + Property Officer (dashboards, asset registries, QR, fulfillment/custody/disposal), Management & Audit Viewer (dashboard KPIs, all report tabs, forms archive, audit), Master Admin (Users / Roles / System Settings / Audit / Notifications / Dashboard — all live as of 2026-09-09; the governance/platform mock pages were cut, see the dated note above), and the shared COA forms generator. **Still mock** — because no backend exists for them, not because a wire is missing: the `physical-inventory` slugs, Property Officer's corrections/reconciliation/replacements, Employee's "returns & incidents" and "assigned assets", and the Trends/Utilization chart panels on both management dashboards (labeled "Preview data" on Management&Audit; still unlabeled on the old Management dashboard — see Missing). Screen-by-screen breakdown in **`MOCK-DATA-WIRING.md`**.
 - **Security basics are in place.** RBAC guards (verified route-by-route across all 8 controllers), audit logging (now including User Management), password hashing, CI checks are solid. One smaller gap remains — some auth security events use fire-and-forget logging instead of awaited, see below.
 
-## Missing — the business logic, not the plumbing
+## Missing (as of 2026-09-10 — superseded)
+
+> **Kept as a dated record. Read "Still open" above for the current list.** Resolved since: disposal workflow, physical-count *sheet*, the Audit Trail Report, the RSMI zeroed costs, the Management chart panels, the Employee returns/incidents and assigned-assets screens, every mock screen. Still true: see "Still open".
 
 This is the real gap. The data model and CRUD exist; the *rules* CICC actually needs mostly don't:
 
@@ -55,7 +187,7 @@ This is the real gap. The data model and CRUD exist; the *rules* CICC actually n
 - **Fire-and-forget audit logging on the most security-sensitive auth events.** Failed login, account lockout, refresh-token reuse, and logout in `auth.service.ts` use un-awaited, uncaught promise calls to the audit logger (unlike every other audit call in the codebase, which is properly awaited). If the DB write fails at that exact moment, the audit entry silently never exists with nothing pointing at why. Lower urgency than the items above — only surfaces during a DB blip at the exact moment of a security-relevant event.
 - **Redesigned-layout wiring is done** (2026-08-27, on `main`) — the Property roles' screens, IT Asset Custodian, Approving Officer, Management & Audit, and Master Admin (all slugs, as of 2026-09-09) are all real now. What's left is the no-backend screens listed under "Solid" above and detailed in `MOCK-DATA-WIRING.md` — physical count, Property Officer corrections/reconciliation/replacements, Employee returns/incidents. (Master Admin governance was cut as out of scope, not wired — see the 2026-09-09 note.)
 
-## What's actually solid despite the gaps above
+## What was solid despite the gaps above (2026-09-10)
 
 Forms/reports generation *mechanism* is in good shape — all 18 forms generate real PDFs from real data, correctly stored and re-downloadable, no crashes. Whether each form's actual *layout* matches its official COA template is a separate, weaker claim — see the forms-fidelity gap above.
 
@@ -146,26 +278,3 @@ Full manual verification of `feature/notifications-auto-fire-sla-cron` against a
 **Verified:** `tsc`/`eslint` clean (both packages); backend webpack build succeeds; backend requisitions suite 49/49; frontend suite 30/30.
 
 **Doc drift noted, not changed:** CLAUDE.md §5's notification table says low stock → "IT Personnel, System Admin" and SLA breach → "System Admin, Management"; the code sends low stock to **Property Custodian** + System Admin, and SLA breach also to the **requester + supervisor**. Reconcile spec vs. code with the team.
-
-## Suggested order of next work
-
-> **2026-09-10:** items 1–3, 6 and 7 are **merged to `origin/main`**. The live remaining
-> work is **4 (disposal workflow)**, **5 (COA form fidelity)**, **8 (physical count +
-> 2 missing reports)** and **9 (small wiring leftovers)** — plus Phase 5 (ZAP / JMeter /
-> UAT), production readiness, data onboarding and handover from `PATH-TO-DONE.md` §C–F.
-
-1. ~~**Notifications + SLA job**~~ — built 2026-08-27, manually verified A–G 2026-08-29, **merged to `main` via PR #84.**
-2. ~~**System Config backend + wire the admin settings page**~~ — built on `feature/system-config`, full manual checklist A–H passed 2026-08-29; **merged to `main` via PR #87.** `system-config` module + `GET`/`PATCH /api/v1/system-config` (admin-only, audited); SLA hours / reorder level / useful-life years / max login attempts are now runtime-tunable and read live by `requisitions.service`, the low-stock watcher, and `auth.service`. UI is **Master Admin → System Settings** (`SystemSettingsPage`); old `/admin/config` deleted. Still open: `SystemSettingsPage`'s other tabs (numbering, retention, localization, notification routing) + `reference-data`, and deferred settings (approval routes, session policy, PPE cost threshold).
-3. ~~**Replacement validation**~~ — **built + merged to `main` via PR #86.** `validateReplacement()` in `requisitions.service.create()` when `requisitionType === replacement`: requester-must-be-custodian, then passes if condition ≠ serviceable **or** asset age ≥ useful-life for its class (live from System Config). `replacedAssetId` column + DTO field; one conditional FE field; audit `metadata.replacementBasis`. Verified live in the System Config F3 checklist run. Not yet wired: the Property Officer `replacements` screen (still `WorkflowPage` mock — separate FE task).
-4. **Disposal workflow** — turn the status flag into an actual documented flow with the required fields (matches your COA/audit obligations).
-5. **Fix the COA form templates against their actual references** — see `docs/guides/COA-FORMS-AUDIT.md` for the full per-form breakdown of all 18, including the RSMI zeroed-cost bug. Fix the Move-In/Move-Out hardcoded Property-Type bug first (it misrepresents real data, not just a layout gap); WMR and IIRUP need their missing sections rebuilt; the rest is systematic field/signatory correction against each form's actual reference file. This is exactly the kind of thing that looks fine until CICC or COA actually compares it to the real form.
-6. ~~**Alternate approver**~~ — **merged to `main` via PR #89/#90** (migration 007 applied to dev; backend 268/268 unit + 52/52 live manual checks 2026-08-30). A supervisor marked unavailable (self-service toggle or admin) → new requisitions for that section route to a designated backup at submit; a requisition past its 24h SLA with no decision is reassigned to the backup by the SLA-breach watcher. Reassigns `requisitions.supervisor_id` (approve/reject untouched), stamps `alternate_routed_at`, writes a `requisition_reassigned` audit entry. Deferred (in `FEATURE-STATUS.md`): no fresh SLA clock / second escalation after a hand-off ("one hop, no chain"); "unavailable until <date>" is date-granularity.
-7. ~~**Master Admin governance backend**~~ — **cut as out of scope (2026-09-09, `feature/master-admin-dashboard`).** The mock governance/platform pages + `admin.mock.ts` were deleted; the dashboard was rebuilt on a new `admin` module (`GET /api/v1/admin/dashboard-stats`) + `healthApi` / `systemConfigApi` / `reportsApi.kpi`. See the dated note near the top and `MOCK-DATA-WIRING.md` Part D #6.
-8. **Physical count / reconciliation + the 2 missing reports** — also unblocks the `physical-inventory` slugs and Property Officer `reconciliation`; needed before any real audit-readiness claim.
-9. **Small wiring leftovers** — Employee assigned-assets custodian filter + returns/incidents module; Approving Officer `approval-history`; Property Officer `disposal`/`audit`. Mostly one-liners once the backends above exist — full list in `MOCK-DATA-WIRING.md`. (Notifications for every role + the TopBar bell were wired 2026-08-29.)
-
-The frontend redesign and its wiring are done — what's left above is backend logic plus a little UI, making the system actually do what it already claims to do.
-
-## About Phase 5 (Testing & Evaluation)
-
-The project timeline says this phase started Aug 16 — it's not actually time yet, calendar aside. Phase 5 (`docs/phases/PHASE-5-TESTING.md`: OWASP ZAP, JMeter load testing, formal Jest security suite, UAT with CICC) tests whether a *working* system is fast/secure/reliable enough — not whether it works at all. The core approval workflow and the redesigned-layout wiring are done; notifications/SLA, replacement validation, system config, alternate approver, and the Master Admin dashboard rebuild are **all merged to `main`**; the disposal workflow, COA form fixes, and physical count are still open — finish those first, then run ZAP / JMeter / UAT once, at the end (see `PATH-TO-DONE.md` §C for the sequencing rationale). **The formal Jest security suite is merged (PR #92)** and runs in CI as a permanent gate — security tests accumulate rather than expire, so it was seeded during the build rather than deferred to the end.

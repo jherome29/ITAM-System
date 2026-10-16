@@ -14,7 +14,9 @@ import { Toast } from '@/components/ui/Toast';
 import { assetsApi, type MyAsset } from '@/lib/api/assets';
 import { assetRequestsApi, type AssetRequest, type AssetRequestType } from '@/lib/api/asset-requests';
 import { REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE, REQUEST_TYPE_LABEL, blockingRequest, isOpen } from '@/lib/asset-requests/asset-request-rules';
+import { locationLabel } from '@/lib/assets/asset-location';
 import { formatDate, formatDateTime } from '@/lib/requisitions/requisition-view';
+import { humanize } from '@/lib/text';
 
 // Why a non-issued asset is still on the holder's list.
 const HOLDING_NOTE: Record<string, string> = {
@@ -154,7 +156,7 @@ export function MyAssignedAssets({
         {isOpen(viewing) && <SecondaryButton onClick={() => setCancelling(viewing)}>Cancel request</SecondaryButton>}
       </div>}
     </DetailDrawer>
-    <ConfirmDialog open={Boolean(cancelling)} title={`Cancel ${cancelling?.requestNumber ?? ''}?`} detail="The custodian will be notified that you no longer need this request." confirmLabel="Cancel request" onConfirm={() => void confirmCancel()} onCancel={() => setCancelling(null)} />
+    <ConfirmDialog open={Boolean(cancelling)} title={`Cancel ${cancelling?.requestNumber ?? ''}?`} detail="The custodian will be notified that you no longer need this request." confirmLabel="Cancel request" cancelLabel="Keep request" onConfirm={() => void confirmCancel()} onCancel={() => setCancelling(null)} />
     <Toast message={toast} />
   </div>;
 }
@@ -185,7 +187,7 @@ function AssetCard({
 
   return <article className="border border-slate-200 bg-white p-4 shadow-sm">
     <div className="flex items-start justify-between gap-3"><div><p className="text-base font-bold text-slate-950">{asset.itemDescription}</p><p className="mt-1 text-xs text-slate-500">{[asset.propertyNumber, asset.serialNumber && `Serial ${asset.serialNumber}`].filter(Boolean).join(' · ') || asset.assetType}</p></div><StatusChip status={asset.condition.replaceAll('_', ' ')} /></div>
-    <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">{[['Status', asset.status.replaceAll('_', ' ')], ['Expected return', asset.expectedReturnDate ? formatDate(asset.expectedReturnDate) : 'No fixed date'], ['Type', `${asset.assetType} · ${asset.assetClass}`], ['Location', asset.officeLocation || asset.officeOrSection || '—']].map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 font-semibold capitalize text-slate-800">{value}</dd></div>)}</dl>
+    <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">{[['Status', humanize(asset.status)], ['Expected return', asset.expectedReturnDate ? formatDate(asset.expectedReturnDate) : 'No fixed date'], ['Type', `${asset.assetType} · ${asset.assetClass}`], ['Location', locationLabel(asset)]].map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 font-semibold text-slate-800">{value}</dd></div>)}</dl>
     {open.map((r) => <div key={r.id} className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
       <span><span className="font-bold text-amber-900">{REQUEST_TYPE_LABEL[r.type]}</span> <span className="text-amber-800">· {r.requestNumber} · {REQUEST_STATUS_LABEL[r.status]}{r.handoverDate ? ` · bring it in ${formatDate(r.handoverDate)}` : ''}</span></span>
       <span className="flex gap-2"><button type="button" onClick={() => onView(r)} className="text-xs font-bold text-blue-700 hover:underline">View</button><button type="button" onClick={() => onCancel(r)} className="text-xs font-bold text-red-700 hover:underline">Cancel request</button></span>

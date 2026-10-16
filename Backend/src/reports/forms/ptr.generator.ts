@@ -13,6 +13,9 @@ import {
   fullName,
   PAGE,
   CONTENT_WIDTH,
+  identityFields,
+  documentNumber,
+  conditionLabel,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — PTR generated when IT Personnel records an asset transfer (Appendix 76)
@@ -47,17 +50,18 @@ export async function generatePTR(
   const doc = createDoc();
   let y = drawRepublicHeader(doc);
 
-  const ptrNo = `PTR-${Date.now()}`;
-  y = drawFormTitle(doc, 'PROPERTY TRANSFER REPORT', 'PTR No.', ptrNo, y);
+  y = drawFormTitle(
+    doc,
+    'PROPERTY TRANSFER REPORT',
+    'PTR No.',
+    documentNumber(),
+    y,
+  );
 
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'Date', value: today() },
       { label: 'Transfer Type', value: 'Within Agency — Office to Office' },
     ],
@@ -118,7 +122,7 @@ export async function generatePTR(
         `${asset.itemDescription}${asset.brand ? ' / ' + asset.brand : ''}`,
         '1',
         phpFormat(asset.acquisitionCost),
-        asset.condition ?? '—',
+        conditionLabel(asset.condition),
       ],
     ],
     y,

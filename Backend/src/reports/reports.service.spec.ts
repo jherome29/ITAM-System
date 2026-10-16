@@ -1,6 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import { ILike, Not } from 'typeorm';
 import { ReportsService } from './reports.service';
 import { GeneratedReportEntity } from './entities/generated-report.entity';
 import { GeneratedFormEntity } from './entities/generated-form.entity';
@@ -10,6 +15,8 @@ import { UserEntity } from '../users/entities/user.entity';
 import { AssetRequestEntity } from '../asset-requests/entities/asset-request.entity';
 import { AssetRepairEntity } from '../assets/entities/asset-repair.entity';
 import { AuditService } from '../audit/audit.service';
+import { SystemConfigService } from '../system-config/system-config.service';
+import PDFDocument from 'pdfkit';
 import {
   AuditAction,
   UserRole,
@@ -53,11 +60,20 @@ describe('ReportsService', () => {
     createQueryBuilder: jest.fn(),
   };
 
+  // A form and its number are stored in one transaction; the manager hands the
+  // same repository back so assertions on mockFormRepo still see the save.
+  const mockEntityManager = {
+    query: jest.fn(),
+    getRepository: jest.fn(),
+  };
+
   const mockFormRepo = {
+    find: jest.fn(),
     findAndCount: jest.fn(),
     create: jest.fn(),
     save: jest.fn(),
     createQueryBuilder: jest.fn(),
+    manager: { transaction: jest.fn() },
   };
 
   const mockAssetRepo = {
@@ -76,6 +92,7 @@ describe('ReportsService', () => {
 
   const mockUserRepo = {
     findOne: jest.fn(),
+    find: jest.fn(),
   };
 
   const mockAssetRequestRepo = {
@@ -88,6 +105,12 @@ describe('ReportsService', () => {
 
   const mockAuditService = {
     log: jest.fn().mockResolvedValue(undefined),
+    findAll: jest.fn(),
+  };
+
+  const mockSystemConfig = {
+    getEntityName: jest.fn(() => 'CICC TEST ENTITY'),
+    getFundCluster: jest.fn(() => ''),
   };
 
   beforeEach(async () => {
@@ -117,12 +140,19 @@ describe('ReportsService', () => {
           useValue: mockRepairRepo,
         },
         { provide: AuditService, useValue: mockAuditService },
+        { provide: SystemConfigService, useValue: mockSystemConfig },
       ],
     }).compile();
 
     service = module.get<ReportsService>(ReportsService);
     jest.clearAllMocks();
     mockAuditService.log.mockResolvedValue(undefined);
+    mockEntityManager.getRepository.mockReturnValue(mockFormRepo);
+    mockEntityManager.query.mockResolvedValue([{ last_value: 7 }]);
+    mockFormRepo.manager.transaction.mockImplementation(
+      (run: (em: typeof mockEntityManager) => Promise<unknown>) =>
+        run(mockEntityManager),
+    );
   });
 
   // ── findAll() ─────────────────────────────────────────────────────────────
@@ -140,6 +170,119 @@ describe('ReportsService', () => {
       mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
       const result = await service.findAllForms();
       expect(result).toMatchObject({ data: [], total: 0, page: 1, limit: 50 });
+    });
+
+    // The archive used to show "asset 3fa85f64…" and no author: a custodian
+    // could not tell which of fifty PARs was for which laptop.
+    it('labels each form with its asset, requisition and author', async () => {
+      mockFormRepo.findAndCount.mockResolvedValue([
+        [
+          {
+            id: 'f-1',
+            formType: OfficialFormType.PAR,
+            documentNumber: 'PAR-2026-0007',
+            generatedById: 'u-1',
+            relatedAssetId: 'a-1',
+            relatedRequisitionId: 'r-1',
+            relatedAssetRequestId: null,
+            filePath: 'stored',
+            generatedAt: new Date('2026-10-15T08:00:00Z'),
+          },
+          {
+            id: 'f-2',
+            formType: OfficialFormType.RPCI,
+            documentNumber: null,
+            generatedById: 'u-gone',
+            relatedAssetId: null,
+            relatedRequisitionId: null,
+            relatedAssetRequestId: null,
+            filePath: 'stored',
+            generatedAt: new Date('2026-10-14T08:00:00Z'),
+          },
+        ],
+        2,
+      ]);
+      mockAssetRepo.find.mockResolvedValue([
+        {
+          id: 'a-1',
+          itemDescription: 'Dell Latitude',
+          propertyNumber: 'P-001',
+        },
+      ]);
+      mockReqRepo.find.mockResolvedValue([
+        { id: 'r-1', requestNumber: 'REQ-0031' },
+      ]);
+      mockUserRepo.find.mockResolvedValue([
+        { id: 'u-1', firstName: 'Ian', lastName: 'Cruz' },
+      ]);
+
+      const { data } = await service.findAllForms();
+
+      expect(data[0]).toMatchObject({
+        id: 'f-1',
+        documentNumber: 'PAR-2026-0007',
+        assetLabel: 'Dell Latitude (P-001)',
+        requisitionNumber: 'REQ-0031',
+        generatedByName: 'Ian Cruz',
+      });
+      expect(data[1]).toMatchObject({
+        assetLabel: null,
+        requisitionNumber: null,
+        generatedByName: null,
+      });
+    });
+
+    // The archive is searched by form type and by the number written on the
+    // paper copy; filtering only the rows already on screen would miss the rest.
+    it('filters by form type and by document number on the server', async () => {
+      mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAllForms(2, 15, {
+        formType: OfficialFormType.PAR,
+        search: 'PAR-2026',
+      });
+
+      expect(mockFormRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 15,
+          take: 15,
+          where: {
+            formType: OfficialFormType.PAR,
+            documentNumber: ILike('%PAR-2026%'),
+          },
+        }),
+      );
+    });
+
+    it('treats % and _ in the search as text, not wildcards', async () => {
+      mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAllForms(1, 15, { search: '50%_off' });
+
+      expect(mockFormRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { documentNumber: ILike('%50\\%\\_off%') },
+        }),
+      );
+    });
+
+    it('applies no filter when none is given', async () => {
+      mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAllForms();
+
+      expect(mockFormRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({ where: {} }),
+      );
+    });
+
+    it('does not look anything up for an empty page', async () => {
+      mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAllForms();
+
+      expect(mockAssetRepo.find).not.toHaveBeenCalled();
+      expect(mockUserRepo.find).not.toHaveBeenCalled();
     });
   });
 
@@ -292,6 +435,32 @@ describe('ReportsService', () => {
       );
     });
 
+    // The audit trail names every user and every record; the role matrix
+    // (CLAUDE.md 4) gives it to the System Administrator and Management only.
+    it.each([UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN])(
+      'refuses the Audit Trail Report to %s',
+      async (role) => {
+        await expect(
+          service.generate('AUDIT_TRAIL', 'PDF', 'u-1', role, '127.0.0.1'),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockReportRepo.save).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT])(
+      'gives the Audit Trail Report to %s',
+      async (role) => {
+        const result = await service.generate(
+          'AUDIT_TRAIL',
+          'PDF',
+          'u-1',
+          role,
+          '127.0.0.1',
+        );
+        expect(result.buffer).toEqual(Buffer.from('mock-pdf'));
+      },
+    );
+
     it('builds Excel and stores xlsx extension in filePath', async () => {
       const result = await service.generate(
         'ASSET_MASTER_LIST',
@@ -374,12 +543,18 @@ describe('ReportsService', () => {
       rows: (string | number | null)[][];
     };
     type ServiceWithFetch = {
-      fetchReportData: (t: string) => Promise<ReportData>;
+      fetchReportData: (
+        t: string,
+        range?: { from?: string; to?: string },
+      ) => Promise<ReportData>;
     };
 
     // Typed accessor avoids no-unsafe-call while still reaching the private method
-    const fetch = (type: string): Promise<ReportData> =>
-      (service as unknown as ServiceWithFetch).fetchReportData(type);
+    const fetch = (
+      type: string,
+      range?: { from?: string; to?: string },
+    ): Promise<ReportData> =>
+      (service as unknown as ServiceWithFetch).fetchReportData(type, range);
 
     const makeDisposalQb = (assets: AssetEntity[]) => ({
       where: jest.fn().mockReturnThis(),
@@ -453,13 +628,20 @@ describe('ReportsService', () => {
       expect(r.rows[0][4]).toBe('serviceable');
     });
 
-    it('PHYSICAL_COUNT returns all assets', async () => {
+    it('PHYSICAL_COUNT counts what is still on the books, not disposed assets', async () => {
       mockAssetRepo.find.mockResolvedValue([makeAsset()]);
 
       const r = await fetch('PHYSICAL_COUNT');
 
       expect(r.title).toBe('Physical Count Summary');
       expect(r.rows).toHaveLength(1);
+      // Disposed assets are off the books: the count sheet in the app leaves
+      // them out, and the exported summary used to disagree with it.
+      expect(mockAssetRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: Not(AssetStatus.DISPOSED) },
+        }),
+      );
     });
 
     it('DISPOSAL uses createQueryBuilder and handles null/non-null cost', async () => {
@@ -532,13 +714,95 @@ describe('ReportsService', () => {
       );
     });
 
-    it('default case returns generic headers and uses replaceAll on title', async () => {
-      mockAssetRepo.find.mockResolvedValue([makeAsset()]);
+    it('rejects a report type it does not know instead of returning an asset list', async () => {
+      await expect(fetch('UNKNOWN_REPORT_TYPE')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockAssetRepo.find).not.toHaveBeenCalled();
+    });
 
-      const r = await fetch('UNKNOWN_REPORT_TYPE');
+    describe('AUDIT_TRAIL', () => {
+      const entry = (over: object = {}) => ({
+        timestamp: new Date('2026-10-15T08:30:00Z'),
+        userId: 'u-1',
+        userRole: UserRole.IT_PERSONNEL,
+        action: AuditAction.FORM_GENERATED,
+        affectedRecordType: 'form',
+        affectedRecordId: 'form-1',
+        ipAddress: '10.0.0.5',
+        ...over,
+      });
 
-      expect(r.title).toBe('UNKNOWN REPORT TYPE');
-      expect(r.headers).toEqual(['Property #', 'Description', 'Status']);
+      it('lists who did what, to which record, from where', async () => {
+        mockAuditService.findAll.mockResolvedValue({
+          data: [entry()],
+          total: 1,
+        });
+        mockUserRepo.find.mockResolvedValue([
+          {
+            id: 'u-1',
+            firstName: 'Ian',
+            lastName: 'Cruz',
+            employeeId: 'CICC-IT-001',
+          },
+        ]);
+
+        const r = await fetch('AUDIT_TRAIL', {
+          from: '2026-10-01',
+          to: '2026-10-15',
+        });
+
+        expect(mockAuditService.findAll).toHaveBeenCalledWith(
+          1,
+          10_000,
+          undefined,
+          '2026-10-01',
+          '2026-10-15',
+        );
+        expect(r.title).toBe('Audit Trail Report');
+        expect(r.headers).toEqual([
+          'Timestamp (UTC)',
+          'User',
+          'Role',
+          'Action',
+          'Record Type',
+          'Record ID',
+          'IP Address',
+        ]);
+        expect(r.rows[0]).toEqual([
+          '2026-10-15 08:30:00',
+          'Ian Cruz (CICC-IT-001)',
+          UserRole.IT_PERSONNEL,
+          AuditAction.FORM_GENERATED,
+          'form',
+          'form-1',
+          '10.0.0.5',
+        ]);
+      });
+
+      it('falls back to the account id when the account can no longer be found', async () => {
+        mockAuditService.findAll.mockResolvedValue({
+          data: [entry({ userId: 'u-gone' })],
+          total: 1,
+        });
+        mockUserRepo.find.mockResolvedValue([]);
+
+        const r = await fetch('AUDIT_TRAIL');
+
+        expect(r.rows[0][1]).toBe('u-gone');
+      });
+
+      it('says so in the title when the export is capped', async () => {
+        mockAuditService.findAll.mockResolvedValue({
+          data: [entry()],
+          total: 12_345,
+        });
+        mockUserRepo.find.mockResolvedValue([]);
+
+        const r = await fetch('AUDIT_TRAIL');
+
+        expect(r.title).toBe('Audit Trail Report (latest 1 of 12,345 entries)');
+      });
     });
   });
 
@@ -741,6 +1005,388 @@ describe('ReportsService', () => {
           '127.0.0.1',
         ),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ── document numbers ──────────────────────────────────────────────────────
+  describe('generateFormRecord() — document numbers', () => {
+    const year = new Date().getFullYear();
+    const user = {
+      id: 'emp-1',
+      firstName: 'Juan',
+      lastName: 'dela Cruz',
+      employeeId: 'CICC-EMP-001',
+      role: UserRole.EMPLOYEE,
+      division: 'Operations',
+      officeOrSection: 'Field',
+    };
+
+    beforeEach(() => {
+      mockFormRepo.create.mockImplementation((x: object) => x);
+      mockFormRepo.save.mockImplementation((x: object) =>
+        Promise.resolve({ id: 'form-1', ...x }),
+      );
+      mockUserRepo.findOne.mockResolvedValue(user);
+      mockAssetRepo.findOne.mockResolvedValue(
+        makeAsset({ custodianId: 'emp-1' }),
+      );
+    });
+
+    const generate = (formType: OfficialFormType, extra = {}) =>
+      service.generateFormRecord(
+        { formType, assetId: 'a-1', ...extra },
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+    it('stores the number it allocated with the form and prints it on the PDF', async () => {
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+
+      const { form } = await generate(OfficialFormType.PAR);
+
+      expect(mockEntityManager.query).toHaveBeenCalledWith(
+        expect.stringContaining('document_counters'),
+        ['PAR', year],
+      );
+      expect(form.documentNumber).toBe(`PAR-${year}-0007`);
+      expect(
+        text.mock.calls.some(([t]) => String(t).includes(`PAR-${year}-0007`)),
+      ).toBe(true);
+      text.mockRestore();
+    });
+
+    it('names the holder - not the person generating it - as the accountable officer on an RLSDDP', async () => {
+      const issuer = {
+        ...user,
+        id: 'it-1',
+        firstName: 'Ian',
+        lastName: 'Torres',
+        role: UserRole.IT_PERSONNEL,
+      };
+      const holder = { ...user, id: 'emp-1' };
+      mockUserRepo.findOne.mockImplementation(
+        ({ where }: { where: { id?: string } }) =>
+          Promise.resolve(where.id === 'emp-1' ? holder : issuer),
+      );
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+
+      await generate(OfficialFormType.RLSDDP, {
+        lossType: 'Damaged',
+        circumstances: 'Dropped during a field operation.',
+      });
+
+      const printed = text.mock.calls.map(([t]) => String(t));
+      expect(printed).toContain(' Juan dela Cruz');
+      expect(printed).not.toContain(' Ian Torres');
+      text.mockRestore();
+    });
+
+    it('names the requester on an RLSDDP generated after custody was cleared', async () => {
+      const issuer = {
+        ...user,
+        id: 'it-1',
+        firstName: 'Ian',
+        lastName: 'Torres',
+      };
+      const requester = {
+        ...user,
+        id: 'emp-9',
+        firstName: 'Ana',
+        lastName: 'Lim',
+      };
+      mockAssetRepo.findOne.mockResolvedValue(makeAsset({ custodianId: null }));
+      mockUserRepo.findOne.mockImplementation(
+        ({ where }: { where: { id?: string } }) =>
+          Promise.resolve(where.id === 'emp-9' ? requester : issuer),
+      );
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+
+      await generate(OfficialFormType.RLSDDP, {
+        lossType: 'Damaged',
+        returneeId: 'emp-9',
+      });
+
+      const printed = text.mock.calls.map(([t]) => String(t));
+      expect(printed).toContain(' Ana Lim');
+      expect(printed).not.toContain(' Ian Torres');
+      text.mockRestore();
+    });
+
+    it('falls back to the person generating an RLSDDP when the asset has no holder', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(makeAsset({ custodianId: null }));
+      mockUserRepo.findOne.mockResolvedValue({
+        ...user,
+        id: 'it-1',
+        firstName: 'Ian',
+        lastName: 'Torres',
+      });
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+
+      await generate(OfficialFormType.RLSDDP, { lossType: 'Lost' });
+
+      expect(text.mock.calls.map(([t]) => String(t))).toContain(' Ian Torres');
+      text.mockRestore();
+    });
+
+    it('prints on the Annex A.4 the ICS number each item was really issued under', async () => {
+      mockAssetRepo.find.mockResolvedValue([
+        makeAsset({
+          id: 'a-1',
+          assetClass: AssetClass.SEP,
+          createdAt: new Date('2026-06-01T00:00:00Z'),
+        }),
+      ]);
+      mockFormRepo.find.mockResolvedValue([
+        { relatedAssetId: 'a-1', documentNumber: 'ICS-2026-0003' },
+      ]);
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+
+      await generate(OfficialFormType.ANNEX_A4, {
+        dateFrom: '2026-01-01',
+        dateTo: '2026-12-31',
+      });
+
+      expect(mockFormRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ formType: OfficialFormType.ICS }),
+        }),
+      );
+      expect(text.mock.calls.map(([t]) => String(t))).toContain(
+        'ICS-2026-0003',
+      );
+      text.mockRestore();
+    });
+
+    it('allocates and saves inside one transaction', async () => {
+      await generate(OfficialFormType.PTR, { targetOffice: 'Records' });
+
+      expect(mockFormRepo.manager.transaction).toHaveBeenCalledTimes(1);
+      expect(mockEntityManager.getRepository).toHaveBeenCalledWith(
+        GeneratedFormEntity,
+      );
+    });
+
+    it('does not number a periodic report', async () => {
+      mockAssetRepo.find.mockResolvedValue([]);
+
+      const { form } = await generate(OfficialFormType.RPCI);
+
+      expect(mockEntityManager.query).not.toHaveBeenCalled();
+      expect(form.documentNumber).toBeNull();
+    });
+
+    it('a form that fails to generate takes no number and leaves no audit entry', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(null);
+
+      await expect(generate(OfficialFormType.PAR)).rejects.toThrow(
+        NotFoundException,
+      );
+
+      // The allocation was inside the transaction that threw, so it is rolled
+      // back with it - the series keeps no hole.
+      expect(mockFormRepo.save).not.toHaveBeenCalled();
+      expect(mockAuditService.log).not.toHaveBeenCalled();
+    });
+
+    it('audits the form once it is stored, with its number', async () => {
+      await generate(OfficialFormType.PAR);
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          affectedRecordId: 'form-1',
+          metadata: expect.objectContaining({
+            documentNumber: `PAR-${year}-0007`,
+          }),
+        }),
+      );
+    });
+  });
+
+  // ── returnee lookups and required inputs ──────────────────────────────────
+  describe('generateFormRecord() — returnee lookup and required inputs', () => {
+    const holder = {
+      id: 'emp-1',
+      firstName: 'Juan',
+      lastName: 'dela Cruz',
+      employeeId: 'CICC-0042',
+      role: UserRole.EMPLOYEE,
+      division: 'Operations',
+      officeOrSection: 'Field',
+    };
+    const issuer = { ...holder, id: 'it-1', employeeId: 'CICC-IT-001' };
+
+    beforeEach(() => {
+      mockFormRepo.create.mockImplementation((x: object) => x);
+      mockFormRepo.save.mockImplementation((x: object) =>
+        Promise.resolve({ id: 'form-1', ...x }),
+      );
+      mockAssetRepo.findOne.mockResolvedValue(makeAsset({ custodianId: null }));
+      mockAssetRequestRepo.findOne.mockResolvedValue(null);
+      mockReqRepo.findOne.mockResolvedValue(null);
+      mockUserRepo.findOne.mockImplementation(
+        ({ where }: { where: { id?: string; employeeId?: string } }) =>
+          Promise.resolve(
+            [holder, issuer].find(
+              (u) =>
+                (where.id && u.id === where.id) ||
+                (where.employeeId && u.employeeId === where.employeeId),
+            ) ?? null,
+          ),
+      );
+    });
+
+    const receipt = (extra: object = {}) =>
+      service.generateFormRecord(
+        {
+          formType: OfficialFormType.RECEIPT_RETURNED_PROPERTY,
+          assetId: 'a-1',
+          ...extra,
+        },
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+    // The page used to ask for a "Returnee User UUID" nobody can see anywhere.
+    it('finds the returnee by employee ID', async () => {
+      await receipt({ returneeEmployeeId: 'CICC-0042' });
+
+      expect(mockUserRepo.findOne).toHaveBeenCalledWith({
+        where: { employeeId: 'CICC-0042' },
+      });
+    });
+
+    it('404s on an employee ID that belongs to nobody', async () => {
+      await expect(
+        receipt({ returneeEmployeeId: 'CICC-9999' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    // A unit handed back through a replacement requisition has no return
+    // request and no custodian, so its receipt used to 404 for want of a name.
+    it('takes the holder from the replacement requisition that collected the unit', async () => {
+      mockReqRepo.findOne.mockResolvedValue({ requestedById: 'emp-1' });
+
+      const { form } = await receipt();
+
+      expect(mockReqRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            replacedAssetId: 'a-1',
+            status: RequisitionStatus.FULFILLED,
+          }),
+        }),
+      );
+      expect(form.formType).toBe(OfficialFormType.RECEIPT_RETURNED_PROPERTY);
+    });
+
+    it('asks for the receiving office on a Property Transfer Report', async () => {
+      mockAssetRepo.findOne.mockResolvedValue(
+        makeAsset({ custodianId: 'emp-1' }),
+      );
+
+      await expect(
+        service.generateFormRecord(
+          { formType: OfficialFormType.PTR, assetId: 'a-1' },
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ── RSMI / RPCI content ───────────────────────────────────────────────────
+  describe('generateFormRecord() — RSMI and RPCI content', () => {
+    beforeEach(() => {
+      mockFormRepo.create.mockImplementation((x: object) => x);
+      mockFormRepo.save.mockImplementation((x: object) =>
+        Promise.resolve({ id: 'form-1', ...x }),
+      );
+    });
+
+    const drawn = async (run: () => Promise<unknown>) => {
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+      await run();
+      const out = text.mock.calls.map(([t]) => String(t));
+      text.mockRestore();
+      return out;
+    };
+
+    it('RSMI lists only supplies, priced from the stock they were issued from', async () => {
+      mockReqRepo.find.mockResolvedValue([
+        {
+          requestNumber: 'REQ-0031',
+          items: [
+            {
+              assetClass: AssetClass.IES,
+              assetType: AssetType.SUPPLIES,
+              itemDescription: 'Bond Paper A4',
+              quantity: 3,
+              fulfilledAssetId: 'stock-1',
+            },
+            {
+              assetClass: AssetClass.PPE,
+              assetType: AssetType.ICT,
+              itemDescription: 'Server Rack',
+              quantity: 1,
+              fulfilledAssetId: 'unit-9',
+            },
+            {
+              assetClass: AssetClass.IES,
+              assetType: AssetType.SUPPLIES,
+              itemDescription: 'Ink Cartridge',
+              quantity: 2,
+              fulfilledAssetId: null,
+            },
+          ],
+        },
+      ]);
+      // Postgres hands decimals back as strings.
+      mockAssetRepo.find.mockResolvedValue([
+        { id: 'stock-1', acquisitionCost: '250.00', itemCode: 'SUP-0001' },
+      ]);
+
+      const out = await drawn(() =>
+        service.generateFormRecord(
+          { formType: OfficialFormType.RSMI },
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      );
+
+      expect(out).toContain('Bond Paper A4');
+      expect(out).toContain('Ink Cartridge');
+      expect(out).not.toContain('Server Rack');
+      expect(out).toContain('SUP-0001');
+      expect(out).toContain('TOTAL AMOUNT: PHP 750.00');
+      expect(out).not.toContain('PHP 0.00');
+    });
+
+    it('RPCI carries the stock on record, with the physical count left to the counter', async () => {
+      mockAssetRepo.find.mockResolvedValue([
+        {
+          itemDescription: 'Bond Paper A4',
+          assetClass: AssetClass.IES,
+          acquisitionCost: '250.00',
+          condition: AssetCondition.SERVICEABLE,
+          quantity: 48,
+        },
+      ]);
+
+      const out = await drawn(() =>
+        service.generateFormRecord(
+          { formType: OfficialFormType.RPCI },
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      );
+
+      expect(out).toContain('48');
+      expect(out).toContain('Serviceable');
     });
   });
 

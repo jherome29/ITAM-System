@@ -43,7 +43,10 @@ export class AuditController {
       startDate,
       endDate,
     );
-    return { message: 'Audit logs retrieved', data: result };
+    return {
+      message: 'Audit logs retrieved',
+      data: { ...result, data: await this.svc.withNames(result.data) },
+    };
   }
 
   /**
@@ -59,7 +62,10 @@ export class AuditController {
     @Query('limit') limit = 50,
   ) {
     const result = await this.svc.findByUser(userId, +page, +limit);
-    return { message: 'User audit log retrieved', data: result };
+    return {
+      message: 'User audit log retrieved',
+      data: { ...result, data: await this.svc.withNames(result.data) },
+    };
   }
 
   /**
@@ -83,6 +89,9 @@ export class AuditController {
     @Req() req: { user: { role: UserRole } },
   ) {
     const result = await this.svc.findRecordHistory(recordId, req.user.role);
-    return { message: 'Record audit history retrieved', data: result };
+    return {
+      message: 'Record audit history retrieved',
+      data: await this.svc.withNames(result),
+    };
   }
 }

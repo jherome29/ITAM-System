@@ -30,6 +30,25 @@ describe('Property Officer menu', () => {
   });
 });
 
+// Holding property does not make someone a requester, but the Property Custodian
+// and Property Officer file requisitions like the employees they are. Management
+// (read-only oversight) and the System Administrator do not.
+describe('who can file a requisition, by menu', () => {
+  it('gives the two property roles My Requisitions', () => {
+    expect(hrefsOf(ProposedUserRole.PROPERTY_CUSTODIAN)).toContain('/property-custodian/requisitions');
+    expect(hrefsOf(ProposedUserRole.PROPERTY_OFFICER)).toContain('/property-officer/requisitions');
+  });
+
+  it('keeps Management and the Master Admin from filing', () => {
+    expect(hrefsOf(ProposedUserRole.MANAGEMENT_AUDIT_VIEWER)).not.toContain('/management-audit/requisitions');
+    expect(hrefsOf(ProposedUserRole.MASTER_ADMIN)).not.toContain('/master-admin/requisitions');
+  });
+
+  it('gives the Master Admin the fallback fulfilment screen', () => {
+    expect(hrefsOf(ProposedUserRole.MASTER_ADMIN)).toContain('/master-admin/fulfillment');
+  });
+});
+
 describe('screens that used to show sample data and are now real', () => {
   it('stay in the menu of the roles that have them', () => {
     expect(hrefsOf(ProposedUserRole.APPROVING_OFFICER)).toContain('/approving-officer/approval-history');

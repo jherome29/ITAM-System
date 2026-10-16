@@ -10,6 +10,8 @@ import {
   today,
   roleDisplay,
   fullName,
+  identityFields,
+  documentNumber,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — Receipt of Returned Property/Equipment (Annex 28)
@@ -50,18 +52,14 @@ export async function generateReceiptReturnedProperty(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       {
         label: 'Property No.',
         value: asset.propertyNumber ?? '_______________',
       },
       { label: 'Date', value: today() },
       { label: 'End-user/Office', value: returnee.officeOrSection },
-      { label: '', value: '' },
+      { label: 'RRPE No.', value: documentNumber() },
     ],
     y,
   );

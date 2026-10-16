@@ -57,6 +57,9 @@ async function bootstrap() {
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+    // The browser may only read these on a cross-origin download: the form's
+    // number and file name.
+    exposedHeaders: ['Content-Disposition', 'X-Document-Number'],
   });
 
   // 4. Request pipeline — validation, response envelope, exception filter,

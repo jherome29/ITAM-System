@@ -67,6 +67,11 @@ export interface RequesterSummary {
   officeOrSection: string;
 }
 
+/** Item names compare ignoring case and stray spacing ("  usb DRIVES " = "USB drives"). */
+function normalizeItemName(name: string | null | undefined): string {
+  return (name ?? '').trim().replaceAll(/\s+/g, ' ').toLowerCase();
+}
+
 function toRequesterSummary(user?: UserEntity | null): RequesterSummary | null {
   if (!user) return null;
   return {
@@ -147,6 +152,29 @@ function withRequester<T extends RequisitionEntity>(
   };
 }
 
+/**
+ * Whether a requisition is the custodian's own: filed by the custodian who would
+ * be the one to fulfil it (the IT Asset Custodian asking for ICT items, the
+ * Property Custodian asking for Fixed assets or Supplies). Segregation of duties
+ * bars them from fulfilling it, as it does for their own returns and incidents,
+ * so another custodian of that type - or, failing one, the System Administrator -
+ * handles it. A request for the other custodian's kind of item is not "own": that
+ * custodian fulfils it as usual.
+ */
+export function isCustodianOwnRequisition(
+  requesterRole: UserRole,
+  items: Array<{ assetType: AssetType }>,
+): boolean {
+  if (
+    requesterRole !== UserRole.IT_PERSONNEL &&
+    requesterRole !== UserRole.PROPERTY_CUSTODIAN
+  ) {
+    return false;
+  }
+  const scope = resolveAssetTypeScope(requesterRole) ?? [];
+  return items.length > 0 && items.every((i) => scope.includes(i.assetType));
+}
+
 @Injectable()
 export class RequisitionsService {
   private readonly logger = new Logger(RequisitionsService.name);
@@ -203,17 +231,21 @@ export class RequisitionsService {
             RequisitionStatus.PENDING_FULFILLMENT,
             RequisitionStatus.ON_HOLD,
           ],
-        }).andWhere(
-          // Filtering the joined `items` alias directly would constrain what
-          // leftJoinAndSelect('r.items', 'items') hydrates (silently hiding
-          // non-matching sibling items) and would skew skip/take pagination,
-          // since a multi-item requisition yields multiple raw rows before
-          // TypeORM re-collapses them. An EXISTS subquery instead filters
-          // which requisitions (the `r` side) match, leaving `items` hydration
-          // and pagination untouched — same shape as the `r.status` filter above.
-          'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type = :itScope)',
-          { itScope: AssetType.ICT },
-        );
+        })
+          .andWhere(
+            // Filtering the joined `items` alias directly would constrain what
+            // leftJoinAndSelect('r.items', 'items') hydrates (silently hiding
+            // non-matching sibling items) and would skew skip/take pagination,
+            // since a multi-item requisition yields multiple raw rows before
+            // TypeORM re-collapses them. An EXISTS subquery instead filters
+            // which requisitions (the `r` side) match, leaving `items` hydration
+            // and pagination untouched — same shape as the `r.status` filter above.
+            'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type = :itScope)',
+            { itScope: AssetType.ICT },
+          )
+          // What they filed themselves is not theirs to fulfil (see
+          // isCustodianOwnRequisition); they follow it under My Requisitions.
+          .andWhere('r.requestedById != :me', { me: requestingUserId });
         break;
       case UserRole.PROPERTY_CUSTODIAN:
         qb.where('r.status IN (:...statuses)', {
@@ -221,10 +253,12 @@ export class RequisitionsService {
             RequisitionStatus.PENDING_FULFILLMENT,
             RequisitionStatus.ON_HOLD,
           ],
-        }).andWhere(
-          'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...pcScope))',
-          { pcScope: resolveAssetTypeScope(UserRole.PROPERTY_CUSTODIAN) },
-        );
+        })
+          .andWhere(
+            'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...pcScope))',
+            { pcScope: resolveAssetTypeScope(UserRole.PROPERTY_CUSTODIAN) },
+          )
+          .andWhere('r.requestedById != :me', { me: requestingUserId });
         break;
       case UserRole.PROPERTY_OFFICER:
         qb.andWhere(
@@ -260,6 +294,41 @@ export class RequisitionsService {
     });
     const data = rows.map((r) => withRequester(r));
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  // ── What only the System Administrator can fulfil ──────────────────────────
+  /**
+   * Open requisitions (awaiting fulfilment, or on hold) filed by the custodian
+   * who would fulfil them. They are kept out of that custodian's own queue, and
+   * there may be no second custodian of the type, so the System Administrator
+   * is the fallback - for exactly these.
+   * SVC: Design & Transition - controlled asset movement authorization.
+   */
+  async fulfilmentFallback() {
+    const rows = await this.reqRepo.find({
+      where: {
+        status: In([
+          RequisitionStatus.PENDING_FULFILLMENT,
+          RequisitionStatus.ON_HOLD,
+        ]),
+      },
+      relations: {
+        items: true,
+        requestedBy: true,
+        supervisor: true,
+        replacedAsset: true,
+      },
+      order: { createdAt: 'ASC' },
+      take: 200,
+    });
+    const data = rows
+      .filter(
+        (r) =>
+          r.requestedBy &&
+          isCustodianOwnRequisition(r.requestedBy.role, r.items),
+      )
+      .map((r) => withRequester(r));
+    return { data, total: data.length };
   }
 
   // ── Decisions I made as an approver ────────────────────────────────────────
@@ -994,6 +1063,35 @@ export class RequisitionsService {
   // fixes: a partial-fulfillment status, per-item fulfillment, or create-time
   // validation that all items on one requisition share a single custodial
   // scope.
+  /**
+   * Who may fulfil or hold this requisition. Never the person who filed it. The
+   * System Administrator only when it is a custodian's own (the fallback);
+   * otherwise the custodian whose asset types the items are.
+   */
+  private async assertMayFulfil(
+    req: RequisitionEntity,
+    actorId: string,
+    actorRole: UserRole,
+  ): Promise<void> {
+    if (req.requestedById === actorId) {
+      throw new ForbiddenException(
+        'You cannot fulfil or hold a requisition you filed yourself. Another custodian, or the System Administrator, handles it.',
+      );
+    }
+    if (actorRole === UserRole.SYSTEM_ADMIN) {
+      const requester = await this.usersService
+        .findOne(req.requestedById)
+        .catch(() => null);
+      if (!requester || !isCustodianOwnRequisition(requester.role, req.items)) {
+        throw new ForbiddenException(
+          "The System Administrator fulfils only a custodian's own requisition; this one is handled by the custodian queue.",
+        );
+      }
+      return;
+    }
+    this.assertItemsInScope(req, actorRole);
+  }
+
   private assertItemsInScope(req: RequisitionEntity, userRole: UserRole): void {
     const scope = resolveAssetTypeScope(userRole);
     if (!scope) return; // unscoped role — nothing to enforce
@@ -1019,7 +1117,7 @@ export class RequisitionsService {
     ipAddress: string,
   ): Promise<RequisitionEntity> {
     const req = await this.findOne(id);
-    this.assertItemsInScope(req, userRole);
+    await this.assertMayFulfil(req, itPersonnelId, userRole);
 
     if (req.status !== RequisitionStatus.PENDING_FULFILLMENT) {
       throw new BadRequestException(
@@ -1064,7 +1162,7 @@ export class RequisitionsService {
     ipAddress: string,
   ): Promise<RequisitionEntity> {
     const req = await this.findOne(id);
-    this.assertItemsInScope(req, userRole);
+    await this.assertMayFulfil(req, itPersonnelId, userRole);
 
     const fulfillableStatuses = [
       RequisitionStatus.PENDING_FULFILLMENT,
@@ -1107,13 +1205,34 @@ export class RequisitionsService {
       const itemRepo = em.getRepository(RequisitionItemEntity);
       const assetRepo = em.getRepository(AssetEntity);
 
-      if (dto.fulfilledItems?.length) {
-        for (const { requisitionItemId, assetId } of dto.fulfilledItems) {
-          // Reject a fulfilledItems entry naming an id that is not on THIS
-          // requisition before any write — otherwise the itemRepo.update below
-          // would overwrite the fulfilledAssetId link on another requisition's
-          // item. Thrown inside the transaction, so it rolls the whole
-          // fulfillment back (consistent with the insufficient-stock 400).
+      // Reject a fulfilledItems entry naming an id that is not on THIS
+      // requisition before any write — otherwise the itemRepo.update below
+      // would overwrite the fulfilledAssetId link on another requisition's
+      // item. Thrown inside the transaction, so it rolls the whole
+      // fulfillment back (consistent with the insufficient-stock 400).
+      for (const { requisitionItemId } of dto.fulfilledItems ?? []) {
+        if (!req.items.some((i) => i.id === requisitionItemId)) {
+          throw new BadRequestException(
+            `Requisition item "${requisitionItemId}" does not belong to this requisition.`,
+          );
+        }
+      }
+
+      // A supply (IES) line must leave stock. The custodian may pick the stock
+      // record; when none is named — the Fulfil screen sends no pick for an
+      // ordinary supply requisition — the server finds it. Without this the
+      // request closed with nothing deducted, so stock never moved and the
+      // low-stock alerts never fired.
+      const links = [...(dto.fulfilledItems ?? [])];
+      for (const item of req.items) {
+        if (item.assetClass !== AssetClass.IES) continue;
+        if (links.some((l) => l.requisitionItemId === item.id)) continue;
+        const stock = await this.resolveSupplyStock(assetRepo, item);
+        links.push({ requisitionItemId: item.id, assetId: stock.id });
+      }
+
+      if (links.length) {
+        for (const { requisitionItemId, assetId } of links) {
           const reqItem = req.items.find((i) => i.id === requisitionItemId);
           if (!reqItem) {
             throw new BadRequestException(
@@ -1235,6 +1354,50 @@ export class RequisitionsService {
     });
 
     return saved;
+  }
+
+  /**
+   * The stock record a supply line is drawn from when the custodian did not
+   * name one: same item (case and spacing ignored), same asset type, still
+   * available. Oldest delivery first (FIFO), and the first record that holds
+   * the whole quantity — a line is drawn from one record. The caller re-reads
+   * the chosen row under a write lock, so a race cannot overdraw it.
+   */
+  private async resolveSupplyStock(
+    assetRepo: Repository<AssetEntity>,
+    item: RequisitionItemEntity,
+  ): Promise<AssetEntity> {
+    const sameItem = (a: AssetEntity) =>
+      normalizeItemName(a.itemDescription) ===
+      normalizeItemName(item.itemDescription);
+    const received = (a: AssetEntity) =>
+      new Date(a.dateOfDelivery ?? a.createdAt).getTime();
+
+    const matches = (
+      await assetRepo.find({
+        where: {
+          assetClass: AssetClass.IES,
+          assetType: item.assetType,
+          status: AssetStatus.AVAILABLE,
+        },
+      })
+    )
+      .filter(sameItem)
+      .sort((a, b) => received(a) - received(b));
+
+    if (matches.length === 0) {
+      throw new BadRequestException(
+        `No stock on record for "${item.itemDescription}". Register the stock first, or place the requisition on hold.`,
+      );
+    }
+    const enough = matches.find((a) => a.quantity >= item.quantity);
+    if (!enough) {
+      const largest = Math.max(...matches.map((a) => a.quantity));
+      throw new BadRequestException(
+        `Insufficient stock: requested ${item.quantity}, available ${largest}`,
+      );
+    }
+    return enough;
   }
 
   /**

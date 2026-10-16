@@ -3,6 +3,18 @@
 ### Time: August 16 – September 15
 ### Do this: After the full system is built and running
 
+## Status (2026-10-16)
+
+The build is feature-complete, so this phase can start once the PR stack (#105 → #108) is merged. Run the whole-system steps **once**, on a production build and a dedicated Postgres.
+
+| Step | State |
+|---|---|
+| 5.1 Jest security tests | **Done.** All 8 scenarios in `Backend/test/security.e2e-spec.ts`, gating CI; per-module privilege-escalation cases in the other e2e specs (e.g. `property-requisitions.e2e-spec.ts`) |
+| 5.2 Coverage | **Met.** Backend 728 unit tests, 96.3% statements / 88.7% branches / 95.2% functions; 89 e2e tests on a real Postgres; frontend 320 tests (no coverage gate on `Frontend/` yet) |
+| 5.3 / 5.4 OWASP ZAP | **Not run.** See the rate-limit warning in 5.3 |
+| 5.5 Load test | **k6 baseline done** (`perf/`: 362 VUs, 0 errors, p95 758 ms on one contended box). The formal JMeter run is still to do |
+| UAT with CICC | **Not started.** The flows verified in a browser on 2026-10-15/16 (file → approve → fulfil, returns, repairs, replacement, forms) are the script |
+
 > This phase is your testing chapter evidence.
 > Everything here gets documented in your capstone paper.
 > Run all tools, save all reports, fix all HIGH severity findings.
@@ -37,7 +49,7 @@ Paste this into Claude Code to generate the security test suite:
 Read CLAUDE.md and SECURITY.md.
 
 Write security-specific Jest tests for the Backend/.
-Place them in Backend/test/security/
+Place them in Backend/test/ as security.e2e-spec.ts
 
 Cover all of these scenarios:
 
@@ -106,6 +118,8 @@ Place tests in the same test folder structure as the source.
 OWASP ZAP is a free tool that automatically scans your running
 system for security vulnerabilities. It is industry standard
 and your capstone paper can cite it as evidence.
+
+> **Rate limiting will wreck an unprepared scan.** The API allows 60 requests per minute per IP, and `POST /auth/login` only 10, so ZAP gets `429` for almost everything after the first few seconds and reports nothing useful. For the scan, run a **separate** backend with `THROTTLE_LIMIT` raised (as `perf/README.md` does for k6), never the shared one, and log ZAP in with one dedicated account (each login bumps that account's `tokenVersion`). Do not lift the limit anywhere else.
 
 **Setup:**
 1. Download OWASP ZAP from `https://www.zaproxy.org`
@@ -196,12 +210,12 @@ From this phase you have:
 
 ## ✅ Checklist — confirm before UAT with CICC
 
-- [ ] All 8 security Jest test scenarios pass
-- [ ] Overall test coverage is 70% or above on all modules
+- [x] All 8 security Jest test scenarios pass
+- [x] Overall test coverage is 70% or above on all modules (backend 96% statements; the gate measures 17 service files, see `CHECKS.md`)
 - [ ] OWASP ZAP scan completed and report saved
 - [ ] All HIGH severity ZAP findings fixed
 - [ ] MEDIUM severity findings documented with justification
-- [ ] JMeter load test completed (if time allows)
+- [ ] JMeter load test completed (if time allows) — k6 baseline done, see `perf/README.md`
 - [ ] All test reports saved for inclusion in capstone paper
 
 ---

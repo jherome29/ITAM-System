@@ -34,6 +34,12 @@ describe('isLiveWorkflowPage — pages that read real records', () => {
     [Role.PROPERTY_CUSTODIAN, 'fulfillment'],
     [Role.PROPERTY_CUSTODIAN, 'custody'],
     [Role.PROPERTY_CUSTODIAN, 'disposal'],
+    // The two property roles file requisitions like any other holder.
+    [Role.PROPERTY_CUSTODIAN, 'requisitions'],
+    [Role.PROPERTY_OFFICER, 'requisitions'],
+    // The System Administrator fulfils a custodian's own requisition (the
+    // custodian cannot), so the fulfilment screen is theirs too.
+    [Role.MASTER_ADMIN, 'fulfillment'],
   ])('%s / %s is live', (role, slug) => {
     expect(isLiveWorkflowPage(role, slug)).toBe(true);
   });
