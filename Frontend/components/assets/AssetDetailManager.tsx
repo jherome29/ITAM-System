@@ -12,6 +12,11 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { ASSET_LIFECYCLE_TRANSITIONS as NEXT_TRANSITIONS, lifecycleNotesRequired } from '@/lib/assets/lifecycle-transitions';
 import { formatDateTime, formatPeso } from '@/lib/dates';
+import { tdClass, thClass } from '@/components/admin/AdminUi';
+import { buttonClass } from '@/components/ui/buttons';
+import { controlClass, labelClass, surfaceClass, textareaClass } from '@/components/ui/controls';
+import { DateField } from '@/components/ui/DateField';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 function optionLabel(value: string): string {
   return value.split('_').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ');
@@ -21,15 +26,15 @@ function Detail({ label, value }: Readonly<{ label: string; value?: string | num
   return (
     <div>
       <dt className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-0.5">{label}</dt>
-      <dd className={`text-sm ${value ? 'text-gray-800' : 'text-slate-500 italic'}`}>{value ?? 'Not specified'}</dd>
+      <dd className={`text-sm ${value ? 'text-slate-800' : 'text-slate-500 italic'}`}>{value ?? 'Not specified'}</dd>
     </div>
   );
 }
 
 function DetailSection({ title, children }: Readonly<{ title: string; children: React.ReactNode }>) {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-5">
-      <h3 className="text-xs font-bold text-[#1a4d7a] uppercase tracking-wider mb-4">{title}</h3>
+    <div className={`${surfaceClass} p-5`}>
+      <h3 className="text-xs font-bold text-brand uppercase tracking-wider mb-4">{title}</h3>
       <dl className="grid grid-cols-2 gap-4">{children}</dl>
     </div>
   );
@@ -42,7 +47,7 @@ function EditableDetail({
   editValue,
   edit,
   onChange,
-  type = 'text',
+  inputType = 'text',
   options,
 }: Readonly<{
   label: string;
@@ -51,30 +56,33 @@ function EditableDetail({
   editValue?: string | number;
   edit: boolean;
   onChange: (field: string, val: string) => void;
-  type?: string;
+  inputType?: string;
   options?: string[];
 }>) {
-  const cls = 'w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]';
   return (
     <div>
       <dt className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-0.5">{label}</dt>
       {edit ? (
         options ? (
-          <select aria-label={label} value={editValue ?? ''} onChange={(e) => onChange(field, e.target.value)} className={cls}>
+          <select aria-label={label} value={editValue ?? ''} onChange={(e) => onChange(field, e.target.value)} className={controlClass}>
             <option value="">— select —</option>
             {options.map((o) => <option key={o} value={o}>{optionLabel(o)}</option>)}
           </select>
         ) : (
-          <input
-            aria-label={label}
-            type={type}
-            value={editValue ?? ''}
-            onChange={(e) => onChange(field, e.target.value)}
-            className={cls}
-          />
+          inputType === 'date' ? (
+            <DateField aria-label={label} value={editValue ?? ''} onChange={(e) => onChange(field, e.target.value)} />
+          ) : (
+            <input
+              aria-label={label}
+              type={inputType}
+              value={editValue ?? ''}
+              onChange={(e) => onChange(field, e.target.value)}
+              className={controlClass}
+            />
+          )
         )
       ) : (
-        <dd className={`text-sm ${value ? 'text-gray-800' : 'text-slate-500 italic'}`}>{value ?? 'Not specified'}</dd>
+        <dd className={`text-sm ${value ? 'text-slate-800' : 'text-slate-500 italic'}`}>{value ?? 'Not specified'}</dd>
       )}
     </div>
   );
@@ -243,57 +251,52 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
 
   return (
     <div className="space-y-5 max-w-4xl">
-      <button type="button" onClick={() => router.back()} className="flex items-center gap-2 text-sm text-[#1a4d7a] hover:underline">
-        <ArrowLeft className="w-4 h-4" /> Back to Inventory
+      <button type="button" onClick={() => router.back()} className="flex items-center gap-2 text-sm font-semibold text-brand hover:underline">
+        <ArrowLeft className="h-5 w-5" /> Back to Inventory
       </button>
 
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-semibold text-[#1a4d7a]">{asset.itemDescription}</h1>
-            <StatusBadge status={asset.status} />
-          </div>
-          {asset.propertyNumber && (
-            <p className="text-sm text-gray-500 font-mono mt-1">Property #: {asset.propertyNumber}</p>
-          )}
-        </div>
-        <div className="flex gap-2 flex-wrap">
+      <PageHeader
+        title={asset.itemDescription}
+        badge={<StatusBadge status={asset.status} />}
+        detail={asset.propertyNumber ? `Property #: ${asset.propertyNumber}` : undefined}
+        action={
+        <div className="flex flex-wrap gap-2">
           {edit ? (
             <>
               <button type="button"
                 onClick={handleSave}
                 disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-60 transition-colors"
+                className={buttonClass()}
               >
-                <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Changes'}
+                <Save className="h-5 w-5" /> {saving ? 'Saving...' : 'Save Changes'}
               </button>
               <button type="button"
                 onClick={handleCancelEdit}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                className={buttonClass({ variant: 'secondary' })}
               >
-                <X className="w-4 h-4" /> Cancel
+                <X className="h-5 w-5" /> Cancel
               </button>
             </>
           ) : (
             <>
               <button type="button"
                 onClick={() => setEdit(true)}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                className={buttonClass({ variant: 'secondary' })}
               >
-                <Pencil className="w-4 h-4" /> Edit
+                <Pencil className="h-5 w-5" /> Edit
               </button>
               {!asset.qrCode && (
                 <button type="button"
                   onClick={handleGenerateQr}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                  className={buttonClass({ variant: 'secondary' })}
                 >
-                  <QrCode className="w-4 h-4" /> Generate QR
+                  <QrCode className="h-5 w-5" /> Generate QR
                 </button>
               )}
               {nextStates.length > 0 && (
                 <button type="button"
                   onClick={() => setShowLifecycle(true)}
-                  className="px-4 py-2 bg-[#1a4d7a] text-white rounded-md text-sm font-medium hover:bg-[#143d61] transition-colors"
+                  className={buttonClass()}
                 >
                   Update Lifecycle
                 </button>
@@ -301,7 +304,8 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
             </>
           )}
         </div>
-      </div>
+        }
+      />
 
       {asset.qrCode && (
         <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
@@ -331,13 +335,13 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
           <div className="flex gap-2 shrink-0">
             <button type="button"
               onClick={() => router.push(formsPath)}
-              className="px-3 py-1 bg-[#1a4d7a] text-white rounded text-xs font-medium hover:bg-[#143d61] transition-colors"
+              className={buttonClass({ size: 'sm' })}
             >
               Go to Forms
             </button>
             <button type="button"
               onClick={() => setFormSuggestion(null)}
-              className="px-3 py-1 border border-blue-300 text-blue-700 rounded text-xs font-medium hover:bg-blue-100 transition-colors"
+              className={buttonClass({ variant: 'secondary', size: 'sm' })}
             >
               Dismiss
             </button>
@@ -369,14 +373,14 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
         </DetailSection>
 
         <DetailSection title="Acquisition">
-          <EditableDetail label="Cost (PHP)" field="acquisitionCost" value={asset.acquisitionCost ? formatPeso(asset.acquisitionCost) : null} editValue={editForm.acquisitionCost} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v === '' ? undefined : Number(v) }))} type="number" />
-          <EditableDetail label="Acquisition Date" field="acquisitionDate" value={asset.acquisitionDate ? formatDate(asset.acquisitionDate) : null} editValue={editForm.acquisitionDate?.slice(0, 10)} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} type="date" />
+          <EditableDetail label="Cost (PHP)" field="acquisitionCost" value={asset.acquisitionCost ? formatPeso(asset.acquisitionCost) : null} editValue={editForm.acquisitionCost} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v === '' ? undefined : Number(v) }))} inputType="number" />
+          <EditableDetail label="Acquisition Date" field="acquisitionDate" value={asset.acquisitionDate ? formatDate(asset.acquisitionDate) : null} editValue={editForm.acquisitionDate?.slice(0, 10)} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} inputType="date" />
           <EditableDetail label="Supplier" field="supplier" value={asset.supplier} editValue={editForm.supplier} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
-          <EditableDetail label="Date of Delivery" field="dateOfDelivery" value={asset.dateOfDelivery ? formatDate(asset.dateOfDelivery) : null} editValue={editForm.dateOfDelivery?.slice(0, 10)} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} type="date" />
+          <EditableDetail label="Date of Delivery" field="dateOfDelivery" value={asset.dateOfDelivery ? formatDate(asset.dateOfDelivery) : null} editValue={editForm.dateOfDelivery?.slice(0, 10)} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} inputType="date" />
           {asset.assetClass === 'IES' && (
             <>
-              <EditableDetail label="Quantity on Hand" field="quantity" value={asset.quantity} editValue={editForm.quantity} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v === '' ? undefined : Number(v) }))} type="number" />
-              <EditableDetail label="Reorder Level" field="reorderLevel" value={asset.reorderLevel} editValue={editForm.reorderLevel} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v === '' ? undefined : Number(v) }))} type="number" />
+              <EditableDetail label="Quantity on Hand" field="quantity" value={asset.quantity} editValue={editForm.quantity} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v === '' ? undefined : Number(v) }))} inputType="number" />
+              <EditableDetail label="Reorder Level" field="reorderLevel" value={asset.reorderLevel} editValue={editForm.reorderLevel} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v === '' ? undefined : Number(v) }))} inputType="number" />
             </>
           )}
         </DetailSection>
@@ -394,25 +398,25 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
       {repairs.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-blue-200">
           <div className="p-5 border-b border-blue-200 bg-blue-50 flex items-center gap-2">
-            <Wrench className="w-5 h-5 text-[#1a4d7a]" />
-            <h2 className="text-base font-semibold text-[#1a4d7a]">Repair History</h2>
-            <span className="ml-auto text-xs text-gray-500">{repairs.length} repair{repairs.length === 1 ? '' : 's'} — managed in Maintenance &amp; Repair</span>
+            <Wrench className="w-5 h-5 text-brand" />
+            <h2 className="text-base font-semibold text-brand">Repair History</h2>
+            <span className="ml-auto text-xs text-slate-500">{repairs.length} repair{repairs.length === 1 ? '' : 's'} — managed in Maintenance &amp; Repair</span>
           </div>
-          <ul className="divide-y divide-gray-100">
+          <ul className="divide-y divide-slate-100">
             {repairs.map((r) => (
               <li key={r.id} className="p-4 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-semibold text-gray-800">
+                  <p className="font-semibold text-slate-800">
                     {formatDate(r.openedAt)} → {r.completedAt ? formatDate(r.completedAt) : `due ${formatDate(r.dueDate)}`}
-                    <span className="ml-2 font-normal text-gray-500">{SERVICE_TYPE_LABEL[r.serviceType]}{r.serviceProvider ? ` · ${r.serviceProvider}` : ''}{r.holder ? ` · held by ${r.holder.name}` : ''}</span>
+                    <span className="ml-2 font-normal text-slate-500">{SERVICE_TYPE_LABEL[r.serviceType]}{r.serviceProvider ? ` · ${r.serviceProvider}` : ''}{r.holder ? ` · held by ${r.holder.name}` : ''}</span>
                   </p>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${r.outcome === 'repaired' ? 'bg-emerald-50 text-emerald-700' : r.outcome ? 'bg-gray-100 text-gray-700' : r.overdue ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${r.outcome === 'repaired' ? 'bg-emerald-50 text-emerald-700' : r.outcome ? 'bg-slate-100 text-slate-700' : r.overdue ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>
                     {r.outcome ? OUTCOME_LABEL[r.outcome] : r.overdue ? 'Overdue' : 'Under repair'}
                   </span>
                 </div>
-                {r.reportedProblem && <p className="mt-1 text-gray-600"><span className="font-semibold">Problem:</span> {r.reportedProblem}</p>}
-                {r.findings && <p className="mt-0.5 text-gray-600"><span className="font-semibold">Findings:</span> {r.findings}</p>}
-                {r.actionTaken && <p className="mt-0.5 text-gray-600"><span className="font-semibold">Work done:</span> {r.actionTaken}</p>}
+                {r.reportedProblem && <p className="mt-1 text-slate-600"><span className="font-semibold">Problem:</span> {r.reportedProblem}</p>}
+                {r.findings && <p className="mt-0.5 text-slate-600"><span className="font-semibold">Findings:</span> {r.findings}</p>}
+                {r.actionTaken && <p className="mt-0.5 text-slate-600"><span className="font-semibold">Work done:</span> {r.actionTaken}</p>}
               </li>
             ))}
           </ul>
@@ -422,8 +426,8 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
       {/* Transaction History */}
       <div className="bg-white rounded-lg shadow-sm border border-blue-200">
         <div className="p-5 border-b border-blue-200 bg-blue-50 flex items-center gap-2">
-          <Clock className="w-5 h-5 text-[#1a4d7a]" />
-          <h2 className="text-base font-semibold text-[#1a4d7a]">Transaction History</h2>
+          <Clock className="w-5 h-5 text-brand" />
+          <h2 className="text-base font-semibold text-brand">Transaction History</h2>
         </div>
         {historyLoading ? (
           <div className="p-6"><LoadingSkeleton rows={4} /></div>
@@ -432,24 +436,24 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50">
+              <thead className="bg-slate-50">
                 <tr>
                   {['Date / Time', 'Event', 'By', 'Details'].map((h) => (
-                    <th key={h} className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                    <th key={h} className={thClass}>{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-slate-100">
                 {history.map((entry) => (
                   <tr key={entry.id} className="align-top hover:bg-blue-50 transition-colors">
-                    <td className="px-5 py-3 text-sm text-gray-600 whitespace-nowrap">
+                    <td className={tdClass}>
                       {formatDateTime(entry.when)}
                     </td>
                     <td className="px-5 py-3">
                       <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium whitespace-nowrap">{entry.event}</span>
                     </td>
-                    <td className="px-5 py-3 text-sm text-gray-600 whitespace-nowrap">{entry.by}</td>
-                    <td className="px-5 py-3 text-sm text-gray-600">
+                    <td className={tdClass}>{entry.by}</td>
+                    <td className="px-5 py-3 text-sm text-slate-600">
                       {entry.details.length === 0 ? '—' : entry.details.map((line) => <p key={line}>{line}</p>)}
                     </td>
                   </tr>
@@ -463,12 +467,12 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
       {showLifecycle && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
-            <h3 className="text-base font-semibold text-gray-800 mb-4">Update Lifecycle</h3>
+            <h3 className="text-base font-semibold text-slate-800 mb-4">Update Lifecycle</h3>
 
             <div className="space-y-4">
               {/* Status selector */}
               <div>
-                <label htmlFor="asset-field-1" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                <label htmlFor="asset-field-1" className={labelClass}>
                   New Status
                 </label>
                 <select id="asset-field-1"
@@ -483,7 +487,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                     setLifecycleOffice(asset.status === 'transferred' && e.target.value === 'available' ? (transfer?.to ?? '') : '');
                     setLifecycleRoom('');
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]"
+                  className={controlClass}
                 >
                   <option value="">— select status —</option>
                   {nextStates.map((s) => (
@@ -499,7 +503,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
               {/* ISSUED: Employee ID input */}
               {targetStatus === 'issued' && !handBack && (
                 <div>
-                  <label htmlFor="asset-field-2" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  <label htmlFor="asset-field-2" className={labelClass}>
                     Recipient Employee ID <span className="text-red-500">*</span>
                   </label>
                   <input id="asset-field-2"
@@ -507,7 +511,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                     placeholder="e.g. CICC-0042"
                     value={lifecycleEmployeeId}
                     onChange={(e) => setLifecycleEmployeeId(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]"
+                    className={controlClass}
                   />
                   <p className="text-xs text-slate-500 mt-1">Enter the recipient&apos;s CICC employee ID. The system will resolve it to the correct user account.</p>
                 </div>
@@ -516,14 +520,12 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
               {/* ISSUED: optional expected return date — arms the overdue-return watcher */}
               {targetStatus === 'issued' && (
                 <div>
-                  <label htmlFor="asset-field-3" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  <label htmlFor="asset-field-3" className={labelClass}>
                     Expected return date (optional)
                   </label>
-                  <input id="asset-field-3"
-                    type="date"
+                  <DateField id="asset-field-3"
                     value={lifecycleExpectedReturnDate}
                     onChange={(e) => setLifecycleExpectedReturnDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]"
                   />
                 </div>
               )}
@@ -531,7 +533,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
               {/* TRANSFERRED: To Location input */}
               {targetStatus === 'transferred' && (
                 <div>
-                  <label htmlFor="asset-field-4" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  <label htmlFor="asset-field-4" className={labelClass}>
                     Receiving Office / Section <span className="text-red-500">*</span>
                   </label>
                   <input id="asset-field-4"
@@ -539,7 +541,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                     placeholder="e.g. Cybercrime Operations Division"
                     value={lifecycleToLocation}
                     onChange={(e) => setLifecycleToLocation(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]"
+                    className={controlClass}
                   />
                 </div>
               )}
@@ -551,7 +553,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                     The asset has arrived. Confirm where it now sits and the registry will show it there. Leave a field blank to keep what the registry has today.
                   </p>
                   <div>
-                    <label htmlFor="arrival-office" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                    <label htmlFor="arrival-office" className={labelClass}>
                       Office / Section
                     </label>
                     <input
@@ -560,11 +562,11 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                       placeholder={asset.officeOrSection || 'e.g. Cyber Intelligence Unit'}
                       value={lifecycleOffice}
                       onChange={(e) => setLifecycleOffice(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]"
+                      className={controlClass}
                     />
                   </div>
                   <div>
-                    <label htmlFor="arrival-room" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                    <label htmlFor="arrival-room" className={labelClass}>
                       Location (room / floor)
                     </label>
                     <input
@@ -573,7 +575,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                       placeholder={asset.officeLocation || 'e.g. Intelligence Room, 4th Floor'}
                       value={lifecycleRoom}
                       onChange={(e) => setLifecycleRoom(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]"
+                      className={controlClass}
                     />
                   </div>
                 </>
@@ -581,7 +583,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
 
               {/* Notes field — required for FLAGGED_FOR_DISPOSAL, optional for others */}
               <div>
-                <label htmlFor="asset-field-5" className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                <label htmlFor="asset-field-5" className={labelClass}>
                   Notes {notesRequired && <span className="text-red-500">* (required — {restoring ? 'say why it is being restored' : 'justify disposal'})</span>}
                 </label>
                 <textarea id="asset-field-5"
@@ -597,7 +599,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                       ? 'Optional: describe the issue or defect'
                       : 'Optional notes'
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] resize-none"
+                  className={`${textareaClass} resize-none`}
                 />
               </div>
 
@@ -616,13 +618,13 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                   (targetStatus === 'transferred' && !lifecycleToLocation.trim()) ||
                   (notesRequired && !lifecycleNotes.trim())
                 }
-                className="flex-1 px-4 py-2 bg-[#1a4d7a] text-white rounded-md text-sm font-medium hover:bg-[#143d61] disabled:opacity-50 transition-colors"
+                className={`${buttonClass()} flex-1`}
               >
                 {updating ? 'Updating...' : 'Confirm'}
               </button>
               <button type="button"
                 onClick={() => { setShowLifecycle(false); setLifecycleError(''); setTargetStatus(''); setLifecycleNotes(''); setLifecycleEmployeeId(''); setLifecycleToLocation(''); setLifecycleExpectedReturnDate(''); }}
-                className="flex-1 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                className={`${buttonClass({ variant: 'secondary' })} flex-1`}
               >
                 Cancel
               </button>

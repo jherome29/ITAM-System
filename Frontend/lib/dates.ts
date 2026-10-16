@@ -1,5 +1,5 @@
 /**
- * Today as YYYY-MM-DD in the user's own timezone — for `<input type="date">`
+ * Today as YYYY-MM-DD in the user's own timezone — for a date field's
  * min/max. `toISOString()` is UTC, which in Manila (UTC+8) is still yesterday
  * until 08:00, so "max today" would refuse something that happened this morning.
  */

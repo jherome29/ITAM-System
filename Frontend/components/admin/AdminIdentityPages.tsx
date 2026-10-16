@@ -12,6 +12,8 @@ import { auditEventLabel, auditRecordText } from '@/lib/audit-label';
 import { alternateApproverOptions, buildAvailabilityPayload } from '@/lib/users/availability';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
 import { formatDateTime } from '@/lib/dates';
+import { DateField } from '@/components/ui/DateField';
+import { buttonClass } from '@/components/ui/buttons';
 
 type IdentitySlug = 'users' | 'roles';
 
@@ -306,7 +308,7 @@ function PasswordResetDialog({ user, onClose, onDone }: Readonly<{ user: User | 
           {error && <p className="text-sm text-red-700">{error}</p>}
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" onClick={onClose} className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Cancel</button>
-            <button type="submit" disabled={!valid || submitting} className="rounded-md bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50">
+            <button type="submit" disabled={!valid || submitting} className={buttonClass()}>
               {submitting ? 'Resetting…' : 'Reset password'}
             </button>
           </div>
@@ -436,7 +438,7 @@ function ApprovalRoutingPanel({ user, onSaved }: Readonly<{ user: User; onSaved?
         </label>
         <label className="block text-sm">
           <span className="mb-1 block font-bold text-slate-600">Unavailable until (optional)</span>
-          <input type="date" className={inputClass} value={until} onChange={(e) => setUntil(e.target.value)} />
+          <DateField value={until} onChange={(e) => setUntil(e.target.value)} />
         </label>
         <SecondaryButton onClick={save} disabled={saving}>Save approval routing</SecondaryButton>
         {msg && <p className="text-sm text-green-700">{msg}</p>}
@@ -482,7 +484,7 @@ function RolesPage() {
 
   return <div className="space-y-4">
     <AdminPageHeader title="Roles & Assignment" detail="Assign one of the system's fixed roles to a user. Roles and their permissions are defined in code, not configurable here." />
-    <SearchToolbar value={search} onChange={setSearch} filterLabel="All users" />
+    <SearchToolbar value={search} onChange={setSearch} placeholder="Search by name, email, or role" filters={[]} />
     <Panel title="User Role Assignment" detail={`${rows.length} accounts shown`}>
       {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="w-full"><thead><tr>
         <th className={thClass}>User</th><th className={thClass}>Current role</th><th className={thClass}>New role</th><th className={`${thClass} text-right`}>Action</th>

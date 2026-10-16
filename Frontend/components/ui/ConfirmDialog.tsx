@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { useEffect, useId, useRef } from 'react';
+import { buttonClass } from '@/components/ui/buttons';
 
 export function ConfirmDialog({
   open,
@@ -64,7 +65,7 @@ export function ConfirmDialog({
           <button ref={cancelRef} type="button" onClick={onCancel} className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
             {cancelLabel}
           </button>
-          <button type="button" onClick={onConfirm} disabled={confirmDisabled} className="rounded-md bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:hover:bg-slate-300">
+          <button type="button" onClick={onConfirm} disabled={confirmDisabled} className={buttonClass()}>
             {confirmLabel}
           </button>
         </div>

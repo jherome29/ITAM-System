@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AlertTriangle, FileDown } from 'lucide-react';
-import { StatusBadge } from '@/components/dashboard/StatusBadge';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { requisitionsApi, type Requisition, type RequisitionDocument } from '@/lib/api/requisitions';
 import { FORM_LABEL } from '@/lib/asset-requests/asset-request-rules';
 import { downloadBlob } from '@/lib/download';

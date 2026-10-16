@@ -21,15 +21,24 @@ import { detailActions, rowActionLabel } from '@/lib/workflow/actions';
 import { assetApiToRow, humanize, unitAssets, type AssetRow } from '@/lib/workflow/asset-rows';
 import { DEFAULT_REQUISITION_SORT, REQUISITION_SORT_OPTIONS, compareRequisitionRows } from '@/lib/workflow/requisition-sort';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
-import { FilterBar } from '@/components/ui/FilterBar';
+import { SearchToolbar } from '@/components/ui/SearchToolbar';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
-import { StatusBadge } from '@/components/dashboard/StatusBadge';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { assetsApi, type Asset } from '@/lib/api/assets';
 import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';
 import { normalizeWorkflowSlug } from '@/lib/workflow/live-pages';
 import { ProposedUserRole, proposedRoleLabels } from '@/lib/roles/proposed-roles';
 import { useAuth } from '@/lib/auth/use-auth';
+import { DateField } from '@/components/ui/DateField';
+import { controlClass, textareaClass } from '@/components/ui/controls';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { PrimaryButton } from '@/components/admin/AdminUi';
+import { buttonClass } from '@/components/ui/buttons';
+
+// The custody pages sort asset rows by one of these keys; the requisition pages have their own list.
+const ASSET_SORT_KEYS = ['item', 'status', 'heldBy', 'location'] as const;
+const SORT_LABEL: Record<string, string> = { item: 'Item', status: 'Status', heldBy: 'Held by', location: 'Location' };
 
 type Row = AssetRow;
 
@@ -426,22 +435,12 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   return (
     <div className="space-y-5">
       <Toast message={toast} />
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-widest text-blue-700">{proposedRoleLabels[role]}</p>
-          <h1 className="text-2xl font-bold text-slate-950">{content.title}</h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-600">{content.detail}</p>
-        </div>
-        {isMyRequisitions && content.action && (
-          <button
-            type="button"
-            onClick={() => setCreatingRequisition(true)}
-            className="rounded-md bg-blue-700 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-800"
-          >
-            {content.action}
-          </button>
-        )}
-      </div>
+      <PageHeader
+        eyebrow={proposedRoleLabels[role]}
+        title={content.title}
+        detail={content.detail}
+        action={isMyRequisitions && content.action ? <PrimaryButton onClick={() => setCreatingRequisition(true)}>{content.action}</PrimaryButton> : undefined}
+      />
 
       {liveFetchError && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
@@ -455,15 +454,16 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
         </div>
       )}
 
-      <FilterBar
-        search={search}
-        onSearch={(value) => { setSearch(value); setPage(1); }}
+      <SearchToolbar
+        value={search}
+        onChange={(value) => { setSearch(value); setPage(1); }}
+        placeholder="Search records"
         filters={[
-          { label: 'Status', value: statusFilter, options: statuses, onChange: (value) => { setStatusFilter(value); setPage(1); } },
+          { label: 'All statuses', value: statusFilter, options: statuses, onChange: (value) => { setStatusFilter(value); setPage(1); } },
           {
-            label: 'Sort',
+            label: 'Sort by',
             value: sortKey,
-            options: isRequisitionPage ? [...REQUISITION_SORT_OPTIONS] : ['item', 'status', 'heldBy', 'location'],
+            options: (isRequisitionPage ? [...REQUISITION_SORT_OPTIONS] : [...ASSET_SORT_KEYS]).map((key) => ({ value: key, label: `Sort: ${SORT_LABEL[key] ?? key}` })),
             onChange: (value) => { setSortKey(value); setPage(1); },
           },
         ]}
@@ -521,7 +521,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
                       <button type="button" onClick={() => setSelected(row)} className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">View</button>
-                      <button type="button" onClick={() => { setSelected(row); if (rowActionMode(normalizedSlug) === 'confirm') setConfirmAction(rowActionLabel(normalizedSlug)); }} className="rounded-md bg-blue-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-800">
+                      <button type="button" onClick={() => { setSelected(row); if (rowActionMode(normalizedSlug) === 'confirm') setConfirmAction(rowActionLabel(normalizedSlug)); }} className={buttonClass({ size: 'sm' })}>
                         {rowActionLabel(normalizedSlug)}
                       </button>
                     </div>
@@ -581,7 +581,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
             {!selectedIsSelfApproval && (
               <div className="flex flex-wrap gap-2">
                 {detailActions(normalizedSlug, String(selected.status ?? '')).map((action) => (
-                  <button key={action} type="button" onClick={() => setConfirmAction(action)} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-bold text-white hover:bg-blue-800">
+                  <button key={action} type="button" onClick={() => setConfirmAction(action)} className={buttonClass()}>
                     {action}
                   </button>
                 ))}
@@ -622,7 +622,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                 value={stockPicks[line.id] ?? ''}
                 onChange={(event) => setStockPicks((current) => ({ ...current, [line.id]: event.target.value }))}
                 disabled={options === undefined || options === null || options.length === 0}
-                className="mt-2 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className={`${controlClass} mt-2`}
               >
                 {options === undefined && <option value="">Loading stock…</option>}
                 {options === null && <option value="">Stock could not be loaded — the system will pick the oldest record</option>}
@@ -641,7 +641,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
         {pickingReplacementUnit && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Replacement unit to issue</span>
-            <select value={replacementUnitId} onChange={(event) => setReplacementUnitId(event.target.value)} disabled={replacementUnits === null} className="mt-2 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
+            <select value={replacementUnitId} onChange={(event) => setReplacementUnitId(event.target.value)} disabled={replacementUnits === null} className={`${controlClass} mt-2`}>
               <option value="">{replacementUnits === null ? 'Loading available units…' : 'Issue later from Custody & Issuance'}</option>
               {(replacementUnits ?? []).map((unit) => (
                 <option key={unit.id} value={unit.id}>{[unit.itemDescription, unit.propertyNumber, unit.serialNumber && `S/N ${unit.serialNumber}`].filter(Boolean).join(' · ')}</option>
@@ -659,27 +659,27 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
           (isDisposalPage && confirmAction === 'Recommend Disposal')) && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Remarks</span>
-            <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} className={`${textareaClass} mt-2`} />
             {errors.remarks && <span className="mt-1 block text-xs text-red-600">{errors.remarks}</span>}
           </label>
         )}
         {isCustodyPage && confirmAction === 'Issue' && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Recipient Employee ID</span>
-            <input type="text" value={issueEmployeeId} onChange={(event) => setIssueEmployeeId(event.target.value)} placeholder="e.g. CICC-0042" className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            <input type="text" value={issueEmployeeId} onChange={(event) => setIssueEmployeeId(event.target.value)} placeholder="e.g. CICC-0042" className={`${controlClass} mt-2`} />
             {errors.employeeId && <span className="mt-1 block text-xs text-red-600">{errors.employeeId}</span>}
           </label>
         )}
         {isCustodyPage && confirmAction === 'Issue' && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Expected return date (optional)</span>
-            <input type="date" value={issueExpectedReturnDate} onChange={(event) => setIssueExpectedReturnDate(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            <DateField value={issueExpectedReturnDate} onChange={(event) => setIssueExpectedReturnDate(event.target.value)} className="mt-2 w-full" />
           </label>
         )}
         {isCustodyPage && confirmAction === 'Transfer' && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Receiving Office / Section</span>
-            <input type="text" value={transferToLocation} onChange={(event) => setTransferToLocation(event.target.value)} placeholder="e.g. Cybercrime Operations Division" className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            <input type="text" value={transferToLocation} onChange={(event) => setTransferToLocation(event.target.value)} placeholder="e.g. Cybercrime Operations Division" className={`${controlClass} mt-2`} />
             {errors.toLocation && <span className="mt-1 block text-xs text-red-600">{errors.toLocation}</span>}
           </label>
         )}

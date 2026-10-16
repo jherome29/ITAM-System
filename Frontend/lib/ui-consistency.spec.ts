@@ -56,6 +56,54 @@ describe('dates and numbers', () => {
   });
 });
 
+const IN_KIT = FILES.filter((f) => f.rel.startsWith('components/ui/')).map((f) => f.rel);
+
+describe('the palette', () => {
+  it('uses one neutral grey (slate), not slate and gray both', () => {
+    expect(offenders(/-gray-\d{2,3}\b/)).toEqual([]);
+  });
+
+  it('names brand colours (text-brand, bg-canvas, bg-navy), never a hex value in a class', () => {
+    expect(offenders(/-\[#[0-9a-fA-F]{3,8}\]/)).toEqual([]);
+  });
+});
+
+describe('form controls', () => {
+  it('draw a date box only through DateField', () => {
+    expect(offenders(/\btype="date"/, ['components/ui/DateField.tsx'])).toEqual([]);
+  });
+
+  it('take their styling from components/ui/controls, not a per-screen class', () => {
+    expect(offenders(/\bconst (input|select|textarea|field)Class\s*=/, IN_KIT)).toEqual([]);
+    // The border and focus ring of a control are written once, in the kit.
+    expect(offenders(/focus:ring-2 focus:ring-(blue-100|brand)/, IN_KIT)).toEqual([]);
+  });
+
+  it('are not rebuilt as a one-off filter row', () => {
+    expect(offenders(/min-w-(44|48|56) rounded-md border border-slate-(200|300)/, IN_KIT)).toEqual([]);
+  });
+});
+
+describe('page headers', () => {
+  it('have one level-one heading component, PageHeader (the sign-in page has its own)', () => {
+    expect(offenders(/<h1\b/, ['components/ui/PageHeader.tsx', 'app/(auth)/login/page.tsx'])).toEqual([]);
+  });
+
+  it('use PageHeader\'s eyebrow, not a hand-rolled one', () => {
+    expect(offenders(/text-xs font-bold uppercase tracking-(widest|wide|\[0\.14em\]) text-blue-700/, ['components/ui/PageHeader.tsx'])).toEqual([]);
+  });
+});
+
+describe('buttons and badges', () => {
+  it('colour every primary button from buttonClass, in one blue', () => {
+    expect(offenders(/\bbg-blue-700\b.*\btext-white\b.*\bhover:bg-blue-800\b/, ['components/ui/buttons.ts'])).toEqual([]);
+  });
+
+  it('show a status through one StatusBadge', () => {
+    expect(FILES.some((f) => f.rel === 'components/dashboard/StatusBadge.tsx')).toBe(false);
+  });
+});
+
 // CICC's staff include older employees, and the client asked for bigger text after the
 // last demo. The sizes live in one place (app/globals.css) so they can be raised or
 // lowered for the whole system at once; nothing is allowed to sidestep them.

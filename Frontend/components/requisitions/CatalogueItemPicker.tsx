@@ -3,13 +3,8 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, MapPin, Package, Search } from 'lucide-react';
 import { assetsApi, type CatalogueItem } from '@/lib/api/assets';
+import { controlBaseClass, searchControlClass } from '@/components/ui/controls';
 import { formatAvailability } from '@/lib/requisitions/catalogue-items';
-
-// Own class strings rather than overriding AdminUi's inputClass — stacking
-// h-8 over h-10 / pl-9 over px-3 depends on generated-CSS order.
-const fieldBase = 'rounded-md border border-slate-200 bg-white text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100';
-const searchClass = `${fieldBase} h-10 w-full pl-9 pr-3 text-sm`;
-const classSelectClass = `${fieldBase} h-8 px-2 text-xs`;
 
 const TYPE_TABS = ['All', 'ICT', 'Fixed', 'Supplies'] as const;
 const CLASS_OPTIONS = ['All', 'PPE', 'SEP', 'IES'] as const;
@@ -82,7 +77,7 @@ export function CatalogueItemPicker({
               <ItemMeta item={selected} />
             </div>
           </div>
-          <button type="button" onClick={() => onSelect(null)} className="shrink-0 text-xs font-bold text-blue-700 hover:underline">
+          <button type="button" onClick={() => onSelect(null)} className="shrink-0 text-sm font-semibold text-blue-700 hover:underline">
             Change
           </button>
         </div>
@@ -93,7 +88,7 @@ export function CatalogueItemPicker({
   return (
     <div className="space-y-2 rounded-lg border border-slate-200 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        {!lockedAssetType && <div role="tablist" aria-label="Asset type" className="flex rounded-md border border-slate-200 p-0.5">
+        {!lockedAssetType && <div role="tablist" aria-label="Asset type" className="flex rounded-md border border-slate-300 p-0.5">
           {TYPE_TABS.map((tab) => (
             <button
               key={tab}
@@ -101,14 +96,14 @@ export function CatalogueItemPicker({
               role="tab"
               aria-selected={assetType === tab}
               onClick={() => setAssetType(tab)}
-              className={`rounded px-3 py-1 text-xs font-bold transition-colors ${assetType === tab ? 'bg-blue-700 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+              className={`h-10 rounded px-3 text-sm font-semibold transition-colors ${assetType === tab ? 'bg-blue-700 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
             >
               {tab}
             </button>
           ))}
         </div>}
         {lockedAssetType && <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">{lockedAssetType} items only</span>}
-        <select aria-label="Asset class" value={assetClass} onChange={(e) => setAssetClass(e.target.value as (typeof CLASS_OPTIONS)[number])} className={classSelectClass}>
+        <select aria-label="Asset class" value={assetClass} onChange={(e) => setAssetClass(e.target.value as (typeof CLASS_OPTIONS)[number])} className={`${controlBaseClass} w-auto`}>
           {CLASS_OPTIONS.filter((c) => !(unitsOnly && c === 'IES')).map((c) => (
             <option key={c} value={c}>{c === 'All' ? 'All classes' : c}</option>
           ))}
@@ -122,7 +117,7 @@ export function CatalogueItemPicker({
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by item, brand, or item code…"
           aria-label="Search inventory"
-          className={searchClass}
+          className={searchControlClass}
         />
       </div>
       <div className="max-h-64 overflow-y-auto rounded-md border border-slate-100" aria-live="polite">

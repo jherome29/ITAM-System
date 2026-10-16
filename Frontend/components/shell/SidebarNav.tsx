@@ -35,7 +35,7 @@ export function SidebarNav({
     <aside
       className={`${
         mobile ? 'h-full' : 'fixed inset-y-0 left-0 z-30 hidden h-screen lg:flex'
-      } ${collapsed && !mobile ? 'w-20' : 'w-72'} flex-col bg-[#0b2038] text-white transition-all`}
+      } ${collapsed && !mobile ? 'w-20' : 'w-72'} flex-col bg-navy text-white transition-all`}
     >
       <div
         className={`flex h-16 items-center border-b border-white/10 ${

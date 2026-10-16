@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Field, inputClass, PrimaryButton } from '@/components/admin/AdminUi';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { DateField } from '@/components/ui/DateField';
 import { localToday } from '@/lib/dates';
 import { formatDate } from '@/lib/requisitions/requisition-view';
 import { AttachmentPicker } from './AttachmentPicker';
@@ -135,9 +136,7 @@ export function AssetRequestForm({
       )}
 
       <Field label={dateCopy.label}>
-        <input
-          type="date"
-          className={inputClass}
+        <DateField
           value={date}
           aria-describedby="request-date-hint"
           onChange={(e) => edit(setDate)(e.target.value)}

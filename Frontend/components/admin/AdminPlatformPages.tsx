@@ -20,6 +20,8 @@ import {
 } from '@/lib/api/systemConfig';
 import { AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, TableWrap, tdClass, thClass } from './AdminUi';
 import { formatDateTime } from '@/lib/dates';
+import { DateRange } from '@/components/ui/DateField';
+import { buttonClass } from '@/components/ui/buttons';
 
 type PlatformSlug = 'configuration' | 'audit';
 
@@ -144,7 +146,7 @@ function SystemSettingsPage() {
               type="button"
               onClick={retry}
               disabled={loading}
-              className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-60"
+              className={buttonClass()}
             >
               {loading ? 'Retrying…' : 'Retry'}
             </button>
@@ -387,9 +389,8 @@ export function AuditLogPage({ eyebrow }: Readonly<{ eyebrow?: string }> = {}) {
   return <div className="space-y-4"><AdminPageHeader eyebrow={eyebrow} title="Audit Log" detail="Inspect append-only evidence of authentication, authorization, asset, requisition, report, and administrative activity." action={<div className="flex flex-wrap gap-2"><SecondaryButton icon={Download} onClick={handleExport}>Export CSV</SecondaryButton><SecondaryButton icon={Download} onClick={() => void handleReport('pdf')} disabled={reporting}>Report (PDF)</SecondaryButton><SecondaryButton icon={Download} onClick={() => void handleReport('excel')} disabled={reporting}>Report (Excel)</SecondaryButton></div>} />
     <div className="flex items-start gap-3 border border-blue-200 bg-blue-50 px-4 py-3"><Archive className="mt-0.5 h-5 w-5 flex-none text-blue-700" /><div><p className="text-sm font-bold text-blue-950">Immutable audit evidence</p><p className="mt-0.5 text-xs text-blue-800">Audit records cannot be edited or deleted. Every logged action succeeded by definition; timestamps are recorded in UTC.</p></div></div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><MetricCard label="Events loaded" value={String(logs.length)} detail={from || to ? 'Within the selected date range' : 'Most recent audit records from the API'} tone="blue" icon={Activity} /><MetricCard label="Unique users" value={String(uniqueUsers)} detail="Distinct accounts represented" tone="blue" icon={KeyRound} /><MetricCard label="Unique actions" value={String(uniqueActions)} detail="Distinct action types represented" tone="blue" icon={FileClock} /></div>
-    <SearchToolbar value={search} onChange={setSearch} filterLabel="User, role, action, or record">
-      <label className="flex items-center gap-2 whitespace-nowrap text-xs font-semibold text-slate-600">From<input type="date" value={from} max={to || undefined} onChange={(event) => handleDateChange('from', event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /></label>
-      <label className="flex items-center gap-2 whitespace-nowrap text-xs font-semibold text-slate-600">To<input type="date" value={to} min={from || undefined} onChange={(event) => handleDateChange('to', event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /></label>
+    <SearchToolbar value={search} onChange={setSearch} placeholder="Search by user, role, action, record, or IP" filters={[]}>
+      <DateRange from={from} to={to} onFromChange={(day) => handleDateChange('from', day)} onToChange={(day) => handleDateChange('to', day)} />
       {(from || to) && <SecondaryButton onClick={() => { setLoading(true); setFrom(''); setTo(''); }}>Clear dates</SecondaryButton>}
     </SearchToolbar>
     <Panel title="Audit Events" detail={loading ? 'Loading audit events…' : `${rows.length} audit events shown${capped ? ` — first ${AUDIT_PAGE_SIZE}, narrow the date range for more` : ''}`}>{loading ? <div className="p-6"><LoadingSkeleton rows={8} /></div> : <TableWrap><table className="min-w-[960px] w-full"><thead><tr><th className={thClass}>Timestamp</th><th className={thClass}>User</th><th className={thClass}>Role at time</th><th className={thClass}>Action</th><th className={thClass}>Affected record</th><th className={thClass}>IP address</th><th className={`${thClass} text-right`}>Inspect</th></tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">No audit logs found.</td></tr> : rows.map((log) => <tr key={log.id} className="hover:bg-slate-50"><td className={tdClass}>{formatDateTime(log.timestamp)}<span className="block text-xs text-slate-500">{log.id.slice(0, 8)}…</span></td><td className={`${tdClass} font-semibold text-slate-950`} title={log.userId}>{auditUserText(log)}</td><td className={tdClass}>{log.userRole}</td><td className={`${tdClass} font-mono text-xs`}>{log.action}</td><td className={`${tdClass} text-xs`} title={log.affectedRecordId ?? undefined}>{auditRecordText(log)}</td><td className={`${tdClass} font-mono text-xs`}>{log.ipAddress}</td><td className={`${tdClass} text-right`}><button type="button" onClick={() => setSelected(log)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`Inspect ${log.id}`}><FileClock className="h-4 w-4" /></button></td></tr>)}</tbody></table></TableWrap>}</Panel>

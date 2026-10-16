@@ -27,6 +27,8 @@ import { notificationsApi } from '@/lib/api/notifications';
 import { assetsApi, type MyAsset } from '@/lib/api/assets';
 import { localToday } from '@/lib/dates';
 import { formatDate } from '@/lib/requisitions/requisition-view';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { buttonClass } from '@/components/ui/buttons';
 
 /** A loaned item due back within this many days shows under "Needs your attention". */
 const DUE_SOON_DAYS = 7;
@@ -93,19 +95,18 @@ export function EmployeeDashboard() {
 
   return (
     <div className="mx-auto w-full max-w-[1480px] space-y-5">
-      <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">Employee workspace</p>
-          <h1 className="mt-1 text-2xl font-bold leading-tight text-slate-950">Good day, {user?.firstName ?? 'there'}</h1>
-          <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-600">
-            Review what needs action and keep track of your requests and accountable property.
-          </p>
-        </div>
-        <Link href="/employee/requisitions/new" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-blue-700 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          New requisition
-        </Link>
-      </header>
+      <PageHeader
+        eyebrow="Employee workspace"
+        title={`Good day, ${user?.firstName ?? 'there'}`}
+        detail="Review what needs action and keep track of your requests and accountable property."
+        divider
+        action={
+          <Link href="/employee/requisitions/new" className={buttonClass()}>
+            <Plus className="h-5 w-5" aria-hidden="true" />
+            New requisition
+          </Link>
+        }
+      />
 
       {error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>

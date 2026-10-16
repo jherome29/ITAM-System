@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Download } from 'lucide-react';
 import { Field, inputClass, PrimaryButton } from '@/components/admin/AdminUi';
+import { textareaClass } from '@/components/ui/controls';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { assetsApi } from '@/lib/api/assets';
 import { apiErrorMessage } from '@/lib/api/error-message';
@@ -20,8 +21,8 @@ import {
 } from '@/lib/forms/form-catalog';
 import { assetOption, requisitionMatches, requisitionOption } from '@/lib/forms/picker-options';
 import { RecordPicker, type PickerOption } from './RecordPicker';
+import { DateField } from '@/components/ui/DateField';
 
-const textareaClass = `${inputClass} h-auto py-2`;
 const PICKER_PAGE = 8;
 const REQUISITION_WINDOW = 100;
 
@@ -135,10 +136,10 @@ function GeneratorForm({ def, onGenerated }: Readonly<{ def: FormDef; onGenerate
       {def.group === 'period' && (
         <div className="grid grid-cols-2 gap-3">
           <Field label="From">
-            <input type="date" value={inputs.dateFrom} max={inputs.dateTo || undefined} onChange={(e) => set('dateFrom', e.target.value)} className={inputClass} />
+            <DateField value={inputs.dateFrom} max={inputs.dateTo || undefined} onChange={(e) => set('dateFrom', e.target.value)} />
           </Field>
           <Field label="To">
-            <input type="date" value={inputs.dateTo} min={inputs.dateFrom || undefined} onChange={(e) => set('dateTo', e.target.value)} className={inputClass} />
+            <DateField value={inputs.dateTo} min={inputs.dateFrom || undefined} onChange={(e) => set('dateTo', e.target.value)} />
           </Field>
         </div>
       )}

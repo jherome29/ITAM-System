@@ -5,6 +5,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth/use-auth';
 import type { Requisition } from '@/lib/api/requisitions';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 /**
  * Shared shell for the per-role operational dashboards (IT Asset Custodian,
@@ -57,12 +58,7 @@ export function useRoleDashboardData<T>(load: () => Promise<T>) {
 export function RoleDashboardHeader({ eyebrow }: Readonly<{ eyebrow: string }>) {
   const { user } = useAuth();
   return (
-    <header className="border-b border-slate-200 pb-5">
-      <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">{eyebrow}</p>
-      <h1 className="mt-1 text-2xl font-bold leading-tight text-slate-950">
-        Good day, {user?.firstName ?? 'there'}
-      </h1>
-    </header>
+    <PageHeader eyebrow={eyebrow} title={`Good day, ${user?.firstName ?? 'there'}`} divider />
   );
 }
 

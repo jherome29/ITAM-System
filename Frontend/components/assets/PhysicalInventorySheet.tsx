@@ -8,6 +8,7 @@ import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { assetsApi, type Asset } from '@/lib/api/assets';
 import { collectAllPages } from '@/lib/api/collect-pages';
 import { buildCountSheet } from '@/lib/assets/count-sheet';
+import { buttonClass } from '@/components/ui/buttons';
 
 /**
  * Physical Inventory: what the system expects to find at each location, from
@@ -38,7 +39,7 @@ export function PhysicalInventorySheet({ eyebrow, formsPath }: Readonly<{ eyebro
         eyebrow={eyebrow}
         title="Physical Inventory"
         detail="What the system expects to find at each location. Count against this sheet, then generate the official count report from Reports & Forms."
-        action={<Link href={formsPath} className="inline-flex h-10 items-center rounded-md bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800">Open Reports &amp; Forms</Link>}
+        action={<Link href={formsPath} className={buttonClass()}>Open Reports &amp; Forms</Link>}
       />
       {loadError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{loadError}</div>}
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">

@@ -13,6 +13,7 @@ import { OUTCOME_LABEL, SERVICE_TYPE_LABEL, repairsApi, type Repair, type Repair
 import { localToday } from '@/lib/dates';
 import { formatDate, formatDateTime } from '@/lib/requisitions/requisition-view';
 import { humanize } from '@/lib/text';
+import { DateField } from '@/components/ui/DateField';
 
 const FILTERS = [
   { value: 'open', label: 'Under repair' },
@@ -115,7 +116,7 @@ function LoanerSection({ repair, canReturn, onChanged, onError }: Readonly<{
               </select>
             </Field>
             <Field label="Return by">
-              <input type="date" className={inputClass} value={returnBy} min={localToday()} onChange={(e) => setReturnBy(e.target.value)} />
+              <DateField value={returnBy} min={localToday()} onChange={(e) => setReturnBy(e.target.value)} />
             </Field>
           </div>
           <SecondaryButton disabled={busy || !unitId} onClick={() => void issue()}>{busy ? 'Issuing…' : 'Issue loaner'}</SecondaryButton>
@@ -351,7 +352,7 @@ export function RepairQueue({
                       </select>
                     </Field>
                     <Field label="Expected back">
-                      <input type="date" className={inputClass} value={draft.expectedCompletionDate} min={localToday()} onChange={(e) => edit({ expectedCompletionDate: e.target.value })} />
+                      <DateField value={draft.expectedCompletionDate} min={localToday()} onChange={(e) => edit({ expectedCompletionDate: e.target.value })} />
                     </Field>
                   </div>
                   {draft.serviceType === 'external' && (

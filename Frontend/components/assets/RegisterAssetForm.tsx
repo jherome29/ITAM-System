@@ -4,6 +4,11 @@ import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { assetsApi, type Asset, type CreateAssetDto } from "@/lib/api/assets";
+import { PrimaryButton, SecondaryButton } from "@/components/admin/AdminUi";
+import { controlClass, surfaceClass } from "@/components/ui/controls";
+import { DateField } from "@/components/ui/DateField";
+import { Field } from "@/components/ui/Field";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 export interface RegisterAssetFormState {
   sapClassification: string;
@@ -65,39 +70,19 @@ const CONDITIONS = [
   "for_disposal",
 ] as const;
 
-const inputClass =
-  "w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors bg-white";
-
 function Section({
   title,
   children,
 }: Readonly<{ title: string; children: ReactNode }>) {
   return (
-    <fieldset className="border border-gray-200 rounded-lg p-5 mb-5">
-      <legend className="px-2 text-xs font-semibold text-[#1a4d7a] uppercase tracking-wider">
+    <fieldset className={`${surfaceClass} mb-5 p-5`}>
+      <legend className="px-2 text-xs font-bold uppercase tracking-wider text-brand">
         {title}
       </legend>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
         {children}
       </div>
     </fieldset>
-  );
-}
-
-function Field({
-  label,
-  required,
-  children,
-}: Readonly<{ label: string; required?: boolean; children: ReactNode }>) {
-  return (
-    // The label wraps its control, so the two are associated without ids.
-    <label className="block">
-      <span className="block text-xs font-semibold text-gray-600 mb-1">
-        {label}
-        {required && <span className="text-red-500 ml-0.5">*</span>}
-      </span>
-      {children}
-    </label>
   );
 }
 
@@ -190,24 +175,19 @@ export function RegisterAssetForm({
           <button
             type="button"
             onClick={handleCancel}
-            className="flex items-center gap-2 text-sm text-[#1a4d7a] hover:underline"
+            className="flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"
           >
-            <ArrowLeft className="w-4 h-4" /> Back to Inventory
+            <ArrowLeft className="h-4 w-4" /> Back to Inventory
           </button>
-          <div>
-            <h1 className="text-2xl font-semibold text-[#1a4d7a]">
-              Register New Asset
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">
-              All fields marked * are required. Complete per CICC asset tagging
-              procedure.
-            </p>
-          </div>
+          <PageHeader
+            title="Register New Asset"
+            detail="All fields marked * are required. Complete per CICC asset tagging procedure."
+          />
         </>
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">
+        <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
           {error}
         </div>
       )}
@@ -216,7 +196,7 @@ export function RegisterAssetForm({
         <Section title="Classification & Identification">
           <Field label="Item Description" required>
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.itemDescription}
               onChange={(e) => set("itemDescription", e.target.value)}
               placeholder="e.g. Laptop Computer, Dell Latitude 5420"
@@ -224,7 +204,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label="Asset Class" required>
             <select
-              className={inputClass}
+              className={controlClass}
               value={form.assetClass}
               onChange={(e) => set("assetClass", e.target.value)}
             >
@@ -238,7 +218,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label="Asset Type" required>
             <select
-              className={inputClass}
+              className={controlClass}
               value={form.assetType}
               onChange={(e) => set("assetType", e.target.value)}
             >
@@ -252,7 +232,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label="SAP Classification">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.sapClassification}
               onChange={(e) => set("sapClassification", e.target.value)}
               placeholder="SAP code"
@@ -260,7 +240,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label="Item Code">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.itemCode}
               onChange={(e) => set("itemCode", e.target.value)}
               placeholder="e.g. ICT-LAPTOP-001"
@@ -268,7 +248,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label="Property Number">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.propertyNumber}
               onChange={(e) => set("propertyNumber", e.target.value)}
               placeholder="Official CICC property #"
@@ -276,7 +256,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label="Brand / Make">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.brand}
               onChange={(e) => set("brand", e.target.value)}
               placeholder="e.g. Dell, HP, Canon"
@@ -284,7 +264,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label="Serial Number">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.serialNumber}
               onChange={(e) => set("serialNumber", e.target.value)}
               placeholder="Manufacturer serial #"
@@ -293,7 +273,7 @@ export function RegisterAssetForm({
           <div className="md:col-span-2">
             <Field label="Components / Accessories">
               <input
-                className={inputClass}
+                className={controlClass}
                 value={form.components}
                 onChange={(e) => set("components", e.target.value)}
                 placeholder="e.g. charger, mouse, carrying bag"
@@ -305,7 +285,7 @@ export function RegisterAssetForm({
         <Section title="Acquisition Details">
           <Field label="Acquisition Cost (PHP)">
             <input
-              className={inputClass}
+              className={controlClass}
               type="number"
               min="0"
               step="0.01"
@@ -315,25 +295,21 @@ export function RegisterAssetForm({
             />
           </Field>
           <Field label="Acquisition Date">
-            <input
-              className={inputClass}
-              type="date"
+            <DateField
               value={form.acquisitionDate}
               onChange={(e) => set("acquisitionDate", e.target.value)}
             />
           </Field>
           <Field label="Supplier / Vendor">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.supplier}
               onChange={(e) => set("supplier", e.target.value)}
               placeholder="e.g. PCMS Technologies"
             />
           </Field>
           <Field label="Date of Delivery">
-            <input
-              className={inputClass}
-              type="date"
+            <DateField
               value={form.dateOfDelivery}
               onChange={(e) => set("dateOfDelivery", e.target.value)}
             />
@@ -343,7 +319,7 @@ export function RegisterAssetForm({
         <Section title="Accountability & Location">
           <Field label="Accountable Officer">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.accountableOfficer}
               onChange={(e) => set("accountableOfficer", e.target.value)}
               placeholder="Full name"
@@ -351,7 +327,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label="Division">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.division}
               onChange={(e) => set("division", e.target.value)}
               placeholder="e.g. Operations Division"
@@ -359,7 +335,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label="Office / Section">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.officeOrSection}
               onChange={(e) => set("officeOrSection", e.target.value)}
               placeholder="e.g. ICT Section"
@@ -367,7 +343,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label="Office Location">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.officeLocation}
               onChange={(e) => set("officeLocation", e.target.value)}
               placeholder="e.g. Room 302, 3F CICC Bldg"
@@ -379,7 +355,7 @@ export function RegisterAssetForm({
           <Section title="Supply Stock">
             <Field label="Quantity on Hand">
               <input
-                className={inputClass}
+                className={controlClass}
                 type="number"
                 min="0"
                 value={form.quantity}
@@ -389,7 +365,7 @@ export function RegisterAssetForm({
             </Field>
             <Field label="Reorder Level">
               <input
-                className={inputClass}
+                className={controlClass}
                 type="number"
                 min="0"
                 value={form.reorderLevel}
@@ -403,7 +379,7 @@ export function RegisterAssetForm({
         <Section title="Physical Condition">
           <Field label="Condition" required>
             <select
-              className={inputClass}
+              className={controlClass}
               value={form.condition}
               onChange={(e) => set("condition", e.target.value)}
             >
@@ -418,21 +394,11 @@ export function RegisterAssetForm({
           </Field>
         </Section>
 
-        <div className="flex gap-3 justify-end pt-2">
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="px-6 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-6 py-2 bg-[#1a4d7a] text-white rounded-md text-sm font-medium hover:bg-[#143d61] disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-150"
-          >
+        <div className="flex justify-end gap-3 pt-2">
+          <SecondaryButton onClick={handleCancel}>Cancel</SecondaryButton>
+          <PrimaryButton type="submit" disabled={saving}>
             {saving ? "Registering..." : "Register Asset"}
-          </button>
+          </PrimaryButton>
         </div>
       </form>
     </div>

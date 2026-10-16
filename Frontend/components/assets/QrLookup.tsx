@@ -5,9 +5,12 @@ import { useRouter } from 'next/navigation';
 import { QrCode, Search } from 'lucide-react';
 import { assetsApi, type Asset } from '@/lib/api/assets';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { PrimaryButton } from '@/components/admin/AdminUi';
+import { buttonClass } from '@/components/ui/buttons';
+import { controlClass, surfaceClass } from '@/components/ui/controls';
 import { PageHeader } from '@/components/ui/PageHeader';
 
-export function QrLookup({ detailBasePath }: Readonly<{ detailBasePath: string }>) {
+export function QrLookup({ detailBasePath, eyebrow }: Readonly<{ detailBasePath: string; eyebrow?: string }>) {
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [result, setResult] = useState<Asset | null>(null);
@@ -37,18 +40,16 @@ export function QrLookup({ detailBasePath }: Readonly<{ detailBasePath: string }
     }
   };
 
-  const inputClass = 'flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors';
-
   return (
-    <div className="space-y-6 max-w-xl">
-      <PageHeader title="QR / Barcode Lookup" />
+    <div className="max-w-xl space-y-6">
+      <PageHeader eyebrow={eyebrow} title="QR / Barcode Lookup" detail="Scan a tag or type its number to open the asset record." />
 
-      <div className="bg-white rounded-lg shadow-sm border border-blue-200 p-6 space-y-5">
+      <div className={`${surfaceClass} space-y-5 p-6`}>
         <div className="flex flex-col items-center gap-3 py-4">
-          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center">
-            <QrCode className="w-8 h-8 text-[#1a4d7a]" />
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50">
+            <QrCode className="h-8 w-8 text-brand" />
           </div>
-          <p className="text-sm text-gray-500 text-center">
+          <p className="text-center text-sm text-slate-600">
             Scan a QR code using your device camera, or enter a QR code value / property number below.
           </p>
         </div>
@@ -60,51 +61,43 @@ export function QrLookup({ detailBasePath }: Readonly<{ detailBasePath: string }
             onChange={(e) => setQuery(e.target.value)}
             placeholder="QR code value or property number..."
             aria-label="QR code value or property number"
-            className={inputClass}
+            className={`${controlClass} flex-1`}
           />
-          <button
-            type="submit"
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-[#1a4d7a] text-white rounded-md text-sm font-medium hover:bg-[#143d61] disabled:opacity-60 transition-colors"
-          >
-            <Search className="w-4 h-4" />
+          <PrimaryButton type="submit" icon={Search} disabled={loading}>
             {loading ? 'Searching...' : 'Search'}
-          </button>
+          </PrimaryButton>
         </form>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">{error}</div>
+          <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>
         )}
 
         {result && (
-          <div className="border border-blue-200 rounded-lg overflow-hidden">
-            <div className="bg-blue-50 p-4 border-b border-blue-200">
-              <h3 className="font-semibold text-[#1a4d7a]">{result.itemDescription}</h3>
-              <p className="text-sm text-gray-500 font-mono mt-0.5">{result.propertyNumber ?? result.id}</p>
+          <div className="overflow-hidden rounded-lg border border-blue-200">
+            <div className="border-b border-blue-200 bg-blue-50 p-4">
+              <h3 className="text-base font-bold text-brand">{result.itemDescription}</h3>
+              <p className="mt-0.5 font-mono text-sm text-slate-600">{result.propertyNumber ?? result.id}</p>
             </div>
-            <div className="p-4 space-y-2 text-sm">
+            <div className="space-y-2 p-4 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-500">Status</span>
+                <span className="text-slate-600">Status</span>
                 <StatusBadge status={result.status} />
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Brand</span>
-                <span className="text-gray-800">{result.brand ?? '—'}</span>
+                <span className="text-slate-600">Brand</span>
+                <span className="text-slate-900">{result.brand ?? '—'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Location</span>
-                <span className="text-gray-800">{result.officeOrSection ?? '—'}</span>
+                <span className="text-slate-600">Location</span>
+                <span className="text-slate-900">{result.officeOrSection ?? '—'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Condition</span>
-                <span className="text-gray-800 capitalize">{result.condition?.replace(/_/g, ' ') ?? '—'}</span>
+                <span className="text-slate-600">Condition</span>
+                <span className="capitalize text-slate-900">{result.condition?.replace(/_/g, ' ') ?? '—'}</span>
               </div>
             </div>
-            <div className="p-4 border-t border-gray-100">
-              <button type="button"
-                onClick={() => router.push(`${detailBasePath}/${result.id}`)}
-                className="w-full py-2 bg-[#1a4d7a] text-white rounded-md text-sm font-medium hover:bg-[#143d61] transition-colors"
-              >
+            <div className="border-t border-slate-100 p-4">
+              <button type="button" onClick={() => router.push(`${detailBasePath}/${result.id}`)} className={`${buttonClass()} w-full`}>
                 View Full Asset Details
               </button>
             </div>

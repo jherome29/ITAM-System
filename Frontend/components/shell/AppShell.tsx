@@ -39,7 +39,7 @@ export function AppShell({ role, children }: Readonly<{ role: ProposedUserRole; 
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f4f7fb]">
+      <div className="flex min-h-screen items-center justify-center bg-canvas">
         <div className="text-sm text-slate-500">Loading...</div>
       </div>
     );
@@ -48,7 +48,7 @@ export function AppShell({ role, children }: Readonly<{ role: ProposedUserRole; 
   if (!user || ownHome) return null;
 
   return (
-    <div className="min-h-screen bg-[#f4f7fb] text-slate-950">
+    <div className="min-h-screen bg-canvas text-slate-950">
       <SidebarNav role={role} items={items} collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} />
       {mobileOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">

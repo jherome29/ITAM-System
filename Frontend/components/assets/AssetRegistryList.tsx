@@ -24,6 +24,11 @@ import { LoadingSkeleton } from "@/components/ui/LoadingSkeleton";
 import { CenteredModal } from "@/components/ui/CenteredModal";
 import { Toast } from "@/components/ui/Toast";
 import { RegisterAssetForm } from "@/components/assets/RegisterAssetForm";
+import { PrimaryButton } from "@/components/admin/AdminUi";
+import { buttonClass } from "@/components/ui/buttons";
+import { surfaceClass } from "@/components/ui/controls";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { SearchToolbar } from "@/components/ui/SearchToolbar";
 
 const STATUS_OPTIONS = [
   "registered",
@@ -225,110 +230,66 @@ export function AssetRegistryList({
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
-            {assetType === "Fixed" || assetType === "Supplies"
-              ? "Property Custodian"
-              : "IT Asset Custodian"}
-          </p>
-          <h1 className="mt-1 text-2xl font-bold text-slate-950 md:text-3xl">
-            {title}
-          </h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-600">
-            {registryDescription(assetType)}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={scanPath(basePath)}
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-          >
-            <QrCode className="h-4 w-4" /> Scan tag
-          </Link>
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            className="inline-flex h-10 items-center gap-2 rounded-md bg-blue-700 px-4 text-sm font-bold text-white shadow-sm hover:bg-blue-800"
-          >
-            <Plus className="h-4 w-4" />{" "}
-            {assetType === "Supplies" ? "Record stock" : "Add asset"}
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow={assetType === "Fixed" || assetType === "Supplies" ? "Property Custodian" : "IT Asset Custodian"}
+        title={title}
+        detail={registryDescription(assetType)}
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Link href={scanPath(basePath)} className={buttonClass({ variant: "secondary" })}>
+              <QrCode className="h-5 w-5" /> Scan tag
+            </Link>
+            <PrimaryButton icon={Plus} onClick={() => setCreateOpen(true)}>
+              {assetType === "Supplies" ? "Record stock" : "Add asset"}
+            </PrimaryButton>
+          </div>
+        }
+      />
 
       <RegistryTabs basePath={basePath} assetType={assetType} />
 
-      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <label className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            <span className="sr-only">Search assets</span>
-            <input
-              value={search}
-              onChange={(event) =>
-                resetAndLoad(() => setSearch(event.target.value))
-              }
-              placeholder="Search assets by name, ID, serial, or location"
-              className="h-12 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            />
-          </label>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <select
-              aria-label="Filter by category"
-              value={filterClass}
-              onChange={(event) =>
-                resetAndLoad(() => setFilterClass(event.target.value))
-              }
-              className="h-12 min-w-56 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-500"
+      <section className={`space-y-4 p-4 ${surfaceClass}`}>
+        <SearchToolbar
+          bare
+          value={search}
+          onChange={(next) => resetAndLoad(() => setSearch(next))}
+          placeholder="Search assets by name, ID, serial, or location"
+          filters={[
+            {
+              label: "All categories",
+              value: filterClass,
+              options: [{ value: "", label: "All categories" }, ...ASSET_CLASS_OPTIONS.map((item) => ({ value: item.value, label: item.label }))],
+              onChange: (next) => resetAndLoad(() => setFilterClass(next)),
+            },
+            {
+              label: "All statuses",
+              value: filterStatus,
+              options: [{ value: "", label: "All statuses" }, ...STATUS_OPTIONS.map((status) => ({ value: status, label: formatLabel(status) }))],
+              onChange: (next) => resetAndLoad(() => setFilterStatus(next)),
+            },
+          ]}
+        >
+          <div className="flex h-11 overflow-hidden rounded-md border border-slate-300" aria-label="Registry view">
+            <button
+              type="button"
+              onClick={() => setView("list")}
+              className={`grid w-11 place-items-center ${view === "list" ? "bg-blue-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+              aria-label="List view"
+              title="List view"
             >
-              <option value="">All categories</option>
-              {ASSET_CLASS_OPTIONS.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter by status"
-              value={filterStatus}
-              onChange={(event) =>
-                resetAndLoad(() => setFilterStatus(event.target.value))
-              }
-              className="h-12 min-w-48 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-500"
+              <List className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("grid")}
+              className={`grid w-11 place-items-center border-l border-slate-300 ${view === "grid" ? "bg-blue-700 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+              aria-label="Grid view"
+              title="Grid view"
             >
-              <option value="">All statuses</option>
-              {STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>
-                  {formatLabel(status)}
-                </option>
-              ))}
-            </select>
-            <div
-              className="flex h-12 overflow-hidden rounded-lg border border-slate-200"
-              aria-label="Registry view"
-            >
-              <button
-                type="button"
-                onClick={() => setView("list")}
-                className={`grid w-12 place-items-center ${view === "list" ? "bg-blue-700 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
-                aria-label="List view"
-                title="List view"
-              >
-                <List className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setView("grid")}
-                className={`grid w-12 place-items-center border-l border-slate-200 ${view === "grid" ? "bg-blue-700 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
-                aria-label="Grid view"
-                title="Grid view"
-              >
-                <Grid2X2 className="h-4 w-4" />
-              </button>
-            </div>
+              <Grid2X2 className="h-5 w-5" />
+            </button>
           </div>
-        </div>
+        </SearchToolbar>
 
         <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -462,13 +423,13 @@ function AssetCard({ asset, href }: Readonly<{ asset: Asset; href: string }>) {
   return (
     <Link
       href={href}
-      className="group min-h-48 overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
+      className={`group min-h-48 overflow-hidden text-left transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md ${surfaceClass}`}
     >
       <div className="flex h-full">
-        <span className="grid w-32 flex-none place-items-center bg-slate-50 text-slate-500 transition group-hover:bg-blue-50 group-hover:text-blue-700">
+        <span className="grid w-24 flex-none place-items-center bg-slate-50 text-slate-500 transition group-hover:bg-blue-50 group-hover:text-blue-700">
           <AssetIcon asset={asset} className="h-11 w-11" />
         </span>
-        <span className="flex min-w-0 flex-1 flex-col p-5">
+        <span className="flex min-w-0 flex-1 flex-col p-4">
           <span className="line-clamp-2 text-base font-bold leading-5 text-slate-950">
             {asset.itemDescription}
           </span>
@@ -482,8 +443,9 @@ function AssetCard({ asset, href }: Readonly<{ asset: Asset; href: string }>) {
             {asset.brand || asset.assetClass} · {formatLabel(asset.status)}
           </span>
           <span className="mt-auto block pt-4">
-            <span className="flex items-center gap-1.5 truncate text-xs text-slate-500">
-              <MapPin className="h-3.5 w-3.5 flex-none" /> {location}
+            <span className="flex items-start gap-1.5 text-xs text-slate-600">
+              <MapPin className="mt-0.5 h-4 w-4 flex-none" />
+              <span className="line-clamp-2">{location}</span>
             </span>
             <span
               className={`mt-2 block truncate text-xs font-semibold ${attention ? "text-red-600" : "text-emerald-700"}`}

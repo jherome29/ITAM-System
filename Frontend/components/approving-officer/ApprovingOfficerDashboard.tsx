@@ -7,6 +7,10 @@ import { notificationsApi } from '@/lib/api/notifications';
 import { usersApi } from '@/lib/api/users';
 import { useAuth } from '@/lib/auth/use-auth';
 import { buildAvailabilityPayload } from '@/lib/users/availability';
+import { PrimaryButton } from '@/components/admin/AdminUi';
+import { surfaceClass } from '@/components/ui/controls';
+import { DateField } from '@/components/ui/DateField';
+import { Field } from '@/components/ui/Field';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import {
   DashboardError,
@@ -52,21 +56,21 @@ function MyAvailabilityCard() {
   }
 
   return (
-    <section className="rounded border border-slate-200 bg-white p-4">
-      <h2 className="text-sm font-bold text-slate-900">My availability</h2>
-      <label className="mt-3 flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={unavailable} onChange={(e) => setUnavailable(e.target.checked)} />
+    <section className={`${surfaceClass} space-y-4 p-4`}>
+      <h2 className="text-base font-bold text-slate-950">My availability</h2>
+      <label className="flex items-center gap-3 text-sm text-slate-800">
+        <input type="checkbox" className="h-5 w-5 accent-blue-700" checked={unavailable} onChange={(e) => setUnavailable(e.target.checked)} />
         <span>I&apos;m unavailable — route my approvals to my alternate</span>
       </label>
-      <label className="mt-2 block text-sm">
-        <span className="mb-1 block text-slate-600">Until (optional)</span>
-        <input type="date" className="rounded border border-slate-300 px-2 py-1" value={until} onChange={(e) => setUntil(e.target.value)} />
-      </label>
-      <button type="button" onClick={save} disabled={saving}
-        className="mt-3 rounded bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
-        {saving ? 'Saving…' : 'Save availability'}
-      </button>
-      {note && <p className="mt-2 text-xs text-slate-600">{note}</p>}
+      <div className="max-w-xs">
+        <Field label="Until (optional)">
+          <DateField value={until} onChange={(e) => setUntil(e.target.value)} />
+        </Field>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <PrimaryButton onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save availability'}</PrimaryButton>
+        {note && <p className="text-sm text-slate-600" role="status">{note}</p>}
+      </div>
     </section>
   );
 }
