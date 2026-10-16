@@ -240,10 +240,19 @@ export function drawFormTitle(
   return y;
 }
 
+/** Gap under a line of label: value text. One 7.5-8pt line plus this stays within the usual step. */
+const LINE_GAP = 3.5;
+/** The usual step between single-line rows: what every form used before rows were measured. */
+const MIN_LINE_STEP = 13;
+
 /**
  * Draws header meta fields in a 2-column key:value layout.
  * fields = [{label, value}, ...]
  * Returns Y after the last field.
+ *
+ * A row is as tall as its tallest value: a 100-character property number or a long office
+ * wraps onto several lines, and a fixed step used to print the next row over it. Short values
+ * keep the usual 13pt step, so a form that never wrapped looks exactly as it did.
  */
 export function drawMetaFields(
   doc: PDFKit.PDFDocument,
@@ -251,6 +260,13 @@ export function drawMetaFields(
   y: number,
 ): number {
   const half = CONTENT_WIDTH / 2;
+  const heightOf = (field?: { label: string; value: string }): number => {
+    if (!field?.label) return 0;
+    doc.font(FONT_REGULAR).fontSize(7.5);
+    return doc.heightOfString(`${field.label}: ${field.value}`, {
+      width: half - 10,
+    });
+  };
   for (let i = 0; i < fields.length; i += 2) {
     const left = fields[i];
     const right = fields[i + 1];
@@ -269,9 +285,32 @@ export function drawMetaFields(
         .fontSize(7.5)
         .text(` ${right.value}`, { width: half - 10 });
     }
-    y += 13;
+    y += Math.max(
+      MIN_LINE_STEP,
+      Math.max(heightOf(left), heightOf(right)) + LINE_GAP,
+    );
   }
   return y;
+}
+
+/**
+ * One full-width "Label: value" line (a form's From / To), as tall as its value needs. Returns
+ * the y below it. The value may wrap onto several lines; a fixed step used to print whatever came
+ * next over the second line.
+ */
+export function drawLabelledLine(
+  doc: PDFKit.PDFDocument,
+  label: string,
+  value: string,
+  y: number,
+): number {
+  const width = CONTENT_WIDTH - 20;
+  doc.font(FONT_BOLD).fontSize(8).fillColor(BLACK);
+  doc.text(`${label}:`, PAGE.margin, y, { continued: true });
+  doc.font(FONT_REGULAR).fontSize(8).text(`  ${value}`, { width });
+  doc.font(FONT_REGULAR).fontSize(8);
+  const height = doc.heightOfString(`${label}:   ${value}`, { width });
+  return y + Math.max(MIN_LINE_STEP, height + LINE_GAP);
 }
 
 /**

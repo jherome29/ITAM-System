@@ -7,6 +7,7 @@ import {
   createDoc,
   createReportDoc,
   drawFormTitle,
+  drawLabelledLine,
   drawMetaFields,
   drawSignatureBlock,
   drawTable,
@@ -710,5 +711,79 @@ describe('drawMetaFields', () => {
     );
 
     expect(drawn.map((d) => d.text)).not.toContain(':');
+  });
+
+  // The rows advanced a fixed 13pt however many lines their text took: a 100-character property
+  // number or a long office wrapped onto the next row and printed over it.
+  it('keeps the usual spacing for short values', () => {
+    const doc = createDoc();
+
+    const y = drawMetaFields(
+      doc,
+      [
+        { label: 'Entity Name', value: 'CICC' },
+        { label: 'Date', value: '10/16/2026' },
+        { label: 'Office', value: 'Systems' },
+        { label: 'Fund', value: '01' },
+      ],
+      100,
+    );
+
+    expect(y).toBe(126);
+  });
+
+  it('gives a row whose value wraps the height it needs, so the next row is not printed over it', () => {
+    const doc = createDoc();
+    const drawn = spyOnText(doc);
+    const long = 'forensic mobile rack calibration writeblocker portable array '
+      .repeat(6)
+      .trim();
+
+    const y = drawMetaFields(
+      doc,
+      [
+        { label: 'Property No.', value: long },
+        { label: 'Date', value: '10/16/2026' },
+        { label: 'Office', value: 'Systems' },
+        { label: 'Fund', value: '01' },
+      ],
+      100,
+    );
+
+    const secondRow = drawn.find((d) => d.text === 'Office:')?.y as number;
+    expect(secondRow - 100).toBeGreaterThan(30);
+    expect(y - secondRow).toBe(13);
+  });
+});
+
+describe('drawLabelledLine', () => {
+  it('moves down the usual 13pt for a short value', () => {
+    const doc = createDoc();
+
+    expect(drawLabelledLine(doc, 'To', 'Records Section', 100)).toBe(113);
+  });
+
+  it('moves down by the height of a value that wraps onto several lines', () => {
+    const doc = createDoc();
+    const long =
+      'Office of the Deputy Executive Director for Cyber Investigation Operations '
+        .repeat(8)
+        .trim();
+
+    const y = drawLabelledLine(doc, 'To', long, 100);
+
+    expect(y - 100).toBeGreaterThan(40);
+  });
+
+  it('draws the label in bold, then the value', () => {
+    const doc = createDoc();
+    const drawn = spyOnText(doc);
+
+    drawLabelledLine(doc, 'From', 'Information Technology', 100);
+
+    expect(drawn.map((d) => d.text)).toEqual([
+      'From:',
+      '  Information Technology',
+    ]);
   });
 });

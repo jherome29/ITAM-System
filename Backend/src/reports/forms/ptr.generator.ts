@@ -3,6 +3,7 @@ import {
   bufferize,
   drawRepublicHeader,
   drawFormTitle,
+  drawLabelledLine,
   drawMetaFields,
   drawTable,
   drawSignatureBlock,
@@ -82,28 +83,13 @@ export async function generatePTR(
     );
   y += 14;
 
-  doc
-    .font('Helvetica-Bold')
-    .fontSize(8)
-    .text('From:', PAGE.margin, y, { continued: true });
-  doc
-    .font('Helvetica')
-    .fontSize(8)
-    .text(
-      `  ${asset.division ?? ''} / ${asset.officeOrSection ?? ''} (${asset.accountableOfficer ?? 'Accountable Officer'})`,
-      { width: CONTENT_WIDTH - 30 },
-    );
-  y += 13;
-
-  doc
-    .font('Helvetica-Bold')
-    .fontSize(8)
-    .text('To:', PAGE.margin, y, { continued: true });
-  doc
-    .font('Helvetica')
-    .fontSize(8)
-    .text(`  ${targetOffice}`, { width: CONTENT_WIDTH - 20 });
-  y += 16;
+  y = drawLabelledLine(
+    doc,
+    'From',
+    `${asset.division ?? ''} / ${asset.officeOrSection ?? ''} (${asset.accountableOfficer ?? 'Accountable Officer'})`,
+    y,
+  );
+  y = drawLabelledLine(doc, 'To', targetOffice, y) + 3;
 
   y = drawTable(
     doc,
