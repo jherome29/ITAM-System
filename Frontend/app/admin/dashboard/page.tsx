@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Users, FileSearch, Shield, Activity } from 'lucide-react';
 import { usersApi } from '@/lib/api/users';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
+import { auditEventLabel } from '@/lib/audit-label';
 import { StatCard } from '@/components/ui/StatCard';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
@@ -64,7 +65,7 @@ export default function AdminDashboard() {
                       <td className="px-6 py-4 text-xs text-gray-700 font-mono">{log.userId}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{log.userRole}</td>
                       <td className="px-6 py-4">
-                        <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium">{log.action.replace(/_/g, ' ')}</span>
+                        <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium">{auditEventLabel(log)}</span>
                       </td>
                       <td className="px-6 py-4 text-sm font-mono text-gray-500">{log.ipAddress}</td>
                     </tr>

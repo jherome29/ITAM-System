@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { AuditLogEntity } from './entities/audit-log.entity';
+import { AssetEntity } from '../assets/entities/asset.entity';
+import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -46,6 +48,9 @@ export class AuditService {
   constructor(
     @InjectRepository(AuditLogEntity)
     private readonly auditRepo: Repository<AuditLogEntity>,
+    // Only to check that a record is an asset inside the caller's scope.
+    @InjectRepository(AssetEntity)
+    private readonly assetRepo: Repository<AssetEntity>,
   ) {}
 
   /**
@@ -116,5 +121,35 @@ export class AuditService {
       where: { affectedRecordId: recordId },
       order: { timestamp: 'ASC' },
     });
+  }
+
+  /**
+   * History of one record, on behalf of a caller's role (CLAUDE.md §8.3).
+   *
+   * Admin and Management already see the whole trail. IT and the property
+   * roles may read only the history of an *asset inside their asset-type
+   * scope* — never an arbitrary record. Account activity is recorded against
+   * the user's own id, so an unscoped lookup would hand any user's login/IP
+   * trail to every custodian and bypass the admin-only /audit/user/:id.
+   * Anything that is not an in-scope asset is refused the same way, so the
+   * response does not reveal whether the id exists.
+   */
+  async findRecordHistory(recordId: string, role: UserRole) {
+    if (role !== UserRole.SYSTEM_ADMIN && role !== UserRole.MANAGEMENT) {
+      const scope = resolveAssetTypeScope(role);
+      // Default-deny: a role with no asset scope and no oversight duty.
+      const asset = scope
+        ? await this.assetRepo.findOne({
+            where: { id: recordId, assetType: In(scope) },
+            select: { id: true },
+          })
+        : null;
+      if (!asset) {
+        throw new ForbiddenException(
+          'You can only view the history of assets within your scope.',
+        );
+      }
+    }
+    return this.findByRecord(recordId);
   }
 }

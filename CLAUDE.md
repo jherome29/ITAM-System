@@ -228,7 +228,11 @@ interface Asset {
                     └──[Transferred] → [Available (new location)]
                     │
                     └──[Flagged for Disposal] → [Disposed]
+                                   │
+                                   └──→ [Available]   (restored: found after being reported lost, or flagged in error)
 ```
+
+Restoring a flagged asset to `available` needs a written justification (as the flag itself does), releases any holder, and sets the condition to `serviceable` — an item that turns out to be damaged is then flagged for repair. `disposed` is terminal.
 
 Every state transition must:
 1. Be authorized by the appropriate role
@@ -256,6 +260,7 @@ Key screens (matching Figma mockup):
 - An asset cannot be issued if its status is not `available`
 - An asset cannot be requisitioned as a replacement unless the existing asset has met useful-life threshold, condition criteria, or loss/damage criteria (replacement validation)
 - A disposal flag requires documented justification, condition assessment, and recommended action — actual disposal execution is out of scope; only documentation is managed
+- Reversing a disposal flag (restoring the asset to `available`) also requires a documented justification; it is audited like any other transition
 
 ### Module 2: Requisition & Approval Workflow
 
@@ -431,7 +436,7 @@ Security controls are NOT add-ons — they are embedded from the first line of c
 - Every system transaction logged: user ID, action type, affected record ID, timestamp (UTC), IP address, user role at time of action
 - Audit logs are **append-only** — no update or delete operations on the audit table
 - Full audit log list (`GET /api/v1/audit`) is restricted to System Administrator and Management; filterable by `action` and by `startDate`/`endDate` (server-side)
-- IT Personnel can view transaction history for individual assets they manage via `GET /api/v1/audit/record/:recordId`
+- IT Personnel and the property roles can view transaction history for individual assets **inside their own asset-type scope** via `GET /api/v1/audit/record/:recordId`; any other record id (a user's login trail, an out-of-scope asset) is `403`. System Administrator and Management may read any record. Enforced in `AuditService.findRecordHistory`, so the admin-only `GET /audit/user/:userId` cannot be bypassed through this route
 - System Administrator can pull a single account's activity via `GET /api/v1/audit/user/:userId` (shown in the Master Admin user drawer)
 - Logs exportable as PDF/Excel for COA audit purposes
 
@@ -672,12 +677,17 @@ cd ../Backend && npm install
 #   DATABASE_SSL      unset = verified TLS · 'disable' (local docker/CI) ·
 #                     'no-verify' (dev box behind a TLS-intercepting proxy —
 #                     set here, never in code; replaces the old app.module.ts hack)
-#   DB_POOL_MAX       pg pool ceiling (default 20)
+#   DB_POOL_MAX       pg pool ceiling (default 20). Supabase's session pooler allows only
+#                     15 connections project-wide — use 8 against the shared dev DB
+#                     (EMAXCONNSESSION otherwise); 20 is for a real Postgres
 #   JWT_SECRET / JWT_REFRESH_SECRET   >= 32 random chars (Joi-enforced at startup)
 #   ALLOWED_ORIGIN    CORS origin
 #   TRUST_PROXY       proxy hops to trust so audit-log IPs are the real client
 #                     (set 1 in prod behind CICC IT's proxy; unset when direct)
 #   THROTTLE_LIMIT / THROTTLE_TTL     per-IP rate limit (default 60 / 60000ms)
+#   TZ               process time zone; unset/blank defaults to Asia/Manila so the
+#                     daily 7:00 jobs and dashboard day/month boundaries are CICC time
+#                     in a UTC container (applyDefaultTimeZone in main.ts)
 #   SUPABASE_URL / SUPABASE_ANON_KEY  dev/test only
 
 # Frontend/.env.local
@@ -725,7 +735,7 @@ cd Backend && npm run test:e2e:local # E2E suite — spins a throwaway postgres:
 | Rule | Detail |
 |---|---|
 | SLA target | 24-hour requisition approval turnaround |
-| Inventory accuracy target | 98% |
+| Inventory accuracy target | 98% — measured against a physical count (RPCI / RPCPPE reconciliation). The dashboards' "Record completeness" is a data-quality proxy (assets with property no. and serial no.), not this |
 | Replacement validation | Must confirm useful-life threshold, condition, or loss/damage criteria before processing replacement requisition |
 | Disposal | System documents and flags only; CICC executes actual disposal through COA procedure manually |
 | Alternate approver | System must support designation of backup approvers when primary supervisor is unavailable |

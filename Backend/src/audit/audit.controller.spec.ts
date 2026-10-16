@@ -1,5 +1,6 @@
 import { AuditController } from './audit.controller';
 import type { AuditService } from './audit.service';
+import { UserRole } from '../../../packages/shared/src/enums';
 
 describe('AuditController', () => {
   const makeController = (svc: Partial<AuditService>) =>
@@ -29,5 +30,24 @@ describe('AuditController', () => {
     const res = await controller.findAll();
 
     expect(res).toEqual({ message: 'Audit logs retrieved', data: page });
+  });
+
+  it("asks for a record's history on behalf of the caller's role, and wraps it", async () => {
+    const rows = [{ id: 'a1' }];
+    const findRecordHistory = jest.fn().mockResolvedValue(rows);
+    const controller = makeController({ findRecordHistory });
+
+    const res = await controller.findByRecord('rec-1', {
+      user: { role: UserRole.IT_PERSONNEL },
+    });
+
+    expect(findRecordHistory).toHaveBeenCalledWith(
+      'rec-1',
+      UserRole.IT_PERSONNEL,
+    );
+    expect(res).toEqual({
+      message: 'Record audit history retrieved',
+      data: rows,
+    });
   });
 });

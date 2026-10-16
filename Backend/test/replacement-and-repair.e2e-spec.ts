@@ -462,6 +462,7 @@ describe('Replacement and repair workflows (e2e)', () => {
       expect(done.status).toBe('completed');
       const asset = await reload('EmpLost');
       expect(asset.status).toBe(AssetStatus.FLAGGED_FOR_DISPOSAL);
+      expect(asset.condition).toBe(AssetCondition.UNSERVICEABLE); // a lost unit is not "serviceable"
       expect(asset.custodianId).toBe(users.EMP.id); // until COA relief
     });
   });

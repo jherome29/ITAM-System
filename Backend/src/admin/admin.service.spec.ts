@@ -7,7 +7,8 @@ import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
 import { AuditLogEntity } from '../audit/entities/audit-log.entity';
 import { SystemConfigService } from '../system-config/system-config.service';
-import { UserRole } from '../../../packages/shared/src/enums';
+import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
+import { AUDIT_REASON_REFRESH_TOKEN_REUSE } from '../audit/audit-reasons';
 
 type Where = Record<string, unknown> | undefined;
 const whereOf = (opts?: FindManyOptions): Where => opts?.where as Where;
@@ -52,11 +53,15 @@ describe('AdminService.getDashboardStats', () => {
     ),
     createQueryBuilder: jest.fn(() => assetQb),
   };
+  const auditQb = {
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    getCount: jest.fn().mockResolvedValue(4),
+  };
   const auditRepo = {
-    count: jest.fn((opts?: FindManyOptions) => {
-      const where = whereOf(opts) ?? {};
-      return Promise.resolve('action' in where ? 4 : 42);
-    }),
+    // All of today's events; failed logins go through the query builder.
+    count: jest.fn(() => Promise.resolve(42)),
+    createQueryBuilder: jest.fn(() => auditQb),
   };
   const systemConfig = { getDefaultReorderLevel: jest.fn(() => 5) };
 
@@ -113,6 +118,25 @@ describe('AdminService.getDashboardStats', () => {
   it('splits today’s audit volume into failed logins and all events', async () => {
     const { audit } = await service.getDashboardStats();
     expect(audit).toEqual({ failedLoginsToday: 4, eventsToday: 42 });
+  });
+
+  // A superseded session's refresh attempt is audited as USER_LOGIN_FAILED with
+  // reason refresh_token_reuse_detected (55 such rows in the dev database, from
+  // tabs, reloads and a second sign-in), so the dashboard's "failed logins
+  // today" counted ordinary session churn as if someone were guessing passwords.
+  it('counts failed logins since the start of today, excluding superseded-session refresh rejections', async () => {
+    await service.getDashboardStats();
+
+    expect(auditQb.where).toHaveBeenCalledWith('a.action = :action', {
+      action: AuditAction.USER_LOGIN_FAILED,
+    });
+    expect(auditQb.andWhere).toHaveBeenCalledWith('a.timestamp >= :since', {
+      since: expect.any(Date) as Date,
+    });
+    expect(auditQb.andWhere).toHaveBeenCalledWith(
+      "COALESCE(a.metadata ->> 'reason', '') <> :reuse",
+      { reuse: AUDIT_REASON_REFRESH_TOKEN_REUSE },
+    );
   });
 
   it('stamps generatedAt as an ISO-8601 timestamp', async () => {

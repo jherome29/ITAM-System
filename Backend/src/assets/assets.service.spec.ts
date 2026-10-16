@@ -632,6 +632,11 @@ describe('AssetsService', () => {
       [AssetStatus.DISPOSED, AssetStatus.ISSUED], // Terminal state
       [AssetStatus.AVAILABLE, AssetStatus.RETURNED], // Must be issued first
       [AssetStatus.AVAILABLE, 'invalid_status' as AssetStatus], // Completely unknown status
+      // A flagged asset can only be disposed or restored to stock — nothing else.
+      [AssetStatus.FLAGGED_FOR_DISPOSAL, AssetStatus.ISSUED],
+      [AssetStatus.FLAGGED_FOR_DISPOSAL, AssetStatus.UNDER_REPAIR],
+      [AssetStatus.FLAGGED_FOR_DISPOSAL, AssetStatus.RETURNED],
+      [AssetStatus.FLAGGED_FOR_DISPOSAL, AssetStatus.TRANSFERRED],
     ];
 
     test.each(invalidPairs)('%s → %s should throw 400', async (from, to) => {
@@ -650,6 +655,101 @@ describe('AssetsService', () => {
 
       // No audit log for invalid transitions
       expect(mockAuditService.log).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Reversing a disposal flag ───────────────────────────────────────────────
+  // FLAGGED_FOR_DISPOSAL used to lead only to DISPOSED, so a laptop reported
+  // lost that turned up, or an asset flagged by mistake, could never come back.
+  describe('updateLifecycle() — restoring a flagged asset to stock', () => {
+    const flagged = (over: Partial<AssetEntity> = {}) => {
+      const asset = makeAsset({
+        status: AssetStatus.FLAGGED_FOR_DISPOSAL,
+        condition: AssetCondition.UNSERVICEABLE, // written off as lost
+        custodianId: 'holder-1', // lost items stay on the holder's record
+        ...over,
+      });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+        Promise.resolve(a),
+      );
+      mockTxRepo.create.mockReturnValue({});
+      mockTxRepo.save.mockResolvedValue({});
+      return asset;
+    };
+    const restore = (notes?: string) =>
+      service.updateLifecycle(
+        'asset-uuid-1',
+        { status: AssetStatus.AVAILABLE, notes },
+        'it-1',
+        UserRole.IT_PERSONNEL,
+        '127.0.0.1',
+      );
+
+    it('puts it back in stock: available, serviceable, and no longer on the old holder', async () => {
+      flagged();
+
+      const saved = await restore('Found in the field office storeroom');
+
+      expect(saved).toMatchObject({
+        status: AssetStatus.AVAILABLE,
+        condition: AssetCondition.SERVICEABLE,
+        custodianId: null,
+      });
+    });
+
+    it('is audited like any other transition, with the justification and both statuses', async () => {
+      flagged();
+
+      await restore('Found in the field office storeroom');
+
+      expect(mockAuditService.log).toHaveBeenCalledTimes(1);
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            fromStatus: AssetStatus.FLAGGED_FOR_DISPOSAL,
+            toStatus: AssetStatus.AVAILABLE,
+            notes: 'Found in the field office storeroom',
+          }),
+        }),
+      );
+    });
+
+    it.each([undefined, '', '   '])(
+      'needs a written justification (got %j), as flagging does — and changes nothing without one',
+      async (notes) => {
+        flagged();
+
+        await expect(restore(notes)).rejects.toThrow(BadRequestException);
+
+        expect(mockAssetRepo.save).not.toHaveBeenCalled();
+        expect(mockAuditService.log).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not make disposing it any harder: flagged → disposed still needs no extra notes', async () => {
+      flagged();
+
+      await expect(
+        service.updateLifecycle(
+          'asset-uuid-1',
+          { status: AssetStatus.DISPOSED },
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        ),
+      ).resolves.toMatchObject({ status: AssetStatus.DISPOSED });
+    });
+
+    it('conditionAfter: a restored asset is serviceable; a disposed one keeps its condition', () => {
+      const S = AssetStatus;
+      const C = AssetCondition;
+      expect(
+        conditionAfter(S.FLAGGED_FOR_DISPOSAL, S.AVAILABLE, C.UNSERVICEABLE),
+      ).toBe(C.SERVICEABLE);
+      expect(
+        conditionAfter(S.FLAGGED_FOR_DISPOSAL, S.DISPOSED, C.UNSERVICEABLE),
+      ).toBe(C.UNSERVICEABLE);
     });
   });
 

@@ -147,12 +147,21 @@ describe('RequisitionsService', () => {
     }),
   };
 
+  // em.query() inside a transaction — the advisory lock that serialises numbering.
+  const mockEmQuery = jest.fn().mockResolvedValue([]);
+
   // Run the transaction callback inline against a real per-entity getRepository
   // switch so decrement/link assertions land on the right repo (the AssetEntity
   // repo must NOT be the same object as the RequisitionItemEntity repo).
   mockReqRepo.manager.transaction.mockImplementation(
-    (cb: (em: { getRepository: (e: unknown) => unknown }) => unknown) =>
+    (
+      cb: (em: {
+        getRepository: (e: unknown) => unknown;
+        query: jest.Mock;
+      }) => unknown,
+    ) =>
       cb({
+        query: mockEmQuery,
         getRepository: (entity: unknown) => {
           if (entity === AssetEntity) return mockAssetRepo;
           if (entity === RequisitionItemEntity) return mockItemRepo;
@@ -441,27 +450,64 @@ describe('RequisitionsService', () => {
       );
     });
 
-    it('generates a sequential request number REQ-YYYY-NNNN', async () => {
-      mockReqRepo.count.mockResolvedValue(41); // 42nd request
-      const saved = makeReq({ requestNumber: 'REQ-2026-0042' });
-      mockReqRepo.create.mockReturnValue(saved);
-      mockReqRepo.save.mockResolvedValue(saved);
-      mockItemRepo.create.mockReturnValue({});
-      mockItemRepo.save.mockResolvedValue([]);
+    // Numbering used to be `count()+1` over ALL years with no lock or
+    // transaction: simultaneous submissions drew the same number, the UNIQUE
+    // constraint rejected the loser, and the user got a 500 (6 of 8 simultaneous
+    // submissions failed live). It also never restarted for a new year.
+    describe('request numbering', () => {
+      const dto = {
+        requisitionType: RequisitionType.NEW,
+        justification: 'test',
+        requiredDate: '2026-07-01',
+        items: [{}],
+      } as any;
+      const year = new Date().getFullYear();
+      let qb: Record<string, jest.Mock>;
 
-      const result = await service.create(
-        {
-          requisitionType: RequisitionType.NEW,
-          justification: 'test',
-          requiredDate: '2026-07-01',
-          items: [{}],
-        } as any,
-        'emp-1',
-        UserRole.EMPLOYEE,
-        '127.0.0.1',
-      );
+      beforeEach(() => {
+        qb = mockReqRepo.createQueryBuilder();
+        // Hand back whatever the service builds, so the number it computed is visible.
+        mockReqRepo.create.mockImplementation((x: object) => ({
+          ...makeReq(),
+          ...x,
+        }));
+        mockReqRepo.save.mockImplementation((x: object) => Promise.resolve(x));
+        mockItemRepo.create.mockReturnValue({});
+        mockItemRepo.save.mockResolvedValue([]);
+      });
 
-      expect(result.requestNumber).toMatch(/^REQ-\d{4}-\d{4}$/);
+      it("is one past the count of THIS year's numbers (REQ-YYYY-NNNN, restarts each year)", async () => {
+        qb.getCount.mockResolvedValue(41);
+
+        const result = await service.create(
+          dto,
+          'emp-1',
+          UserRole.EMPLOYEE,
+          '127.0.0.1',
+        );
+
+        expect(result.requestNumber).toBe(`REQ-${year}-0042`);
+        expect(qb.where).toHaveBeenCalledWith('r.requestNumber LIKE :p', {
+          p: `REQ-${year}-%`,
+        });
+        expect(mockReqRepo.count).not.toHaveBeenCalled(); // no all-years count
+      });
+
+      it('takes the numbering lock before counting, and saves the header in that same transaction', async () => {
+        qb.getCount.mockResolvedValue(0);
+
+        await service.create(dto, 'emp-1', UserRole.EMPLOYEE, '127.0.0.1');
+
+        expect(mockReqRepo.manager.transaction).toHaveBeenCalledTimes(1);
+        expect(mockEmQuery).toHaveBeenCalledWith(
+          expect.stringContaining('pg_advisory_xact_lock'),
+        );
+        const lockAt = mockEmQuery.mock.invocationCallOrder[0];
+        const countAt = qb.getCount.mock.invocationCallOrder[0];
+        const saveAt = mockReqRepo.save.mock.invocationCallOrder[0];
+        expect(lockAt).toBeLessThan(countAt);
+        expect(countAt).toBeLessThan(saveAt);
+      });
     });
 
     // ── Server-side supervisor resolution (Fix 1) ────────────────────────────

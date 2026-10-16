@@ -9,9 +9,8 @@ import {
   type ReactNode,
 } from 'react';
 import { useRouter } from 'next/navigation';
-import axios from 'axios';
 import { authApi, type AuthUser } from '@/lib/api/auth';
-import { setAccessToken, setOnTokenExpired, type ApiResponse } from '@/lib/api/client';
+import { refreshAccessToken, setAccessToken, setOnTokenExpired } from '@/lib/api/client';
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -42,8 +41,6 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   }, [clearSession]);
 
   useEffect(() => {
-    const base = process.env.NEXT_PUBLIC_API_URL ?? '/api';
-
     // If login() stashed a token to survive the hard-nav reload, use it immediately.
     // Do NOT remove it here — Strict Mode double-invokes effects in dev, and the
     // second run would find an empty key and fall through to the cookie path.
@@ -60,15 +57,13 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
       return;
     }
 
-    // Otherwise attempt silent session restore via refresh cookie
-    axios
-      .post<ApiResponse<{ accessToken: string }>>(
-        `${base}/v1/auth/refresh`,
-        {},
-        { withCredentials: true },
-      )
-      .then((r) => {
-        const token = r.data.data.accessToken;
+    // Otherwise attempt silent session restore via refresh cookie. Shares one
+    // in-flight refresh with the 401 handler — and with Strict Mode's second run
+    // of this effect in dev — because the refresh cookie is single-use: two
+    // refreshes at once leave the browser and the server holding different
+    // tokens, and the next page load logs the user out.
+    refreshAccessToken()
+      .then((token) => {
         setToken(token);
         setAccessToken(token);
         return authApi.profile();
