@@ -8,19 +8,18 @@ Legend: ✅ real backend + real UI, verified · 🟡 works but has a caveat ·
 ⬜ not built · 🚫 out of scope. (There is no 🔴 "mock" row any more: the
 frontend contains no sample data, see below.)
 
-> **As of 2026-10-16.** Everything below is on the PR #108 branch
-> (`fix/ui-audit-findings`). That branch sits on top of #106 (which contains
-> #105), with #107 (the demo-data seeder) beside it, all open against `develop`
-> with CI green. `develop` already has #102 / #103 (returns & incidents, repairs,
-> replacement flow); `main` has none of #102–#108. Schemas 001–016 must be applied
-> to any database that predates them (`Database/README.md`).
+> **As of 2026-10-16.** Everything below is in `develop` (PRs #102, #103, #105, #106,
+> #107 and #109), plus the Property Officer → Property Custodian role merge on the
+> `refactor/merge-property-officer-into-custodian` branch. `main` is still behind
+> `develop`. Schemas 001–017 must be applied to any database that predates them
+> (`Database/README.md`); the shared Supabase dev database is at 016, so 017 is pending.
 
 ---
 
 ## ✅ Working
 
 **Auth & access**
-- Login for all 7 roles, JWT + refresh-token rotation (one shared refresh, so
+- Login for all 6 roles, JWT + refresh-token rotation (one shared refresh, so
   parallel requests no longer log you out), per-route RBAC guards.
 - Account lockout after N failed logins (N is runtime-configurable); admin
   force-reset-password, unlock, reactivate, force sign-out. Login is rate-limited
@@ -29,8 +28,8 @@ frontend contains no sample data, see below.)
 **Requisitions**
 - Full workflow end to end: submit → supervisor approves/rejects → custodian
   fulfils → asset issued. PAR/ICS generated on issuance.
-- **Five roles file requisitions** — Employee, Supervisor, IT Personnel, Property
-  Custodian, Property Officer — routed to the Approving Officer of their section,
+- **Four roles file requisitions** — Employee, Supervisor, IT Personnel, Property
+  Custodian — routed to the Approving Officer of their section,
   else division. Management and the System Administrator do not file.
 - **Segregation of duties** — a requisition is never routed to or decided by its
   own requester, and a custodian (IT or Property) **never fulfils or holds their
@@ -123,10 +122,10 @@ editable at runtime (System Admin only, audited, with "last changed … by …")
 
 **Infra / quality**
 - Docker: both images build (repo-root context); `docker compose up --build` brings
-  up Postgres (all 16 schemas + seed) + backend + frontend with `/api/health`
+  up Postgres (all 17 schemas + seed) + backend + frontend with `/api/health`
   healthchecks; prod compose fails fast on missing secrets; CI builds both images.
-- Formal security e2e suite (8 ASVS scenarios) gates CI. Backend 728 unit tests
-  (96% statements), 89 e2e on a real Postgres, frontend 320 tests.
+- Formal security e2e suite (8 ASVS scenarios) gates CI. Backend 800 unit tests
+  (96% statements), 94 e2e on a real Postgres, frontend 327 tests.
 - k6 load baseline: 362 VUs, 0 errors, p95 758 ms (single contended box), `perf/`.
 
 ---
@@ -157,7 +156,7 @@ editable at runtime (System Admin only, audited, with "last changed … by …")
 
 ## ⬜ Not built
 
-- **Recording a physical count / reconciliation** (and Property Officer inventory
+- **Recording a physical count / reconciliation** (and inventory
   corrections). Blocks a real RPCI / RPCPPE reconciliation.
 - **Trends / utilisation reporting** — the Management dashboard shows real status
   shares, not monthly trends; the Asset Utilization Summary report does not exist.

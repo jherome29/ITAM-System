@@ -8,33 +8,42 @@ properly, see `RUN-LOCAL.md` §11. Update this file at the end of every session.
 
 ## 1. Where it stands
 
-- **`develop`** has PR #102 / #103 (returns & incidents, repairs, replacement flow).
-- **Four PRs are open and mergeable, CI green** (SonarCloud and Docker Build were still
-  running on #108):
-
-  | PR | Branch | What |
-  |---|---|---|
-  | #105 | `fix/audit-findings-2026-10-14` | access control, audit integrity, numbering, KPIs, deployment |
-  | #106 | `feat/pilot-demo-data` | removes every mock screen (contains #105) |
-  | #107 | `feat/demo-data-seed` | repeatable pilot demo data through the real API |
-  | #108 | `fix/ui-audit-findings` | 12 audit defects, forms redesign, running numbers, property roles file requisitions, PDF layout fixes. **Stacked on #106** |
-
-- Health on #108: backend 728 unit + 89 e2e, frontend 320, every `CHECKS.md` item clean.
-- The shared Supabase dev DB is at schema **016** and has the new Approving Officer
-  `psm.approver@cicc.gov.ph` (see `docs/guides/ROLES.md`).
-- Local servers (this machine): backend `:3001` (`DB_POOL_MAX=8`) and frontend `:3000`
-  are running the #108 build.
+- **`develop` has everything built so far.** #105, #106, #107 and #109 were merged on
+  2026-10-16. (#108 had been merged into the already-merged `feat/pilot-demo-data`
+  branch by mistake, because its base was not retargeted after #106 merged, so #109
+  delivered the same work into `develop`. When you stack PRs, check the base reads
+  `develop` before you click merge.)
+- **`main` is still behind `develop`.** Promoting it needs 2 reviews and every check green
+  (`secret-scan`, `codeql`, `dependency-audit`, `owasp-dc` included).
+- **The Property Officer role was merged into the Property Custodian** on branch
+  `refactor/merge-property-officer-into-custodian` (this PR): the Officer was a read-only
+  subset of the custodian. Schema `017` migrates its accounts; the `property_officer`
+  value stays in the Postgres and shared enums (deprecated: old audit rows carry it); no
+  route grants it and the API refuses to assign it; Replacement Validation and Disposal
+  Review are now in the Property Custodian's menu.
+- Health: backend 800 unit + 94 e2e tests, frontend 327, every `CHECKS.md` item clean.
+- **The shared Supabase dev DB is at schema 016.** `017` is **not applied yet**; see §2.
 
 ## 2. Do first
 
-- [ ] **Get #105 → #106 → #107 → #108 reviewed and merged** (develop needs 1 review each). Retarget
-      #108 to `develop` when #106 merges. Offer a short reviewer walkthrough if teammates need one.
-- [ ] Check CI on #108 finished green (SonarCloud, Docker Build).
+- [ ] **Apply `Database/schemas/017_retire_property_officer.sql` to the shared Supabase dev
+      database** before running a backend that includes it against that database. It is a
+      plain `UPDATE` (idempotent), and it turns `property.officer@cicc.gov.ph` into a
+      Property Custodian and invalidates its sessions. Until it is applied, that account is
+      refused by every route. Ask before applying: it writes to the shared database.
+- [ ] Restart the local backend (`:3001`, `DB_POOL_MAX=8`) on the new build once 017 is applied.
+      It is still running the pre-merge build.
+- [ ] **Look at SonarCloud's failing quality gate** ("C Reliability Rating on New Code",
+      required ≥ A; it failed on #106, #107 and #108, passed on #105). The issue is not
+      identified: SonarCloud's API refuses non-main branches for this organisation, so open
+      `https://sonarcloud.io/dashboard?id=jherome29_ITAM-System` and read the issue, then fix it.
 - [ ] **Fix the end-date bug in the period reports** (`getDateRange` in
       `Backend/src/reports/reports.service.ts`): an end date is midnight, so an item created
       later that day is left out of a period ending today. Small, real, needs a test first.
-- [ ] **Compare the generated PDFs with `FORMS/`** — layout and content were checked on 2026-10-16,
-      not the paper templates. Then the form-fidelity pass (`docs/guides/COA-FORMS-AUDIT.md`).
+- [ ] **Compare the generated PDFs with `FORMS/`**: layout and content were checked on
+      2026-10-16, not the paper templates. Then the form-fidelity pass
+      (`docs/guides/COA-FORMS-AUDIT.md`).
+- [ ] Promote `develop` → `main` when you are happy.
 
 ## 3. Decisions waiting on you or CICC
 
@@ -42,12 +51,16 @@ properly, see `RUN-LOCAL.md` §11. Update this file at the end of every session.
 - Should the **asset history** name the person, not the role?
 - Whose section is the **Office/Section** on a PAR / ICS / RLSDDP (today: the asset's registered one)?
 - CICC's **document-number series** (ours is a placeholder) and the **Fund Cluster** value.
+- Does CICC want an independent **approver for disposals and replacements**? The merged-away
+  Property Officer could have become that gate; if CICC wants one, the role has to be re-added.
 - Whether to build **physical-count recording / reconciliation** and the **trends / utilisation**
   report (neither exists; `PATH-TO-DONE.md` §A).
 - **Rotate the dev passwords** before handover; the repo is public and they are in four md files.
 
 ## 4. Clean-ups
 
+- [ ] `scripts/audit-allowlist.mjs` still lists four `multer` advisories that no longer apply
+      (`multer` is 2.4.0, the Backend audit has 0 allowlisted). Drop them.
 - [ ] `PROGRESS-REPORT-DRAFT.md` and `docs/superpowers/` are untracked local files. The first is
       content for the capstone progress report (it holds the dev test accounts: do not commit it
       as is); the second is old plan/spec drafts that the status docs say were already deleted.
@@ -69,6 +82,8 @@ properly, see `RUN-LOCAL.md` §11. Update this file at the end of every session.
 - **Next 16 allows one `next dev` per project folder.** A second one refuses to start ("existing
   server at :3000"). To run a sandbox frontend, stop the real one first and restart it after.
 - **`npm run build` in `Frontend/` shares `.next/` with the dev server.** Stop `npm run dev` first.
+  After deleting a route, `tsc` can fail on stale generated types in `.next/types`; that folder is a
+  gitignored build cache, so delete it (or rebuild) and re-run.
 - **Each login bumps `tokenVersion`** and signs that account out everywhere else, so a scripted login
   kicks your browser session. The login route is also limited to 10 per minute per IP: a seed script
   that logs in a dozen accounts hits a 429, so retry with a wait.
@@ -76,7 +91,10 @@ properly, see `RUN-LOCAL.md` §11. Update this file at the end of every session.
   never read the Supabase connection string from `Backend/.env`.
 - **The shared Supabase DB allows 15 connections**: run the backend with `DB_POOL_MAX=8`.
 - **Schema changes need a SQL file** in `Database/schemas/` and a line in `docker-compose.yml`. The
-  e2e suite uses `synchronize: true`, so it will *not* catch a missing migration.
+  e2e suite uses `synchronize: true`, so it will *not* catch a missing migration. Test a data
+  migration yourself: apply 001…NNN to a fresh database, insert the rows it touches, run it twice.
+- **The e2e hooks are slow** (real bcrypt, real logins). Jest's default 5 s timeout made them flaky
+  on a busy machine, so `Backend/test/jest-e2e.json` sets a 30 s `testTimeout`.
 - **Heredocs:** in Git Bash an unquoted `<<EOF` runs backticks inside it as commands. Quote the
   delimiter (`<<'EOF'`), or write the file with the editor and run it.
 - **PowerShell 5.1 mangles double quotes in native arguments.** Use `git commit -F <file>`.

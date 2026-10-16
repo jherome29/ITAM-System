@@ -6,26 +6,34 @@ Each line links the doc that has the detail.
 
 Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 
-> **As of 2026-10-16.** The build is functionally complete for all seven roles on real
-> data. What remains is: merge the open PR stack, the rest of the COA form fidelity,
-> a handful of product decisions, Phase 5 testing, and the production / handover work
-> that is blocked on CICC. Health on the PR #108 branch: backend 728 unit + 89 e2e
-> tests, frontend 320 tests, every `CHECKS.md` item clean, CI green (SonarCloud and
-> Docker Build were still running when this was written).
+> **As of 2026-10-16.** The build is functionally complete for all six roles on real
+> data. What remains is: `develop` → `main`, the rest of the COA form fidelity, a handful
+> of product decisions, Phase 5 testing, and the production / handover work that is
+> blocked on CICC. Health on the Property-Officer-merge branch: backend 800 unit + 94 e2e
+> tests, frontend 327 tests, every `CHECKS.md` item clean.
 
 ---
 
 ## G. Merge the PR stack  → `SYSTEM-STATUS.md` "Where things stand"
 
-`main` is 27 commits behind `develop`, and 63 further commits are open against
-`develop` in four PRs. Reviewing and merging them is the gate for everything else.
+#105, #106, #107 and #109 are merged into `develop` (2026-10-16). `main` is still behind `develop`: promoting it is the last step of this section.
 
 - [x] PR #102 / #103 (returns & incidents, repairs, replacement flow) — **merged to `develop`**.
-- [ ] #105 `fix/audit-findings-2026-10-14` — access control, audit integrity, numbering, KPIs.
-- [ ] #106 `feat/pilot-demo-data` — removes every mock screen (contains #105).
-- [ ] #107 `feat/demo-data-seed` — repeatable pilot demo data through the real API.
-- [ ] #108 `fix/ui-audit-findings` — the 12 audit defects, forms redesign, property roles file
-      requisitions, PDF layout fixes. Stacked on #106: **retarget it to `develop` once #106 merges.**
+- [x] #105 `fix/audit-findings-2026-10-14` — access control, audit integrity, numbering, KPIs.
+- [x] #106 `feat/pilot-demo-data` — removes every mock screen (contains #105).
+- [x] #107 `feat/demo-data-seed` — repeatable pilot demo data through the real API.
+- [x] #108 / #109 — the 12 audit defects, forms redesign, property roles file requisitions, PDF
+      layout fixes. **#108 was merged into the already-merged `feat/pilot-demo-data` branch by
+      mistake** (its base was not retargeted after #106 merged), so none of it reached `develop`;
+      #109 re-delivered the same branch into `develop`. When a PR is stacked, check its base is
+      `develop` before merging.
+- [x] Merge the Property Officer role into the Property Custodian (schema `017`; the role stays
+      in the Postgres enum). **Apply `017` to the shared Supabase dev database** before running
+      a backend that includes it against that database, or the old Property Officer account
+      is refused everywhere.
+- [ ] SonarCloud's quality gate fails on the merged work ("C Reliability Rating on New Code"); the
+      issue itself is not identified yet (SonarCloud's API blocks non-main branches: open the
+      dashboard and read it).
 - [ ] Then `develop` → `main` (2 reviews + all checks, including `secret-scan`, `codeql`,
       `dependency-audit`, `owasp-dc`).
 - [ ] Promote CI's `docker-build` job to a required check on `main` once it has stayed green.
@@ -35,14 +43,14 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 - [x] ~~Wire the mock screens, delete the dead mock code~~ — **done (PR #106).** The frontend
       has no sample data; `MOCK-DATA-WIRING.md` is now just the record.
 - [x] ~~Disposal workflow~~ — documented flow (justification, condition, recommended action);
-      Property Officer's Disposal Review; restore-from-flagged with a justification. Documentation
+      the Disposal Review list; restore-from-flagged with a justification. Documentation
       only; the disposal itself is a manual COA process.
 - [x] ~~Master Admin governance~~ — cut as out of scope (2026-09-09); admin hardening done.
 - [x] ~~Returns & Incidents, Maintenance & Repair, replacement follow-ups~~ — PR #102 / #103.
-- [x] ~~Property Custodian and Property Officer file requisitions; custodians never fulfil their
-      own; System Administrator fallback~~ — PR #108, proven on Postgres for both custodian roles.
+- [x] ~~Property Custodian files requisitions; custodians never fulfil their own; System
+      Administrator fallback~~ — PR #108, proven on Postgres for both custodian roles.
 - [~] **Physical count / reconciliation** — the count sheet exists (read-only). Still to build:
-      *recording* a count, comparing it with the records, and Property Officer corrections.
+      *recording* a count, comparing it with the records, and inventory corrections.
       Needed before any real RPCI / RPCPPE reconciliation or audit-readiness claim.
 - [ ] **Trends / utilisation endpoint** and the **Asset Utilization Summary** report — for the
       Management chart panels and the one management report that does not exist.
@@ -83,8 +91,8 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 - [x] **Formal Jest security suite** — all 8 Step-5.1 scenarios in
       `Backend/test/security.e2e-spec.ts`, gating CI. Per-module privilege-escalation cases are
       added as modules land (e.g. `property-requisitions.e2e-spec.ts`). `docs/guides/SECURITY.md`.
-- [x] **Coverage ≥ 70% on backend services** — 96.3% statements / 88.7% branches (gate: 65 / 55 / 55 / 65).
-- [ ] Frontend test coverage — no coverage gate on `Frontend/` yet (320 tests exist).
+- [x] **Coverage ≥ 70% on backend services** — 96.3% statements / 88.6% branches (gate: 65 / 55 / 55 / 65).
+- [ ] Frontend test coverage — no coverage gate on `Frontend/` yet (327 tests exist).
 - [ ] **OWASP ZAP scan** — run ZAP against the running system, save the PDF, fix HIGH findings
       (`PHASE-5-TESTING.md` §5.3–5.4).
 - [ ] **JMeter load test** — 362 users, 60 s ramp, the hot endpoints. Needs a **production build**,
@@ -114,7 +122,7 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 - [ ] Production `.env` via secrets, not files (JWT secrets ≥ 32 chars, DB URL, `ALLOWED_ORIGIN`,
       `TRUST_PROXY`; the process runs on Asia/Manila time unless `TZ` is set).
 - [ ] Backup / restore procedure + a tested restore.
-- [ ] Run the full schema set `Database/schemas/001…016` against the prod DB, in order. **Run
+- [ ] Run the full schema set `Database/schemas/001…017` against the prod DB, in order. **Run
       `003`, `006`, `007`, `008`, `010` and `013` with plain `psql -f` (no `--single-transaction`):**
       they use `ALTER TYPE … ADD VALUE`, which cannot run inside a transaction. All are safe to re-run.
 - [x] Shared dev Supabase is at `016` (008–014 applied 2026-10-11, 015 on 2026-10-14, 016 on

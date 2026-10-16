@@ -2,7 +2,7 @@
 
 > **System:** Asset Inventory Management and Requisition System (AIMRS)
 > **Client:** Cybercrime Investigation and Coordinating Center (CICC)
-> **Last reviewed against the controllers:** 2026-10-16. Seven roles. The permission matrix below is read from each controller's `@Roles(...)` list and is the same table as CLAUDE.md §4: change both together.
+> **Last reviewed against the controllers:** 2026-10-16. Six roles (the Property Officer was merged into the Property Custodian on 2026-10-16). The permission matrix below is read from each controller's `@Roles(...)` list and is the same table as CLAUDE.md §4: change both together.
 
 ---
 
@@ -16,10 +16,9 @@
 | Employee | employee@cicc.gov.ph | Employee@CICC2026! |
 | Management | management@cicc.gov.ph | Management@CICC2026! |
 | Property Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
-| Property Officer | property.officer@cicc.gov.ph | PropertyOfficer@2026! |
 | Supervisor (Approving Officer, Property and Supply Management) | psm.approver@cicc.gov.ph | PSMApprover@2026! |
 
-> **The last row is the approver for the Property Custodian and Property Officer.** Both sit in the *Property and Supply Management* division (sections *Property Custody Unit* and *Property Governance*); requisitions route to the active Approving Officer of the requester's section, then their division, so this account (employee ID `CICC-SUP-002`, section *Property and Supply Approving Office*) receives theirs. Its own requisitions go to its alternate approver, `alt.supervisor@cicc.gov.ph` (`CICC-ALT01`). Created 2026-10-16 through `POST /api/v1/users` and verified with a live login. The `supervisor@cicc.gov.ph` account (Maria Santos, *Operations / Field Operations*) is unchanged and approves for that section only.
+> **The last row is the approver for the Property Custodian.** The role sits in the *Property and Supply Management* division (section *Property Custody Unit*; the retired Property Officer's section was *Property Governance*); requisitions route to the active Approving Officer of the requester's section, then their division, so this account (employee ID `CICC-SUP-002`, section *Property and Supply Approving Office*) receives theirs. Its own requisitions go to its alternate approver, `alt.supervisor@cicc.gov.ph` (`CICC-ALT01`). Created 2026-10-16 through `POST /api/v1/users` and verified with a live login. The `supervisor@cicc.gov.ph` account (Maria Santos, *Operations / Field Operations*) is unchanged and approves for that section only.
 
 > **Note:** If an account gets locked after too many failed login attempts, a System Administrator can unlock it via `PATCH /api/v1/users/:id/unlock` or reset the password via `PATCH /api/v1/users/:id/reset-password`. To end a possibly-compromised session without changing the password, use `PATCH /api/v1/users/:id/revoke-sessions`.
 >
@@ -203,6 +202,7 @@ The custodian of **Fixed assets and Supplies** (furniture, vehicles, office equi
 - Fulfil or hold approved Fixed / Supplies requisitions (fulfilling a supply draws the stock down in the same transaction)
 - Decide Returns & Incidents requests for Fixed / Supplies, and run the Maintenance & Repair queue (including loaner units)
 - See the Physical Inventory count sheet, and recommend disposal with a documented justification
+- **Replacement Validation** and **Disposal Review**, two read-only lists: every replacement request with the basis it was justified on and the old unit's repairs in the last 12 months (plus held items that already qualify but have no open request), and every asset recommended for disposal. They were the Property Officer's screens
 - Generate official COA forms and view the forms archive; receive notifications (low stock, overdue returns, repairs)
 - **File requisitions and replacements** (My Requisitions, Request replacement) like any other holder, and see **My Assigned Assets**
 
@@ -212,22 +212,7 @@ The custodian of **Fixed assets and Supplies** (furniture, vehicles, office equi
 
 ---
 
-### Property Officer
-**Dashboard:** `/property-officer/dashboard`
-
-Oversight of Fixed assets and Supplies. Mostly read-only.
-
-**Can do:**
-- View the consolidated asset registry, an asset's transaction history, and the Disposal Review (assets recommended for disposal)
-- **Replacement Validation**: every replacement request with the basis it was justified on and the old unit's repairs in the last 12 months, plus held items that already qualify but have no open request
-- View and download the forms archive; receive notifications
-- **File requisitions and replacements** and see **My Assigned Assets**
-
-**Cannot do:**
-- Register or change assets, update lifecycles, generate forms (archive only), fulfil, approve, or decide returns & incidents
-- Touch ICT assets
-
-> Both property roles file requisitions like any employee: the request routes to the active Approving Officer of their section, otherwise their division (here, `psm.approver@cicc.gov.ph`, whose own requests go to its alternate). If the division has none, submitting fails with "No supervisor is configured for your section".
+> The Property Custodian files requisitions like any employee: the request routes to the active Approving Officer of their section, otherwise their division (here, `psm.approver@cicc.gov.ph`, whose own requests go to its alternate). If the division has none, submitting fails with "No supervisor is configured for your section".
 
 ---
 
@@ -239,40 +224,39 @@ Oversight of Fixed assets and Supplies. Mostly read-only.
 | Supervisor (Approving Officer) | Their designated alternate approver | Same custodian split |
 | IT Personnel | Approving Officer of their section, else division | **Another** IT Personnel; the System Administrator if the request is theirs and there is no other |
 | Property Custodian | Approving Officer of their section, else division | **Another** Property Custodian; the System Administrator as fallback |
-| Property Officer | Approving Officer of their section, else division | The custodian for the item type (Property Officer is not a fulfiller) |
 | Management, System Administrator | — cannot file — | — |
 
 ---
 
 ## Quick Reference — Feature Access Matrix
 
-| Feature | Employee | Supervisor | IT Personnel | Property Custodian | Property Officer | System Admin | Management |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Login | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Submit requisition / replacement | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| Track own requests | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| Browse the asset catalogue (requisition picker) | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| See assets I hold; file return / repair / damage / loss / theft on them | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Receive notifications | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Approve / reject requisitions | — | ✓ | — | — | — | ✓ | — |
-| Approval history (decisions I made) | — | ✓ | — | — | — | ✓ | — |
-| Fulfil / hold requisitions | — | — | ✓ ¹ | ✓ ¹ | — | ✓ ² | — |
-| Decide returns & incidents requests | — | — | ✓ ¹ | ✓ ¹ | — | ✓ ² | — |
-| Run maintenance & repair (incl. loaner) | — | — | ✓ ¹ | ✓ ¹ | — | ✓ ² | — |
-| Register assets, edit non-status fields | — | — | ✓ ³ | ✓ ³ | — | — | — |
-| Update asset lifecycle (issue / return / transfer / repair / flag for disposal) | — | — | ✓ ³ | ✓ ³ | — | — | — |
-| Generate / scan QR and barcodes | — | — | ✓ ³ | ✓ ³ | — | — | — |
-| View the asset registry and inventory dashboard | — | — | ✓ ³ | ✓ ³ | ✓ ³ | ✓ | ✓ |
-| View an asset's transaction history | — | — | ✓ ³ | ✓ ³ | ✓ ³ | ✓ | ✓ |
-| See the replacement-validation list and assets flagged for disposal (read-only) | — | — | ✓ ³ | ✓ ³ | ✓ ³ | ✓ | ✓ |
-| Generate official forms (PAR, ICS, RIS…) | — | — | ✓ | ✓ | — | ✓ | — |
-| View / download the forms archive | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Generate management reports | — | — | ✓ | ✓ | — | ✓ | ✓ |
-| User accounts, role assignment, system configuration | — | — | — | — | — | ✓ | — |
-| View the full audit trail (all records) | — | — | — | — | — | ✓ | ✓ |
-| Executive KPI dashboard | — | — | — | — | — | ✓ | ✓ |
+| Feature | Employee | Supervisor | IT Personnel | Property Custodian | System Admin | Management |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Login | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Submit requisition / replacement | ✓ | ✓ | ✓ | ✓ | — | — |
+| Track own requests | ✓ | ✓ | ✓ | ✓ | — | — |
+| Browse the asset catalogue (requisition picker) | ✓ | ✓ | ✓ | ✓ | — | — |
+| See assets I hold; file return / repair / damage / loss / theft on them | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Receive notifications | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Approve / reject requisitions | — | ✓ | — | — | ✓ | — |
+| Approval history (decisions I made) | — | ✓ | — | — | ✓ | — |
+| Fulfil / hold requisitions | — | — | ✓ ¹ | ✓ ¹ | ✓ ² | — |
+| Decide returns & incidents requests | — | — | ✓ ¹ | ✓ ¹ | ✓ ² | — |
+| Run maintenance & repair (incl. loaner) | — | — | ✓ ¹ | ✓ ¹ | ✓ ² | — |
+| Register assets, edit non-status fields | — | — | ✓ ³ | ✓ ³ | — | — |
+| Update asset lifecycle (issue / return / transfer / repair / flag for disposal) | — | — | ✓ ³ | ✓ ³ | — | — |
+| Generate / scan QR and barcodes | — | — | ✓ ³ | ✓ ³ | — | — |
+| View the asset registry and inventory dashboard | — | — | ✓ ³ | ✓ ³ | ✓ | ✓ |
+| View an asset's transaction history | — | — | ✓ ³ | ✓ ³ | ✓ | ✓ |
+| See the replacement-validation list and assets flagged for disposal (read-only) | — | — | ✓ ³ | ✓ ³ | ✓ | ✓ |
+| Generate official forms (PAR, ICS, RIS…) | — | — | ✓ | ✓ | ✓ | — |
+| View / download the forms archive | — | — | ✓ | ✓ | ✓ | ✓ |
+| Generate management reports | — | — | ✓ | ✓ | ✓ | ✓ |
+| User accounts, role assignment, system configuration | — | — | — | — | ✓ | — |
+| View the full audit trail (all records) | — | — | — | — | ✓ | ✓ |
+| Executive KPI dashboard | — | — | — | — | ✓ | ✓ |
 
-¹ Never for a requisition or request they filed themselves. ² Only for a custodian's own request or requisition (the fallback). ³ Inside the role's own asset-type scope: IT Personnel see and change **ICT** only; Property Custodian and Property Officer see **Fixed** and **Supplies** only. Enforced in the service layer on every read and write (`resolveAssetTypeScope`), not just in the menu.
+¹ Never for a requisition or request they filed themselves. ² Only for a custodian's own request or requisition (the fallback). ³ Inside the role's own asset-type scope: IT Personnel see and change **ICT** only; Property Custodian sees **Fixed** and **Supplies** only. Enforced in the service layer on every read and write (`resolveAssetTypeScope`), not just in the menu.
 
 ---
 
@@ -285,7 +269,17 @@ Oversight of Fixed assets and Supplies. Mostly read-only.
 | **IT Personnel** (IT Asset Custodian) | `/login`, `/it-asset-custodian/{dashboard, assets, assets/new, assets/[id], fulfillment, custody, returns-incidents, qr-scanner, maintenance, physical-inventory, disposal, reports, management-reports, requisitions, assigned-assets, notifications}` |
 | **System Admin** (Master Administrator) | `/login`, `/master-admin/{dashboard, users, roles, configuration, audit, returns-incidents, repairs, fulfillment, assigned-assets, notifications}` |
 | **Management** (Management & Audit Viewer) | `/login`, `/management-audit/{dashboard, asset-reports, requisition-reports, maintenance-disposal, physical-count, audit, forms, assigned-assets, notifications}` |
-| **Property Custodian** | `/login`, `/property-custodian/{dashboard, fixed-assets, supplies, fulfillment, custody, returns-incidents, maintenance, qr-scanner, physical-inventory, disposal, reports, requisitions, assigned-assets, notifications}` |
-| **Property Officer** | `/login`, `/property-officer/{dashboard, assets, replacements, disposal, reports, requisitions, assigned-assets, notifications}` |
+| **Property Custodian** | `/login`, `/property-custodian/{dashboard, fixed-assets, supplies, fulfillment, custody, returns-incidents, maintenance, qr-scanner, physical-inventory, disposal, disposal-review, replacements, reports, requisitions, assigned-assets, notifications}` |
 
 Every role also has **My Assigned Assets** and **Notifications**. The menu for each role is `Frontend/lib/roles/role-navigation.ts`; an address with no screen behind it is a 404.
+
+---
+
+## The retired Property Officer role
+
+The Property Officer could see the registry, replacement validation, disposal review and the forms archive and file requisitions, and could change nothing. The Property Custodian can do all of that and more, so the two were merged on 2026-10-16. What happened:
+
+- Accounts that held the role became Property Custodians (schema `017`; their sessions were invalidated so the next login shows the new menu). In the shared dev database that is `property.officer@cicc.gov.ph`.
+- The `property_officer` value stays in the Postgres `user_role` enum and in the shared `UserRole` enum, marked deprecated: Postgres cannot drop an enum value, and old audit entries still carry it. No route grants it, the API refuses to assign it (`ASSIGNABLE_USER_ROLES`), and the admin dashboard lists it only while an account still holds it.
+- The two Property Officer screens that read real records, **Replacement Validation** and **Disposal Review**, are now in the Property Custodian's menu; the consolidated registry and dashboard were dropped (the custodian has the Fixed Assets and Supplies registries). `/property-officer/*` redirects.
+- Trade-off accepted: a custodian both recommends a disposal and can review it. That is harmless while the review is read-only, but it means the role cannot later become an independent approval gate without being re-added.

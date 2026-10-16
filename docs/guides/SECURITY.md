@@ -974,6 +974,7 @@ The sections above are the original contract. These controls came from later ver
 | The server runs on CICC time (Asia/Manila), so day boundaries and the daily jobs are right in a UTC container | `common/app-time-zone.ts`, `main.ts` | `app-time-zone.spec.ts` |
 | Database function `search_path` pinned (Supabase advisor lint 0011) | `015_function_search_path.sql` | applied to dev |
 | Names, not ids, in the audit screens, and only for people (CLAUDE.md §8.4) | `audit.service.ts` `withNames` | `audit.service.spec.ts` |
+| A retired role cannot come back: no controller route grants `property_officer`, the API refuses to assign it, and the scope helper never treats it as unscoped | `common/retired-roles.spec.ts` scans every controller; `ASSIGNABLE_USER_ROLES` in `packages/shared`; `017_retire_property_officer.sql` | `retired-roles.spec.ts`, `user.dto.spec.ts`, `property-requisitions.e2e-spec.ts` |
 
 **Known gaps in this area:** the auth events *failed login, lockout, refresh-token reuse and logout* still use fire-and-forget audit calls (`void this.auditService.log(...)`), so a database blip at that exact moment loses the entry silently; the dev credentials in the docs are in a public repo and must be rotated before handover; no OWASP ZAP scan has been run yet (`docs/phases/PHASE-5-TESTING.md`).
 
