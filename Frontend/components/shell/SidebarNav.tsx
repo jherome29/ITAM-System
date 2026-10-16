@@ -1,7 +1,8 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
-import { LogOut, Shield, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
+import { LogOut, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import type { RoleNavItem } from '@/lib/roles/role-navigation';
 import { proposedRoleLabels, ProposedUserRole } from '@/lib/roles/proposed-roles';
@@ -43,12 +44,10 @@ export function SidebarNav({
       >
         {(!collapsed || mobile) && (
           <>
-            <span className="grid h-9 w-9 flex-none place-items-center rounded-lg bg-blue-600">
-              <Shield className="h-5 w-5" />
-            </span>
+            <Image src="/logo.png" alt="CICC logo" width={40} height={40} priority className="h-10 w-10 flex-none object-contain" />
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold">{appConfig.appName}</p>
-              <p className="truncate text-xs text-blue-200">CICC Asset Mgmt</p>
+              <p className="text-sm font-bold leading-tight">{appConfig.appName}</p>
+              <p className="text-[11px] leading-tight text-blue-200">CICC Asset Management</p>
             </div>
           </>
         )}

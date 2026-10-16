@@ -1,8 +1,7 @@
 'use client';
 
-import { Bell, Building2, CalendarDays, Menu, RefreshCw } from 'lucide-react';
+import { Bell, CalendarDays, Menu } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { Breadcrumbs } from './Breadcrumbs';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
@@ -27,9 +26,7 @@ function captionFor(n: Notification): string {
 }
 
 export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole; onMenuClick: () => void }>) {
-  const router = useRouter();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const date = new Intl.DateTimeFormat('en-US', {
@@ -89,10 +86,6 @@ export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole;
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <span className="hidden h-9 items-center gap-1.5 rounded-md border border-blue-100 bg-blue-50 px-2.5 text-sm font-bold text-blue-700 sm:flex">
-          <Building2 className="h-4 w-4" />
-          CICC
-        </span>
         <span className="hidden h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-sm text-slate-600 sm:flex">
           <CalendarDays className="h-4 w-4" />
           {date}
@@ -160,9 +153,6 @@ export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole;
             </div>
           )}
         </div>
-        <button type="button" onClick={() => { setRefreshing(true); router.refresh(); window.setTimeout(() => setRefreshing(false), 600); }} className="rounded-md p-2 text-slate-500 hover:bg-slate-100" aria-label="Refresh page" title="Refresh page">
-          <RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
-        </button>
       </div>
     </header>
   );
