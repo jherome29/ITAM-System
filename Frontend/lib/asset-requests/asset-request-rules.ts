@@ -261,3 +261,13 @@ export function formatBytes(n: number): string {
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/** Shortest rejection reason the server accepts (RejectAssetRequestDto). */
+export const MIN_REJECT_REASON_LENGTH = 10;
+
+/** What is wrong with a rejection reason, or null. A rejection is the requester's only explanation. */
+export function rejectReasonProblem(reason: string): string | null {
+  const length = reason.trim().length;
+  if (length >= MIN_REJECT_REASON_LENGTH) return null;
+  return `Write at least ${MIN_REJECT_REASON_LENGTH} characters so the requester knows why (${MIN_REJECT_REASON_LENGTH - length} more).`;
+}
