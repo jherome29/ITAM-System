@@ -19,14 +19,13 @@ import {
   Send,
   Undo2,
 } from 'lucide-react';
-import { StatusChip } from '@/components/admin/AdminUi';
 import { DashboardSkeleton } from '@/components/states/DashboardSkeleton';
 import { useAuth } from '@/lib/auth/use-auth';
 import { requisitionsApi, type Requisition, type RequisitionStats } from '@/lib/api/requisitions';
 import { notificationsApi } from '@/lib/api/notifications';
 import { assetsApi, type MyAsset } from '@/lib/api/assets';
 import { localToday } from '@/lib/dates';
-import { formatDate } from '@/lib/requisitions/requisition-view';
+import { formatDate, requisitionStatusLabel } from '@/lib/requisitions/requisition-view';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { buttonClass } from '@/components/ui/buttons';
 import { Chip } from '@/components/ui/Chip';
@@ -36,6 +35,7 @@ import { Panel } from '@/components/ui/Panel';
 import { toneStyles } from '@/components/ui/tones';
 import { Notice } from '@/components/ui/Notice';
 import { EmptyMessage } from '@/components/ui/EmptyRow';
+import { humanize } from '@/lib/text';
 
 /** A loaned item due back within this many days shows under "Needs your attention". */
 const DUE_SOON_DAYS = 7;
@@ -201,7 +201,7 @@ export function EmployeeDashboard() {
                       <p className="mt-1 text-xs text-slate-500">{request.requestNumber} · Needed {String(request.requiredDate).slice(0, 10)}</p>
                     </div>
                     <span className="inline-flex items-center gap-1.5 text-xs text-slate-500"><CalendarClock className="h-3.5 w-3.5" />{formatDate(request.updatedAt)}</span>
-                    <StatusChip status={request.status.replace(/_/g, ' ')} tone={request.status === 'on_hold' ? 'amber' : 'blue'} />
+                    <StatusBadge status={request.status} label={requisitionStatusLabel(request.status)} />
                     <ChevronRight className="hidden h-4 w-4 text-slate-500 transition group-hover:translate-x-0.5 group-hover:text-blue-600 sm:block" />
                   </Link>
                 );
@@ -222,7 +222,7 @@ export function EmployeeDashboard() {
                     <span className="grid h-9 w-9 flex-none place-items-center rounded-md bg-slate-100 text-slate-600 group-hover:bg-blue-50 group-hover:text-blue-700"><Laptop className="h-4 w-4" /></span>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-start justify-between gap-2"><p className="text-sm font-bold text-slate-950">{asset.itemDescription}</p><StatusBadge status={asset.status} /></div>
-                      <p className="mt-1 text-xs text-slate-500">{[asset.propertyNumber || asset.serialNumber, asset.condition.replaceAll('_', ' ')].filter(Boolean).join(' · ')}</p>
+                      <p className="mt-1 text-xs text-slate-500">{[asset.propertyNumber || asset.serialNumber, humanize(asset.condition)].filter(Boolean).join(' · ')}</p>
                       {asset.repair ? (
                         <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-slate-500"><CalendarClock className="h-3.5 w-3.5" />Under repair — expected back {formatDate(asset.repair.dueDate)}</p>
                       ) : location ? (

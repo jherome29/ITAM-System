@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Clock, XCircle } from 'lucide-react';
-import { AdminPageHeader, MetricCard, Panel, StatusChip, TableWrap, tdClass, thClass } from '@/components/admin/AdminUi';
+import { AdminPageHeader, MetricCard, Panel, StatusChip, TableWrap, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';
 import { approvalHistorySummary, decidedRequisitions, turnaroundHours } from '@/lib/requisitions/approval-history';
@@ -77,15 +77,15 @@ export function ApprovalHistory({ eyebrow }: Readonly<{ eyebrow: string }>) {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} className="hover:bg-blue-50/40">
-                    <td className={`${tdClass} font-bold text-slate-950`}>{r.requestNumber}</td>
+                    <td className={`${tdNoWrapClass} font-bold text-slate-950`}>{r.requestNumber}</td>
                     <td className={tdClass}>{requesterLabel(r.requester)}</td>
                     <td className={tdClass}>{itemsLabel(r)}</td>
                     <td className={tdClass}>
                       <StatusChip status={r.supervisorDecision === 'approved' ? 'Approved' : 'Rejected'} tone={r.supervisorDecision === 'approved' ? 'green' : 'red'} />
                     </td>
-                    <td className={tdClass}>{formatDateTime(r.supervisorDecidedAt)}</td>
+                    <td className={tdNoWrapClass}>{formatDateTime(r.supervisorDecidedAt)}</td>
                     <td className={tdClass}>{turnaroundHours(r) === null ? '—' : `${turnaroundHours(r)} h`}</td>
-                    <td className={`${tdClass} max-w-[320px] truncate`} title={r.supervisorComments ?? ''}>{r.supervisorComments?.trim() || '—'}</td>
+                    <td className={`${tdClass} max-w-xs`} title={r.supervisorComments ?? ''}>{r.supervisorComments?.trim() || '—'}</td>
                   </tr>
                 ))}
               </tbody>

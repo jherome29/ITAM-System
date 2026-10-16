@@ -6,6 +6,7 @@ import { assetsApi, type CatalogueItem } from '@/lib/api/assets';
 import { controlBaseClass, searchControlClass } from '@/components/ui/controls';
 import { formatAvailability } from '@/lib/requisitions/catalogue-items';
 import { Chip } from '@/components/ui/Chip';
+import { humanize } from '@/lib/text';
 
 const TYPE_TABS = ['All', 'ICT', 'Fixed', 'Supplies'] as const;
 const CLASS_OPTIONS = ['All', 'PPE', 'SEP', 'IES'] as const;
@@ -163,7 +164,7 @@ function ItemMeta({ item }: Readonly<{ item: CatalogueItem }>) {
       <p>
         <span className="font-semibold text-slate-700">{item.assetType} · {item.assetClass}</span>
         {identity && <> · {identity}</>}
-        {item.conditions.length > 0 && <> · {item.conditions.join(', ').replaceAll('_', ' ')}</>}
+        {item.conditions.length > 0 && <> · {item.conditions.map(humanize).join(', ')}</>}
       </p>
       {item.locations.length > 0 && (
         <p className="flex items-center gap-1"><MapPin className="h-3 w-3" aria-hidden="true" />{item.locations.join(' · ')}</p>

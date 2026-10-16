@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ClipboardCheck, Repeat2, ShieldCheck } from 'lucide-react';
-import { AdminPageHeader, MetricCard, Panel, SearchToolbar, StatusChip, TableWrap, tdClass, thClass } from '@/components/admin/AdminUi';
+import { AdminPageHeader, MetricCard, Panel, SearchToolbar, StatusChip, TableWrap, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { REPLACEMENT_BASIS_LABEL, requisitionsApi, type ReplacementReview as Review } from '@/lib/api/requisitions';
 import { formatDate, requisitionStatusLabel } from '@/lib/requisitions/requisition-view';
@@ -86,12 +86,12 @@ export function ReplacementReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow
             <tbody>
               {visible.map((r) => (
                 <tr key={r.id} className="hover:bg-blue-50/40">
-                  <td className={`${tdClass} font-semibold text-slate-950`}>{r.requestNumber}</td>
+                  <td className={`${tdNoWrapClass} font-semibold text-slate-950`}>{r.requestNumber}</td>
                   <td className={tdClass}>{r.replacedAsset ? <>{assetLink(r.replacedAsset.id, r.replacedAsset.itemDescription)}<p className="text-xs text-slate-500">{[r.replacedAsset.propertyNumber, `${r.replacedAsset.assetType} · ${r.replacedAsset.assetClass}`].filter(Boolean).join(' · ')}</p></> : '—'}</td>
                   <td className={tdClass}>{r.requester ? <><p>{r.requester.name}</p><p className="text-xs text-slate-500">{r.requester.employeeId}</p></> : '—'}</td>
                   <td className={tdClass}>{r.replacementBasis ? REPLACEMENT_BASIS_LABEL[r.replacementBasis] : <span className="text-slate-500">Not recorded</span>}</td>
                   <td className={tdClass}><RepairCount count={r.repairsInWindow} /></td>
-                  <td className={tdClass}>{formatDate(r.submittedAt ?? r.createdAt)}</td>
+                  <td className={tdNoWrapClass}>{formatDate(r.submittedAt ?? r.createdAt)}</td>
                   <td className={tdClass}><StatusChip status={requisitionStatusLabel(r.status)} tone={statusTone(r.status)} /></td>
                 </tr>
               ))}
@@ -112,7 +112,7 @@ export function ReplacementReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow
                   <td className={tdClass}>{a.holder ? <><p>{a.holder.name}</p><p className="text-xs text-slate-500">{a.holder.employeeId}</p></> : '—'}</td>
                   <td className={tdClass}>{a.eligibility.basis ? <StatusChip status={REPLACEMENT_BASIS_LABEL[a.eligibility.basis]} tone={a.eligibility.basis === 'repeat_repair' ? 'amber' : 'blue'} /> : '—'}</td>
                   <td className={tdClass}><RepairCount count={a.repairsInWindow} /></td>
-                  <td className={tdClass}>{formatDate(a.acquisitionDate)}</td>
+                  <td className={tdNoWrapClass}>{formatDate(a.acquisitionDate)}</td>
                   <td className={`${tdClass} whitespace-normal text-xs text-slate-600`}>{a.eligibility.reason}</td>
                 </tr>
               ))}

@@ -6,7 +6,7 @@ import { ManagementAuditDashboard } from '@/components/management-audit/Manageme
 import { AuditLogPage } from '@/components/admin/AdminPlatformPages';
 import { notFound } from 'next/navigation';
 import { normalizeWorkflowSlug } from '@/lib/workflow/live-pages';
-import { ProposedUserRole, proposedRoleLabels } from '@/lib/roles/proposed-roles';
+import { ProposedUserRole, workspaceLabels } from '@/lib/roles/proposed-roles';
 
 export default async function ManagementAuditPage({
   params,
@@ -24,7 +24,7 @@ export default async function ManagementAuditPage({
   if (segment === 'physical-count') return <ReportsContent eyebrow="Management" reportTypes={['PHYSICAL_COUNT']} pageTitle="Physical Count Reports" panelTitle="Physical Count Summary" />;
   if (segment === 'forms') return <FormsWorkspaceContent eyebrow="Management" canGenerate={false} />;
   // Read-only evidence: the same append-only audit viewer the Master Admin uses.
-  if (normalizeWorkflowSlug(segment) === 'audit') return <AuditLogPage eyebrow={proposedRoleLabels[ProposedUserRole.MANAGEMENT_AUDIT_VIEWER]} />;
+  if (normalizeWorkflowSlug(segment) === 'audit') return <AuditLogPage eyebrow={workspaceLabels[ProposedUserRole.MANAGEMENT_AUDIT_VIEWER]} />;
   notFound();
 }
 

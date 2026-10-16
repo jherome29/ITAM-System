@@ -13,6 +13,7 @@ import { attentionPanelState } from '@/lib/admin-attention';
 import { schedulerApi, type WatcherName, type WatcherStatus, type WatcherSweep } from '@/lib/api/scheduler';
 import { AdminPageHeader, MetricCard, Panel, StatusChip, type AdminTone } from './AdminUi';
 import { formatDateTime, formatTime } from '@/lib/dates';
+import { roleLabel } from '@/lib/assets/asset-history';
 
 // Backend UserRole enum value -> the label already used on the Users & Roles
 // screens (AdminIdentityPages USER_ROLE_OPTIONS). Kept local so the dashboard
@@ -363,7 +364,7 @@ export function AdminDashboard() {
                 <div key={log.id} className="py-3">
                   <div className="flex items-start justify-between gap-3">
                     <p className="text-sm font-semibold text-slate-900">{auditEventLabel(log)}</p>
-                    <StatusChip status={log.userRole.replace(/_/g, ' ')} />
+                    <StatusChip status={roleLabel(log.userRole)} />
                   </div>
                   <p className="mt-1 text-xs text-slate-500">{log.ipAddress || 'no-ip'} · {formatDateTime(log.timestamp)}</p>
                 </div>

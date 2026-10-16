@@ -87,11 +87,11 @@ export function ActionMenu({ actions }: Readonly<{ actions: Array<{ label: strin
 
   return (
     <div ref={ref} className="relative inline-flex">
-      <button type="button" onClick={() => setOpen((value) => !value)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="Open row actions" aria-expanded={open}>
-        <MoreHorizontal className="h-4 w-4" />
+      <button type="button" onClick={() => setOpen((value) => !value)} className="grid h-10 w-10 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="Open row actions" aria-expanded={open}>
+        <MoreHorizontal className="h-5 w-5" />
       </button>
       {open && (
-        <div className="absolute right-0 top-9 z-20 w-44 border border-slate-200 bg-white py-1 shadow-xl">
+        <div className="absolute right-0 top-11 z-20 w-52 rounded-md border border-slate-200 bg-white py-1 shadow-xl">
           {actions.map((action) => (
             <button key={action.label} type="button" onClick={() => { action.onClick(); setOpen(false); }} className={`block w-full px-3 py-2 text-left text-sm hover:bg-slate-50 ${action.danger ? 'text-red-700' : 'text-slate-700'}`}>
               {action.label}
@@ -107,9 +107,12 @@ export function TableWrap({ children }: Readonly<{ children: ReactNode }>) {
   return <div className="w-full max-w-full overflow-x-auto">{children}</div>;
 }
 
-export const thClass = 'whitespace-nowrap bg-slate-50 px-4 py-3 text-left text-xs font-bold uppercase text-slate-500';
-export const tdWrapClass = 'border-t border-slate-100 px-4 py-3 text-sm text-slate-700';
-export const tdClass = `whitespace-nowrap ${tdWrapClass}`;
+// Table cells and headers may wrap. A no-wrap default pushed 16 tables wider than their
+// panel once the text got bigger, hiding the Actions column off the right edge.
+export const thClass = 'bg-slate-50 px-4 py-3 text-left text-xs font-bold uppercase text-slate-500';
+export const tdClass = 'border-t border-slate-100 px-4 py-3 text-sm text-slate-700';
+/** For a column that must stay on one line: a time, a count. */
+export const tdNoWrapClass = `whitespace-nowrap ${tdClass}`;
 
 // The form kit lives in components/ui; these names stay importable from here so the
 // admin screens (and everything built on them) keep one import path.

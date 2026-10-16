@@ -17,6 +17,7 @@ import {
 } from '@/lib/requisitions/requisition-view';
 import { Chip } from '@/components/ui/Chip';
 import type { Tone } from '@/components/ui/tones';
+import { humanize } from '@/lib/text';
 
 // The SLA countdown is a chip in the shared tones: red once overdue, amber when close.
 const SLA_TONE: Record<SlaTone, Tone> = { red: 'red', amber: 'amber', slate: 'slate' };
@@ -113,7 +114,7 @@ export function RequisitionDetailView({ request }: Readonly<{ request: Requisiti
     ['Request No.', request.requestNumber],
     ['Requested by', requesterLabel(request.requester)],
     ['Approving officer', request.approver ? `${request.approver.name} · ${request.approver.employeeId}` : 'Not yet assigned'],
-    ['Request type', request.requisitionType.replaceAll('_', ' ')],
+    ['Request type', humanize(request.requisitionType)],
     ['Total quantity', String(totalQty)],
     ['Required by', formatDate(request.requiredDate)],
   ];

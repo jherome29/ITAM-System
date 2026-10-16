@@ -12,7 +12,7 @@ import { formatDate } from '@/lib/dates';
 import { SecondaryButton } from '@/components/admin/AdminUi';
 import { surfaceClass } from '@/components/ui/controls';
 import { useAuth } from '@/lib/auth/use-auth';
-import { proposedRoleLabels } from '@/lib/roles/proposed-roles';
+import { workspaceLabels } from '@/lib/roles/proposed-roles';
 import { mapBackendRoleToProposedRole } from '@/lib/roles/role-mapping';
 import { Notice } from '@/components/ui/Notice';
 
@@ -49,7 +49,7 @@ export function NotificationsContent() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow={proposedRoleLabels[mapBackendRoleToProposedRole(user?.role)]}
+        eyebrow={workspaceLabels[mapBackendRoleToProposedRole(user?.role)]}
         title="Notifications"
         detail="Alerts that need your attention, newest first."
         action={<SecondaryButton onClick={markAllRead}>Mark all as read</SecondaryButton>}

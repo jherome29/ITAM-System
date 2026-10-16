@@ -12,7 +12,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { ASSET_LIFECYCLE_TRANSITIONS as NEXT_TRANSITIONS, lifecycleNotesRequired } from '@/lib/assets/lifecycle-transitions';
 import { formatDateTime, formatPeso } from '@/lib/dates';
-import { tdClass, tdWrapClass, thClass } from '@/components/admin/AdminUi';
+import { tdClass, thClass } from '@/components/admin/AdminUi';
 import { buttonClass } from '@/components/ui/buttons';
 import { controlClass, labelClass, surfaceClass, textareaClass } from '@/components/ui/controls';
 import { DateField } from '@/components/ui/DateField';
@@ -458,7 +458,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                       <Chip tone="blue">{entry.event}</Chip>
                     </td>
                     <td className={tdClass}>{entry.by}</td>
-                    <td className={tdWrapClass}>
+                    <td className={tdClass}>
                       {entry.details.length === 0 ? '—' : entry.details.map((line) => <p key={line}>{line}</p>)}
                     </td>
                   </tr>

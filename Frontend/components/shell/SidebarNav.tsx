@@ -109,14 +109,14 @@ export function SidebarNav({
           {(!collapsed || mobile) && (
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold leading-5 text-white">{displayName}</p>
-              <p className="truncate text-xs leading-5 text-blue-200">{proposedRoleLabels[role]}</p>
+              <p className="text-xs leading-5 text-blue-200">{proposedRoleLabels[role]}</p>
             </div>
           )}
           {(!collapsed || mobile) && (
             <button
               type="button"
               onClick={() => logout()}
-              className="grid h-8 w-8 flex-none place-items-center rounded-md text-blue-200 hover:bg-white/10 hover:text-white"
+              className="grid h-10 w-10 flex-none place-items-center rounded-md text-blue-200 hover:bg-white/10 hover:text-white"
               aria-label="Sign out"
               title="Sign out"
             >

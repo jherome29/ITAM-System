@@ -289,7 +289,7 @@ cd Backend;  npm run audit:check
 cd Frontend; npx tsc --noEmit
 cd Frontend; npx eslint . --max-warnings 0
 cd Frontend; npm run build
-cd Frontend; npm test                # 447 vitest tests (2026-10-16)
+cd Frontend; npm test                # 456 vitest tests (2026-10-16)
 cd Frontend; npm run audit:check
 cd ..;       npm run secretlint
 ```
@@ -419,7 +419,17 @@ Three traps cost an hour each:
 - **`addInitScript` outlives everything.** A script from an earlier login keeps re-writing its (now stale) token on every navigation, and `unrouteAll` does not remove it. Scripts run in registration order, so register a new one with the fresh token each time and the last one wins; to start clean, open a new browser context.
 - **The `response` event reports the original URL** (`:3001`) even when the sandbox answered. To see which backend answered, compare `GET /api/health` `uptime` from the page with the two servers'. A page-level `page.route` from an earlier session also beats a context-level one, so call `page.unrouteAll()` first.
 
-Also check horizontal overflow (`document.documentElement.scrollWidth > clientWidth`) at 1366, 820 and 390 wide, and look at the screenshot: a green test does not tell you a toolbar looks right.
+Also check horizontal overflow (`document.documentElement.scrollWidth > clientWidth`) at 1366, 820 and 390 wide, and look at the screenshot: a green test does not tell you a toolbar looks right. **A table that scrolls inside its own panel does not trip that check** (the page itself does not overflow), yet its last column and its buttons are hidden. So also run this on every page that has a table, at 1440 and 1366, with data in it (seed the sandbox with `npm run seed:demo`, both rounds):
+
+```js
+document.querySelectorAll('*').forEach((e) => {
+  const cs = getComputedStyle(e);
+  if ((cs.overflowX === 'auto' || cs.overflowX === 'scroll') && e.scrollWidth > e.clientWidth + 2)
+    console.log('hidden by scroll:', e.scrollWidth - e.clientWidth, 'px', [...e.querySelectorAll('th')].map((t) => t.innerText).join('/'));
+});
+```
+
+The same pass is worth doing for text under 14px, `undefined` / `NaN` in the page text, and the buttons on each queue (open the drawer behind every Review / Update / Manage button: the drawers are where the forms live). Remember that several things are `role="tab"` or a card-sized button, not a plain button, when you script the clicks.
 
 **For PDFs**, generate each form through `POST /api/v1/reports/forms/generate` (and
 the management reports through `POST /api/v1/reports/generate`), render the pages to

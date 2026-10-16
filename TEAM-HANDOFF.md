@@ -54,7 +54,7 @@ If you have an old local clone with a branch called `FE-Updated-not-finished`: t
 
 **Open items:** SonarCloud's quality gate fails ("C Reliability Rating on New Code") and the issue is not yet identified; see `NEXT-TIME.md`.
 
-**Health (2026-10-16):** every `CHECKS.md` item clean; backend 800 unit tests (96% statements) and 94 e2e tests on a real Postgres; frontend 447 tests. Screens and all 18 PDFs were also driven/rendered against a throwaway database.
+**Health (2026-10-16):** every `CHECKS.md` item clean; backend 800 unit tests (96% statements) and 94 e2e tests on a real Postgres; frontend 456 tests. Screens and all 18 PDFs were also driven/rendered against a throwaway database.
 
 For a one-screen state map see **`FEATURE-STATUS.md`** (✅ / 🟡 / 🔴 mock / ⬜); for the full path to CICC handover see **`PATH-TO-DONE.md`**; for the plain-language gap list see **`SYSTEM-STATUS.md`**; for a screen-by-screen mock inventory see **`MOCK-DATA-WIRING.md`** — all at the repo root.
 

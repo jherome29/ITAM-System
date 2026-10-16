@@ -33,7 +33,7 @@ import { useAuth } from '@/lib/auth/use-auth';
 import { DateField } from '@/components/ui/DateField';
 import { controlClass, textareaClass } from '@/components/ui/controls';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { PrimaryButton, tdWrapClass, thClass } from '@/components/admin/AdminUi';
+import { PrimaryButton, tdClass, thClass } from '@/components/admin/AdminUi';
 import { buttonClass } from '@/components/ui/buttons';
 import { Notice } from '@/components/ui/Notice';
 import { EmptyRow } from '@/components/ui/EmptyRow';
@@ -486,7 +486,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                 const liveReq = isRequisitionPage ? requisitionById[String(row.id)] : undefined;
                 return (
                 <tr key={String(row.id)} className="hover:bg-blue-50/40">
-                  <td className={tdWrapClass}>
+                  <td className={tdClass}>
                     <p className="font-bold text-slate-950">{String(row.item ?? row.id)}</p>
                     <p className="text-xs text-slate-500">
                       {isAssetPage
@@ -495,7 +495,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                     </p>
                   </td>
                   {isAssetPage && (
-                    <td className={tdWrapClass}>
+                    <td className={tdClass}>
                       <p className="font-semibold text-slate-800">{String(row.heldBy)}</p>
                       {row.dueBack ? (
                         <p className={`text-xs ${row.overdue ? 'font-bold text-red-600' : 'text-slate-500'}`}>
@@ -504,21 +504,21 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                       ) : null}
                     </td>
                   )}
-                  {isAssetPage && <td className={tdWrapClass}>{String(row.location ?? '-')}</td>}
+                  {isAssetPage && <td className={tdClass}>{String(row.location ?? '-')}</td>}
                   {liveReq && (
                     <>
-                      <td className={tdWrapClass}>
+                      <td className={tdClass}>
                         <p className="font-semibold text-slate-800">{liveReq.requester?.name ?? 'Unknown requester'}</p>
                         <p className="text-xs text-slate-500">{[liveReq.requester?.employeeId, liveReq.requester?.officeOrSection, liveReq.requisitionType].filter(Boolean).join(' · ')}</p>
                       </td>
-                      <td className={tdWrapClass}>
+                      <td className={tdClass}>
                         <p>{formatDate(liveReq.requiredDate)}</p>
                         <SlaBadge request={liveReq} />
                       </td>
                     </>
                   )}
-                  <td className={tdWrapClass}><StatusBadge status={String(row.status ?? 'Open')} label={liveReq ? requisitionStatusLabel(liveReq.status) : undefined} /></td>
-                  <td className={tdWrapClass}>
+                  <td className={tdClass}><StatusBadge status={String(row.status ?? 'Open')} label={liveReq ? requisitionStatusLabel(liveReq.status) : undefined} /></td>
+                  <td className={tdClass}>
                     <div className="flex justify-end gap-2">
                       <button type="button" onClick={() => setSelected(row)} className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">View</button>
                       <button type="button" onClick={() => { setSelected(row); if (rowActionMode(normalizedSlug) === 'confirm') setConfirmAction(rowActionLabel(normalizedSlug)); }} className={buttonClass({ size: 'sm' })}>
@@ -530,7 +530,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                 );
               })}
               {visibleRows.length === 0 && (
-                <EmptyRow colSpan={5}>No records match the current filters.</EmptyRow>
+                <EmptyRow colSpan={5}>{search || statusFilter !== 'All' ? 'No records match the current filters.' : 'Nothing here yet.'}</EmptyRow>
               )}
             </tbody>
           </table>

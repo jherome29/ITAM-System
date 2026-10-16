@@ -3,13 +3,14 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Archive, UserCheck, UserMinus } from 'lucide-react';
-import { AdminPageHeader, MetricCard, Panel, StatusChip, TableWrap, tdClass, thClass } from '@/components/admin/AdminUi';
+import { AdminPageHeader, MetricCard, Panel, StatusChip, TableWrap, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { assetsApi, type Asset } from '@/lib/api/assets';
 import { disposalReviewSummary } from '@/lib/assets/disposal-review';
 import { formatDateTime } from '@/lib/requisitions/requisition-view';
 import { Notice } from '@/components/ui/Notice';
 import { EmptyMessage } from '@/components/ui/EmptyRow';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
 /**
  * Disposal Review (Property Custodian, read-only): every asset in the custodian's
@@ -73,12 +74,12 @@ export function DisposalReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow: s
                     </td>
                     <td className={tdClass}>{a.propertyNumber || '—'}</td>
                     <td className={tdClass}>{a.assetClass} · {a.assetType}</td>
-                    <td className={tdClass}>{a.condition.replaceAll('_', ' ')}</td>
+                    <td className={tdClass}><StatusBadge status={a.condition} /></td>
                     <td className={tdClass}>{a.officeLocation || a.officeOrSection || '—'}</td>
                     <td className={tdClass}>
                       {a.custodianId ? <StatusChip status="Holder still accountable" tone="amber" /> : <StatusChip status="Released" tone="slate" />}
                     </td>
-                    <td className={tdClass}>{formatDateTime(a.updatedAt)}</td>
+                    <td className={tdNoWrapClass}>{formatDateTime(a.updatedAt)}</td>
                   </tr>
                 ))}
               </tbody>

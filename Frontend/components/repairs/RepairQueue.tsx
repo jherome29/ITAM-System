@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock, Wrench } from 'lucide-react';
-import { AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from '@/components/admin/AdminUi';
+import { AdminPageHeader, Field, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, inputClass, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
@@ -302,7 +302,7 @@ export function RepairQueue({
                   <td className={tdClass}><p className="font-bold text-slate-950">{r.asset?.itemDescription ?? '—'}</p><p className="text-xs text-slate-500">{[r.asset?.propertyNumber, r.asset && `${r.asset.assetType} · ${r.asset.assetClass}`].filter(Boolean).join(' · ')}</p></td>
                   <td className={tdClass}>{r.holder ? <><p>{r.holder.name}</p><p className="text-xs text-slate-500">{r.holder.employeeId}</p></> : <span className="text-slate-500">In stock</span>}</td>
                   <td className={tdClass}>{SERVICE_TYPE_LABEL[r.serviceType]}{r.serviceProvider ? <p className="text-xs text-slate-500">{r.serviceProvider}</p> : null}</td>
-                  <td className={tdClass}>{formatDate(r.openedAt)}</td>
+                  <td className={tdNoWrapClass}>{formatDate(r.openedAt)}</td>
                   <td className={tdClass}>{r.completedAt ? formatDate(r.completedAt) : formatDate(r.dueDate)}</td>
                   <td className={tdClass}><StatusChip status={status.label} tone={status.tone} /></td>
                   <td className={`${tdClass} text-right`}><SecondaryButton onClick={() => open(r)}>{!r.completedAt && r.canAct ? 'Update' : 'View'}</SecondaryButton></td>

@@ -16,6 +16,12 @@ export const proposedRoleLabels: Record<ProposedUserRole, string> = {
   [ProposedUserRole.MANAGEMENT_AUDIT_VIEWER]: 'Management & Audit Viewer',
 };
 
+/** The name over a page title: the role's label, except Management, whose official title is long. */
+export const workspaceLabels: Record<ProposedUserRole, string> = {
+  ...proposedRoleLabels,
+  [ProposedUserRole.MANAGEMENT_AUDIT_VIEWER]: 'Management',
+};
+
 export const roleHomePaths: Record<ProposedUserRole, string> = {
   [ProposedUserRole.EMPLOYEE]: '/employee/dashboard',
   [ProposedUserRole.APPROVING_OFFICER]: '/approving-officer/dashboard',

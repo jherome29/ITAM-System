@@ -2,7 +2,7 @@
 // as a form control beside it) with 16px text; `sm` is for the buttons inside table rows.
 
 const BASE =
-  'inline-flex items-center justify-center gap-2 rounded-md font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed';
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed';
 
 const SIZE = {
   md: 'h-11 px-4 text-sm',

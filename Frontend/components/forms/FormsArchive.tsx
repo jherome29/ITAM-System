@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Download } from 'lucide-react';
-import { Panel, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from '@/components/admin/AdminUi';
+import { Panel, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { apiErrorMessage } from '@/lib/api/error-message';
@@ -123,12 +123,12 @@ export function FormsArchive({ refreshKey }: Readonly<{ refreshKey: number }>) {
                   <tr key={form.id} className="hover:bg-blue-50/40">
                     <td className={tdClass}>
                       <p className="font-bold text-slate-950">{formByType(form.formType)?.abbr ?? form.formType}</p>
-                      <p className="max-w-48 truncate text-xs text-slate-500" title={formTypeLabel(form.formType)}>{formTypeLabel(form.formType)}</p>
+                      <p className="max-w-56 text-xs text-slate-500" title={formTypeLabel(form.formType)}>{formTypeLabel(form.formType)}</p>
                     </td>
                     <td className={tdClass}>{form.documentNumber ? <StatusChip status={form.documentNumber} tone="blue" /> : <span className="text-slate-500">—</span>}</td>
-                    <td className={`${tdClass} max-w-48 truncate`} title={subjectOf(form)}>{subjectOf(form)}</td>
+                    <td className={`${tdClass} max-w-56`} title={subjectOf(form)}>{subjectOf(form)}</td>
                     <td className={tdClass}>{form.generatedByName ?? '—'}</td>
-                    <td className={tdClass}>{formatDateTime(form.generatedAt)}</td>
+                    <td className={tdNoWrapClass}>{formatDateTime(form.generatedAt)}</td>
                     <td className={`${tdClass} text-right`}>
                       <SecondaryButton icon={Download} onClick={() => void download(form)} disabled={downloading === form.id || form.filePath !== 'stored'}>
                         {downloading === form.id ? 'Downloading…' : 'Download'}

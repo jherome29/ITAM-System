@@ -47,6 +47,17 @@ describe('the sidebar brand', () => {
   });
 });
 
+describe('the sidebar footer', () => {
+  // "Management & Audit Viewer" was cut to "Management & Audit Vi…" by a truncating line.
+  it('lets a long role name wrap instead of cutting it off', () => {
+    const html = sidebar();
+    const roleLine = /<p class="([^"]*)">Employee<\/p>/.exec(html);
+
+    expect(roleLine).not.toBeNull();
+    expect(roleLine![1]).not.toContain('truncate');
+  });
+});
+
 describe('the top bar', () => {
   it('has no "CICC" chip: the logo and the brand already say it', () => {
     expect(topBar()).not.toContain('CICC');

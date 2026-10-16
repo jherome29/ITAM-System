@@ -30,7 +30,7 @@ import { surfaceClass } from "@/components/ui/controls";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchToolbar } from "@/components/ui/SearchToolbar";
 import { Notice } from '@/components/ui/Notice';
-import { tdWrapClass, thClass } from '@/components/admin/AdminUi';
+import { tdClass, thClass } from '@/components/admin/AdminUi';
 
 const STATUS_OPTIONS = [
   "registered",
@@ -490,7 +490,7 @@ function AssetTable({
         <tbody className="divide-y divide-slate-100">
           {assets.map((asset) => (
             <tr key={asset.id} className="hover:bg-blue-50/60">
-              <td className={tdWrapClass}>
+              <td className={tdClass}>
                 <div className="flex items-center gap-3">
                   <span className="grid h-10 w-10 place-items-center rounded-lg bg-slate-100 text-slate-600">
                     <AssetIcon asset={asset} className="h-4 w-4" />
@@ -505,24 +505,24 @@ function AssetTable({
                   </span>
                 </div>
               </td>
-              <td className={tdWrapClass}>
+              <td className={tdClass}>
                 {asset.assetClass}
               </td>
-              <td className={tdWrapClass}>
+              <td className={tdClass}>
                 {asset.assetType}
               </td>
-              <td className={tdWrapClass}>
+              <td className={tdClass}>
                 {locationLabel(asset)}
               </td>
-              <td className={tdWrapClass}>
+              <td className={tdClass}>
                 <StatusBadge status={asset.status} />
               </td>
               {showQuantity && (
-                <td className={tdWrapClass}>
+                <td className={tdClass}>
                   {asset.quantity}
                 </td>
               )}
-              <td className={tdWrapClass}>
+              <td className={tdClass}>
                 <Link
                   href={`${basePath}/${asset.id}`}
                   className="text-sm font-semibold text-blue-700 hover:underline"

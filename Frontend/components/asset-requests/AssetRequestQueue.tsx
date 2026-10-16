@@ -5,7 +5,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
-import { AdminPageHeader, Field, inputClass, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from '@/components/admin/AdminUi';
+import { AdminPageHeader, Field, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, inputClass, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
 import { AssetRequestDetail } from './AssetRequestDetail';
 import { AttachmentPicker } from './AttachmentPicker';
 import { assetRequestsApi, type AssetRequest } from '@/lib/api/asset-requests';
@@ -179,14 +179,14 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
                 <tr key={r.id} className="hover:bg-blue-50/40">
                   <td className={tdClass}>
                     <p className="font-bold text-slate-950">{REQUEST_TYPE_LABEL[r.type]}</p>
-                    <p className="text-xs text-slate-500">{r.requestNumber}{attachmentCount(r.attachments.length)}</p>
+                    <p className="whitespace-nowrap text-xs text-slate-500">{r.requestNumber}{attachmentCount(r.attachments.length)}</p>
                   </td>
                   <td className={tdClass}>{r.asset?.itemDescription ?? '—'}</td>
                   <td className={tdClass}>
                     <p>{r.requester?.name ?? '—'}</p>
                     <p className="text-xs text-slate-500">{r.requester?.employeeId}</p>
                   </td>
-                  <td className={tdClass}>{formatDateTime(r.createdAt)}</td>
+                  <td className={tdNoWrapClass}>{formatDateTime(r.createdAt)}</td>
                   <td className={tdClass}><StatusChip status={REQUEST_STATUS_LABEL[r.status]} tone={REQUEST_STATUS_TONE[r.status]} /></td>
                   <td className={`${tdClass} text-right`}>
                     <SecondaryButton onClick={() => open(r)}>{isOpen(r) && r.canAct ? 'Review' : 'View'}</SecondaryButton>

@@ -25,7 +25,7 @@ waves:
 
 Health (2026-10-16): backend `tsc` / ESLint / webpack build clean, **800 unit
 tests** (96.3% statements) and **94 e2e tests** on a real Postgres passing;
-frontend `tsc` / ESLint clean and **447 tests** passing (the production build was last run before the UI-consistency branch; CI builds it);
+frontend `tsc` / ESLint clean and **456 tests** passing (the production build was last run before the UI-consistency branch; CI builds it);
 `secretlint` and both dependency audits clean; CI green except SonarCloud's quality
 gate ("C Reliability Rating on New Code", issue not yet identified). One
 transient failure of 4 tests in `auth.service.spec` (the lockout threshold) was

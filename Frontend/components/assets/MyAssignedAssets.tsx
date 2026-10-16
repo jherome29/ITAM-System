@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CalendarClock, ClipboardList, PackageCheck, RefreshCcw } from 'lucide-react';
-import { AdminPageHeader, MetricCard, Panel, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from '@/components/admin/AdminUi';
+import { AdminPageHeader, MetricCard, Panel, SecondaryButton, StatusChip, TableWrap, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
 import { AssetRequestDetail } from '@/components/asset-requests/AssetRequestDetail';
 import { AssetRequestForm } from '@/components/asset-requests/AssetRequestForm';
 import { RequisitionForm } from '@/components/requisitions/RequisitionForm';
@@ -19,6 +19,7 @@ import { formatDate, formatDateTime } from '@/lib/requisitions/requisition-view'
 import { humanize } from '@/lib/text';
 import { Notice } from '@/components/ui/Notice';
 import { EmptyRow } from '@/components/ui/EmptyRow';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
 // Why a non-issued asset is still on the holder's list.
 const HOLDING_NOTE: Record<string, string> = {
@@ -128,10 +129,10 @@ export function MyAssignedAssets({
     {showRequestHistory && !loading && <Panel title="My return & incident requests" detail={`${requests.length} request${requests.length === 1 ? '' : 's'}`}>
       <TableWrap><table className="w-full min-w-[720px]"><thead><tr><th className={thClass}>Request</th><th className={thClass}>Type</th><th className={thClass}>Asset</th><th className={thClass}>Filed</th><th className={thClass}>Status</th><th className={thClass} /></tr></thead><tbody>
         {requests.map((r) => <tr key={r.id}>
-          <td className={`${tdClass} font-bold text-slate-950`}>{r.requestNumber}</td>
+          <td className={`${tdNoWrapClass} font-bold text-slate-950`}>{r.requestNumber}</td>
           <td className={tdClass}>{REQUEST_TYPE_LABEL[r.type]}</td>
           <td className={tdClass}>{r.asset?.itemDescription ?? '—'}</td>
-          <td className={tdClass}>{formatDateTime(r.createdAt)}</td>
+          <td className={tdNoWrapClass}>{formatDateTime(r.createdAt)}</td>
           <td className={tdClass}><StatusChip status={REQUEST_STATUS_LABEL[r.status]} tone={REQUEST_STATUS_TONE[r.status]} /></td>
           <td className={`${tdClass} text-right`}><SecondaryButton onClick={() => setViewing(r)}>View</SecondaryButton></td>
         </tr>)}
@@ -188,7 +189,7 @@ function AssetCard({
     : (replacement.eligible ? undefined : replacement.reason);
 
   return <article className="border border-slate-200 bg-white p-4 shadow-sm">
-    <div className="flex items-start justify-between gap-3"><div><p className="text-base font-bold text-slate-950">{asset.itemDescription}</p><p className="mt-1 text-xs text-slate-500">{[asset.propertyNumber, asset.serialNumber && `Serial ${asset.serialNumber}`].filter(Boolean).join(' · ') || asset.assetType}</p></div><StatusChip status={asset.condition.replaceAll('_', ' ')} /></div>
+    <div className="flex items-start justify-between gap-3"><div><p className="text-base font-bold text-slate-950">{asset.itemDescription}</p><p className="mt-1 text-xs text-slate-500">{[asset.propertyNumber, asset.serialNumber && `Serial ${asset.serialNumber}`].filter(Boolean).join(' · ') || asset.assetType}</p></div><StatusBadge status={asset.condition} /></div>
     <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">{[['Status', humanize(asset.status)], ['Expected return', asset.expectedReturnDate ? formatDate(asset.expectedReturnDate) : 'No fixed date'], ['Type', `${asset.assetType} · ${asset.assetClass}`], ['Location', locationLabel(asset)]].map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 font-semibold text-slate-800">{value}</dd></div>)}</dl>
     {open.map((r) => <div key={r.id} className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
       <span><span className="font-bold text-amber-900">{REQUEST_TYPE_LABEL[r.type]}</span> <span className="text-amber-800">· {r.requestNumber} · {REQUEST_STATUS_LABEL[r.status]}{r.handoverDate ? ` · bring it in ${formatDate(r.handoverDate)}` : ''}</span></span>

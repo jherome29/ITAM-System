@@ -611,7 +611,7 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 - **Critical-path pass rate:** 100% — no exceptions
 - Tests run automatically in CI on every push; failing tests block merges to `main`
 - Key test areas: asset status transitions, requisition approval routing, RBAC enforcement, audit log generation, QR code utility functions, database interaction layers
-- **Where it stands (2026-10-16):** backend 800 unit tests in 40 suites (96.3% statements, 88.6% branches, 95.2% functions; gate is 65 / 55 / 55 / 65), 94 e2e tests in 12 suites on a real Postgres, frontend 447 vitest tests in 53 files. A request-routing or guard change needs an e2e test, because the unit tests mock the database
+- **Where it stands (2026-10-16):** backend 800 unit tests in 40 suites (96.3% statements, 88.6% branches, 95.2% functions; gate is 65 / 55 / 55 / 65), 94 e2e tests in 12 suites on a real Postgres, frontend 456 vitest tests in 53 files. A request-routing or guard change needs an e2e test, because the unit tests mock the database
 
 ### Integration Testing (Jest)
 - API endpoint behavior across service boundaries
@@ -804,10 +804,11 @@ cd Backend && npm run seed:demo
   | an error or notice | `Notice` (`red` is announced to screen readers) | a red box |
   | nothing to list | `EmptyRow` (in a table), `EmptyMessage` | a hand-built row |
   | a dialog or drawer | `CenteredModal` (`size="sm"` for a few fields), `ConfirmDialog`, `DetailDrawer` | `fixed inset-0` |
-  | a table | `thClass` / `tdClass` / `tdWrapClass` from `AdminUi` | cell classes of your own |
+  | a table | `thClass` / `tdClass` (cells may wrap) / `tdNoWrapClass` (a record number, a time) from `AdminUi`, inside `TableWrap` | cell classes of your own, or `whitespace-nowrap` on a whole table |
   | a date or an amount on screen | `formatDate` / `formatDateTime` / `formatTime` / `formatPeso` from `lib/dates.ts` (Manila time; a calendar day never shifts) | `toLocaleString()`, `Intl.DateTimeFormat` |
 
   `components/admin/AdminUi.tsx` still exports several of these under their old names so the screens built on it keep one import path.
+- **Tables must fit their panel.** With the bigger text, 16 tables were wider than their panel at a 1440px screen (up to 450px), which pushed the Actions column and its buttons off the right edge behind a sideways scroll that nobody sees. Cells and headers therefore wrap by default; keep `whitespace-nowrap` for a record number or a time only, give a button a name that does not wrap (`buttonClass` never wraps its label), and keep a clickable icon at 40px or more. A unit test cannot see layout: after adding or widening a table, run the overflow probe in `RUN-LOCAL.md` §11 at 1440 and 1366 wide (it reports any scroll container whose content is wider than its box).
 - **Type scale: bigger text, set once (`Frontend/app/globals.css`).** CICC's staff include older employees and the client asked for bigger text after the last demo, so every step of the scale is about 15% above Tailwind's default: `xs` 14px (captions, table headers), `sm` 16px (body, fields, cells, buttons), `base` 18px, `lg` 20px, `xl` 22px, `2xl` 28px (page titles), `3xl` 34px. **Nothing on screen is smaller than 14px**, controls and buttons are 44px tall (36px compact in table rows) and the sidebar is 288px wide so its labels wrap instead of truncating. Change a size in `globals.css` and it changes everywhere; never write `text-[Npx]`. One typeface (DM Sans). Light-grey text (`slate`/`gray` 300-400) fails contrast, use `slate-500` or darker.
 - **Palette:** one neutral grey (`slate`, never `gray`) and named brand colours (`text-brand`, `bg-brand-dark`, `bg-canvas`, `bg-navy`, declared once in `globals.css`), never a hex value in a class. Status colours come from `ui/tones.ts`.
 - **Wording:** "Fulfillment" (the API route `/requisitions/fulfilment-fallback` keeps its own spelling), "Could not …" for a failure (not "Failed to …"), one ellipsis character (`…`) on a progress message, Title Case for a page title or menu item and sentence case for everything else. A record's page is "Details" in the breadcrumb, never its id. "Requisition" is the formal request for an asset; "request" is a return or incident request: do not mix them.
