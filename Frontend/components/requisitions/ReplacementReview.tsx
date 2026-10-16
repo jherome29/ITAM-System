@@ -24,7 +24,7 @@ function statusTone(status: string): 'amber' | 'green' | 'red' | 'slate' {
 }
 
 function RepairCount({ count }: Readonly<{ count: number }>) {
-  if (count === 0) return <span className="text-slate-400">—</span>;
+  if (count === 0) return <span className="text-slate-500">—</span>;
   return <span className={count >= 2 ? 'font-semibold text-amber-700' : ''}>{count}</span>;
 }
 
@@ -87,7 +87,7 @@ export function ReplacementReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow
                   <td className={`${tdClass} font-semibold text-slate-950`}>{r.requestNumber}</td>
                   <td className={tdClass}>{r.replacedAsset ? <>{assetLink(r.replacedAsset.id, r.replacedAsset.itemDescription)}<p className="text-xs text-slate-500">{[r.replacedAsset.propertyNumber, `${r.replacedAsset.assetType} · ${r.replacedAsset.assetClass}`].filter(Boolean).join(' · ')}</p></> : '—'}</td>
                   <td className={tdClass}>{r.requester ? <><p>{r.requester.name}</p><p className="text-xs text-slate-500">{r.requester.employeeId}</p></> : '—'}</td>
-                  <td className={tdClass}>{r.replacementBasis ? REPLACEMENT_BASIS_LABEL[r.replacementBasis] : <span className="text-slate-400">Not recorded</span>}</td>
+                  <td className={tdClass}>{r.replacementBasis ? REPLACEMENT_BASIS_LABEL[r.replacementBasis] : <span className="text-slate-500">Not recorded</span>}</td>
                   <td className={tdClass}><RepairCount count={r.repairsInWindow} /></td>
                   <td className={tdClass}>{formatDate(r.submittedAt ?? r.createdAt)}</td>
                   <td className={tdClass}><StatusChip status={requisitionStatusLabel(r.status)} tone={statusTone(r.status)} /></td>

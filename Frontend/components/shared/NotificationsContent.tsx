@@ -51,8 +51,8 @@ export function NotificationsContent() {
       {loading ? (
         <LoadingSkeleton rows={5} />
       ) : notifications.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 px-6 py-12 text-center text-sm text-gray-400">
-          <Bell className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+        <div className="bg-white rounded-lg border border-gray-200 px-6 py-12 text-center text-sm text-slate-500">
+          <Bell className="w-8 h-8 text-slate-500 mx-auto mb-2" />
           No notifications.
         </div>
       ) : (
@@ -65,11 +65,11 @@ export function NotificationsContent() {
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-start gap-4">
                     <p className={`text-sm ${n.isRead ? 'text-gray-700' : 'font-medium text-gray-900'}`}>{n.title}</p>
-                    <span className="text-xs text-gray-400 shrink-0">{formatDate(n.createdAt)}</span>
+                    <span className="text-xs text-slate-500 shrink-0">{formatDate(n.createdAt)}</span>
                   </div>
                   <p className="text-sm text-gray-600 mt-1">{n.message}</p>
                 </div>
-                {target && <ChevronRight className="w-4 h-4 text-gray-400 shrink-0 self-center" />}
+                {target && <ChevronRight className="w-4 h-4 text-slate-500 shrink-0 self-center" />}
               </div>
             );
             const cardClass = `block bg-white rounded-lg shadow-sm border p-4 ${n.isRead ? 'border-gray-200' : 'border-blue-300 bg-blue-50'}`;

@@ -143,7 +143,7 @@ export function SearchToolbar({
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-slate-200/90 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)] sm:flex-row sm:items-center">
       <label className="relative min-w-0 flex-1 sm:max-w-sm">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
         <span className="sr-only">Search records</span>
         <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-label={placeholder} className="h-10 w-full rounded-md border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
       </label>
@@ -198,7 +198,7 @@ export function TableWrap({ children }: Readonly<{ children: ReactNode }>) {
   return <div className="w-full max-w-full overflow-x-auto">{children}</div>;
 }
 
-export const thClass = 'whitespace-nowrap bg-slate-50 px-4 py-3 text-left text-[11px] font-bold uppercase text-slate-500';
+export const thClass = 'whitespace-nowrap bg-slate-50 px-4 py-3 text-left text-xs font-bold uppercase text-slate-500';
 export const tdClass = 'whitespace-nowrap border-t border-slate-100 px-4 py-3 text-sm text-slate-700';
 
 export function Field({ label, children }: Readonly<{ label: string; children: ReactNode }>) {

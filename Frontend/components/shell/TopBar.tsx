@@ -83,8 +83,8 @@ export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole;
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <span className="hidden h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-sm text-slate-600 sm:flex">
-          <CalendarDays className="h-4 w-4" />
+        <span className="hidden h-11 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-600 sm:flex">
+          <CalendarDays className="h-5 w-5" />
           {date}
         </span>
         <div className="relative">
@@ -97,19 +97,19 @@ export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole;
                 return next;
               });
             }}
-            className="relative grid h-9 w-9 place-items-center rounded-md text-slate-500 hover:bg-slate-100"
+            className="relative grid h-11 w-11 place-items-center rounded-md text-slate-500 hover:bg-slate-100"
             aria-label="Open important notifications"
             aria-expanded={notificationsOpen}
           >
-            <Bell className="h-5 w-5" />
+            <Bell className="h-6 w-6" />
             {unreadCount > 0 && (
-              <span className="absolute right-1.5 top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white">
+              <span className="absolute right-1 top-1 grid h-5 min-w-5 place-items-center rounded-full bg-red-600 px-1 text-xs font-bold leading-none text-white ring-2 ring-white">
                 {unreadCount}
               </span>
             )}
           </button>
           {notificationsOpen && (
-            <div className="absolute right-0 top-11 z-50 w-80 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+            <div className="absolute right-0 top-12 z-50 w-96 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                 <div>
                   <p className="text-sm font-bold text-slate-950">Important Notifications</p>
@@ -133,7 +133,7 @@ export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole;
                         <div className="min-w-0">
                           <p className="truncate text-sm font-bold text-slate-900">{item.title}</p>
                           <p className="mt-1 line-clamp-2 text-xs text-slate-600">{item.message}</p>
-                          <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-blue-700">{captionFor(item)}</p>
+                          <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-blue-700">{captionFor(item)}</p>
                         </div>
                       </div>
                     </Link>

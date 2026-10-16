@@ -16,7 +16,7 @@ export function FormCatalog({ onChoose }: Readonly<{ onChoose: (def: FormDef) =>
             <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
               <h2 id={`catalog-${group}`} className="text-sm font-bold text-slate-950">
                 {GROUP_META[group].label}
-                <span className="ml-2 text-xs font-semibold text-slate-400">{forms.length}</span>
+                <span className="ml-2 text-xs font-semibold text-slate-500">{forms.length}</span>
               </h2>
               <p className="text-xs text-slate-500">{GROUP_META[group].blurb}</p>
             </div>
@@ -29,7 +29,7 @@ export function FormCatalog({ onChoose }: Readonly<{ onChoose: (def: FormDef) =>
                   className="group flex h-full flex-col rounded-lg border border-slate-200/90 bg-white p-4 text-left shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:border-blue-300 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold uppercase text-slate-600 ring-1 ring-slate-200">{form.code}</span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold uppercase text-slate-600 ring-1 ring-slate-200">{form.code}</span>
                     <span className="grid h-9 w-9 flex-none place-items-center rounded-md bg-blue-50 text-blue-700 ring-1 ring-blue-200">
                       <FileText className="h-4 w-4" />
                     </span>

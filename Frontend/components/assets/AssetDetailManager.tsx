@@ -20,8 +20,8 @@ function optionLabel(value: string): string {
 function Detail({ label, value }: Readonly<{ label: string; value?: string | number | null }>) {
   return (
     <div>
-      <dt className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</dt>
-      <dd className={`text-sm ${value ? 'text-gray-800' : 'text-gray-300 italic'}`}>{value ?? 'Not specified'}</dd>
+      <dt className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-0.5">{label}</dt>
+      <dd className={`text-sm ${value ? 'text-gray-800' : 'text-slate-500 italic'}`}>{value ?? 'Not specified'}</dd>
     </div>
   );
 }
@@ -57,7 +57,7 @@ function EditableDetail({
   const cls = 'w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]';
   return (
     <div>
-      <dt className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</dt>
+      <dt className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-0.5">{label}</dt>
       {edit ? (
         options ? (
           <select aria-label={label} value={editValue ?? ''} onChange={(e) => onChange(field, e.target.value)} className={cls}>
@@ -74,7 +74,7 @@ function EditableDetail({
           />
         )
       ) : (
-        <dd className={`text-sm ${value ? 'text-gray-800' : 'text-gray-300 italic'}`}>{value ?? 'Not specified'}</dd>
+        <dd className={`text-sm ${value ? 'text-gray-800' : 'text-slate-500 italic'}`}>{value ?? 'Not specified'}</dd>
       )}
     </div>
   );
@@ -428,7 +428,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
         {historyLoading ? (
           <div className="p-6"><LoadingSkeleton rows={4} /></div>
         ) : history.length === 0 ? (
-          <div className="px-6 py-10 text-center text-sm text-gray-400">No lifecycle history recorded yet.</div>
+          <div className="px-6 py-10 text-center text-sm text-slate-500">No lifecycle history recorded yet.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -509,7 +509,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                     onChange={(e) => setLifecycleEmployeeId(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]"
                   />
-                  <p className="text-xs text-gray-400 mt-1">Enter the recipient&apos;s CICC employee ID. The system will resolve it to the correct user account.</p>
+                  <p className="text-xs text-slate-500 mt-1">Enter the recipient&apos;s CICC employee ID. The system will resolve it to the correct user account.</p>
                 </div>
               )}
 

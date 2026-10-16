@@ -262,7 +262,7 @@ export function AssetRegistryList({
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <label className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <span className="sr-only">Search assets</span>
             <input
               value={search}
@@ -334,7 +334,7 @@ export function AssetRegistryList({
           <div>
             <h2 className="text-base font-bold text-slate-950">
               {assetType === "Supplies" ? "Supplies" : "Assets"}{" "}
-              <span className="font-medium text-slate-400">({total})</span>
+              <span className="font-medium text-slate-500">({total})</span>
             </h2>
             <p className="mt-1 text-xs text-slate-500">
               Showing {startRecord}-{endRecord} of {total} records
@@ -348,14 +348,14 @@ export function AssetRegistryList({
                 setLoading(true);
                 setPage((current) => Math.max(1, current - 1));
               }}
-              className="h-9 rounded-md px-2 text-slate-600 hover:bg-slate-100 disabled:text-slate-300"
+              className="h-9 rounded-md px-2 text-slate-600 hover:bg-slate-100 disabled:text-slate-500"
             >
               Previous
             </button>
             {visiblePages.map((item, index) => (
               <span key={item} className="contents">
                 {index > 0 && item - visiblePages[index - 1] > 1 && (
-                  <span className="px-1 text-slate-400">…</span>
+                  <span className="px-1 text-slate-500">…</span>
                 )}
                 <button
                   type="button"
@@ -376,7 +376,7 @@ export function AssetRegistryList({
                 setLoading(true);
                 setPage((current) => Math.min(totalPages, current + 1));
               }}
-              className="h-9 rounded-md px-2 text-slate-600 hover:bg-slate-100 disabled:text-slate-300"
+              className="h-9 rounded-md px-2 text-slate-600 hover:bg-slate-100 disabled:text-slate-500"
             >
               Next
             </button>
@@ -394,7 +394,7 @@ export function AssetRegistryList({
         </div>
       ) : assets.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
-          <Search className="mx-auto h-6 w-6 text-slate-400" />
+          <Search className="mx-auto h-6 w-6 text-slate-500" />
           <p className="mt-3 text-sm font-bold text-slate-900">
             No matching assets
           </p>

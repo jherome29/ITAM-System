@@ -70,7 +70,7 @@ function WatcherRows({ status }: Readonly<{ status: WatcherStatus | null }>) {
       {WATCHERS.map((w) => {
         const run = status?.watchers?.[w.name];
         let value = 'Not run yet';
-        let tone = 'text-slate-400';
+        let tone = 'text-slate-500';
         if (run && run.count < 0) { value = 'Failed — see server log'; tone = 'text-red-700'; }
         else if (run) { value = run.count === 0 ? 'Nothing to alert' : `${run.count} ${w.unit}${plural(run.count)} alerted`; tone = run.count > 0 ? 'text-amber-700' : 'text-slate-700'; }
         return (
@@ -274,7 +274,7 @@ export function AdminDashboard() {
                 );
               })
             ) : (
-              <p className="py-6 text-center text-xs text-slate-400">Loading account breakdown…</p>
+              <p className="py-6 text-center text-xs text-slate-500">Loading account breakdown…</p>
             )}
           </div>
         </Panel>
@@ -294,7 +294,7 @@ export function AdminDashboard() {
                 </div>
               ))
             ) : (
-              <p className="py-6 text-center text-xs text-slate-400">KPI metrics unavailable.</p>
+              <p className="py-6 text-center text-xs text-slate-500">KPI metrics unavailable.</p>
             )}
           </div>
         </Panel>
@@ -357,7 +357,7 @@ export function AdminDashboard() {
         >
           <div className="divide-y divide-slate-100 px-4">
             {recentLogs.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-400">{loading ? 'Loading…' : 'No recent audit activity.'}</p>
+              <p className="py-6 text-center text-xs text-slate-500">{loading ? 'Loading…' : 'No recent audit activity.'}</p>
             ) : (
               recentLogs.map((log) => (
                 <div key={log.id} className="py-3">

@@ -92,11 +92,11 @@ export function EmployeeDashboard() {
   if (loading) return <DashboardSkeleton />;
 
   return (
-    <div className="employee-dashboard mx-auto w-full max-w-[1480px] space-y-5">
+    <div className="mx-auto w-full max-w-[1480px] space-y-5">
       <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">Employee workspace</p>
-          <h1 className="mt-1 text-[28px] font-extrabold leading-tight text-slate-950 md:text-[32px]">Good day, {user?.firstName ?? 'there'}</h1>
+          <h1 className="mt-1 text-2xl font-bold leading-tight text-slate-950">Good day, {user?.firstName ?? 'there'}</h1>
           <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-600">
             Review what needs action and keep track of your requests and accountable property.
           </p>
@@ -112,7 +112,7 @@ export function EmployeeDashboard() {
       )}
 
       <section aria-labelledby="employee-overview-heading" className="space-y-2">
-        <h2 id="employee-overview-heading" className="text-lg font-extrabold text-slate-950">Overview</h2>
+        <h2 id="employee-overview-heading" className="text-lg font-bold text-slate-950">Overview</h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <SummaryMetric href="/employee/assigned-assets" label="Assigned assets" value={assets.length} detail="Accountable to you" icon={PackageCheck} tone="blue" />
           <SummaryMetric href="/employee/requisitions" label="Active requests" value={activeRequestCount} detail="In progress" icon={ClipboardList} tone="blue" />
@@ -124,7 +124,7 @@ export function EmployeeDashboard() {
       <section aria-labelledby="employee-attention-heading" className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 id="employee-attention-heading" className="text-lg font-extrabold text-slate-950">Needs your attention</h2>
+            <h2 id="employee-attention-heading" className="text-lg font-bold text-slate-950">Needs your attention</h2>
             <p className="mt-0.5 text-xs text-slate-500">Prioritized tasks that require your response</p>
           </div>
           <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">{attentionCount} pending</span>
@@ -194,7 +194,7 @@ export function EmployeeDashboard() {
                     </div>
                     <span className="inline-flex items-center gap-1.5 text-xs text-slate-500"><CalendarClock className="h-3.5 w-3.5" />{formatDate(request.updatedAt)}</span>
                     <StatusChip status={request.status.replace(/_/g, ' ')} tone={request.status === 'on_hold' ? 'amber' : 'blue'} />
-                    <ChevronRight className="hidden h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600 sm:block" />
+                    <ChevronRight className="hidden h-4 w-4 text-slate-500 transition group-hover:translate-x-0.5 group-hover:text-blue-600 sm:block" />
                   </Link>
                 );
               })}
@@ -276,7 +276,7 @@ function SummaryMetric({ href, label, value, detail, icon: Icon, tone }: Readonl
           <span className="block truncate text-xs font-semibold text-slate-500">{label}</span>
         </span>
         <span className="mt-1.5 flex min-w-0 items-baseline gap-2">
-          <span className="text-[26px] font-extrabold leading-none text-slate-950">{value}</span>
+          <span className="text-2xl font-bold leading-none text-slate-950">{value}</span>
           <span className={`truncate text-xs font-bold ${summaryToneClass(tone)}`}>{detail}</span>
         </span>
       </span>
@@ -285,9 +285,9 @@ function SummaryMetric({ href, label, value, detail, icon: Icon, tone }: Readonl
 }
 
 function DashboardPanel({ title, detail, action, badge, children }: Readonly<{ title: string; detail?: string; action?: React.ReactNode; badge?: React.ReactNode; children: React.ReactNode }>) {
-  return <section className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_3px_12px_rgba(15,23,42,0.05)]"><div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-50/70 px-4 py-4"><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-[15px] font-extrabold text-slate-950">{title}</h2>{badge}</div>{detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}</div>{action}</div>{children}</section>;
+  return <section className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_3px_12px_rgba(15,23,42,0.05)]"><div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-50/70 px-4 py-4"><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-bold text-slate-950">{title}</h2>{badge}</div>{detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}</div>{action}</div>{children}</section>;
 }
 
 function QuickAction({ href, icon: Icon, title, detail }: Readonly<{ href: string; icon: LucideIcon; title: string; detail: string }>) {
-  return <Link href={href} className="group flex min-h-[82px] items-center gap-3 border-b border-slate-100 p-4 transition last:border-b-0 hover:bg-slate-50 sm:border-r sm:border-b-0 sm:last:border-r-0"><span className="grid h-10 w-10 flex-none place-items-center rounded-lg bg-blue-50 text-blue-700"><Icon className="h-[18px] w-[18px]" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-slate-950 group-hover:text-blue-700">{title}</span><span className="mt-0.5 block text-xs leading-5 text-slate-500">{detail}</span></span><ChevronRight className="h-4 w-4 flex-none text-slate-300 group-hover:text-blue-600" /></Link>;
+  return <Link href={href} className="group flex min-h-[82px] items-center gap-3 border-b border-slate-100 p-4 transition last:border-b-0 hover:bg-slate-50 sm:border-r sm:border-b-0 sm:last:border-r-0"><span className="grid h-10 w-10 flex-none place-items-center rounded-lg bg-blue-50 text-blue-700"><Icon className="h-[18px] w-[18px]" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-slate-950 group-hover:text-blue-700">{title}</span><span className="mt-0.5 block text-xs leading-5 text-slate-500">{detail}</span></span><ChevronRight className="h-4 w-4 flex-none text-slate-500 group-hover:text-blue-600" /></Link>;
 }

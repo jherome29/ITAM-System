@@ -72,26 +72,26 @@ export function ManagementAuditDashboard() {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
           <span className="grid h-12 w-12 place-items-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700"><Activity className="h-5 w-5" /></span>
-          <span><span className="block text-xs font-semibold text-slate-500">Total assets</span><span className="text-2xl font-extrabold text-slate-950">{kpi?.totalAssets ?? '—'}</span></span>
+          <span><span className="block text-xs font-semibold text-slate-500">Total assets</span><span className="text-2xl font-bold text-slate-950">{kpi?.totalAssets ?? '—'}</span></span>
         </div>
         <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
           <span className="grid h-12 w-12 place-items-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700"><TrendingUp className="h-5 w-5" /></span>
-          <span><span className="block text-xs font-semibold text-slate-500">SLA compliance</span><span className="text-2xl font-extrabold text-slate-950">{kpi ? `${kpi.slaComplianceRate}%` : '—'}</span></span>
+          <span><span className="block text-xs font-semibold text-slate-500">SLA compliance</span><span className="text-2xl font-bold text-slate-950">{kpi ? `${kpi.slaComplianceRate}%` : '—'}</span></span>
         </div>
         <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
           <span className="grid h-12 w-12 place-items-center rounded-lg border border-purple-200 bg-purple-50 text-purple-700"><BarChart3 className="h-5 w-5" /></span>
-          <span><span className="block text-xs font-semibold text-slate-500">Record completeness</span><span className="text-2xl font-extrabold text-slate-950">{kpi ? `${kpi.recordCompleteness}%` : '—'}</span></span>
+          <span><span className="block text-xs font-semibold text-slate-500">Record completeness</span><span className="text-2xl font-bold text-slate-950">{kpi ? `${kpi.recordCompleteness}%` : '—'}</span></span>
         </div>
         <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
           <span className="grid h-12 w-12 place-items-center rounded-lg border border-amber-200 bg-amber-50 text-amber-700"><TrendingDown className="h-5 w-5" /></span>
-          <span><span className="block text-xs font-semibold text-slate-500">Avg approval (hrs)</span><span className="text-2xl font-extrabold text-slate-950">{kpi?.avgApprovalHours ?? '—'}</span></span>
+          <span><span className="block text-xs font-semibold text-slate-500">Avg approval (hrs)</span><span className="text-2xl font-bold text-slate-950">{kpi?.avgApprovalHours ?? '—'}</span></span>
         </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-4">
-            <h2 className="text-[15px] font-extrabold text-slate-950">Requisitions by status</h2>
+            <h2 className="text-base font-bold text-slate-950">Requisitions by status</h2>
           </div>
           <StatusBars
             total={reqStats?.total ?? 0}
@@ -102,7 +102,7 @@ export function ManagementAuditDashboard() {
 
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-4">
-            <h2 className="text-[15px] font-extrabold text-slate-950">Assets by status</h2>
+            <h2 className="text-base font-bold text-slate-950">Assets by status</h2>
           </div>
           <StatusBars
             total={assetStats?.total ?? 0}

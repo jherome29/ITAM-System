@@ -83,7 +83,7 @@ export function ReportsContent({
                     <span className="block text-sm font-bold text-slate-950">{r.label}</span>
                     <span className="mt-0.5 block text-xs text-slate-500">{r.detail}</span>
                   </span>
-                  <span className="flex-none rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-600 ring-1 ring-slate-200">{r.formats.join(' / ')}</span>
+                  <span className="flex-none rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold uppercase text-slate-600 ring-1 ring-slate-200">{r.formats.join(' / ')}</span>
                 </label>
               ))}
             </div>

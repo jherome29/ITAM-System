@@ -52,7 +52,7 @@ export default function LoginPage() {
         <Image src="/logo.png" alt="CICC Logo" width={96} height={96} className="object-contain mb-4" />
         <h1 className="text-2xl font-semibold text-[#1a4d7a]">Asset Management System</h1>
         <p className="text-sm text-gray-500 mt-1">Cybercrime Investigation and Coordinating Center</p>
-        <p className="text-sm text-gray-400 mt-1">Sign in to continue</p>
+        <p className="text-sm text-slate-500 mt-1">Sign in to continue</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -98,7 +98,7 @@ export default function LoginPage() {
               aria-label={showPassword ? 'Hide password' : 'Show password'}
               aria-pressed={showPassword}
               aria-controls="password"
-              className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-[#1a4d7a] focus:outline-none focus-visible:text-[#1a4d7a] focus-visible:ring-2 focus-visible:ring-[#1a4d7a]/30 rounded-r-md transition-colors"
+              className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-[#1a4d7a] focus:outline-none focus-visible:text-[#1a4d7a] focus-visible:ring-2 focus-visible:ring-[#1a4d7a]/30 rounded-r-md transition-colors"
             >
               {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
             </button>

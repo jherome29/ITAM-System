@@ -61,8 +61,8 @@ export function AttachmentGallery({
               // eslint-disable-next-line @next/next/no-img-element -- authenticated blob URL
               <img src={url} alt={a.fileName} className="h-full w-full object-cover" />
             ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-1 p-2 text-center text-[11px] text-slate-600">
-                <FileText className="h-6 w-6 text-slate-400" />
+              <div className="flex h-full flex-col items-center justify-center gap-1 p-2 text-center text-xs text-slate-600">
+                <FileText className="h-6 w-6 text-slate-500" />
                 <span className="line-clamp-2 break-all">{url ? a.fileName : 'Loading…'}</span>
               </div>
             )}

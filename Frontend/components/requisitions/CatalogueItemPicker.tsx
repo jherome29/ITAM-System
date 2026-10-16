@@ -115,7 +115,7 @@ export function CatalogueItemPicker({
         </select>
       </div>
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
         <input
           type="search"
           value={search}
@@ -132,7 +132,7 @@ export function CatalogueItemPicker({
               <li key={catalogueItemKey(item)}>
                 <button type="button" onClick={() => onSelect(item)} className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left hover:bg-blue-50 focus:bg-blue-50 focus:outline-none">
                   <div className="flex min-w-0 items-start gap-2">
-                    <Package className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                    <Package className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-slate-950">{item.itemDescription}</p>
                       <ItemMeta item={item} />

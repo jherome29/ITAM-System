@@ -59,7 +59,7 @@ export function RoleDashboardHeader({ eyebrow }: Readonly<{ eyebrow: string }>) 
   return (
     <header className="border-b border-slate-200 pb-5">
       <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">{eyebrow}</p>
-      <h1 className="mt-1 text-[28px] font-extrabold leading-tight text-slate-950">
+      <h1 className="mt-1 text-2xl font-bold leading-tight text-slate-950">
         Good day, {user?.firstName ?? 'there'}
       </h1>
     </header>
@@ -93,7 +93,7 @@ export function KpiTile({
       </span>
       <span>
         <span className="block text-xs font-semibold text-slate-500">{label}</span>
-        <span className="text-2xl font-extrabold text-slate-950">{value}</span>
+        <span className="text-2xl font-bold text-slate-950">{value}</span>
       </span>
     </>
   );
@@ -116,7 +116,7 @@ export function RequisitionListSection({
   return (
     <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-4">
-        <h2 className="text-[15px] font-extrabold text-slate-950">{title}</h2>
+        <h2 className="text-base font-bold text-slate-950">{title}</h2>
       </div>
       {items.length === 0 ? (
         <div className="p-8 text-center text-sm text-slate-500">{emptyText}</div>

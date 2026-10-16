@@ -32,6 +32,17 @@ function offenders(pattern: RegExp, allowed: readonly string[] = []): string[] {
   );
 }
 
+// A rule that can never match passes forever. These keep the rules honest: each pattern
+// must catch a sample of the thing it forbids.
+describe('the rules themselves', () => {
+  it('catch what they forbid', () => {
+    expect('x.toLocaleString()').toMatch(/toLocale(Date|Time)?String\(\s*\)/);
+    expect('text-[11px] font-bold').toMatch(/\btext-\[[\d.]+px\]/);
+    expect('text-slate-400').toMatch(/\btext-(slate|gray)-[34]00\b/);
+    expect('text-gray-300 ').toMatch(/\btext-(slate|gray)-[34]00\b/);
+  });
+});
+
 describe('dates and numbers', () => {
   it('never format with the viewer\'s own locale', () => {
     // 10/16/2026 on one machine, 16/10/2026 on the next: ambiguous in an audit trail.
@@ -42,5 +53,40 @@ describe('dates and numbers', () => {
     expect(offenders(/toLocale(Date|Time)String\(/, ['lib/dates.ts'])).toEqual([]);
     expect(offenders(/toLocaleString\([^)]*\b(year|month|day|hour|minute)\b/, ['lib/dates.ts'])).toEqual([]);
     expect(offenders(/Intl\.DateTimeFormat/, ['lib/dates.ts'])).toEqual([]);
+  });
+});
+
+// CICC's staff include older employees, and the client asked for bigger text after the
+// last demo. The sizes live in one place (app/globals.css) so they can be raised or
+// lowered for the whole system at once; nothing is allowed to sidestep them.
+describe('type scale', () => {
+  const css = readFileSync(path.join(ROOT, 'app/globals.css'), 'utf8');
+  const sizePx = (token: string): number => {
+    const prefix = `--text-${token}:`;
+    const line = css.split('\n').find((l) => l.trim().startsWith(prefix));
+    return line ? Number.parseFloat(line.trim().slice(prefix.length)) * 16 : 0;
+  };
+
+  it('keeps the smallest text at 14px and body text at 16px or more', () => {
+    expect(sizePx('xs')).toBeGreaterThanOrEqual(14);
+    expect(sizePx('sm')).toBeGreaterThanOrEqual(16);
+  });
+
+  it('grows every step with the one below it', () => {
+    const steps = ['xs', 'sm', 'base', 'lg', 'xl', '2xl', '3xl'].map(sizePx);
+    expect(steps.every((px, i) => px > 0 && (i === 0 || px > steps[i - 1]))).toBe(true);
+  });
+
+  it('loads one typeface', () => {
+    expect(css).not.toMatch(/family=(Inter|Manrope)/);
+    expect(css).not.toMatch(/font-family:\s*"?(Inter|Manrope)/);
+  });
+
+  it('uses the scale, not one-off pixel sizes', () => {
+    expect(offenders(/\btext-\[[\d.]+px\]/)).toEqual([]);
+  });
+
+  it('keeps small text readable: no light-grey text on white', () => {
+    expect(offenders(/\btext-(slate|gray)-[34]00\b/)).toEqual([]);
   });
 });
