@@ -93,7 +93,7 @@ export const roleNavigation: Record<ProposedUserRole, RoleNavItem[]> = {
     { section: 'Security & Audit', label: 'Audit Log', href: '/master-admin/audit', icon: FileClock, readOnly: true },
     { section: 'Escalations', label: 'Returns & Incidents', href: '/master-admin/returns-incidents', icon: RefreshCcw },
     { label: 'Repairs', href: '/master-admin/repairs', icon: Wrench },
-    { label: 'Requisition Fulfilment', href: '/master-admin/fulfillment', icon: ListChecks },
+    { label: 'Requisition Fulfillment', href: '/master-admin/fulfillment', icon: ListChecks },
     { section: 'My Accountability', label: 'My Assigned Assets', href: '/master-admin/assigned-assets', icon: PackageCheck },
     { section: 'Updates', label: 'Notifications', href: '/master-admin/notifications', icon: Bell },
   ],

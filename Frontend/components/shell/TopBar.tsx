@@ -9,6 +9,8 @@ import { roleNavigation } from '@/lib/roles/role-navigation';
 import { notificationsApi, type Notification } from '@/lib/api/notifications';
 import { notificationTarget, workspaceBasePath } from '@/lib/notifications/notification-target';
 import { formatDate, formatMonthDay } from '@/lib/dates';
+import { Chip } from '@/components/ui/Chip';
+import { EmptyMessage } from '@/components/ui/EmptyRow';
 
 // Turns a backend notification into the "ASSETS - TODAY" caption the dropdown shows.
 // Prefer the related record type; fall back to the alert type (e.g. "LOW STOCK").
@@ -115,11 +117,11 @@ export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole;
                   <p className="text-sm font-bold text-slate-950">Important Notifications</p>
                   <p className="text-xs text-slate-500">Unread items only</p>
                 </div>
-                <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-bold text-red-700">{unreadCount}</span>
+                <Chip tone="red">{unreadCount}</Chip>
               </div>
               <div className="max-h-72 overflow-y-auto">
                 {importantNotifications.length === 0 ? (
-                  <p className="px-4 py-6 text-center text-sm text-slate-500">No important notifications.</p>
+                  <EmptyMessage>No important notifications.</EmptyMessage>
                 ) : (
                   importantNotifications.map((item) => (
                     <Link

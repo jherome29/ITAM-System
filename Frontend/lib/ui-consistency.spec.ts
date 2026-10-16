@@ -23,12 +23,14 @@ const FILES = SOURCE_DIRS.flatMap((d) => sourceFiles(path.join(ROOT, d))).map((f
   text: readFileSync(file, 'utf8'),
 }));
 
-/** Files that break `pattern`, as `path:line` so a failure says where to look. */
+const COMMENT_LINE = /^\s*(\/\/|\*|\/\*)/;
+
+/** Files that break `pattern`, as `path:line` so a failure says where to look. Prose in a comment is not code. */
 function offenders(pattern: RegExp, allowed: readonly string[] = []): string[] {
   return FILES.filter((f) => !allowed.includes(f.rel)).flatMap((f) =>
     f.text
       .split('\n')
-      .flatMap((line, i) => (pattern.test(line) ? [`${f.rel}:${i + 1}`] : [])),
+      .flatMap((line, i) => (!COMMENT_LINE.test(line) && pattern.test(line) ? [`${f.rel}:${i + 1}`] : [])),
   );
 }
 
@@ -101,6 +103,49 @@ describe('buttons and badges', () => {
 
   it('show a status through one StatusBadge', () => {
     expect(FILES.some((f) => f.rel === 'components/dashboard/StatusBadge.tsx')).toBe(false);
+  });
+});
+
+describe('cards, labels and messages', () => {
+  it('show an error through Notice, so it is announced and looks the same everywhere', () => {
+    expect(offenders(/border-red-200 bg-red-50/, ['components/ui/Notice.tsx'])).toEqual([]);
+  });
+
+  it('draw a small label through Chip, not a hand-built pill', () => {
+    expect(offenders(/rounded-full[^"`]*\bpx-2(\.5)?\b/, ['components/ui/Chip.tsx'])).toEqual([]);
+  });
+
+  it('say a table is empty through EmptyRow', () => {
+    expect(offenders(/<td colSpan=\{\d+\} className="[^"]*text-center/, ['components/ui/EmptyRow.tsx'])).toEqual([]);
+  });
+
+  it('open a dialog or drawer only through the shared components', () => {
+    const overlays = ['components/ui/CenteredModal.tsx', 'components/ui/ConfirmDialog.tsx', 'components/ui/DetailDrawer.tsx', 'components/shell/AppShell.tsx'];
+    expect(offenders(/\bfixed inset-0\b/, overlays)).toEqual([]);
+  });
+
+  it('use one corner and one shadow for a card', () => {
+    expect(offenders(/\brounded-(xl|2xl|3xl)\b/)).toEqual([]);
+    expect(offenders(/\bshadow-\[/)).toEqual([]);
+  });
+
+  it('draw a metric card only through MetricCard', () => {
+    expect(offenders(/\bfunction (KpiTile|SummaryMetric|DashboardPanel)\b/)).toEqual([]);
+  });
+});
+
+describe('wording', () => {
+  it('spells it fulfillment, as the menus do (the API route keeps its own spelling)', () => {
+    expect(offenders(/\bFulfilment\b/)).toEqual([]);
+    expect(offenders(/\b(left after this|awaiting) fulfilment\b/)).toEqual([]);
+  });
+
+  it('says "Could not …", not "Failed to …" or "Unable to …", when something goes wrong', () => {
+    expect(offenders(/['"`>]Failed to /)).toEqual([]);
+  });
+
+  it('ends a progress message with one ellipsis character, not three dots', () => {
+    expect(offenders(/[A-Za-z]\.\.\.['"<`]/)).toEqual([]);
   });
 });
 

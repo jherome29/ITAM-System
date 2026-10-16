@@ -22,6 +22,8 @@ import {
 import { formatDate, formatDateTime } from '@/lib/requisitions/requisition-view';
 import { localToday } from '@/lib/dates';
 import { DateField } from '@/components/ui/DateField';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyRow } from '@/components/ui/EmptyRow';
 
 const FILTERS = [
   { value: 'open', label: 'Open (needs action)' },
@@ -83,7 +85,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
 
   useEffect(() => {
     load()
-      .catch(() => setLoadError('Failed to load requests. Please refresh the page.'))
+      .catch(() => setLoadError('Could not load requests. Please refresh the page.'))
       .finally(() => setLoading(false));
   }, [load]);
 
@@ -157,7 +159,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
           ? `Custodians cannot decide their own return, repair or incident requests, so those escalate here. ${awaitingCount} awaiting your decision; the rest are read-only.`
           : 'Return, repair, damage, loss and theft requests from asset holders. Approve to schedule the hand-over, then mark the item received.'}
       />
-      {loadError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{loadError}</div>}
+      {loadError && <Notice tone="red">{loadError}</Notice>}
       <SearchToolbar value={search} onChange={setSearch} filterValue={filter} filterOptions={FILTERS} onFilterChange={setFilter} />
       <Panel title="Requests" detail={`${openCount} open · ${rows.length} total`}>
         <TableWrap>
@@ -192,7 +194,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
                 </tr>
               ))}
               {visible.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">No requests match the current filter.</td></tr>
+                <EmptyRow colSpan={6}>No requests match the current filter.</EmptyRow>
               )}
             </tbody>
           </table>
@@ -281,7 +283,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
             {selected.status === 'approved' && selected.handoverDate && (
               <p className="text-xs text-slate-500">Hand-over scheduled for {formatDate(selected.handoverDate)}.</p>
             )}
-            {actionError && <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{actionError}</p>}
+            {actionError && <Notice tone="red">{actionError}</Notice>}
           </div>
         )}
       </DetailDrawer>

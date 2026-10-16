@@ -1,5 +1,6 @@
 import { humanize } from '@/lib/text';
-import { type Tone, toneStyles } from './tones';
+import { Chip } from './Chip';
+import type { Tone } from './tones';
 
 // Keys are the real backend enum values (packages/shared/src/enums: AssetStatus,
 // RequisitionStatus, AssetCondition, plus account state) — lowercase snake_case, NOT the
@@ -39,10 +40,5 @@ const STATUS: Record<string, { tone: Tone; label: string }> = {
  */
 export function StatusBadge({ status, label }: Readonly<{ status: string; label?: string }>) {
   const known = STATUS[status];
-  const tone = known?.tone ?? 'slate';
-  return (
-    <span className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${toneStyles[tone]}`}>
-      {label ?? known?.label ?? humanize(status)}
-    </span>
-  );
+  return <Chip tone={known?.tone ?? 'slate'}>{label ?? known?.label ?? humanize(status)}</Chip>;
 }

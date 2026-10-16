@@ -9,6 +9,7 @@ import { controlClass, surfaceClass } from "@/components/ui/controls";
 import { DateField } from "@/components/ui/DateField";
 import { Field } from "@/components/ui/Field";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Notice } from '@/components/ui/Notice';
 
 export interface RegisterAssetFormState {
   sapClassification: string;
@@ -156,7 +157,7 @@ export function RegisterAssetForm({
       setError(
         Array.isArray(msg)
           ? msg.join(" · ")
-          : (msg ?? "Failed to register asset."),
+          : (msg ?? "Could not register asset."),
       );
     } finally {
       setSaving(false);
@@ -187,9 +188,7 @@ export function RegisterAssetForm({
       )}
 
       {error && (
-        <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-          {error}
-        </div>
+        <Notice tone="red">{error}</Notice>
       )}
 
       <form onSubmit={handleSubmit}>
@@ -208,7 +207,7 @@ export function RegisterAssetForm({
               value={form.assetClass}
               onChange={(e) => set("assetClass", e.target.value)}
             >
-              <option value="">Select class...</option>
+              <option value="">Select class…</option>
               {ASSET_CLASSES.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -222,7 +221,7 @@ export function RegisterAssetForm({
               value={form.assetType}
               onChange={(e) => set("assetType", e.target.value)}
             >
-              <option value="">Select type...</option>
+              <option value="">Select type…</option>
               {ASSET_TYPES.map((t) => (
                 <option key={t} value={t}>
                   {t}
@@ -397,7 +396,7 @@ export function RegisterAssetForm({
         <div className="flex justify-end gap-3 pt-2">
           <SecondaryButton onClick={handleCancel}>Cancel</SecondaryButton>
           <PrimaryButton type="submit" disabled={saving}>
-            {saving ? "Registering..." : "Register Asset"}
+            {saving ? "Registering…" : "Register Asset"}
           </PrimaryButton>
         </div>
       </form>

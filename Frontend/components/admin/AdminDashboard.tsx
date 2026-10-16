@@ -198,7 +198,7 @@ export function AdminDashboard() {
       />
 
       {failed && (
-        <section className="rounded-lg border border-red-200 border-l-4 border-l-red-500 bg-white px-4 py-3 text-sm text-red-800 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <section className="rounded-lg border border-red-200 border-l-4 border-l-red-500 bg-white px-4 py-3 text-sm text-red-800 shadow-sm">
           Could not load dashboard statistics. The admin API may be unreachable — try refreshing.
         </section>
       )}
@@ -207,13 +207,13 @@ export function AdminDashboard() {
         {panel === 'loading' ? (
           <div className="h-16 animate-pulse rounded-lg border border-slate-200 bg-white" />
         ) : panel === 'unavailable' ? null /* the failure banner above says why; never claim "all clear" without the numbers */ : panel === 'clear' ? (
-          <div className="flex items-center gap-3 rounded-lg border border-emerald-200 border-l-4 border-l-emerald-500 bg-white px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center gap-3 rounded-lg border border-emerald-200 border-l-4 border-l-emerald-500 bg-white px-4 py-3 shadow-sm">
             <CheckCircle2 className="h-5 w-5 flex-none text-emerald-600" />
             <p className="text-sm font-semibold text-slate-900">No administrative items need attention right now.</p>
           </div>
         ) : (
           attention.map((item) => (
-            <div key={item.text} className={`flex flex-col gap-2 rounded-lg border border-slate-200 border-l-4 bg-white px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:flex-row sm:items-center sm:justify-between ${attentionRowClass[item.tone]}`}>
+            <div key={item.text} className={`flex flex-col gap-2 rounded-lg border border-slate-200 border-l-4 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between ${attentionRowClass[item.tone]}`}>
               <div className="flex items-start gap-3">
                 <AlertTriangle className={`mt-0.5 h-5 w-5 flex-none ${item.tone === 'red' ? 'text-red-600' : 'text-amber-600'}`} />
                 <p className="text-sm text-slate-800">{item.text}</p>

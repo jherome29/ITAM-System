@@ -14,6 +14,7 @@ import { surfaceClass } from '@/components/ui/controls';
 import { useAuth } from '@/lib/auth/use-auth';
 import { proposedRoleLabels } from '@/lib/roles/proposed-roles';
 import { mapBackendRoleToProposedRole } from '@/lib/roles/role-mapping';
+import { Notice } from '@/components/ui/Notice';
 
 function NotifIcon({ type }: Readonly<{ type: string }>) {
   if (type === 'requisition_approved' || type === 'requisition_fulfilled')
@@ -36,7 +37,7 @@ export function NotificationsContent() {
     notificationsApi
       .list()
       .then((r) => setNotifications(r.data.notifications))
-      .catch(() => setError('Failed to load notifications. Please try again.'))
+      .catch(() => setError('Could not load notifications. Please try again.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -54,7 +55,7 @@ export function NotificationsContent() {
         action={<SecondaryButton onClick={markAllRead}>Mark all as read</SecondaryButton>}
       />
       {error && (
-        <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>
+        <Notice tone="red">{error}</Notice>
       )}
       {loading ? (
         <LoadingSkeleton rows={5} />

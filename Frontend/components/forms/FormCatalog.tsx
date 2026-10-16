@@ -2,6 +2,7 @@
 
 import { ArrowRight, FileText } from 'lucide-react';
 import { FORM_CATALOG, GROUP_META, type FormDef, type FormGroup } from '@/lib/forms/form-catalog';
+import { Chip } from '@/components/ui/Chip';
 
 const GROUP_ORDER: FormGroup[] = ['asset', 'requisition', 'period'];
 
@@ -26,10 +27,10 @@ export function FormCatalog({ onChoose }: Readonly<{ onChoose: (def: FormDef) =>
                   key={form.type}
                   type="button"
                   onClick={() => onChoose(form)}
-                  className="group flex h-full flex-col rounded-lg border border-slate-200/90 bg-white p-4 text-left shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:border-blue-300 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+                  className="group flex h-full flex-col rounded-lg border border-slate-200/90 bg-white p-4 text-left shadow-sm transition hover:border-blue-300 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold uppercase text-slate-600 ring-1 ring-slate-200">{form.code}</span>
+                    <Chip className="uppercase">{form.code}</Chip>
                     <span className="grid h-9 w-9 flex-none place-items-center rounded-md bg-blue-50 text-blue-700 ring-1 ring-blue-200">
                       <FileText className="h-4 w-4" />
                     </span>

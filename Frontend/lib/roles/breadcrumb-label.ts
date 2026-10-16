@@ -8,10 +8,13 @@ const NAMED = new Map([
   ['maintenance-disposal', 'Maintenance & Disposal'],
 ]);
 
+const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** The words for one address segment in the breadcrumb. */
 export function breadcrumbLabel(segment: string): string {
   const named = NAMED.get(segment);
   if (named) return named;
+  if (RECORD_ID.test(segment)) return 'Details';
   return segment
     .split('-')
     .map((part) =>

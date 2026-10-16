@@ -7,6 +7,8 @@ import { AdminPageHeader, MetricCard, Panel, SearchToolbar, StatusChip, TableWra
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { REPLACEMENT_BASIS_LABEL, requisitionsApi, type ReplacementReview as Review } from '@/lib/api/requisitions';
 import { formatDate, requisitionStatusLabel } from '@/lib/requisitions/requisition-view';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyRow } from '@/components/ui/EmptyRow';
 
 const OPEN = new Set(['pending_supervisor', 'pending_fulfillment', 'on_hold']);
 
@@ -47,7 +49,7 @@ export function ReplacementReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow
     requisitionsApi
       .replacementReview()
       .then((res) => setData(res.data))
-      .catch(() => setLoadError('Failed to load replacement requests. Please refresh the page.'))
+      .catch(() => setLoadError('Could not load replacement requests. Please refresh the page.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -69,9 +71,9 @@ export function ReplacementReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow
         title="Replacement Validation"
         detail="Replacement requests with the criterion each was justified on, and held items that already qualify for one. The rules — condition, useful life, repeated repairs, loss or damage — are checked by the system when the holder submits."
       />
-      {loadError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{loadError}</div>}
+      {loadError && <Notice tone="red">{loadError}</Notice>}
       <div className="grid gap-3 sm:grid-cols-3">
-        <MetricCard label="Open requests" value={String(requests.filter((r) => OPEN.has(r.status)).length)} detail="Awaiting approval or fulfilment" tone="amber" icon={ClipboardCheck} />
+        <MetricCard label="Open requests" value={String(requests.filter((r) => OPEN.has(r.status)).length)} detail="Awaiting approval or fulfillment" tone="amber" icon={ClipboardCheck} />
         <MetricCard label="Fulfilled" value={String(requests.filter((r) => r.status === 'fulfilled').length)} detail="Old unit collected, receipt generated" tone="green" icon={ShieldCheck} />
         <MetricCard label="Due for replacement" value={String(candidates.length)} detail="Qualify, but no request filed yet" tone="blue" icon={Repeat2} />
       </div>
@@ -93,7 +95,7 @@ export function ReplacementReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow
                   <td className={tdClass}><StatusChip status={requisitionStatusLabel(r.status)} tone={statusTone(r.status)} /></td>
                 </tr>
               ))}
-              {visible.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">No replacement requests match the current filter.</td></tr>}
+              {visible.length === 0 && <EmptyRow colSpan={7}>No replacement requests match the current filter.</EmptyRow>}
             </tbody>
           </table>
         </TableWrap>
@@ -114,7 +116,7 @@ export function ReplacementReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow
                   <td className={`${tdClass} whitespace-normal text-xs text-slate-600`}>{a.eligibility.reason}</td>
                 </tr>
               ))}
-              {candidates.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">No held item currently qualifies for a replacement.</td></tr>}
+              {candidates.length === 0 && <EmptyRow colSpan={6}>No held item currently qualifies for a replacement.</EmptyRow>}
             </tbody>
           </table>
         </TableWrap>

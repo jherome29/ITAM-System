@@ -10,6 +10,8 @@ import { reportsApi, type FormMeta } from '@/lib/api/reports';
 import { downloadBlob } from '@/lib/download';
 import { FORM_CATALOG, formByType, formTypeLabel } from '@/lib/forms/form-catalog';
 import { formatDateTime } from '@/lib/dates';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyRow } from '@/components/ui/EmptyRow';
 
 const PAGE_SIZE = 15;
 const TYPE_OPTIONS = [{ value: 'All', label: 'All form types' }, ...FORM_CATALOG.map((f) => ({ value: f.type, label: `${f.abbr} — ${f.name}` }))];
@@ -50,7 +52,7 @@ export function FormsArchive({ refreshKey }: Readonly<{ refreshKey: number }>) {
         setLoadError('');
       })
       .catch(() => {
-        if (current) setLoadError('Failed to load the forms archive. Please refresh the page.');
+        if (current) setLoadError('Could not load the forms archive. Please refresh the page.');
       })
       .finally(() => {
         if (current) setLoading(false);
@@ -99,7 +101,7 @@ export function FormsArchive({ refreshKey }: Readonly<{ refreshKey: number }>) {
           setFormType(value);
         }}
       />
-      {loadError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{loadError}</div>}
+      {loadError && <Notice tone="red">{loadError}</Notice>}
       <Panel title="Generated forms" detail={loading ? 'Loading…' : `${total.toLocaleString('en-PH')} ${filtered ? 'matching ' : ''}${total === 1 ? 'form' : 'forms'} on file`}>
         {loading ? (
           <div className="p-6"><LoadingSkeleton rows={6} /></div>
@@ -135,11 +137,7 @@ export function FormsArchive({ refreshKey }: Readonly<{ refreshKey: number }>) {
                   </tr>
                 ))}
                 {forms.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
-                      {filtered ? 'No forms match the current filter.' : 'No forms have been generated yet.'}
-                    </td>
-                  </tr>
+                  <EmptyRow colSpan={6}>{filtered ? 'No forms match the current filter.' : 'No forms have been generated yet.'}</EmptyRow>
                 )}
               </tbody>
             </table>

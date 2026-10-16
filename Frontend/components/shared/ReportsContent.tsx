@@ -6,6 +6,8 @@ import { AdminPageHeader, Panel, PrimaryButton } from '@/components/admin/AdminU
 import { apiErrorMessage } from '@/lib/api/error-message';
 import { reportsApi } from '@/lib/api/reports';
 import { downloadBlob } from '@/lib/download';
+import { Chip } from '@/components/ui/Chip';
+import { Notice } from '@/components/ui/Notice';
 
 const ALL_REPORT_TYPES = [
   { value: 'ASSET_MASTER_LIST', label: 'Asset Master List', detail: 'Every asset with its class, status, location and cost.', formats: ['pdf', 'excel'] as const },
@@ -44,7 +46,7 @@ export function ReportsContent({
       downloadBlob(blob, `${selectedReport}-${new Date().toISOString().slice(0, 10)}.${ext}`);
       setSuccess(`${currentReport?.label} downloaded.`);
     } catch (err) {
-      setError(await apiErrorMessage(err, 'Failed to generate the report. Please try again.'));
+      setError(await apiErrorMessage(err, 'Could not generate the report. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -55,7 +57,7 @@ export function ReportsContent({
       <AdminPageHeader eyebrow={eyebrow} title={pageTitle} detail="Reports are generated from live records at the moment you download them." />
       <Panel title={panelTitle} detail={`${REPORT_TYPES.length} ${REPORT_TYPES.length === 1 ? 'report' : 'reports'} available`}>
         <form onSubmit={(event) => void handleGenerate(event)} className="space-y-5 p-4">
-          {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
+          {error && <Notice tone="red">{error}</Notice>}
           {success && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{success}</div>}
 
           <fieldset>
@@ -83,7 +85,7 @@ export function ReportsContent({
                     <span className="block text-sm font-bold text-slate-950">{r.label}</span>
                     <span className="mt-0.5 block text-xs text-slate-500">{r.detail}</span>
                   </span>
-                  <span className="flex-none rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold uppercase text-slate-600 ring-1 ring-slate-200">{r.formats.join(' / ')}</span>
+                  <Chip className="uppercase">{r.formats.join(' / ')}</Chip>
                 </label>
               ))}
             </div>

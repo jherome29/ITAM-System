@@ -22,6 +22,7 @@ import {
 import { assetOption, requisitionMatches, requisitionOption } from '@/lib/forms/picker-options';
 import { RecordPicker, type PickerOption } from './RecordPicker';
 import { DateField } from '@/components/ui/DateField';
+import { Notice } from '@/components/ui/Notice';
 
 const PICKER_PAGE = 8;
 const REQUISITION_WINDOW = 100;
@@ -98,9 +99,7 @@ function GeneratorForm({ def, onGenerated }: Readonly<{ def: FormDef; onGenerate
       </div>
 
       {error && (
-        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-          {error}
-        </div>
+        <Notice tone="red">{error}</Notice>
       )}
 
       {def.group === 'asset' && (

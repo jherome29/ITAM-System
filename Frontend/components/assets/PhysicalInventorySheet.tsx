@@ -9,6 +9,8 @@ import { assetsApi, type Asset } from '@/lib/api/assets';
 import { collectAllPages } from '@/lib/api/collect-pages';
 import { buildCountSheet } from '@/lib/assets/count-sheet';
 import { buttonClass } from '@/components/ui/buttons';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyMessage } from '@/components/ui/EmptyRow';
 
 /**
  * Physical Inventory: what the system expects to find at each location, from
@@ -25,7 +27,7 @@ export function PhysicalInventorySheet({ eyebrow, formsPath }: Readonly<{ eyebro
   useEffect(() => {
     collectAllPages<Asset>((page, limit) => assetsApi.list(page, limit).then((res) => ({ data: res.data.data, total: res.data.total })))
       .then(setAssets)
-      .catch(() => setLoadError('Failed to load the asset records. Please refresh the page.'))
+      .catch(() => setLoadError('Could not load the asset records. Please refresh the page.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -41,7 +43,7 @@ export function PhysicalInventorySheet({ eyebrow, formsPath }: Readonly<{ eyebro
         detail="What the system expects to find at each location. Count against this sheet, then generate the official count report from Reports & Forms."
         action={<Link href={formsPath} className={buttonClass()}>Open Reports &amp; Forms</Link>}
       />
-      {loadError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{loadError}</div>}
+      {loadError && <Notice tone="red">{loadError}</Notice>}
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
         This is the system&apos;s expected count. Recording the quantities you actually counted is not available in this version yet.
       </div>
@@ -52,7 +54,7 @@ export function PhysicalInventorySheet({ eyebrow, formsPath }: Readonly<{ eyebro
       </div>
       <Panel title="Expected count by location" detail={`${rows.length} locations`}>
         {rows.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-slate-500">No assets to count yet.</p>
+          <EmptyMessage>No assets to count yet.</EmptyMessage>
         ) : (
           <TableWrap>
             <table className="w-full min-w-[760px]">

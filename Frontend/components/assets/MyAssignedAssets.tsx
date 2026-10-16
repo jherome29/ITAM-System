@@ -17,6 +17,8 @@ import { REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE, REQUEST_TYPE_LABEL, blocking
 import { locationLabel } from '@/lib/assets/asset-location';
 import { formatDate, formatDateTime } from '@/lib/requisitions/requisition-view';
 import { humanize } from '@/lib/text';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyRow } from '@/components/ui/EmptyRow';
 
 // Why a non-issued asset is still on the holder's list.
 const HOLDING_NOTE: Record<string, string> = {
@@ -73,7 +75,7 @@ export function MyAssignedAssets({
     [],
   );
   useEffect(() => {
-    load().catch(() => setError('Failed to load your assets. Please refresh the page.')).finally(() => setLoading(false));
+    load().catch(() => setError('Could not load your assets. Please refresh the page.')).finally(() => setLoading(false));
   }, [load]);
 
   const handledOpenId = useRef<string | null>(null);
@@ -102,13 +104,13 @@ export function MyAssignedAssets({
 
   return <div className="space-y-4">
     <AdminPageHeader eyebrow={eyebrow} title="My Assigned Assets" detail={`Property currently issued to you. Request a return or repair, report damage, loss or theft${canRequestReplacement ? ', or request a replacement once an asset qualifies' : ''} — the responsible custodian is notified.`} />
-    {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
+    {error && <Notice tone="red">{error}</Notice>}
     <div className="grid gap-3 sm:grid-cols-3">
       <MetricCard label="Assigned to me" value={String(assets.length)} detail="Current accountability" tone="blue" icon={PackageCheck} />
       <MetricCard label="Open requests" value={String(openTotal)} detail="Returns and incidents in progress" tone="amber" icon={ClipboardList} />
       <MetricCard label="Return due" value={String(assets.filter((a) => a.expectedReturnDate).length)} detail="Assets with an expected return date" tone="red" icon={CalendarClock} />
     </div>
-    {loading ? <Panel title="Assigned assets" detail="Loading..."><div className="p-4"><LoadingSkeleton rows={4} /></div></Panel>
+    {loading ? <Panel title="Assigned assets" detail="Loading…"><div className="p-4"><LoadingSkeleton rows={4} /></div></Panel>
       : assets.length === 0 ? <Panel title="Assigned assets" detail="Nothing is issued to you right now."><p className="p-4 text-sm text-slate-500">When a custodian issues an asset to you, it will appear here.</p></Panel>
       : <div className="grid gap-4 lg:grid-cols-2">{assets.map((asset) => (
         <AssetCard
@@ -133,7 +135,7 @@ export function MyAssignedAssets({
           <td className={tdClass}><StatusChip status={REQUEST_STATUS_LABEL[r.status]} tone={REQUEST_STATUS_TONE[r.status]} /></td>
           <td className={`${tdClass} text-right`}><SecondaryButton onClick={() => setViewing(r)}>View</SecondaryButton></td>
         </tr>)}
-        {requests.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">You have not filed any return or incident requests.</td></tr>}
+        {requests.length === 0 && <EmptyRow colSpan={6}>You have not filed any return or incident requests.</EmptyRow>}
       </tbody></table></TableWrap>
     </Panel>}
 

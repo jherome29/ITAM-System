@@ -10,12 +10,15 @@ export function CenteredModal({
   description,
   children,
   onClose,
+  size = 'lg',
 }: Readonly<{
   open: boolean;
   title: string;
   description?: string;
   children: ReactNode;
   onClose: () => void;
+  /** `sm` for a short confirmation or a few fields; `lg` (default) for a long form. */
+  size?: 'sm' | 'lg';
 }>) {
   useEffect(() => {
     if (!open) return;
@@ -48,12 +51,12 @@ export function CenteredModal({
         open
         aria-modal="true"
         aria-labelledby="centered-modal-title"
-        className="relative m-0 flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/70 bg-white p-0 shadow-[0_24px_80px_rgba(15,23,42,0.3)] sm:max-h-[calc(100dvh-3rem)]"
+        className={`relative m-0 flex max-h-[calc(100dvh-1.5rem)] w-full ${size === 'sm' ? 'max-w-md' : 'max-w-3xl'} flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-0 shadow-2xl sm:max-h-[calc(100dvh-3rem)]`}
       >
         <header className="flex flex-none items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 sm:px-7 sm:py-5">
           <div>
-            <h2 id="centered-modal-title" className="text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">{title}</h2>
-            {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
+            <h2 id="centered-modal-title" className="text-xl font-bold text-slate-950">{title}</h2>
+            {description && <p className="mt-1 text-sm text-slate-600">{description}</p>}
           </div>
           <button
             type="button"

@@ -7,6 +7,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/lib/auth/use-auth';
 import { buttonClass } from '@/components/ui/buttons';
 import { controlClass, controlWithTrailingIconClass, labelClass } from '@/components/ui/controls';
+import { Notice } from '@/components/ui/Notice';
 
 const ROLE_REDIRECTS: Record<string, string> = {
   employee: '/employee/dashboard',
@@ -59,9 +60,7 @@ export default function LoginPage() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-            {error}
-          </div>
+          <Notice tone="red">{error}</Notice>
         )}
 
         <div>
@@ -112,7 +111,7 @@ export default function LoginPage() {
           disabled={loading}
           className={`${buttonClass()} mt-2 w-full`}
         >
-          {loading ? 'Signing in...' : 'Sign In'}
+          {loading ? 'Signing in…' : 'Sign In'}
         </button>
       </form>
     </div>

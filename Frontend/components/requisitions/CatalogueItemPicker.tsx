@@ -5,6 +5,7 @@ import { CheckCircle2, MapPin, Package, Search } from 'lucide-react';
 import { assetsApi, type CatalogueItem } from '@/lib/api/assets';
 import { controlBaseClass, searchControlClass } from '@/components/ui/controls';
 import { formatAvailability } from '@/lib/requisitions/catalogue-items';
+import { Chip } from '@/components/ui/Chip';
 
 const TYPE_TABS = ['All', 'ICT', 'Fixed', 'Supplies'] as const;
 const CLASS_OPTIONS = ['All', 'PPE', 'SEP', 'IES'] as const;
@@ -96,7 +97,7 @@ export function CatalogueItemPicker({
               role="tab"
               aria-selected={assetType === tab}
               onClick={() => setAssetType(tab)}
-              className={`h-10 rounded px-3 text-sm font-semibold transition-colors ${assetType === tab ? 'bg-blue-700 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+              className={`h-10 rounded-md px-3 text-sm font-semibold transition-colors ${assetType === tab ? 'bg-blue-700 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
             >
               {tab}
             </button>
@@ -133,7 +134,7 @@ export function CatalogueItemPicker({
                       <ItemMeta item={item} />
                     </div>
                   </div>
-                  <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700">{formatAvailability(item)}</span>
+                  <Chip tone="green">{formatAvailability(item)}</Chip>
                 </button>
               </li>
             ))}

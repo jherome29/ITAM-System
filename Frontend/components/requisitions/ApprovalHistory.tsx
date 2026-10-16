@@ -7,6 +7,8 @@ import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';
 import { approvalHistorySummary, decidedRequisitions, turnaroundHours } from '@/lib/requisitions/approval-history';
 import { formatDateTime, requesterLabel } from '@/lib/requisitions/requisition-view';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyMessage } from '@/components/ui/EmptyRow';
 
 function itemsLabel(r: Requisition): string {
   const [first, ...rest] = r.items ?? [];
@@ -28,7 +30,7 @@ export function ApprovalHistory({ eyebrow }: Readonly<{ eyebrow: string }>) {
     requisitionsApi
       .decided(1, 200)
       .then((res) => setRows(decidedRequisitions(res.data.data)))
-      .catch(() => setLoadError('Failed to load your approval history. Please refresh the page.'))
+      .catch(() => setLoadError('Could not load your approval history. Please refresh the page.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -43,7 +45,7 @@ export function ApprovalHistory({ eyebrow }: Readonly<{ eyebrow: string }>) {
         title="Approval History"
         detail="Requisitions you have approved or rejected, newest first, with how long each took you and the comment you left."
       />
-      {loadError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{loadError}</div>}
+      {loadError && <Notice tone="red">{loadError}</Notice>}
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard label="Approved" value={String(summary.approved)} detail={`${summary.total} decided in all`} tone="green" icon={CheckCircle2} />
         <MetricCard label="Rejected" value={String(summary.rejected)} detail="Sent back with a reason" tone="red" icon={XCircle} />
@@ -57,7 +59,7 @@ export function ApprovalHistory({ eyebrow }: Readonly<{ eyebrow: string }>) {
       </div>
       <Panel title="Your decisions" detail={`${rows.length} shown`}>
         {rows.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-slate-500">No decisions yet — requisitions you approve or reject will appear here.</p>
+          <EmptyMessage>No decisions yet — requisitions you approve or reject will appear here.</EmptyMessage>
         ) : (
           <TableWrap>
             <table className="w-full min-w-[960px]">

@@ -9,6 +9,8 @@ import { requisitionsApi, type CreateRequisitionDto, type Requisition } from '@/
 import { MAX_REQUEST_QUANTITY, maxRequestQuantity } from '@/lib/requisitions/catalogue-items';
 import { localToday } from '@/lib/dates';
 import { DateField } from '@/components/ui/DateField';
+import { Chip } from '@/components/ui/Chip';
+import { Notice } from '@/components/ui/Notice';
 
 // Shared by every role that can submit a requisition (Employee, Approving
 // Officer, IT Asset Custodian). Submits directly to POST /v1/requisitions with
@@ -124,7 +126,7 @@ export function RequisitionForm({
       onSubmit(res.data);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
-      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to submit requisition.'));
+      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Could not submit requisition.'));
     } finally {
       setSubmitting(false);
     }
@@ -133,7 +135,7 @@ export function RequisitionForm({
   const maxQty = manual ? MAX_REQUEST_QUANTITY : maxRequestQuantity(picked);
 
   return <form className="space-y-4" onSubmit={handleSubmit}>
-    {error && <div className="border border-red-200 bg-red-50 p-3 text-xs text-red-700">{error}</div>}
+    {error && <Notice tone="red">{error}</Notice>}
 
     {replacing && (
       <div className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
@@ -171,7 +173,7 @@ export function RequisitionForm({
 
     <div className="flex items-center gap-2 text-xs">
       <span className="font-bold text-slate-600">Request type</span>
-      <span className="rounded-full bg-slate-100 px-2.5 py-0.5 font-bold text-slate-700 ring-1 ring-slate-200">{REQUISITION_TYPE_LABEL[requisitionType]}</span>
+      <Chip>{REQUISITION_TYPE_LABEL[requisitionType]}</Chip>
       {!replacing && <span className="text-slate-500">To repair or replace an asset you hold, use My Assigned Assets.</span>}
     </div>
     <div className="grid gap-4 sm:grid-cols-2">

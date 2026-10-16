@@ -78,7 +78,7 @@ export function FormsWorkspaceContent({ eyebrow, canGenerate = true }: Readonly<
       </div>
 
       {canGenerate && (
-        <div role="tablist" aria-label="Reports and forms" className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+        <div role="tablist" aria-label="Reports and forms" className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
           {TABS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}

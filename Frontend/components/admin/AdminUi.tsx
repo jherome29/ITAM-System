@@ -6,8 +6,8 @@ import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { buttonClass, type ButtonSize, type ButtonVariant } from '@/components/ui/buttons';
-import { type Tone, toneStyles } from '@/components/ui/tones';
-import { surfaceClass } from '@/components/ui/controls';
+import type { Tone } from '@/components/ui/tones';
+import { Chip } from '@/components/ui/Chip';
 
 // Semantic colour role for admin cards, chips, and status rows; the palette itself is
 // shared (components/ui/tones.ts) so the whole system colours "good" the same way.
@@ -57,36 +57,6 @@ export function DangerButton(props: Readonly<ButtonProps>) {
   return renderButton('danger', props);
 }
 
-export function MetricCard({ label, value, detail, tone, icon: Icon }: Readonly<{ label: string; value: string; detail: string; tone: AdminTone; icon: LucideIcon }>) {
-  return (
-    <article className={`${surfaceClass} p-4`}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-bold uppercase text-slate-500">{label}</p>
-          <p className="mt-2 text-2xl font-bold text-slate-950">{value}</p>
-          <p className="mt-1 text-xs text-slate-500">{detail}</p>
-        </div>
-        <span className={`grid h-10 w-10 flex-none place-items-center rounded-md ring-1 ${toneStyles[tone]}`}><Icon className="h-5 w-5" /></span>
-      </div>
-    </article>
-  );
-}
-
-export function Panel({ title, detail, action, children, className = '' }: Readonly<{ title: string; detail?: string; action?: ReactNode; children: ReactNode; className?: string }>) {
-  return (
-    <section className={`min-w-0 overflow-hidden ${surfaceClass} ${className}`}>
-      <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-base font-bold text-slate-950">{title}</h2>
-          {detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}
-        </div>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
 // Word-boundary anchored so a keyword must appear as its own word (e.g. the
 // literal word "active"), not merely as a substring of a longer word — this
 // is what previously made "Inactive" match "active" via .includes()-style
@@ -100,7 +70,7 @@ function inferToneFromStatus(status: string): AdminTone {
 
 export function StatusChip({ status, tone }: Readonly<{ status: string; tone?: AdminTone }>) {
   const inferred: AdminTone = tone ?? inferToneFromStatus(status);
-  return <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${toneStyles[inferred]}`}>{status}</span>;
+  return <Chip tone={inferred}>{status}</Chip>;
 }
 
 export function ActionMenu({ actions }: Readonly<{ actions: Array<{ label: string; onClick: () => void; danger?: boolean }> }>) {
@@ -138,10 +108,13 @@ export function TableWrap({ children }: Readonly<{ children: ReactNode }>) {
 }
 
 export const thClass = 'whitespace-nowrap bg-slate-50 px-4 py-3 text-left text-xs font-bold uppercase text-slate-500';
-export const tdClass = 'whitespace-nowrap border-t border-slate-100 px-4 py-3 text-sm text-slate-700';
+export const tdWrapClass = 'border-t border-slate-100 px-4 py-3 text-sm text-slate-700';
+export const tdClass = `whitespace-nowrap ${tdWrapClass}`;
 
 // The form kit lives in components/ui; these names stay importable from here so the
 // admin screens (and everything built on them) keep one import path.
 export { Field } from '@/components/ui/Field';
+export { MetricCard } from '@/components/ui/MetricCard';
+export { Panel } from '@/components/ui/Panel';
 export { controlClass as inputClass } from '@/components/ui/controls';
 export { SearchToolbar, type FilterOption, type ToolbarFilter } from '@/components/ui/SearchToolbar';

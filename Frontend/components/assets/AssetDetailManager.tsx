@@ -2,7 +2,7 @@
 
 import { useCallback, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, QrCode, Pencil, Save, X, Clock, Wrench } from 'lucide-react';
+import { ArrowLeft, QrCode, Pencil, Save, X } from 'lucide-react';
 import { assetsApi, type Asset, type UpdateAssetDto } from '@/lib/api/assets';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { OUTCOME_LABEL, SERVICE_TYPE_LABEL, repairsApi, type Repair } from '@/lib/api/repairs';
@@ -12,11 +12,15 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { ASSET_LIFECYCLE_TRANSITIONS as NEXT_TRANSITIONS, lifecycleNotesRequired } from '@/lib/assets/lifecycle-transitions';
 import { formatDateTime, formatPeso } from '@/lib/dates';
-import { tdClass, thClass } from '@/components/admin/AdminUi';
+import { tdClass, tdWrapClass, thClass } from '@/components/admin/AdminUi';
 import { buttonClass } from '@/components/ui/buttons';
 import { controlClass, labelClass, surfaceClass, textareaClass } from '@/components/ui/controls';
 import { DateField } from '@/components/ui/DateField';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { Chip } from '@/components/ui/Chip';
+import { EmptyMessage } from '@/components/ui/EmptyRow';
+import { CenteredModal } from '@/components/ui/CenteredModal';
+import { Panel } from '@/components/ui/Panel';
 
 function optionLabel(value: string): string {
   return value.split('_').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ');
@@ -161,7 +165,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
       const res = await assetsApi.generateQr(asset.id);
       setAsset((prev) => prev ? { ...prev, qrCode: res.data.qrCode } : prev);
     } catch {
-      setSaveError('Failed to generate QR code. Please try again.');
+      setSaveError('Could not generate QR code. Please try again.');
     }
   };
 
@@ -222,7 +226,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
       auditApi.byRecord(assetId).then((r) => setTransactions(r.data ?? [])).catch(() => {});
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setSaveError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to save.'));
+      setSaveError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Could not save.'));
     } finally {
       setSaving(false);
     }
@@ -249,6 +253,16 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
   const transfer = asset.status === 'transferred' ? lastTransfer(asset.locationHistory) : null;
   const history = historyEntries(transactions);
 
+  const closeLifecycle = () => {
+    setShowLifecycle(false);
+    setLifecycleError('');
+    setTargetStatus('');
+    setLifecycleNotes('');
+    setLifecycleEmployeeId('');
+    setLifecycleToLocation('');
+    setLifecycleExpectedReturnDate('');
+  };
+
   return (
     <div className="space-y-5 max-w-4xl">
       <button type="button" onClick={() => router.back()} className="flex items-center gap-2 text-sm font-semibold text-brand hover:underline">
@@ -268,7 +282,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                 disabled={saving}
                 className={buttonClass()}
               >
-                <Save className="h-5 w-5" /> {saving ? 'Saving...' : 'Save Changes'}
+                <Save className="h-5 w-5" /> {saving ? 'Saving…' : 'Save Changes'}
               </button>
               <button type="button"
                 onClick={handleCancelEdit}
@@ -396,12 +410,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
 
       {/* Repair History — one row per stay under repair */}
       {repairs.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-blue-200">
-          <div className="p-5 border-b border-blue-200 bg-blue-50 flex items-center gap-2">
-            <Wrench className="w-5 h-5 text-brand" />
-            <h2 className="text-base font-semibold text-brand">Repair History</h2>
-            <span className="ml-auto text-xs text-slate-500">{repairs.length} repair{repairs.length === 1 ? '' : 's'} — managed in Maintenance &amp; Repair</span>
-          </div>
+        <Panel title="Repair History" detail={`${repairs.length} repair${repairs.length === 1 ? '' : 's'} — managed in Maintenance & Repair`}>
           <ul className="divide-y divide-slate-100">
             {repairs.map((r) => (
               <li key={r.id} className="p-4 text-sm">
@@ -410,9 +419,9 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                     {formatDate(r.openedAt)} → {r.completedAt ? formatDate(r.completedAt) : `due ${formatDate(r.dueDate)}`}
                     <span className="ml-2 font-normal text-slate-500">{SERVICE_TYPE_LABEL[r.serviceType]}{r.serviceProvider ? ` · ${r.serviceProvider}` : ''}{r.holder ? ` · held by ${r.holder.name}` : ''}</span>
                   </p>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${r.outcome === 'repaired' ? 'bg-emerald-50 text-emerald-700' : r.outcome ? 'bg-slate-100 text-slate-700' : r.overdue ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>
+                  <Chip tone={r.outcome === 'repaired' ? 'green' : r.outcome ? 'slate' : r.overdue ? 'red' : 'amber'}>
                     {r.outcome ? OUTCOME_LABEL[r.outcome] : r.overdue ? 'Overdue' : 'Under repair'}
-                  </span>
+                  </Chip>
                 </div>
                 {r.reportedProblem && <p className="mt-1 text-slate-600"><span className="font-semibold">Problem:</span> {r.reportedProblem}</p>}
                 {r.findings && <p className="mt-0.5 text-slate-600"><span className="font-semibold">Findings:</span> {r.findings}</p>}
@@ -420,40 +429,36 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
               </li>
             ))}
           </ul>
-        </div>
+        </Panel>
       )}
 
       {/* Transaction History */}
-      <div className="bg-white rounded-lg shadow-sm border border-blue-200">
-        <div className="p-5 border-b border-blue-200 bg-blue-50 flex items-center gap-2">
-          <Clock className="w-5 h-5 text-brand" />
-          <h2 className="text-base font-semibold text-brand">Transaction History</h2>
-        </div>
+      <Panel title="Transaction History">
         {historyLoading ? (
           <div className="p-6"><LoadingSkeleton rows={4} /></div>
         ) : history.length === 0 ? (
-          <div className="px-6 py-10 text-center text-sm text-slate-500">No lifecycle history recorded yet.</div>
+          <EmptyMessage>No lifecycle history recorded yet.</EmptyMessage>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-slate-50">
+              <thead>
                 <tr>
                   {['Date / Time', 'Event', 'By', 'Details'].map((h) => (
                     <th key={h} className={thClass}>{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {history.map((entry) => (
                   <tr key={entry.id} className="align-top hover:bg-blue-50 transition-colors">
                     <td className={tdClass}>
                       {formatDateTime(entry.when)}
                     </td>
-                    <td className="px-5 py-3">
-                      <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium whitespace-nowrap">{entry.event}</span>
+                    <td className={tdClass}>
+                      <Chip tone="blue">{entry.event}</Chip>
                     </td>
                     <td className={tdClass}>{entry.by}</td>
-                    <td className="px-5 py-3 text-sm text-slate-600">
+                    <td className={tdWrapClass}>
                       {entry.details.length === 0 ? '—' : entry.details.map((line) => <p key={line}>{line}</p>)}
                     </td>
                   </tr>
@@ -462,13 +467,9 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
             </table>
           </div>
         )}
-      </div>
+      </Panel>
 
-      {showLifecycle && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
-            <h3 className="text-base font-semibold text-slate-800 mb-4">Update Lifecycle</h3>
-
+      <CenteredModal open={showLifecycle} title="Update Lifecycle" size="sm" onClose={closeLifecycle}>
             <div className="space-y-4">
               {/* Status selector */}
               <div>
@@ -620,18 +621,16 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                 }
                 className={`${buttonClass()} flex-1`}
               >
-                {updating ? 'Updating...' : 'Confirm'}
+                {updating ? 'Updating…' : 'Confirm'}
               </button>
               <button type="button"
-                onClick={() => { setShowLifecycle(false); setLifecycleError(''); setTargetStatus(''); setLifecycleNotes(''); setLifecycleEmployeeId(''); setLifecycleToLocation(''); setLifecycleExpectedReturnDate(''); }}
+                onClick={closeLifecycle}
                 className={`${buttonClass({ variant: 'secondary' })} flex-1`}
               >
                 Cancel
               </button>
             </div>
-          </div>
-        </div>
-      )}
+      </CenteredModal>
     </div>
   );
 }

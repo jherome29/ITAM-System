@@ -14,6 +14,10 @@ import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, Prim
 import { formatDateTime } from '@/lib/dates';
 import { DateField } from '@/components/ui/DateField';
 import { buttonClass } from '@/components/ui/buttons';
+import { EmptyRow } from '@/components/ui/EmptyRow';
+import { CenteredModal } from '@/components/ui/CenteredModal';
+import { labelClass } from '@/components/ui/controls';
+import { Notice } from '@/components/ui/Notice';
 
 type IdentitySlug = 'users' | 'roles';
 
@@ -116,7 +120,7 @@ function UsersPage() {
       .then((res) => {
         if (ticket === latestFetch.current) setUsers(res.data.data);
       })
-      .catch(() => setToast('Failed to load users.'))
+      .catch(() => setToast('Could not load users.'))
       .finally(() => {
         if (ticket === latestFetch.current) setLoading(false);
       });
@@ -164,7 +168,7 @@ function UsersPage() {
       setUsers((current) => current.map((user) => user.id === id ? { ...user, isActive: false } : user));
       setToast(`${name} account deactivated.`);
     } catch {
-      setToast(`Failed to deactivate ${name}.`);
+      setToast(`Could not deactivate ${name}.`);
     }
   };
 
@@ -174,7 +178,7 @@ function UsersPage() {
       fetchUsers(search || undefined, roleParam);
       setToast(`${name} reactivated.`);
     } catch {
-      setToast(`Failed to reactivate ${name}.`);
+      setToast(`Could not reactivate ${name}.`);
     }
   };
 
@@ -184,7 +188,7 @@ function UsersPage() {
       fetchUsers(search || undefined, roleParam);
       setToast(`${name} unlocked — they can sign in again.`);
     } catch {
-      setToast(`Failed to unlock ${name}.`);
+      setToast(`Could not unlock ${name}.`);
     }
   };
 
@@ -193,7 +197,7 @@ function UsersPage() {
       await usersApi.revokeSessions(id);
       setToast(`${name} signed out of all sessions.`);
     } catch {
-      setToast(`Failed to sign ${name} out.`);
+      setToast(`Could not sign ${name} out.`);
     }
   };
 
@@ -213,7 +217,7 @@ function UsersPage() {
       onFilterChange={handleRoleFilterChange}
     />
     <Panel title="Account Directory" detail={`${users.length} accounts shown - deactivation preserves audit history`}>
-      {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>User</th><th className={thClass}>Office</th><th className={thClass}>Role</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{users.length === 0 ? <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-500">No accounts found.</td></tr> : users.map((user) => <tr key={user.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelectedId(user.id)} className="text-left"><span className="block font-bold text-slate-950">{userName(user)}</span><span className="text-xs text-slate-500">{user.employeeId} - {user.email}</span></button></td><td className={tdClass}>{user.division} / {user.officeOrSection}</td><td className={tdClass}>{user.role}</td><td className={tdClass}><AccountStatusChip user={user} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View account', onClick: () => setSelectedId(user.id) }, { label: 'Reset password', onClick: () => setResetTarget(user) }, ...(isLockedNow(user) ? [{ label: 'Unlock account', onClick: () => handleUnlock(user.id, userName(user)) }] : []), ...(user.isActive ? [{ label: 'Force sign-out', onClick: () => setSignOutTarget(user) }] : []), user.isActive ? { label: 'Deactivate account', danger: true, onClick: () => handleDeactivate(user.id, userName(user)) } : { label: 'Reactivate account', onClick: () => handleReactivate(user.id, userName(user)) }]} /></td></tr>)}</tbody></table></TableWrap>}
+      {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>User</th><th className={thClass}>Office</th><th className={thClass}>Role</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{users.length === 0 ? <EmptyRow colSpan={5}>No accounts found.</EmptyRow> : users.map((user) => <tr key={user.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelectedId(user.id)} className="text-left"><span className="block font-bold text-slate-950">{userName(user)}</span><span className="text-xs text-slate-500">{user.employeeId} - {user.email}</span></button></td><td className={tdClass}>{user.division} / {user.officeOrSection}</td><td className={tdClass}>{user.role}</td><td className={tdClass}><AccountStatusChip user={user} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View account', onClick: () => setSelectedId(user.id) }, { label: 'Reset password', onClick: () => setResetTarget(user) }, ...(isLockedNow(user) ? [{ label: 'Unlock account', onClick: () => handleUnlock(user.id, userName(user)) }] : []), ...(user.isActive ? [{ label: 'Force sign-out', onClick: () => setSignOutTarget(user) }] : []), user.isActive ? { label: 'Deactivate account', danger: true, onClick: () => handleDeactivate(user.id, userName(user)) } : { label: 'Reactivate account', onClick: () => handleReactivate(user.id, userName(user)) }]} /></td></tr>)}</tbody></table></TableWrap>}
     </Panel>
     <DetailDrawer open={Boolean(selected)} title={selected ? userName(selected) : 'Account details'} onClose={() => setSelectedId(null)}>{selected && <div className="space-y-5"><div className="grid grid-cols-2 gap-3">{[['Employee ID', selected.employeeId], ['Account ID', selected.id], ['Email', selected.email], ['Role', selected.role], ['Division', selected.division], ['Office / Section', selected.officeOrSection]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>)}</div><Panel title="Account status"><div className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Status</span><AccountStatusChip user={selected} /></div>{isLockedNow(selected) && <div className="flex items-center justify-between"><span className="text-sm text-slate-600">Locked until</span><span className="text-sm font-semibold text-slate-900">{formatDateTime(selected.lockedUntil as string)}</span></div>}{selected.failedLoginAttempts > 0 && <div className="flex items-center justify-between"><span className="text-sm text-slate-600">Failed sign-ins</span><span className="text-sm font-semibold text-slate-900">{selected.failedLoginAttempts}</span></div>}</div></Panel>{selected.role === 'supervisor' && <ApprovalRoutingPanel key={selected.id} user={selected} onSaved={(u) => setUsers((prev) => prev.map((x) => (x.id === u.id ? u : x)))} />}<UserAuditHistory key={selected.id} userId={selected.id} /><div className="flex flex-wrap gap-2">{isLockedNow(selected) && <SecondaryButton onClick={() => handleUnlock(selected.id, userName(selected))}>Unlock account</SecondaryButton>}<SecondaryButton onClick={() => setResetTarget(selected)}>Reset password</SecondaryButton>{selected.isActive && <SecondaryButton onClick={() => setSignOutTarget(selected)}>Force sign-out</SecondaryButton>}{selected.isActive ? <SecondaryButton onClick={() => handleDeactivate(selected.id, userName(selected))}>Deactivate account</SecondaryButton> : <SecondaryButton onClick={() => handleReactivate(selected.id, userName(selected))}>Reactivate account</SecondaryButton>}</div><p className="text-xs text-slate-500">Actions call the live users API and create append-only audit events.</p></div>}</DetailDrawer>
     <DetailDrawer open={creating} title="Create account" onClose={() => setCreating(false)}><AccountForm onSave={(user) => { setUsers((current) => [user, ...current]); setCreating(false); setToast(`${userName(user)} was added to the account directory.`); }} /></DetailDrawer>
@@ -267,54 +271,54 @@ function PasswordResetDialog({ user, onClose, onDone }: Readonly<{ user: User | 
       onClose();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
-      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to reset password.'));
+      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Could not reset password.'));
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4">
-      <section className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl">
-        <h2 className="text-lg font-bold text-slate-950">Reset password</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Set a new password for <span className="font-semibold">{name}</span>. They will be signed out of every session and must sign in with the new password.
-        </p>
-        <form className="mt-4 space-y-3" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-          <div>
-            <label htmlFor="reset-password" className="mb-1 block text-xs font-bold text-slate-600">New password</label>
-            <div className="flex gap-2">
-              <input
-                id="reset-password"
-                type={show ? 'text' : 'password'}
-                value={value}
-                onChange={(event) => setValue(event.target.value)}
-                autoComplete="new-password"
-                autoFocus
-                className={inputClass}
-              />
-              <button type="button" onClick={() => setShow((current) => !current)} className="rounded-md border border-slate-200 px-3 text-xs font-bold text-slate-600 hover:bg-slate-50">
-                {show ? 'Hide' : 'Show'}
-              </button>
-            </div>
-          </div>
-          <ul className="space-y-1 text-xs">
-            {checks.map((check) => (
-              <li key={check.label} className={check.ok ? 'text-green-700' : 'text-slate-500'}>
-                <span aria-hidden="true">{check.ok ? '✓' : '○'}</span> {check.label}
-              </li>
-            ))}
-          </ul>
-          {error && <p className="text-sm text-red-700">{error}</p>}
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={onClose} className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Cancel</button>
-            <button type="submit" disabled={!valid || submitting} className={buttonClass()}>
-              {submitting ? 'Resetting…' : 'Reset password'}
+    <CenteredModal
+      open
+      size="sm"
+      title="Reset password"
+      description={`Set a new password for ${name}. They will be signed out of every session and must sign in with the new password.`}
+      onClose={onClose}
+    >
+      <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+        <div>
+          <label htmlFor="reset-password" className={labelClass}>New password</label>
+          <div className="flex gap-2">
+            <input
+              id="reset-password"
+              type={show ? 'text' : 'password'}
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              autoComplete="new-password"
+              autoFocus
+              className={inputClass}
+            />
+            <button type="button" onClick={() => setShow((current) => !current)} className={buttonClass({ variant: 'secondary' })}>
+              {show ? 'Hide' : 'Show'}
             </button>
           </div>
-        </form>
-      </section>
-    </div>
+        </div>
+        <ul className="space-y-1 text-sm">
+          {checks.map((check) => (
+            <li key={check.label} className={check.ok ? 'text-emerald-700' : 'text-slate-600'}>
+              <span aria-hidden="true">{check.ok ? '✓' : '○'}</span> {check.label}
+            </li>
+          ))}
+        </ul>
+        {error && <Notice tone="red">{error}</Notice>}
+        <div className="flex justify-end gap-2 pt-1">
+          <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
+          <PrimaryButton type="submit" disabled={!valid || submitting}>
+            {submitting ? 'Resetting…' : 'Reset password'}
+          </PrimaryButton>
+        </div>
+      </form>
+    </CenteredModal>
   );
 }
 
@@ -342,7 +346,7 @@ function AccountForm({ onSave }: Readonly<{ onSave: (user: User) => void }>) {
       onSave(res.data);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to create account.'));
+      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Could not create account.'));
     } finally {
       setSubmitting(false);
     }
@@ -459,7 +463,7 @@ function RolesPage() {
   useEffect(() => {
     usersApi.list(1, 100)
       .then((res) => setUsers(res.data.data))
-      .catch(() => setToast('Failed to load users.'))
+      .catch(() => setToast('Could not load users.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -476,7 +480,7 @@ function RolesPage() {
       setUsers((current) => current.map((u) => (u.id === user.id ? res.data : u)));
       setToast(`${user.firstName} ${user.lastName}'s role updated to ${newRole.replace(/_/g, ' ')}.`);
     } catch {
-      setToast(`Failed to update ${user.firstName} ${user.lastName}'s role.`);
+      setToast(`Could not update ${user.firstName} ${user.lastName}'s role.`);
     } finally {
       setSavingId(null);
     }
@@ -488,7 +492,7 @@ function RolesPage() {
     <Panel title="User Role Assignment" detail={`${rows.length} accounts shown`}>
       {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="w-full"><thead><tr>
         <th className={thClass}>User</th><th className={thClass}>Current role</th><th className={thClass}>New role</th><th className={`${thClass} text-right`}>Action</th>
-      </tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={4} className="px-4 py-10 text-center text-sm text-slate-500">No accounts found.</td></tr> : rows.map((user) => <tr key={user.id}>
+      </tr></thead><tbody>{rows.length === 0 ? <EmptyRow colSpan={4}>No accounts found.</EmptyRow> : rows.map((user) => <tr key={user.id}>
         <td className={tdClass}>{user.firstName} {user.lastName}<span className="block text-xs text-slate-500">{user.employeeId}</span></td>
         <td className={tdClass}>{user.role.replace(/_/g, ' ')}</td>
         <td className={tdClass}>

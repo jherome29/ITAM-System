@@ -8,6 +8,7 @@ import { assetsApi, type AssetStats } from '@/lib/api/assets';
 import { assetStatusRows, requisitionStatusRows, statusShare, type StatusRow } from '@/lib/reports/status-share';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
+import { Notice } from '@/components/ui/Notice';
 
 function StatusBars({ rows, total, empty }: Readonly<{ rows: StatusRow[]; total: number; empty: string }>) {
   if (total === 0) return <p className="p-4 text-sm text-slate-500">{empty}</p>;
@@ -43,7 +44,7 @@ export function ManagementAuditDashboard() {
     Promise.allSettled([reportsApi.kpi(), requisitionsApi.stats(), assetsApi.stats()]).then(([k, r, a]) => {
       if (cancelled) return;
       if (k.status === 'fulfilled') setKpi(k.value.data);
-      else setError('Failed to load KPI data. Please refresh the page.');
+      else setError('Could not load KPI data. Please refresh the page.');
       if (r.status === 'fulfilled') setReqStats(r.value.data);
       if (a.status === 'fulfilled') setAssetStats(a.value.data);
       setLoading(false);
@@ -51,7 +52,7 @@ export function ManagementAuditDashboard() {
       // allSettled never rejects, so this only catches a throw inside the
       // handler above — without it the skeleton would stay up forever.
       if (cancelled) return;
-      setError('Failed to load KPI data. Please refresh the page.');
+      setError('Could not load KPI data. Please refresh the page.');
       setLoading(false);
     });
     return () => { cancelled = true; };
@@ -66,7 +67,7 @@ export function ManagementAuditDashboard() {
       <PageHeader eyebrow="Management" title="Executive Dashboard" detail="Asset and requisition status across the organization. Read-only." />
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        <Notice tone="red">{error}</Notice>
       )}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

@@ -14,12 +14,12 @@ import { Field } from '@/components/ui/Field';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import {
   DashboardError,
-  KpiTile,
   NotificationsFooter,
   RequisitionListSection,
   RoleDashboardHeader,
   useRoleDashboardData,
 } from '@/components/dashboard/RoleDashboardShell';
+import { MetricCard } from '@/components/ui/MetricCard';
 
 // Self-service away toggle for an approving officer. When marked unavailable,
 // the SLA-breach reassignment (backend) routes new approvals to their alternate.
@@ -105,8 +105,8 @@ export function ApprovingOfficerDashboard() {
       <DashboardError message={error} />
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <KpiTile icon={ClipboardCheck} tone="amber" label="Pending my approval" value={pendingTotal} href="/approving-officer/approvals" />
-        <KpiTile icon={ClipboardList} tone="blue" label="My own requisitions" value={stats?.total ?? 0} href="/approving-officer/requisitions" />
+        <MetricCard icon={ClipboardCheck} tone="amber" label="Pending my approval" value={pendingTotal} href="/approving-officer/approvals" />
+        <MetricCard icon={ClipboardList} tone="blue" label="My own requisitions" value={stats?.total ?? 0} href="/approving-officer/requisitions" />
       </div>
 
       <MyAvailabilityCard />

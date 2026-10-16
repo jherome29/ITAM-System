@@ -6,12 +6,13 @@ import { requisitionsApi } from '@/lib/api/requisitions';
 import { notificationsApi } from '@/lib/api/notifications';
 import {
   DashboardError,
-  KpiTile,
   NotificationsFooter,
   RequisitionListSection,
   RoleDashboardHeader,
   useRoleDashboardData,
 } from '@/components/dashboard/RoleDashboardShell';
+import { MetricCard } from '@/components/ui/MetricCard';
+import { EmptyMessage } from '@/components/ui/EmptyRow';
 
 export function ItAssetCustodianDashboard() {
   const { data, loading, error } = useRoleDashboardData(async () => {
@@ -28,7 +29,7 @@ export function ItAssetCustodianDashboard() {
   });
 
   if (loading) {
-    return <div className="p-8 text-center text-sm text-slate-500">Loading dashboard...</div>;
+    return <EmptyMessage>Loading dashboard…</EmptyMessage>;
   }
 
   const stats = data?.stats ?? null;
@@ -41,10 +42,10 @@ export function ItAssetCustodianDashboard() {
       <DashboardError message={error} />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiTile icon={Boxes} tone="blue" label="Total assets" value={stats?.total ?? 0} href="/it-asset-custodian/assets" />
-        <KpiTile icon={CheckCircle2} tone="emerald" label="Available" value={stats?.available ?? 0} href="/it-asset-custodian/assets" />
-        <KpiTile icon={ClipboardList} tone="amber" label="Pending fulfillment" value={pendingFulfillment.length} href="/it-asset-custodian/fulfillment" />
-        <KpiTile icon={Wrench} tone="red" label="Under repair" value={stats?.underRepair ?? 0} href="/it-asset-custodian/maintenance" />
+        <MetricCard icon={Boxes} tone="blue" label="Total assets" value={stats?.total ?? 0} href="/it-asset-custodian/assets" />
+        <MetricCard icon={CheckCircle2} tone="green" label="Available" value={stats?.available ?? 0} href="/it-asset-custodian/assets" />
+        <MetricCard icon={ClipboardList} tone="amber" label="Pending fulfillment" value={pendingFulfillment.length} href="/it-asset-custodian/fulfillment" />
+        <MetricCard icon={Wrench} tone="red" label="Under repair" value={stats?.underRepair ?? 0} href="/it-asset-custodian/maintenance" />
       </div>
 
       <RequisitionListSection

@@ -7,12 +7,12 @@ import { notificationsApi } from '@/lib/api/notifications';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import {
   DashboardError,
-  KpiTile,
   NotificationsFooter,
   RequisitionListSection,
   RoleDashboardHeader,
   useRoleDashboardData,
 } from '@/components/dashboard/RoleDashboardShell';
+import { MetricCard } from '@/components/ui/MetricCard';
 
 export function PropertyCustodianDashboard() {
   const { data, loading, error } = useRoleDashboardData(async () => {
@@ -44,10 +44,10 @@ export function PropertyCustodianDashboard() {
       <DashboardError message={error} />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiTile icon={Boxes} tone="blue" label="Total assets (Fixed + Supplies)" value={stats?.total ?? 0} />
-        <KpiTile icon={CheckCircle2} tone="emerald" label="Available" value={stats?.available ?? 0} />
-        <KpiTile icon={ClipboardList} tone="amber" label="Pending fulfillment" value={pendingTotal} href="/property-custodian/fulfillment" />
-        <KpiTile icon={Archive} tone="red" label="Flagged for disposal" value={stats?.flaggedForDisposal ?? 0} href="/property-custodian/disposal" />
+        <MetricCard icon={Boxes} tone="blue" label="Total assets (Fixed + Supplies)" value={stats?.total ?? 0} />
+        <MetricCard icon={CheckCircle2} tone="green" label="Available" value={stats?.available ?? 0} />
+        <MetricCard icon={ClipboardList} tone="amber" label="Pending fulfillment" value={pendingTotal} href="/property-custodian/fulfillment" />
+        <MetricCard icon={Archive} tone="red" label="Flagged for disposal" value={stats?.flaggedForDisposal ?? 0} href="/property-custodian/disposal" />
       </div>
 
       <RequisitionListSection

@@ -9,6 +9,7 @@ import { PrimaryButton } from '@/components/admin/AdminUi';
 import { buttonClass } from '@/components/ui/buttons';
 import { controlClass, surfaceClass } from '@/components/ui/controls';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { Notice } from '@/components/ui/Notice';
 
 export function QrLookup({ detailBasePath, eyebrow }: Readonly<{ detailBasePath: string; eyebrow?: string }>) {
   const router = useRouter();
@@ -59,17 +60,17 @@ export function QrLookup({ detailBasePath, eyebrow }: Readonly<{ detailBasePath:
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="QR code value or property number..."
+            placeholder="QR code value or property number…"
             aria-label="QR code value or property number"
             className={`${controlClass} flex-1`}
           />
           <PrimaryButton type="submit" icon={Search} disabled={loading}>
-            {loading ? 'Searching...' : 'Search'}
+            {loading ? 'Searching…' : 'Search'}
           </PrimaryButton>
         </form>
 
         {error && (
-          <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>
+          <Notice tone="red">{error}</Notice>
         )}
 
         {result && (

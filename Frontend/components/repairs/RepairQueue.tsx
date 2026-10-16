@@ -14,6 +14,8 @@ import { localToday } from '@/lib/dates';
 import { formatDate, formatDateTime } from '@/lib/requisitions/requisition-view';
 import { humanize } from '@/lib/text';
 import { DateField } from '@/components/ui/DateField';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyRow } from '@/components/ui/EmptyRow';
 
 const FILTERS = [
   { value: 'open', label: 'Under repair' },
@@ -177,7 +179,7 @@ export function RepairQueue({
   const load = useCallback(() => repairsApi.list().then((res) => setRows(res.data)), []);
 
   useEffect(() => {
-    load().catch(() => setLoadError('Failed to load repairs. Please refresh the page.')).finally(() => setLoading(false));
+    load().catch(() => setLoadError('Could not load repairs. Please refresh the page.')).finally(() => setLoading(false));
   }, [load]);
 
   const open = (r: Repair | null) => {
@@ -282,7 +284,7 @@ export function RepairQueue({
           ? "Repairs of a custodian's own item escalate here — they cannot close their own. Everything else is read-only."
           : 'Every asset under repair. Record where it is and when it is due back, the diagnosis and the work done, then close it as repaired or not repairable — the holder is told either way.'}
       />
-      {loadError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{loadError}</div>}
+      {loadError && <Notice tone="red">{loadError}</Notice>}
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard label="Under repair" value={String(openRows.length)} detail="Open repair records" tone="amber" icon={Wrench} />
         <MetricCard label="Overdue" value={String(rows.filter((r) => r.overdue).length)} detail="Past their expected completion" tone="red" icon={AlertTriangle} />
@@ -306,7 +308,7 @@ export function RepairQueue({
                   <td className={`${tdClass} text-right`}><SecondaryButton onClick={() => open(r)}>{!r.completedAt && r.canAct ? 'Update' : 'View'}</SecondaryButton></td>
                 </tr>;
               })}
-              {visible.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">No repairs match the current filter.</td></tr>}
+              {visible.length === 0 && <EmptyRow colSpan={7}>No repairs match the current filter.</EmptyRow>}
             </tbody>
           </table>
         </TableWrap>
@@ -325,7 +327,7 @@ export function RepairQueue({
                 ['Status', statusOf(selected).label],
               ] as const).map(([label, value]) => <div key={label} className="rounded-lg bg-slate-50 p-3"><dt className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt><dd className="mt-1 font-semibold text-slate-900">{value}</dd></div>)}
             </dl>
-            {selected.overdue && <p className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700"><Clock className="h-4 w-4" aria-hidden="true" />Past its expected completion — update the date or record the outcome.</p>}
+            {selected.overdue && <Notice tone="red" icon={<Clock className="mt-0.5 h-5 w-5 flex-none" aria-hidden="true" />}>Past its expected completion — update the date or record the outcome.</Notice>}
             <div><p className="text-xs font-bold text-slate-500">Reported problem</p><p className="mt-1 whitespace-pre-line text-sm text-slate-700">{selected.reportedProblem ?? 'No description was recorded when it went in.'}</p></div>
             {selected.asset?.components && <p className="text-xs text-slate-500">Components: {selected.asset.components}</p>}
             {assetBasePath && selected.asset && <Link href={`${assetBasePath}/${selected.asset.id}`} className="inline-flex text-sm font-bold text-blue-700 hover:underline">Open asset record →</Link>}
@@ -390,7 +392,7 @@ export function RepairQueue({
               }}
               onError={setActionError}
             />
-            {actionError && <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{actionError}</p>}
+            {actionError && <Notice tone="red">{actionError}</Notice>}
           </div>
         )}
       </DetailDrawer>

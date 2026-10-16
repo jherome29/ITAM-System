@@ -33,8 +33,10 @@ import { useAuth } from '@/lib/auth/use-auth';
 import { DateField } from '@/components/ui/DateField';
 import { controlClass, textareaClass } from '@/components/ui/controls';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { PrimaryButton } from '@/components/admin/AdminUi';
+import { PrimaryButton, tdWrapClass, thClass } from '@/components/admin/AdminUi';
 import { buttonClass } from '@/components/ui/buttons';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyRow } from '@/components/ui/EmptyRow';
 
 // The custody pages sort asset rows by one of these keys; the requisition pages have their own list.
 const ASSET_SORT_KEYS = ['item', 'status', 'heldBy', 'location'] as const;
@@ -47,8 +49,8 @@ type PageCopy = { title: string; detail: string; action?: string };
 // The System Administrator's version of Requisition Fulfillment: only what a
 // custodian filed themselves, which segregation of duties keeps out of their queue.
 const ADMIN_FULFILMENT_COPY: PageCopy = {
-  title: 'Requisition Fulfilment (fallback)',
-  detail: 'Requisitions filed by the custodian who would fulfil them. They cannot fulfil their own, so you do - fulfil it, or put it on hold when the item is unavailable. Each action is saved and recorded in the audit trail.',
+  title: 'Requisition Fulfillment (fallback)',
+  detail: 'Requisitions filed by the custodian who would fulfill them. They cannot fulfill their own, so you do - fulfill it, or put it on hold when the item is unavailable. Each action is saved and recorded in the audit trail.',
 };
 
 // The pages this component serves - exactly the ones lib/workflow/live-pages.ts lets
@@ -65,7 +67,7 @@ const pageCopy: Record<string, PageCopy> = {
   },
   fulfillment: {
     title: 'Requisition Fulfillment',
-    detail: 'Fulfil approved requests, or put them on hold when the item is unavailable. Each action is saved and recorded in the audit trail.',
+    detail: 'Fulfill approved requests, or put them on hold when the item is unavailable. Each action is saved and recorded in the audit trail.',
   },
   custody: {
     title: 'Custody & Issuance',
@@ -165,7 +167,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   useEffect(() => {
     fetchLiveRows()
       .then(() => setLiveFetchError(''))
-      .catch(() => setLiveFetchError('Failed to load data. Please refresh the page.'))
+      .catch(() => setLiveFetchError('Could not load data. Please refresh the page.'))
       .finally(() => setLoading(false));
   }, [fetchLiveRows]);
 
@@ -253,7 +255,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       notify(action === 'Approve' ? 'Requisition approved.' : 'Requisition rejected.');
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
     } catch {
-      notify(`Failed to ${action.toLowerCase()} the requisition. Please try again.`);
+      notify(`Could not ${action.toLowerCase()} the requisition. Please try again.`);
     } finally {
       setActionSubmitting(false);
     }
@@ -352,7 +354,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
-      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? `Failed to ${action === 'Fulfill' ? 'fulfill' : 'place on hold'} the requisition. Please try again.`));
+      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? `Could not ${action === 'Fulfill' ? 'fulfill' : 'place on hold'} the requisition. Please try again.`));
     } finally {
       setActionSubmitting(false);
     }
@@ -391,7 +393,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
-      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to complete this action. Please try again.'));
+      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Could not complete this action. Please try again.'));
     } finally {
       setActionSubmitting(false);
     }
@@ -419,7 +421,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
-      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to complete this action. Please try again.'));
+      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Could not complete this action. Please try again.'));
     } finally {
       setActionSubmitting(false);
     }
@@ -443,15 +445,13 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       />
 
       {liveFetchError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-          {liveFetchError}
-        </div>
+        <Notice tone="red">{liveFetchError}</Notice>
       )}
 
       {liveFetchTruncated && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+        <Notice tone="amber">
           Showing the first {LIVE_FETCH_LIMIT} records. There may be more — narrow your search to find items beyond this list.
-        </div>
+        </Notice>
       )}
 
       <SearchToolbar
@@ -472,21 +472,21 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+            <thead>
               <tr>
-                <th className="px-4 py-3">{isRequisitionPage ? 'Request' : 'Asset'}</th>
-                <th className="px-4 py-3">{isRequisitionPage ? 'Requested by' : 'Held by'}</th>
-                <th className="px-4 py-3">{isRequisitionPage ? 'Required by' : 'Location'}</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className={thClass}>{isRequisitionPage ? 'Request' : 'Asset'}</th>
+                <th className={thClass}>{isRequisitionPage ? 'Requested by' : 'Held by'}</th>
+                <th className={thClass}>{isRequisitionPage ? 'Required by' : 'Location'}</th>
+                <th className={thClass}>Status</th>
+                <th className={`${thClass} text-right`}>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
+            <tbody>
               {visibleRows.map((row) => {
                 const liveReq = isRequisitionPage ? requisitionById[String(row.id)] : undefined;
                 return (
                 <tr key={String(row.id)} className="hover:bg-blue-50/40">
-                  <td className="px-4 py-3">
+                  <td className={tdWrapClass}>
                     <p className="font-bold text-slate-950">{String(row.item ?? row.id)}</p>
                     <p className="text-xs text-slate-500">
                       {isAssetPage
@@ -495,7 +495,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                     </p>
                   </td>
                   {isAssetPage && (
-                    <td className="px-4 py-3">
+                    <td className={tdWrapClass}>
                       <p className="font-semibold text-slate-800">{String(row.heldBy)}</p>
                       {row.dueBack ? (
                         <p className={`text-xs ${row.overdue ? 'font-bold text-red-600' : 'text-slate-500'}`}>
@@ -504,21 +504,21 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                       ) : null}
                     </td>
                   )}
-                  {isAssetPage && <td className="px-4 py-3 text-slate-600">{String(row.location ?? '-')}</td>}
+                  {isAssetPage && <td className={tdWrapClass}>{String(row.location ?? '-')}</td>}
                   {liveReq && (
                     <>
-                      <td className="px-4 py-3">
+                      <td className={tdWrapClass}>
                         <p className="font-semibold text-slate-800">{liveReq.requester?.name ?? 'Unknown requester'}</p>
                         <p className="text-xs text-slate-500">{[liveReq.requester?.employeeId, liveReq.requester?.officeOrSection, liveReq.requisitionType].filter(Boolean).join(' · ')}</p>
                       </td>
-                      <td className="px-4 py-3 text-slate-600">
+                      <td className={tdWrapClass}>
                         <p>{formatDate(liveReq.requiredDate)}</p>
                         <SlaBadge request={liveReq} />
                       </td>
                     </>
                   )}
-                  <td className="px-4 py-3"><StatusBadge status={String(row.status ?? 'Open')} label={liveReq ? requisitionStatusLabel(liveReq.status) : undefined} /></td>
-                  <td className="px-4 py-3">
+                  <td className={tdWrapClass}><StatusBadge status={String(row.status ?? 'Open')} label={liveReq ? requisitionStatusLabel(liveReq.status) : undefined} /></td>
+                  <td className={tdWrapClass}>
                     <div className="flex justify-end gap-2">
                       <button type="button" onClick={() => setSelected(row)} className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">View</button>
                       <button type="button" onClick={() => { setSelected(row); if (rowActionMode(normalizedSlug) === 'confirm') setConfirmAction(rowActionLabel(normalizedSlug)); }} className={buttonClass({ size: 'sm' })}>
@@ -530,9 +530,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                 );
               })}
               {visibleRows.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-500">No records match the current filters.</td>
-                </tr>
+                <EmptyRow colSpan={5}>No records match the current filters.</EmptyRow>
               )}
             </tbody>
           </table>
@@ -633,7 +631,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                 ))}
               </select>
               <span className={`mt-1 block text-xs font-normal ${problem ? 'text-red-600' : 'text-slate-500'}`}>
-                {problem ?? (chosen ? `${chosen.onHand} on hand → ${chosen.remaining} left after this fulfilment.` : 'The quantity leaves stock when you fulfil.')}
+                {problem ?? (chosen ? `${chosen.onHand} on hand → ${chosen.remaining} left after this fulfillment.` : 'The quantity leaves stock when you fulfill.')}
               </span>
             </label>
           );
@@ -649,7 +647,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
             </select>
             <span className="mt-1 block text-xs font-normal text-slate-500">
               {replacementUnits && replacementUnits.length === 0
-                ? `No available ${replacementLine?.assetType ?? ''} unit — fulfil now and issue one later, or put the request on hold.`
+                ? `No available ${replacementLine?.assetType ?? ''} unit — fulfill now and issue one later, or put the request on hold.`
                 : 'The old unit is taken back and this one is issued to the requester in the same step.'}
             </span>
           </label>

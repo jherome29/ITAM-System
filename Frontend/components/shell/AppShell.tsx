@@ -40,7 +40,7 @@ export function AppShell({ role, children }: Readonly<{ role: ProposedUserRole; 
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-canvas">
-        <div className="text-sm text-slate-500">Loading...</div>
+        <div className="text-sm text-slate-500">Loading…</div>
       </div>
     );
   }

@@ -29,6 +29,13 @@ import { localToday } from '@/lib/dates';
 import { formatDate } from '@/lib/requisitions/requisition-view';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { buttonClass } from '@/components/ui/buttons';
+import { Chip } from '@/components/ui/Chip';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { MetricCard } from '@/components/ui/MetricCard';
+import { Panel } from '@/components/ui/Panel';
+import { toneStyles } from '@/components/ui/tones';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyMessage } from '@/components/ui/EmptyRow';
 
 /** A loaned item due back within this many days shows under "Needs your attention". */
 const DUE_SOON_DAYS = 7;
@@ -72,7 +79,7 @@ export function EmployeeDashboard() {
         setError('');
       })
       .catch(() => {
-        if (!cancelled) setError('Failed to load your dashboard data. Please try again.');
+        if (!cancelled) setError('Could not load your dashboard data. Please try again.');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -109,16 +116,16 @@ export function EmployeeDashboard() {
       />
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        <Notice tone="red">{error}</Notice>
       )}
 
       <section aria-labelledby="employee-overview-heading" className="space-y-2">
         <h2 id="employee-overview-heading" className="text-lg font-bold text-slate-950">Overview</h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryMetric href="/employee/assigned-assets" label="Assigned assets" value={assets.length} detail="Accountable to you" icon={PackageCheck} tone="blue" />
-          <SummaryMetric href="/employee/requisitions" label="Active requests" value={activeRequestCount} detail="In progress" icon={ClipboardList} tone="blue" />
-          <SummaryMetric href="/employee/assigned-assets" label="Due back" value={returnsDue.length} detail={`Overdue or within ${DUE_SOON_DAYS} days`} icon={Undo2} tone="amber" />
-          <SummaryMetric href="/employee/notifications" label="Unread updates" value={unreadCount} detail="New activity" icon={Bell} tone="green" />
+          <MetricCard href="/employee/assigned-assets" label="Assigned assets" value={assets.length} detail="Accountable to you" icon={PackageCheck} tone="blue" />
+          <MetricCard href="/employee/requisitions" label="Active requests" value={activeRequestCount} detail="In progress" icon={ClipboardList} tone="blue" />
+          <MetricCard href="/employee/assigned-assets" label="Due back" value={returnsDue.length} detail={`Overdue or within ${DUE_SOON_DAYS} days`} icon={Undo2} tone="amber" />
+          <MetricCard href="/employee/notifications" label="Unread updates" value={unreadCount} detail="New activity" icon={Bell} tone="green" />
         </div>
       </section>
 
@@ -128,7 +135,7 @@ export function EmployeeDashboard() {
             <h2 id="employee-attention-heading" className="text-lg font-bold text-slate-950">Needs your attention</h2>
             <p className="mt-0.5 text-xs text-slate-500">Prioritized tasks that require your response</p>
           </div>
-          <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">{attentionCount} pending</span>
+          <Chip tone="amber">{attentionCount} pending</Chip>
         </div>
         {attentionCount === 0 ? (
           <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">You are all caught up — nothing needs your attention right now.</div>
@@ -179,9 +186,9 @@ export function EmployeeDashboard() {
       </section>
 
       <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.8fr)]">
-        <DashboardPanel title="Active requests" detail="Requests still moving through review or fulfillment" action={<Link href="/employee/requisitions" className="inline-flex items-center gap-1 text-sm font-bold text-blue-700 hover:text-blue-900">View all<ArrowRight className="h-4 w-4" /></Link>}>
+        <Panel title="Active requests" detail="Requests still moving through review or fulfillment" action={<Link href="/employee/requisitions" className="inline-flex items-center gap-1 text-sm font-bold text-blue-700 hover:text-blue-900">View all<ArrowRight className="h-4 w-4" /></Link>}>
           {activeRequests.length === 0 ? (
-            <div className="p-8 text-center text-sm text-slate-500">You have no requisitions in progress.</div>
+            <EmptyMessage>You have no requisitions in progress.</EmptyMessage>
           ) : (
             <div className="divide-y divide-slate-100">
               {activeRequests.slice(0, 6).map((request) => {
@@ -201,11 +208,11 @@ export function EmployeeDashboard() {
               })}
             </div>
           )}
-        </DashboardPanel>
+        </Panel>
 
-        <DashboardPanel title="My property" detail="Assets under your accountability" action={<Link href="/employee/assigned-assets" className="text-sm font-bold text-blue-700 hover:text-blue-900">Manage</Link>}>
+        <Panel title="My property" detail="Assets under your accountability" action={<Link href="/employee/assigned-assets" className="text-sm font-bold text-blue-700 hover:text-blue-900">Manage</Link>}>
           {assets.length === 0 ? (
-            <div className="p-8 text-center text-sm text-slate-500">No property is assigned to you.</div>
+            <EmptyMessage>No property is assigned to you.</EmptyMessage>
           ) : (
             <div className="divide-y divide-slate-100">
               {assets.slice(0, 6).map((asset) => {
@@ -214,7 +221,7 @@ export function EmployeeDashboard() {
                   <Link href="/employee/assigned-assets" key={asset.id} className="group flex items-start gap-3 px-4 py-3.5 hover:bg-slate-50">
                     <span className="grid h-9 w-9 flex-none place-items-center rounded-md bg-slate-100 text-slate-600 group-hover:bg-blue-50 group-hover:text-blue-700"><Laptop className="h-4 w-4" /></span>
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-start justify-between gap-2"><p className="text-sm font-bold text-slate-950">{asset.itemDescription}</p><StatusChip status={asset.status.replaceAll('_', ' ')} tone={assetTone(asset.status)} /></div>
+                      <div className="flex flex-wrap items-start justify-between gap-2"><p className="text-sm font-bold text-slate-950">{asset.itemDescription}</p><StatusBadge status={asset.status} /></div>
                       <p className="mt-1 text-xs text-slate-500">{[asset.propertyNumber || asset.serialNumber, asset.condition.replaceAll('_', ' ')].filter(Boolean).join(' · ')}</p>
                       {asset.repair ? (
                         <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-slate-500"><CalendarClock className="h-3.5 w-3.5" />Under repair — expected back {formatDate(asset.repair.dueDate)}</p>
@@ -228,65 +235,23 @@ export function EmployeeDashboard() {
               {assets.length > 6 && <Link href="/employee/assigned-assets" className="block px-4 py-3 text-center text-xs font-bold text-blue-700 hover:bg-slate-50">View all {assets.length}</Link>}
             </div>
           )}
-        </DashboardPanel>
+        </Panel>
       </div>
 
-      <DashboardPanel title="Quick actions">
+      <Panel title="Quick actions">
         <div className="grid sm:grid-cols-3">
           <QuickAction href="/employee/catalogue" icon={Search} title="Browse catalogue" detail="Find requestable assets and supplies" />
           <QuickAction href="/employee/requisitions/new" icon={Send} title="Submit request" detail="Create a new or replacement requisition" />
           <QuickAction href="/employee/returns-incidents" icon={FileWarning} title="File return or incident" detail="Report return, repair, damage, loss, or theft" />
         </div>
-      </DashboardPanel>
+      </Panel>
     </div>
   );
 }
 
-const tones = {
-  blue: 'border-blue-200 bg-blue-50 text-blue-700',
-  amber: 'border-amber-200 bg-amber-50 text-amber-800',
-  green: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  red: 'border-red-200 bg-red-50 text-red-700',
-};
-
-function assetTone(status: string): 'blue' | 'amber' | 'red' | 'green' | 'slate' {
-  if (status === 'issued') return 'green';
-  if (status === 'under_repair') return 'amber';
-  if (status === 'flagged_for_disposal') return 'red';
-  return 'slate';
-}
 
 function AttentionRow({ icon: Icon, title, detail, meta, href, action, tone }: Readonly<{ icon: LucideIcon; title: string; detail: string; meta: string; href: string; action: string; tone: 'amber' | 'red' }>) {
-  return <article className="grid min-w-0 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-[0_2px_8px_rgba(15,23,42,0.05)] sm:grid-cols-[auto_minmax(0,1fr)]"><span className={`grid h-10 w-10 place-items-center rounded-md border ${tones[tone]}`}><Icon className="h-4 w-4" /></span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-bold text-slate-950">{title}</p><span className="text-xs font-semibold text-slate-500">{meta}</span></div><p className="mt-1 text-xs leading-5 text-slate-600">{detail}</p><Link href={href} className="mt-2 inline-flex min-h-8 items-center gap-1.5 text-sm font-bold text-blue-700 hover:text-blue-900">{action}<ArrowRight className="h-4 w-4" /></Link></div></article>;
-}
-
-function summaryToneClass(tone: 'blue' | 'amber' | 'green') {
-  if (tone === 'amber') return 'text-amber-700';
-  if (tone === 'green') return 'text-emerald-700';
-  return 'text-blue-700';
-}
-
-function SummaryMetric({ href, label, value, detail, icon: Icon, tone }: Readonly<{ href: string; label: string; value: number; detail: string; icon: LucideIcon; tone: 'blue' | 'amber' | 'green' }>) {
-  return (
-    <Link href={href} className="group flex min-h-[104px] min-w-0 items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-[0_3px_12px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
-      <span className={`grid h-12 w-12 flex-none place-items-center rounded-lg border ${tones[tone]}`}>
-        <Icon className="h-[22px] w-[22px]" aria-hidden="true" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-1.5">
-          <span className="block truncate text-xs font-semibold text-slate-500">{label}</span>
-        </span>
-        <span className="mt-1.5 flex min-w-0 items-baseline gap-2">
-          <span className="text-2xl font-bold leading-none text-slate-950">{value}</span>
-          <span className={`truncate text-xs font-bold ${summaryToneClass(tone)}`}>{detail}</span>
-        </span>
-      </span>
-    </Link>
-  );
-}
-
-function DashboardPanel({ title, detail, action, badge, children }: Readonly<{ title: string; detail?: string; action?: React.ReactNode; badge?: React.ReactNode; children: React.ReactNode }>) {
-  return <section className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_3px_12px_rgba(15,23,42,0.05)]"><div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-50/70 px-4 py-4"><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-bold text-slate-950">{title}</h2>{badge}</div>{detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}</div>{action}</div>{children}</section>;
+  return <article className="grid min-w-0 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-[auto_minmax(0,1fr)]"><span className={`grid h-10 w-10 place-items-center rounded-md ring-1 ${toneStyles[tone]}`}><Icon className="h-5 w-5" /></span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-bold text-slate-950">{title}</p><span className="text-xs font-semibold text-slate-500">{meta}</span></div><p className="mt-1 text-xs leading-5 text-slate-600">{detail}</p><Link href={href} className="mt-2 inline-flex min-h-8 items-center gap-1.5 text-sm font-bold text-blue-700 hover:text-blue-900">{action}<ArrowRight className="h-4 w-4" /></Link></div></article>;
 }
 
 function QuickAction({ href, icon: Icon, title, detail }: Readonly<{ href: string; icon: LucideIcon; title: string; detail: string }>) {

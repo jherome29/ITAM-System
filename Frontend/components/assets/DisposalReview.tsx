@@ -8,6 +8,8 @@ import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { assetsApi, type Asset } from '@/lib/api/assets';
 import { disposalReviewSummary } from '@/lib/assets/disposal-review';
 import { formatDateTime } from '@/lib/requisitions/requisition-view';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyMessage } from '@/components/ui/EmptyRow';
 
 /**
  * Disposal Review (Property Custodian, read-only): every asset in the custodian's
@@ -25,7 +27,7 @@ export function DisposalReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow: s
     assetsApi
       .list(1, 500, undefined, 'flagged_for_disposal')
       .then((res) => setAssets(res.data.data))
-      .catch(() => setLoadError('Failed to load the disposal list. Please refresh the page.'))
+      .catch(() => setLoadError('Could not load the disposal list. Please refresh the page.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -40,7 +42,7 @@ export function DisposalReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow: s
         title="Disposal Review"
         detail="Assets flagged for disposal. A lost or stolen item stays on its holder's accountability record until COA grants relief; open an asset to read its history and the justification."
       />
-      {loadError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{loadError}</div>}
+      {loadError && <Notice tone="red">{loadError}</Notice>}
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard label="Flagged for disposal" value={String(summary.total)} detail="Awaiting disposal" tone="amber" icon={Archive} />
         <MetricCard label="Holder still accountable" value={String(summary.stillAccountable)} detail="Lost or stolen — until COA relief" tone="red" icon={UserCheck} />
@@ -48,7 +50,7 @@ export function DisposalReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow: s
       </div>
       <Panel title="Flagged assets" detail={`${assets.length} in your scope`}>
         {assets.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-slate-500">Nothing is flagged for disposal.</p>
+          <EmptyMessage>Nothing is flagged for disposal.</EmptyMessage>
         ) : (
           <TableWrap>
             <table className="w-full min-w-[900px]">

@@ -22,6 +22,8 @@ import { AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, S
 import { formatDateTime } from '@/lib/dates';
 import { DateRange } from '@/components/ui/DateField';
 import { buttonClass } from '@/components/ui/buttons';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyRow } from '@/components/ui/EmptyRow';
 
 type PlatformSlug = 'configuration' | 'audit';
 
@@ -81,7 +83,7 @@ function SystemSettingsPage() {
         setMeta(r.data.meta ?? null);
         setError('');
       })
-      .catch(() => setError('Failed to load configuration. Please try again.'))
+      .catch(() => setError('Could not load configuration. Please try again.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -118,7 +120,7 @@ function SystemSettingsPage() {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })
         ?.response?.data?.message;
-      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to save configuration.'));
+      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Could not save configuration.'));
     } finally {
       setSaving(false);
     }
@@ -141,7 +143,7 @@ function SystemSettingsPage() {
       {!form && error ? (
         <Panel title="System Settings">
           <div className="space-y-3 p-5">
-            <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            <Notice tone="red">{error}</Notice>
             <button
               type="button"
               onClick={retry}
@@ -161,7 +163,7 @@ function SystemSettingsPage() {
       ) : (
         <>
           {error && (
-            <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            <Notice tone="red">{error}</Notice>
           )}
           {saved && (
             <div className="border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
@@ -332,7 +334,7 @@ export function AuditLogPage({ eyebrow }: Readonly<{ eyebrow?: string }> = {}) {
     auditApi
       .list(1, AUDIT_PAGE_SIZE, undefined, from || undefined, to || undefined)
       .then((res) => setLogs(res.data.data))
-      .catch(() => setToast('Failed to load audit log.'))
+      .catch(() => setToast('Could not load audit log.'))
       .finally(() => setLoading(false));
   }, [from, to]);
 
@@ -393,6 +395,6 @@ export function AuditLogPage({ eyebrow }: Readonly<{ eyebrow?: string }> = {}) {
       <DateRange from={from} to={to} onFromChange={(day) => handleDateChange('from', day)} onToChange={(day) => handleDateChange('to', day)} />
       {(from || to) && <SecondaryButton onClick={() => { setLoading(true); setFrom(''); setTo(''); }}>Clear dates</SecondaryButton>}
     </SearchToolbar>
-    <Panel title="Audit Events" detail={loading ? 'Loading audit events…' : `${rows.length} audit events shown${capped ? ` — first ${AUDIT_PAGE_SIZE}, narrow the date range for more` : ''}`}>{loading ? <div className="p-6"><LoadingSkeleton rows={8} /></div> : <TableWrap><table className="min-w-[960px] w-full"><thead><tr><th className={thClass}>Timestamp</th><th className={thClass}>User</th><th className={thClass}>Role at time</th><th className={thClass}>Action</th><th className={thClass}>Affected record</th><th className={thClass}>IP address</th><th className={`${thClass} text-right`}>Inspect</th></tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">No audit logs found.</td></tr> : rows.map((log) => <tr key={log.id} className="hover:bg-slate-50"><td className={tdClass}>{formatDateTime(log.timestamp)}<span className="block text-xs text-slate-500">{log.id.slice(0, 8)}…</span></td><td className={`${tdClass} font-semibold text-slate-950`} title={log.userId}>{auditUserText(log)}</td><td className={tdClass}>{log.userRole}</td><td className={`${tdClass} font-mono text-xs`}>{log.action}</td><td className={`${tdClass} text-xs`} title={log.affectedRecordId ?? undefined}>{auditRecordText(log)}</td><td className={`${tdClass} font-mono text-xs`}>{log.ipAddress}</td><td className={`${tdClass} text-right`}><button type="button" onClick={() => setSelected(log)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`Inspect ${log.id}`}><FileClock className="h-4 w-4" /></button></td></tr>)}</tbody></table></TableWrap>}</Panel>
+    <Panel title="Audit Events" detail={loading ? 'Loading audit events…' : `${rows.length} audit events shown${capped ? ` — first ${AUDIT_PAGE_SIZE}, narrow the date range for more` : ''}`}>{loading ? <div className="p-6"><LoadingSkeleton rows={8} /></div> : <TableWrap><table className="min-w-[960px] w-full"><thead><tr><th className={thClass}>Timestamp</th><th className={thClass}>User</th><th className={thClass}>Role at time</th><th className={thClass}>Action</th><th className={thClass}>Affected record</th><th className={thClass}>IP address</th><th className={`${thClass} text-right`}>Inspect</th></tr></thead><tbody>{rows.length === 0 ? <EmptyRow colSpan={7}>No audit logs found.</EmptyRow> : rows.map((log) => <tr key={log.id} className="hover:bg-slate-50"><td className={tdClass}>{formatDateTime(log.timestamp)}<span className="block text-xs text-slate-500">{log.id.slice(0, 8)}…</span></td><td className={`${tdClass} font-semibold text-slate-950`} title={log.userId}>{auditUserText(log)}</td><td className={tdClass}>{log.userRole}</td><td className={`${tdClass} font-mono text-xs`}>{log.action}</td><td className={`${tdClass} text-xs`} title={log.affectedRecordId ?? undefined}>{auditRecordText(log)}</td><td className={`${tdClass} font-mono text-xs`}>{log.ipAddress}</td><td className={`${tdClass} text-right`}><button type="button" onClick={() => setSelected(log)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`Inspect ${log.id}`}><FileClock className="h-4 w-4" /></button></td></tr>)}</tbody></table></TableWrap>}</Panel>
     <DetailDrawer open={Boolean(selected)} title={selected?.action ?? 'Audit event'} onClose={() => setSelected(null)}>{selected && <div className="space-y-4">{[['ID', selected.id], ['Timestamp', formatDateTime(selected.timestamp)], ['User', selected.userName ?? '—'], ['User ID', selected.userId], ['Role at time', selected.userRole], ['Action', selected.action], ['Affected record', selected.recordLabel ?? '—'], ['Affected record type', selected.affectedRecordType ?? '—'], ['Affected record ID', selected.affectedRecordId ?? '—'], ['IP address', selected.ipAddress], ['Metadata', selected.metadata ? JSON.stringify(selected.metadata) : '—']].map(([key, value]) => <div key={key} className="flex justify-between gap-4 border-b border-slate-100 pb-3 text-sm"><span className="capitalize text-slate-500">{key}</span><span className="text-right font-mono text-xs font-semibold">{value}</span></div>)}<Panel title="Event integrity"><div className="space-y-2 p-4 text-xs text-slate-600"><p><strong>Write mode:</strong> Append only</p><p><strong>Update:</strong> Not permitted</p><p><strong>Delete:</strong> Not permitted</p><p><strong>Metadata:</strong> Includes UTC timestamp, user ID, role, source IP, record ID, and safe before/after values where applicable.</p></div></Panel></div>}</DetailDrawer><Toast message={toast} /></div>;
 }
