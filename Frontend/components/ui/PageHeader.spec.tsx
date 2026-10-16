@@ -14,6 +14,16 @@ describe('PageHeader', () => {
     expect(html).toContain('>ICT Asset Registry</h1>');
   });
 
+  // An asset's page is titled with its description, and a 690-character one ran 24 lines down the
+  // page. The whole text is in the record below; the title only has to identify it.
+  it('keeps a very long title to three lines, with the whole text on hover', () => {
+    const long = 'forensic mobile rack calibration '.repeat(20).trim();
+    const html = renderToStaticMarkup(<PageHeader title={long} />);
+
+    expect(html).toContain('line-clamp-3');
+    expect(html).toContain(`title="${long}"`);
+  });
+
   it('uses the page-title size from the type scale, in near-black', () => {
     const html = renderToStaticMarkup(<PageHeader title="Anything" />);
 

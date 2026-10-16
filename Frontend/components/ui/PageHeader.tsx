@@ -21,7 +21,9 @@ export function PageHeader({
   action?: ReactNode;
   divider?: boolean;
 }>) {
-  const heading = <h1 className={`${eyebrow ? 'mt-1 ' : ''}text-2xl font-bold text-slate-950`}>{title}</h1>;
+  // line-clamp, not truncation: an asset's page is titled with its description, which can be
+  // very long; the whole text is in the record below and on hover.
+  const heading = <h1 className={`${eyebrow ? 'mt-1 ' : ''}line-clamp-3 text-2xl font-bold text-slate-950`} title={title}>{title}</h1>;
   return (
     <header className={`flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between ${divider ? 'border-b border-slate-200 pb-5' : ''}`}>
       <div className="min-w-0">

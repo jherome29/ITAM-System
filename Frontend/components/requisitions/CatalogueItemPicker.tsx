@@ -7,6 +7,7 @@ import { controlBaseClass, searchControlClass } from '@/components/ui/controls';
 import { formatAvailability } from '@/lib/requisitions/catalogue-items';
 import { Chip } from '@/components/ui/Chip';
 import { humanize } from '@/lib/text';
+import { ClampText } from '@/components/ui/ClampText';
 
 const TYPE_TABS = ['All', 'ICT', 'Fixed', 'Supplies'] as const;
 const CLASS_OPTIONS = ['All', 'PPE', 'SEP', 'IES'] as const;
@@ -161,13 +162,13 @@ function ItemMeta({ item }: Readonly<{ item: CatalogueItem }>) {
   const identity = [item.brand, item.itemCode].filter(Boolean).join(' · ');
   return (
     <div className="mt-0.5 space-y-0.5 text-xs text-slate-500">
-      <p>
+      <ClampText lines={2}>
         <span className="font-semibold text-slate-700">{item.assetType} · {item.assetClass}</span>
         {identity && <> · {identity}</>}
         {item.conditions.length > 0 && <> · {item.conditions.map(humanize).join(', ')}</>}
-      </p>
+      </ClampText>
       {item.locations.length > 0 && (
-        <p className="flex items-center gap-1"><MapPin className="h-3 w-3" aria-hidden="true" />{item.locations.join(' · ')}</p>
+        <p className="flex items-center gap-1"><MapPin className="h-3 w-3 flex-none" aria-hidden="true" /><ClampText lines={1}>{item.locations.join(' · ')}</ClampText></p>
       )}
     </div>
   );

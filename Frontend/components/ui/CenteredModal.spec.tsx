@@ -17,6 +17,14 @@ describe('CenteredModal', () => {
     expect(render({ open: false })).toBe('');
   });
 
+  it('keeps a very long title to two lines, with the whole text on hover', () => {
+    const long = 'Request forensic mobile rack calibration '.repeat(20).trim();
+    const html = render({ title: long });
+
+    expect(html).toContain('line-clamp-2');
+    expect(html).toContain(`title="${long}"`);
+  });
+
   it('is a labelled modal dialog with the title as its heading', () => {
     const html = render();
 

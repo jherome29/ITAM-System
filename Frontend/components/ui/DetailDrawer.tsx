@@ -44,7 +44,7 @@ export function DetailDrawer({ open, title, children, onClose }: Readonly<{ open
       <button type="button" tabIndex={-1} className="absolute inset-0 bg-slate-950/40" onClick={onClose} aria-label="Close drawer backdrop" />
       <aside role="dialog" aria-modal="true" aria-labelledby={titleId} className="absolute right-0 top-0 flex h-full w-full max-w-xl flex-col bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <h2 id={titleId} className="text-lg font-bold text-slate-950">{title}</h2>
+          <h2 id={titleId} className="line-clamp-2 text-lg font-bold text-slate-950" title={title}>{title}</h2>
           <button ref={closeRef} type="button" onClick={onClose} className="rounded-md p-2 text-slate-500 hover:bg-slate-100" aria-label="Close drawer">
             <X className="h-5 w-5" />
           </button>
