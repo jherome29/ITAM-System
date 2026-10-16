@@ -50,3 +50,64 @@ describe('RequisitionsController — the approver decision history route', () =>
     expect(res.data).toMatchObject({ total: 0 });
   });
 });
+
+// Who may ask for things. Holding property does not make someone a requester:
+// the Property Custodian and Property Officer now file requisitions like the
+// employee they are, but Management (read-only oversight) and the System
+// Administrator (a privileged system role that can approve any requisition) do not.
+describe('RequisitionsController - who may file and who may fulfil', () => {
+  const prototype = RequisitionsController.prototype as unknown as Record<
+    string,
+    () => unknown
+  >;
+  const rolesOf = (name: string) =>
+    [...(Reflect.getMetadata(ROLES_KEY, prototype[name]) as UserRole[])].sort();
+
+  it('lets the employee-side roles file a requisition, including the two property roles', () => {
+    expect(rolesOf('create')).toEqual(
+      [
+        UserRole.EMPLOYEE,
+        UserRole.SUPERVISOR,
+        UserRole.IT_PERSONNEL,
+        UserRole.PROPERTY_CUSTODIAN,
+        UserRole.PROPERTY_OFFICER,
+      ].sort(),
+    );
+  });
+
+  it('keeps Management and the System Administrator from filing one', () => {
+    expect(rolesOf('create')).not.toContain(UserRole.MANAGEMENT);
+    expect(rolesOf('create')).not.toContain(UserRole.SYSTEM_ADMIN);
+  });
+
+  it.each(['fulfill', 'putOnHold'])(
+    '%s is for the custodians, and the System Administrator as their fallback',
+    (name) => {
+      expect(rolesOf(name)).toEqual(
+        [
+          UserRole.IT_PERSONNEL,
+          UserRole.PROPERTY_CUSTODIAN,
+          UserRole.SYSTEM_ADMIN,
+        ].sort(),
+      );
+    },
+  );
+
+  it("lists the custodians' own requisitions for the System Administrator only", () => {
+    expect(rolesOf('findFulfilmentFallback')).toEqual([UserRole.SYSTEM_ADMIN]);
+    const route = Reflect.getMetadata(
+      PATH_METADATA,
+      prototype['findFulfilmentFallback'],
+    ) as string;
+    expect(route).toBe('fulfilment-fallback');
+  });
+
+  // `GET :id` would swallow the literal path as a UUID (and 400) if declared first.
+  it('declares the fallback route before GET :id', () => {
+    const order = Object.getOwnPropertyNames(RequisitionsController.prototype);
+    expect(order.indexOf('findFulfilmentFallback')).toBeGreaterThan(-1);
+    expect(order.indexOf('findFulfilmentFallback')).toBeLessThan(
+      order.indexOf('findOne'),
+    );
+  });
+});

@@ -14,6 +14,8 @@ export interface Repair {
   expectedCompletionDate: string | null;
   /** Expected completion date, or the default turnaround from opening. */
   dueDate: string;
+  /** The due date if no expected date were set: opened + the default turnaround. */
+  defaultDueDate: string;
   overdue: boolean;
   findings: string | null;
   actionTaken: string | null;

@@ -7,7 +7,10 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { RequisitionsService } from './requisitions.service';
+import {
+  RequisitionsService,
+  isCustodianOwnRequisition,
+} from './requisitions.service';
 import { RequisitionEntity } from './entities/requisition.entity';
 import { RequisitionItemEntity } from './entities/requisition-item.entity';
 import { RequisitionApprovalEntity } from './entities/requisition-approval.entity';
@@ -88,6 +91,7 @@ describe('RequisitionsService', () => {
 
   const mockAssetRepo = {
     findOne: jest.fn(),
+    find: jest.fn(),
     save: jest.fn(),
   };
 
@@ -1931,22 +1935,234 @@ describe('RequisitionsService', () => {
       );
     });
 
-    it('still fulfills via the legacy path when no fulfilledItems are supplied', async () => {
-      armFulfillable([mkItem()]);
+    // The Fulfil screen sends no stock record for an ordinary supply
+    // requisition, so the server has to find the stock itself. Before this, such
+    // a fulfilment closed the request and deducted nothing: stock never moved
+    // and low-stock alerts never fired.
+    describe('when the custodian does not name a stock record', () => {
+      const stockRecord = (
+        over: Record<string, unknown> = {},
+      ): Record<string, unknown> => ({
+        id: 'sup-1',
+        assetClass: AssetClass.IES,
+        assetType: AssetType.ICT,
+        status: AssetStatus.AVAILABLE,
+        itemDescription: 'USB drives (box)',
+        quantity: 10,
+        dateOfDelivery: new Date('2026-01-01'),
+        createdAt: new Date('2026-01-01'),
+        ...over,
+      });
 
-      const result = await service.fulfill(
-        'req-supply-1',
-        'it-1',
-        UserRole.IT_PERSONNEL,
-        {},
-        '127.0.0.1',
-      );
+      /**
+       * The rows the stock lookup can see. `find` applies its `where` the way
+       * the database does, and the locked re-read serves the same rows.
+       */
+      const armStock = (records: Array<Record<string, unknown>>) => {
+        mockAssetRepo.find.mockImplementation(
+          ({ where }: { where: Record<string, unknown> }) =>
+            Promise.resolve(
+              records.filter((r) =>
+                Object.entries(where).every(([k, v]) => r[k] === v),
+              ),
+            ),
+        );
+        mockAssetRepo.findOne.mockImplementation(
+          ({ where }: { where: { id: string } }) =>
+            Promise.resolve(records.find((r) => r.id === where.id) ?? null),
+        );
+        mockAssetRepo.save.mockImplementation((a: AssetEntity) =>
+          Promise.resolve(a),
+        );
+      };
 
-      expect(result.status).toBe(RequisitionStatus.FULFILLED);
-      expect(mockAssetRepo.findOne).not.toHaveBeenCalled();
-      expect(
-        mockAssetsService.notifyLowStockIfBelowThreshold,
-      ).not.toHaveBeenCalled();
+      const fulfilWithoutPick = () =>
+        service.fulfill(
+          'req-supply-1',
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          {},
+          '127.0.0.1',
+        );
+
+      it('draws the line from the one matching stock record, links it and audits the draw-down', async () => {
+        const req = armFulfillable([mkItem({ quantity: 4 })]);
+        armStock([stockRecord({ quantity: 10 })]);
+
+        const result = await fulfilWithoutPick();
+
+        expect(result.status).toBe(RequisitionStatus.FULFILLED);
+        expect(mockAssetRepo.save).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sup-1', quantity: 6 }),
+        );
+        expect(req.items[0].fulfilledAssetId).toBe('sup-1');
+        expect(mockItemRepo.update).toHaveBeenCalledWith('ri-ies-1', {
+          fulfilledAssetId: 'sup-1',
+        });
+        expect(mockAuditService.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: AuditAction.REQUISITION_FULFILLED,
+            metadata: expect.objectContaining({
+              stockDecrements: [{ assetId: 'sup-1', from: 10, to: 6 }],
+            }),
+          }),
+        );
+        expect(
+          mockAssetsService.notifyLowStockIfBelowThreshold,
+        ).toHaveBeenCalledWith('sup-1');
+      });
+
+      it('matches the description ignoring case and surrounding spaces', async () => {
+        armFulfillable([mkItem({ itemDescription: '  usb DRIVES (box) ' })]);
+        armStock([stockRecord({ quantity: 10 })]);
+
+        await fulfilWithoutPick();
+
+        expect(mockAssetRepo.save).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sup-1', quantity: 6 }),
+        );
+      });
+
+      it('ignores stock of another item, another asset type or one that is not available', async () => {
+        armFulfillable([mkItem({ quantity: 2 })]);
+        armStock([
+          stockRecord({ id: 'other-item', itemDescription: 'HDMI cables' }),
+          stockRecord({ id: 'other-type', assetType: AssetType.FIXED }),
+          stockRecord({ id: 'on-hold', status: AssetStatus.UNDER_REPAIR }),
+          stockRecord({ id: 'the-one', quantity: 5 }),
+        ]);
+
+        await fulfilWithoutPick();
+
+        expect(mockAssetRepo.save).toHaveBeenCalledTimes(1);
+        expect(mockAssetRepo.save).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'the-one', quantity: 3 }),
+        );
+      });
+
+      it('takes the oldest delivery first (FIFO) when several records hold enough', async () => {
+        armFulfillable([mkItem({ quantity: 2 })]);
+        armStock([
+          stockRecord({ id: 'newer', dateOfDelivery: new Date('2026-06-01') }),
+          stockRecord({ id: 'older', dateOfDelivery: new Date('2026-02-01') }),
+        ]);
+
+        await fulfilWithoutPick();
+
+        expect(mockAssetRepo.save).toHaveBeenCalledTimes(1);
+        expect(mockAssetRepo.save).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'older', quantity: 8 }),
+        );
+      });
+
+      it('skips a record that is too small and uses the next one that holds enough', async () => {
+        armFulfillable([mkItem({ quantity: 6 })]);
+        armStock([
+          stockRecord({
+            id: 'small',
+            quantity: 3,
+            dateOfDelivery: new Date('2026-01-01'),
+          }),
+          stockRecord({
+            id: 'big',
+            quantity: 20,
+            dateOfDelivery: new Date('2026-03-01'),
+          }),
+        ]);
+
+        await fulfilWithoutPick();
+
+        expect(mockAssetRepo.save).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'big', quantity: 14 }),
+        );
+      });
+
+      it('refuses with a clear 400 and writes nothing when no stock is on record for the item', async () => {
+        armFulfillable([mkItem()]);
+        armStock([stockRecord({ itemDescription: 'HDMI cables' })]);
+
+        await expect(fulfilWithoutPick()).rejects.toThrow(
+          /No stock on record for "USB drives \(box\)"/,
+        );
+
+        expect(mockAssetRepo.save).not.toHaveBeenCalled();
+        expect(mockReqRepo.save).not.toHaveBeenCalled();
+        expect(mockAuditService.log).not.toHaveBeenCalled();
+      });
+
+      it('refuses with Insufficient stock when no single record holds enough', async () => {
+        armFulfillable([mkItem({ quantity: 50 })]);
+        armStock([
+          stockRecord({ id: 'a', quantity: 10 }),
+          stockRecord({ id: 'b', quantity: 20 }),
+        ]);
+
+        await expect(fulfilWithoutPick()).rejects.toThrow(
+          'Insufficient stock: requested 50, available 20',
+        );
+
+        expect(mockAssetRepo.save).not.toHaveBeenCalled();
+        expect(mockReqRepo.save).not.toHaveBeenCalled();
+      });
+
+      it('never looks up stock for a unit (PPE/SEP) line, so unit fulfilments are unchanged', async () => {
+        armFulfillable([
+          mkItem({ id: 'ri-sep', assetClass: AssetClass.SEP, quantity: 1 }),
+        ]);
+
+        const result = await fulfilWithoutPick();
+
+        expect(result.status).toBe(RequisitionStatus.FULFILLED);
+        expect(mockAssetRepo.find).not.toHaveBeenCalled();
+        expect(mockAssetRepo.findOne).not.toHaveBeenCalled();
+        expect(
+          mockAssetsService.notifyLowStockIfBelowThreshold,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('keeps an explicit pick for one line and resolves the others', async () => {
+        armFulfillable([
+          mkItem({
+            id: 'ri-a',
+            quantity: 1,
+            itemDescription: 'USB drives (box)',
+          }),
+          mkItem({ id: 'ri-b', quantity: 2, itemDescription: 'HDMI cables' }),
+        ]);
+        armStock([
+          stockRecord({ id: 'usb-picked', quantity: 9 }),
+          stockRecord({
+            id: 'usb-other',
+            quantity: 9,
+            dateOfDelivery: new Date('2025-01-01'),
+          }),
+          stockRecord({
+            id: 'hdmi',
+            itemDescription: 'HDMI cables',
+            quantity: 7,
+          }),
+        ]);
+
+        await service.fulfill(
+          'req-supply-1',
+          'it-1',
+          UserRole.IT_PERSONNEL,
+          {
+            fulfilledItems: [
+              { requisitionItemId: 'ri-a', assetId: 'usb-picked' },
+            ],
+          },
+          '127.0.0.1',
+        );
+
+        const saved = mockAssetRepo.save.mock.calls.map(
+          ([a]: [{ id: string; quantity: number }]) => [a.id, a.quantity],
+        );
+        expect(saved).toEqual([
+          ['usb-picked', 8],
+          ['hdmi', 5],
+        ]);
+      });
     });
 
     it('rejects a fulfilledItems entry that matches no requisition item — rolls back, writes nothing', async () => {
@@ -2021,6 +2237,205 @@ describe('RequisitionsService', () => {
         ),
       ).rejects.toThrow(ForbiddenException);
       expect(mockReqRepo.save).not.toHaveBeenCalled();
+    });
+  });
+
+  // A custodian can now file requisitions (the IT custodian always could), and
+  // fulfilling is the custodian's job - so without a rule they would approve-then-
+  // issue to themselves. Returns and incidents already bar this; requisitions now do
+  // too, with the System Administrator as the fallback for exactly those requests.
+  describe('isCustodianOwnRequisition()', () => {
+    const ict = [{ assetType: AssetType.ICT }];
+    const fixed = [{ assetType: AssetType.FIXED }];
+    const supplies = [{ assetType: AssetType.SUPPLIES }];
+
+    it.each([
+      [UserRole.IT_PERSONNEL, ict, true],
+      [UserRole.PROPERTY_CUSTODIAN, fixed, true],
+      [UserRole.PROPERTY_CUSTODIAN, supplies, true],
+      // Someone else's kind of item: another custodian fulfils it.
+      [UserRole.IT_PERSONNEL, fixed, false],
+      [UserRole.PROPERTY_CUSTODIAN, ict, false],
+      // Not a custodian at all.
+      [UserRole.EMPLOYEE, ict, false],
+      [UserRole.SUPERVISOR, fixed, false],
+      [UserRole.PROPERTY_OFFICER, fixed, false],
+    ])('requester %s asking for %j -> %s', (role, items, expected) => {
+      expect(isCustodianOwnRequisition(role, items as never)).toBe(expected);
+    });
+  });
+
+  describe('fulfil / hold - a custodian does not fulfil their own requisition', () => {
+    const ictItem = [
+      { itemDescription: 'Laptop', assetType: AssetType.ICT },
+    ] as unknown as RequisitionItemEntity[];
+    const fixedItem = [
+      { itemDescription: 'Chair', assetType: AssetType.FIXED },
+    ] as unknown as RequisitionItemEntity[];
+
+    const arm = (over: Partial<RequisitionEntity>) => {
+      const req = makeReq({
+        status: RequisitionStatus.PENDING_FULFILLMENT,
+        ...over,
+      });
+      mockReqRepo.findOne.mockResolvedValue(req);
+      mockApprovalRepo.find.mockResolvedValue([]);
+      mockReqRepo.save.mockImplementation((r: object) => Promise.resolve(r));
+      return req;
+    };
+    const requesterIs = (role: UserRole) =>
+      mockUsersService.findOne.mockResolvedValue({
+        id: 'requester-1',
+        role,
+        firstName: 'Re',
+        lastName: 'Quester',
+      });
+
+    it('refuses the IT custodian fulfilling a requisition they filed', async () => {
+      const req = arm({ requestedById: 'it-1', items: ictItem });
+
+      await expect(
+        service.fulfill(req.id, 'it-1', UserRole.IT_PERSONNEL, {}, 'ip'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockReqRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('refuses the Property Custodian holding a requisition they filed', async () => {
+      const req = arm({ requestedById: 'pc-1', items: fixedItem });
+
+      await expect(
+        service.putOnHold(
+          req.id,
+          'pc-1',
+          UserRole.PROPERTY_CUSTODIAN,
+          'No stock',
+          'ip',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockReqRepo.save).not.toHaveBeenCalled();
+    });
+
+    it("lets the System Administrator fulfil a custodian's own requisition", async () => {
+      const req = arm({ requestedById: 'requester-1', items: ictItem });
+      requesterIs(UserRole.IT_PERSONNEL);
+
+      const done = await service.fulfill(
+        req.id,
+        'admin-1',
+        UserRole.SYSTEM_ADMIN,
+        {},
+        'ip',
+      );
+
+      expect(done.status).toBe(RequisitionStatus.FULFILLED);
+    });
+
+    it("lets the System Administrator hold a custodian's own requisition", async () => {
+      const req = arm({ requestedById: 'requester-1', items: fixedItem });
+      requesterIs(UserRole.PROPERTY_CUSTODIAN);
+
+      const held = await service.putOnHold(
+        req.id,
+        'admin-1',
+        UserRole.SYSTEM_ADMIN,
+        'Awaiting delivery',
+        'ip',
+      );
+
+      expect(held.status).toBe(RequisitionStatus.ON_HOLD);
+    });
+
+    it.each([
+      ['an employee', UserRole.EMPLOYEE, ictItem],
+      [
+        'an IT custodian asking for a Fixed item',
+        UserRole.IT_PERSONNEL,
+        fixedItem,
+      ],
+    ])(
+      'refuses the System Administrator on the requisition of %s - another custodian handles it',
+      async (_who, role, items) => {
+        const req = arm({ requestedById: 'requester-1', items });
+        requesterIs(role);
+
+        await expect(
+          service.fulfill(req.id, 'admin-1', UserRole.SYSTEM_ADMIN, {}, 'ip'),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockReqRepo.save).not.toHaveBeenCalled();
+      },
+    );
+
+    it('still lets another custodian fulfil it', async () => {
+      const req = arm({ requestedById: 'it-1', items: ictItem });
+
+      const done = await service.fulfill(
+        req.id,
+        'it-2',
+        UserRole.IT_PERSONNEL,
+        {},
+        'ip',
+      );
+
+      expect(done.status).toBe(RequisitionStatus.FULFILLED);
+    });
+  });
+
+  describe("the custodians' fulfilment queue", () => {
+    const makeQb = () => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+    });
+
+    it.each([
+      [UserRole.IT_PERSONNEL, 'it-1'],
+      [UserRole.PROPERTY_CUSTODIAN, 'pc-1'],
+    ])('leaves out what %s filed themselves', async (role, id) => {
+      const qb = makeQb();
+      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findAll(id, role);
+
+      expect(qb.andWhere).toHaveBeenCalledWith('r.requestedById != :me', {
+        me: id,
+      });
+    });
+  });
+
+  describe('fulfilmentFallback() - what only the System Administrator can fulfil', () => {
+    const entry = (
+      id: string,
+      requesterRole: UserRole,
+      type: AssetType,
+      status = RequisitionStatus.PENDING_FULFILLMENT,
+    ) =>
+      makeReq({
+        id,
+        status,
+        items: [{ assetType: type }] as unknown as RequisitionItemEntity[],
+        requestedBy: { id: `u-${id}`, role: requesterRole } as never,
+      });
+
+    it("lists a custodian's own open requisitions and nothing else", async () => {
+      mockReqRepo.find.mockResolvedValue([
+        entry('it-own', UserRole.IT_PERSONNEL, AssetType.ICT),
+        entry(
+          'pc-own',
+          UserRole.PROPERTY_CUSTODIAN,
+          AssetType.SUPPLIES,
+          RequisitionStatus.ON_HOLD,
+        ),
+        entry('employee', UserRole.EMPLOYEE, AssetType.ICT),
+        entry('it-for-fixed', UserRole.IT_PERSONNEL, AssetType.FIXED),
+      ]);
+
+      const { data } = await service.fulfilmentFallback();
+
+      expect(data.map((r) => r.id)).toEqual(['it-own', 'pc-own']);
     });
   });
 

@@ -10,6 +10,7 @@ import {
   USEFUL_LIFE_YEARS,
   MAX_LOGIN_ATTEMPTS,
   REPEAT_REPAIR_LIMIT,
+  FORM_ENTITY_NAME,
 } from '../../../packages/shared/src/constants';
 import { AssetClass } from '../../../packages/shared/src/enums';
 
@@ -89,6 +90,39 @@ describe('SystemConfigService — getters + fallback', () => {
     service = await build();
     expect(service.getUsefulLifeYears()[AssetClass.PPE]).toBe(7);
     expect(service.getUsefulLifeYears()[AssetClass.IES]).toBe(2);
+  });
+
+  // The official forms used to print "Entity Name" and "Fund Cluster: General
+  // Fund" as fixed text. The cluster was an assumption nobody at CICC had made,
+  // so it is a setting now and blank until the Master Admin fills it in.
+  describe('official-form identity', () => {
+    it('defaults to the CICC name and no fund cluster', async () => {
+      service = await build();
+      expect(service.getEntityName()).toBe(FORM_ENTITY_NAME);
+      expect(service.getFundCluster()).toBe('');
+    });
+
+    it('serves a stored entity name and fund cluster, trimmed', async () => {
+      rows.push({
+        key: CONFIG_KEYS.ENTITY_NAME,
+        value: '  CICC Central Office ',
+      });
+      rows.push({
+        key: CONFIG_KEYS.FUND_CLUSTER,
+        value: ' 01 Regular Agency Fund ',
+      });
+      service = await build();
+      expect(service.getEntityName()).toBe('CICC Central Office');
+      expect(service.getFundCluster()).toBe('01 Regular Agency Fund');
+    });
+
+    it('ignores a stored value of the wrong type or an empty entity name', async () => {
+      rows.push({ key: CONFIG_KEYS.ENTITY_NAME, value: '   ' });
+      rows.push({ key: CONFIG_KEYS.FUND_CLUSTER, value: 42 });
+      service = await build();
+      expect(service.getEntityName()).toBe(FORM_ENTITY_NAME);
+      expect(service.getFundCluster()).toBe('');
+    });
   });
 });
 
@@ -188,6 +222,34 @@ describe('SystemConfigService — update() + getAll()', () => {
         'admin-1',
       ),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects an empty or over-long entity name and an over-long fund cluster', async () => {
+    service = await build();
+    await expect(
+      service.update(CONFIG_KEYS.ENTITY_NAME, '   ', 'admin-1'),
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      service.update(CONFIG_KEYS.ENTITY_NAME, 'x'.repeat(151), 'admin-1'),
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      service.update(CONFIG_KEYS.FUND_CLUSTER, 'x'.repeat(61), 'admin-1'),
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      service.update(CONFIG_KEYS.FUND_CLUSTER, 5, 'admin-1'),
+    ).rejects.toThrow(BadRequestException);
+    expect(mockRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('stores the trimmed identity, and lets the fund cluster be cleared', async () => {
+    service = await build();
+    await service.update(CONFIG_KEYS.ENTITY_NAME, '  CICC  ', 'admin-1');
+    await service.update(CONFIG_KEYS.FUND_CLUSTER, ' 01 ', 'admin-1');
+    expect(service.getEntityName()).toBe('CICC');
+    expect(service.getFundCluster()).toBe('01');
+
+    await service.update(CONFIG_KEYS.FUND_CLUSTER, '', 'admin-1');
+    expect(service.getFundCluster()).toBe('');
   });
 
   it('persists a valid value and reflects it immediately via the getter', async () => {

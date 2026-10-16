@@ -10,6 +10,10 @@ export interface AuditLog {
   ipAddress: string;
   metadata: Record<string, unknown> | null;
   timestamp: string;
+  /** Who did it, by name; null when the account no longer resolves. */
+  userName?: string | null;
+  /** What it was done to, in words ("AR-2026-0014"); null when the API cannot describe it. */
+  recordLabel?: string | null;
 }
 
 interface PaginatedAuditLogs {
@@ -31,6 +35,7 @@ export const auditApi = {
   byUser: (userId: string, page = 1, limit = 50) =>
     client.get<ApiResponse<PaginatedAuditLogs>>(`/v1/audit/user/${userId}`, { params: { page, limit } }).then((r) => r.data),
 
+  /** One record's history, newest first by the screen. The API returns the list itself under `data`. */
   byRecord: (recordId: string) =>
-    client.get<ApiResponse<{ data: AuditLog[] }>>(`/v1/audit/record/${recordId}`).then((r) => r.data),
+    client.get<ApiResponse<AuditLog[]>>(`/v1/audit/record/${recordId}`).then((r) => r.data),
 };

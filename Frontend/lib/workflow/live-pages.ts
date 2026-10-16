@@ -31,7 +31,10 @@ export function normalizeWorkflowSlug(slug: string): string {
 const LIVE_WORKFLOW_PAGES: Partial<Record<ProposedUserRole, readonly string[]>> = {
   [ProposedUserRole.APPROVING_OFFICER]: ['approvals', 'requisitions'],
   [ProposedUserRole.IT_ASSET_CUSTODIAN]: ['fulfillment', 'custody', 'disposal', 'requisitions'],
-  [ProposedUserRole.PROPERTY_CUSTODIAN]: ['fulfillment', 'custody', 'disposal'],
+  [ProposedUserRole.PROPERTY_CUSTODIAN]: ['fulfillment', 'custody', 'disposal', 'requisitions'],
+  [ProposedUserRole.PROPERTY_OFFICER]: ['requisitions'],
+  // A custodian cannot fulfil their own requisition; the administrator does.
+  [ProposedUserRole.MASTER_ADMIN]: ['fulfillment'],
 };
 
 export function isLiveWorkflowPage(role: ProposedUserRole, slug: string): boolean {

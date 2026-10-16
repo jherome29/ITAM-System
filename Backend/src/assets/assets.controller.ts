@@ -79,7 +79,13 @@ export class AssetsController {
    * Roles: Employee, Supervisor, IT Personnel
    */
   @Get('catalogue')
-  @Roles(UserRole.EMPLOYEE, UserRole.SUPERVISOR, UserRole.IT_PERSONNEL)
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
   async findCatalogue(@Query('page') page = 1, @Query('limit') limit = 20) {
     const result = await this.assetsService.findCatalogue(+page, +limit);
     return { message: 'Available assets retrieved', data: result };
@@ -93,7 +99,13 @@ export class AssetsController {
    * SVC: Engage
    */
   @Get('catalogue/items')
-  @Roles(UserRole.EMPLOYEE, UserRole.SUPERVISOR, UserRole.IT_PERSONNEL)
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
   async findCatalogueItems(
     @Query('search') search?: string,
     @Query('assetType') assetType?: string,

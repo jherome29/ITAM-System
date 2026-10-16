@@ -3,6 +3,9 @@
 Run every check in this file **before starting a new feature and after finishing one.**
 All checks must pass with zero errors before the task is considered done.
 
+> Last reviewed 2026-10-16. The numbers below (tests, coverage) are the state of the
+> PR #108 branch; refresh them when they move.
+
 ---
 
 ## How to use this file
@@ -74,10 +77,18 @@ cd Backend && npm run test
 **What it checks:** Jest unit tests for all service files. Every test must pass — no exceptions.
 **If it fails:** Read the failing test output. Fix the underlying service logic or test, do not skip or comment out tests.
 
-> **If the change touches a controller, a guard, a DTO, or the DB layer**, also run
-> the e2e suite: `cd Backend && npm run test:e2e:local` (needs Docker — it spins a
-> throwaway `postgres:16` like CI's `backend-e2e` job). Plain `npm run test:e2e`
-> targets Supabase and will not connect from jest.
+**Current state (2026-10-16):** 728 tests in 33 suites, all passing.
+
+> **If the change touches a controller, a guard, a DTO, request routing, or the DB
+> layer**, also run the e2e suite: `cd Backend && npm run test:e2e:local` (needs
+> Docker — it spins a throwaway `postgres:16` like CI's `backend-e2e` job; 89 tests
+> in 12 suites). The unit tests mock the database, so routing and guard rules are only
+> proven there. Plain `npm run test:e2e` targets Supabase and will not connect from jest.
+> A single suite: `npm run test:e2e:local -- property-requisitions`.
+>
+> One transient failure has been seen (4 tests in `auth.service.spec`, the lockout
+> threshold, on one coverage run; not reproducible in four later runs). If a test fails
+> once and then passes, re-run it, and capture the output if it comes back.
 
 ---
 
@@ -94,19 +105,20 @@ cd Backend && npm run test:cov
 - Functions: ≥ 55%
 - Lines: ≥ 65%
 
-**Current state (as of 2026-06-18):** 91 tests passing · 79.45% statements · 65.33% branches · 71.18% functions · 78.91% lines.
+**Current state (2026-10-16):** 728 tests passing · 96.28% statements · 88.65% branches · 95.18% functions · 96.28% lines.
 
-Target to work toward: **70% across all metrics** (CLAUDE.md §12).
+Target to work toward: **70% across all metrics** (CLAUDE.md §12): met.
 
-**Files measured:**
-- `auth/auth.service.ts`
-- `auth/guards/roles.guard.ts`
-- `assets/assets.service.ts`
+**Files measured** (`collectCoverageFrom` in `Backend/package.json`; a new service belongs in this list):
+- `auth/auth.service.ts`, `auth/guards/roles.guard.ts`
+- `assets/assets.service.ts`, `assets/replacement-eligibility.ts`, `assets/asset-repairs.service.ts`
 - `requisitions/requisitions.service.ts`
-- `notifications/notifications.service.ts`
-- `audit/audit.service.ts`
-- `users/users.service.ts`
-- `reports/reports.service.ts`
+- `asset-requests/asset-requests.service.ts`, `asset-requests/asset-requests.controller.ts`, `asset-requests/attachment-files.ts`
+- `notifications/notifications.service.ts`, `audit/audit.service.ts`, `users/users.service.ts`
+- `reports/reports.service.ts`, `system-config/system-config.service.ts`
+- `health/health.controller.ts`, `admin/admin.service.ts`, `admin/admin.controller.ts`
+
+The PDF generators in `reports/forms/` are not in the gate but have their own specs; see check 13.
 
 **If it fails:** Add or expand tests in `Backend/src/<module>/<module>.service.spec.ts` for the file(s) below threshold. Focus on untested branches and functions first.
 
@@ -121,7 +133,7 @@ cd Backend && npm run audit:check
 ```
 **Pass condition:** Exit code 0.
 **What it checks:** `node ../scripts/audit-allowlist.mjs .` — runs `npm audit` and fails on any **high/critical** advisory that is **not** in `scripts/audit-allowlist.mjs`.
-**Note:** The allowlist (as of 2026-09-09) holds only the four `multer` DoS advisories — `multer` is pulled in transitively by every `@nestjs/*` package and the only "fix" npm offers is downgrading NestJS 11 → 7. Each entry has a written reason; re-check when `@nestjs/platform-express` bumps its `multer` dependency. Everything else high/critical still fails the gate.
+**Note:** The allowlist (as of 2026-10-16) holds the four `multer` DoS advisories — `multer` is pulled in transitively by every `@nestjs/*` package and the only "fix" npm offers is downgrading NestJS 11 → 7 — and one `braces` advisory (stack exhaustion in lint-time globbing, no fix released). Each entry has a written reason; re-check when `@nestjs/platform-express` bumps `multer` or `braces` ships a fix. Everything else high/critical still fails the gate.
 **If it fails:** Prefer a targeted in-range bump — `npm update <pkg>` (or edit the pin) then `npm install` — and re-verify tests/build. Only add a GHSA to the allowlist when there is genuinely no non-breaking fix, with a reason. Never `npm audit fix` (it reshuffles the whole tree) and never `--force`.
 
 ---
@@ -174,6 +186,19 @@ cd Frontend && npm run build
 
 ---
 
+## 9b. Frontend — Unit Tests
+
+**Directory:** `Frontend/`
+**Command:**
+```bash
+cd Frontend && npm run test
+```
+**Pass condition:** All test files pass (320 tests in 41 files as of 2026-10-16).
+**What it checks:** vitest unit tests for the pure logic the screens depend on: role navigation and the live-page allow-list, requisition and asset-request rules, date and status formatting, API clients, server-rendered component specs. CI's `frontend-ci` job runs this.
+**If it fails:** Fix the code or the test; never skip one. A menu or allow-list change (`lib/roles/role-navigation.ts`, `lib/workflow/live-pages.ts`) needs its spec updated in the same commit.
+
+---
+
 ## 10. Root — Secret Scan
 
 **Directory:** Project root (`cicc/`)
@@ -182,7 +207,7 @@ cd Frontend && npm run build
 secretlint "**/*"
 ```
 **Pass condition:** No output. Zero secrets detected.
-**What it checks:** Scans all files for accidentally committed credentials, API keys, JWT secrets, and connection strings.
+**What it checks:** Scans all files — markdown included — for accidentally committed credentials, API keys, JWT secrets, and connection strings. Note that it flags any contiguous `postgresql://user:pass@host` string, even for a throwaway test database: spell those out in prose or build them from parts, as `Backend/test/e2e-local.mjs` does.
 **If it fails:** Remove the secret from the file immediately. If it was already committed, rotate the credential. Never use `--allow-dirty` to bypass this check.
 
 ---
@@ -245,6 +270,19 @@ curl -s -I http://localhost:3001/api/v1/auth/login | grep -i "x-content-type\|x-
 
 ---
 
+## 13. Official Forms — Render and Read (only if a form generator or `base-form.generator.ts` changed)
+
+**Directory:** `Backend/`
+**Commands:**
+```bash
+cd Backend && npx jest src/reports          # geometry, content and numbering specs
+```
+Then generate every affected form from a throwaway database, render the PDFs to images and look at them (recipe: `RUN-LOCAL.md` §11).
+**Pass condition:** the specs pass, and on every page of every affected form: the form number sits under its label, no table runs past the right margin (rightmost ink ≤ 555.3 pt), no header or value breaks mid-word, nothing overprints.
+**Why it is manual:** the specs catch geometry and content but not "does this look like a form". On 2026-10-16 reading all 18 PDFs found an overprinted form number, tables running off the page and a wrong signatory that no test had caught.
+
+---
+
 ## Summary Table
 
 | # | Check | Directory | Command | Pass Condition |
@@ -253,12 +291,15 @@ curl -s -I http://localhost:3001/api/v1/auth/login | grep -i "x-content-type\|x-
 | 2 | ESLint | Backend | `npx eslint ... --max-warnings 0` | No output |
 | 3 | Build | Backend | `npm run build` | Compiled successfully |
 | 4 | Unit Tests | Backend | `npm run test` | 0 failed |
+| 4b | e2e *(only if a controller, guard, DTO, routing or DB layer changed)* | Backend | `npm run test:e2e:local` | 0 failed |
 | 5 | Coverage | Backend | `npm run test:cov` | All thresholds met |
 | 6 | Dep Audit | Backend | `npm run audit:check` | No high CVEs |
 | 7 | TypeScript | Frontend | `npx tsc --noEmit` | No output |
 | 8 | ESLint | Frontend | `npx eslint . --max-warnings 0` | No output |
 | 9 | Build | Frontend | `npm run build` | Compiled successfully |
+| 9b | Unit Tests | Frontend | `npm run test` | 0 failed |
 | 10 | Secret Scan | Root | `secretlint "**/*"` | No output |
 | 11 | Dep Audit | Frontend | `npm run audit:check` | No high CVEs |
 | 11a–d | Smoke Tests | — | curl commands | Correct HTTP codes |
 | 12 | Docker build *(only if a `Dockerfile` / `docker-compose*.yml` changed)* | Root | `docker build -f Backend/Dockerfile --target production .` and same for `Frontend/Dockerfile` (`--build-arg NEXT_PUBLIC_API_URL=…`) | Both images build. CI's `docker-build` job runs this on every push. |
+| 13 | Official forms *(only if a form generator changed)* | Backend | `npx jest src/reports` + render and read the PDFs | Specs pass; layout checks above |

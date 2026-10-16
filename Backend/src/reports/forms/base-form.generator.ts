@@ -1,16 +1,70 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import PDFDocument from 'pdfkit';
+import { FORM_ENTITY_NAME } from '../../../../packages/shared/src/constants';
 
 // SVC: Improve — shared pdfkit utilities for all COA official form generators
 
 export const PAGE = { width: 595.28, height: 841.89, margin: 40 } as const;
 export const CONTENT_WIDTH = PAGE.width - PAGE.margin * 2;
+/** The lowest y anything may be drawn at: past it pdfkit silently starts a new page for each text call. */
+export const CONTENT_BOTTOM = PAGE.height - PAGE.margin;
+
+// ── Who the form is for ──────────────────────────────────────────────────────
+// The agency name and Fund Cluster in the header come from the system settings.
+// The generators are plain functions, so the values travel with the request
+// instead of through every signature: ReportsService runs a generator inside
+// withFormIdentity(), and the header helpers read it back. Request-scoped, so two
+// forms being generated at once never see each other's settings.
+
+export interface FormIdentity {
+  entityName: string;
+  /** Empty until CICC has set one; the form then prints a fill-in line. */
+  fundCluster: string;
+  /** The running number allocated to this form, for the forms that carry one. */
+  documentNumber?: string;
+}
+
+const DEFAULT_IDENTITY: FormIdentity = {
+  entityName: FORM_ENTITY_NAME,
+  fundCluster: '',
+};
+const identityStore = new AsyncLocalStorage<FormIdentity>();
+
+/** Runs `run` (a form generator) with the given identity in effect. */
+export function withFormIdentity<T>(identity: FormIdentity, run: () => T): T {
+  return identityStore.run(identity, run);
+}
+
+export function formIdentity(): FormIdentity {
+  return identityStore.getStore() ?? DEFAULT_IDENTITY;
+}
+
+/** The "Entity Name" and "Fund Cluster" header fields of an official form. */
+export function identityFields(): { label: string; value: string }[] {
+  const { entityName, fundCluster } = formIdentity();
+  return [
+    { label: 'Entity Name', value: entityName },
+    { label: 'Fund Cluster', value: fundCluster || '_______________' },
+  ];
+}
+
+const NUMBER_FILL_IN = '_______________';
+
+/** The form's own running number, or a fill-in line when none was allocated. */
+export function documentNumber(): string {
+  return formIdentity().documentNumber ?? NUMBER_FILL_IN;
+}
+
 export const FONT_REGULAR = 'Helvetica';
 export const FONT_BOLD = 'Helvetica-Bold';
 export const GRAY_LIGHT = '#f5f5f5';
 export const GRAY_BORDER = '#888888';
 export const BLACK = '#000000';
 
-/** Creates a new A4 PDFDocument with standard margins. */
+/**
+ * Creates a new A4 PDFDocument with standard margins. Pages are buffered so
+ * bufferize() can number them once the page count is known.
+ */
 export function createDoc(): PDFKit.PDFDocument {
   return new PDFDocument({
     size: 'A4',
@@ -21,7 +75,23 @@ export function createDoc(): PDFKit.PDFDocument {
       right: PAGE.margin,
     },
     autoFirstPage: true,
+    bufferPages: true,
   });
+}
+
+/**
+ * Makes room for `needed` points below `y`: returns `y` when it fits, otherwise
+ * starts a new page and returns the top margin. Anything drawn after a table
+ * (signature blocks, totals) goes through this so it never lands off the page.
+ */
+export function ensureSpace(
+  doc: PDFKit.PDFDocument,
+  y: number,
+  needed: number,
+): number {
+  if (y + needed <= CONTENT_BOTTOM) return y;
+  doc.addPage();
+  return PAGE.margin;
 }
 
 /**
@@ -46,7 +116,7 @@ export function drawRepublicHeader(doc: PDFKit.PDFDocument): number {
   );
   y += 10;
   doc.font(FONT_BOLD).fontSize(9);
-  doc.text('CYBERCRIME INVESTIGATION AND COORDINATING CENTER', PAGE.margin, y, {
+  doc.text(formIdentity().entityName.toUpperCase(), PAGE.margin, y, {
     width: CONTENT_WIDTH,
     align: 'center',
   });
@@ -77,6 +147,8 @@ export function drawRepublicHeader(doc: PDFKit.PDFDocument): number {
   return y;
 }
 
+const REFERENCE_FONT_SIZE = 9;
+
 /**
  * Draws a centered form title in bold and the form reference number on the right.
  * Returns Y after the title block.
@@ -94,19 +166,29 @@ export function drawFormTitle(
     align: 'center',
   });
 
-  doc.font(FONT_REGULAR).fontSize(8);
-  const rx = PAGE.width - PAGE.margin - 118;
-  doc.text(`${formRefLabel}:`, rx, y, { width: 118 });
-  y += 11;
+  // The reference box has two lines - the label, then the value on top of the
+  // rule. They used to be drawn 2pt apart, so the number printed over its label.
+  const boxWidth = 118;
+  const rx = PAGE.width - PAGE.margin - boxWidth;
+  doc.font(FONT_REGULAR).fontSize(7).fillColor(BLACK);
+  doc.text(`${formRefLabel}:`, rx, y, { width: boxWidth, lineBreak: false });
+
+  // A long reference ("SS-02 / MOF-2026-0001") shrinks to stay inside the box.
+  doc.font(FONT_BOLD).fontSize(REFERENCE_FONT_SIZE);
+  const valueWidth = doc.widthOfString(formRefValue);
+  if (valueWidth > boxWidth) {
+    doc.fontSize(Math.max(6, (REFERENCE_FONT_SIZE * boxWidth) / valueWidth));
+  }
+  doc.text(formRefValue, rx, y + 10, { width: boxWidth, lineBreak: false });
+
+  y += 22;
   doc
     .moveTo(rx, y)
     .lineTo(PAGE.width - PAGE.margin, y)
     .strokeColor(BLACK)
     .lineWidth(0.5)
     .stroke();
-  doc.font(FONT_BOLD).fontSize(9).fillColor(BLACK);
-  doc.text(formRefValue, rx, y - 9, { width: 118 });
-  y += 10;
+  y += 4;
 
   doc
     .moveTo(PAGE.margin, y)
@@ -138,7 +220,8 @@ export function drawMetaFields(
       .font(FONT_REGULAR)
       .fontSize(7.5)
       .text(` ${left.value}`, { width: half - 10 });
-    if (right) {
+    // An empty label is a filler that keeps the pairs aligned: draw nothing.
+    if (right?.label) {
       doc.font(FONT_BOLD).fontSize(7.5).fillColor(BLACK);
       doc.text(`${right.label}:`, PAGE.margin + half, y, { continued: true });
       doc
@@ -152,29 +235,115 @@ export function drawMetaFields(
 }
 
 /**
- * Draws a bordered table with a shaded header row.
- * cols = [{header, width (px)}]
- * rows = string[][] each row's cell values
- * Returns Y after the table.
+ * Widths for a table's columns that add up to exactly `total`: the caller's
+ * proportions, except that no column goes below its minimum (the width of its
+ * longest unbreakable word). A column held at its minimum is taken out of the
+ * sharing and the rest are scaled again until every column fits. When even the
+ * minimums do not fit, they are shrunk evenly - a word may then break.
  */
-export function drawTable(
+export function fitColumnWidths(
+  desired: number[],
+  mins: number[],
+  total: number,
+): number[] {
+  const sumOf = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const minTotal = sumOf(mins);
+  if (minTotal >= total) return mins.map((m) => (m * total) / minTotal);
+
+  const wanted = desired.map((w) => (w > 0 ? w : 1));
+  const held = new Set<number>();
+  let widths: number[] = [];
+  for (let pass = 0; pass <= wanted.length; pass++) {
+    const sharedWanted = sumOf(wanted.filter((_, i) => !held.has(i)));
+    const sharedTotal = total - sumOf(mins.filter((_, i) => held.has(i)));
+    widths = wanted.map((w, i) =>
+      held.has(i) ? mins[i] : (w * sharedTotal) / sharedWanted,
+    );
+    const short = widths
+      .map((w, i) => (!held.has(i) && w < mins[i] ? i : -1))
+      .filter((i) => i >= 0);
+    if (short.length === 0) break;
+    short.forEach((i) => held.add(i));
+  }
+  return widths;
+}
+
+/** Room a column needs beside its longest word: 3pt padding each side plus slack. */
+const COLUMN_SIDE_ROOM = 8;
+/** A longer unbroken value (a URL, say) wraps instead of starving its neighbours. */
+const MAX_WORD_ROOM = 90;
+
+function longestWord(text: string): string {
+  let longest = '';
+  for (const word of text.split(/\s+/)) {
+    if (word.length > longest.length) longest = word;
+  }
+  return longest;
+}
+
+/**
+ * The columns scaled to the content width, so a table neither runs past the
+ * right margin nor stops short of the rules above and below it, and no column
+ * is so narrow that its header or a value breaks in the middle of a word
+ * ("REM/ARK/S", "Serviceabl/e"). Callers give proportions; this makes them fit.
+ */
+function fitColumns(
   doc: PDFKit.PDFDocument,
   cols: { header: string; width: number }[],
   rows: string[][],
+): { header: string; width: number }[] {
+  const mins = cols.map((col, i) => {
+    doc.font(FONT_BOLD).fontSize(7);
+    const header = doc.widthOfString(longestWord(col.header));
+    let widest = '';
+    for (const row of rows) {
+      const word = longestWord(String(row[i] ?? ''));
+      if (word.length > widest.length) widest = word;
+    }
+    doc.font(FONT_REGULAR).fontSize(7);
+    const body = doc.widthOfString(widest);
+    return Math.min(Math.max(header, body) + COLUMN_SIDE_ROOM, MAX_WORD_ROOM);
+  });
+  const widths = fitColumnWidths(
+    cols.map((c) => c.width),
+    mins,
+    CONTENT_WIDTH,
+  );
+  return cols.map((col, i) => ({ ...col, width: widths[i] }));
+}
+
+const TABLE_HEADER_HEIGHT = 20;
+/** Room a row's text needs above and below it inside its cell. */
+const CELL_PADDING = 8;
+
+/** The header row grows with its tallest header, so a wrapped one stays inside it. */
+function tableHeaderHeight(
+  doc: PDFKit.PDFDocument,
+  cols: { header: string; width: number }[],
+): number {
+  doc.font(FONT_BOLD).fontSize(7);
+  const tallest = Math.max(
+    ...cols.map((c) =>
+      doc.heightOfString(c.header, { width: c.width - 4, align: 'center' }),
+    ),
+  );
+  // 4pt above the text (where it is drawn) and the same below it.
+  return Math.max(TABLE_HEADER_HEIGHT, tallest + 8);
+}
+
+/** Draws the shaded column-header row at `y`; returns the y below it. */
+function drawTableHeader(
+  doc: PDFKit.PDFDocument,
+  cols: { header: string; width: number }[],
   y: number,
-  rowHeight = 18,
+  height: number,
 ): number {
   const tableWidth = cols.reduce((s, c) => s + c.width, 0);
-  const startX = PAGE.margin;
-  const headerH = 20;
-
-  // Header background
   doc
-    .rect(startX, y, tableWidth, headerH)
+    .rect(PAGE.margin, y, tableWidth, height)
     .fillAndStroke(GRAY_LIGHT, GRAY_BORDER);
 
-  // Header text
-  let cx = startX;
+  let cx = PAGE.margin;
   for (const col of cols) {
     doc.font(FONT_BOLD).fontSize(7).fillColor(BLACK);
     doc.text(col.header, cx + 2, y + 4, {
@@ -183,32 +352,76 @@ export function drawTable(
     });
     cx += col.width;
   }
-  y += headerH;
+  return y + height;
+}
 
-  // Data rows
+/**
+ * Draws a bordered table with a shaded header row.
+ * cols = [{header, width (px)}]
+ * rows = string[][] each row's cell values
+ * rowHeight is the minimum height: a row grows to fit text that wraps.
+ *
+ * The table flows onto further pages (repeating the header) rather than running
+ * past the bottom margin - pdfkit answers any text drawn there with a new page
+ * per cell, which turned a 55-asset count sheet into 211 one-word pages.
+ * Returns Y after the table, on its last page.
+ */
+export function drawTable(
+  doc: PDFKit.PDFDocument,
+  columns: { header: string; width: number }[],
+  rows: string[][],
+  y: number,
+  rowHeight = 18,
+): number {
+  const cols = fitColumns(doc, columns, rows);
+  const headerHeight = tableHeaderHeight(doc, cols);
+  const tableWidth = CONTENT_WIDTH;
+  const startX = PAGE.margin;
+
+  // The header never sits alone at the foot of a page: it needs room for itself
+  // and a first row.
+  if (y + headerHeight + rowHeight > CONTENT_BOTTOM) {
+    doc.addPage();
+    y = PAGE.margin;
+  }
+  y = drawTableHeader(doc, cols, y, headerHeight);
+
   for (const row of rows) {
-    // Row border
-    doc.rect(startX, y, tableWidth, rowHeight).stroke(GRAY_BORDER);
+    const cells = cols.map((_, i) => (row[i] ?? '').toString());
+    doc.font(FONT_REGULAR).fontSize(7);
+    const height = Math.max(
+      rowHeight,
+      ...cells.map(
+        (text, i) =>
+          doc.heightOfString(text, { width: cols[i].width - 6 }) + CELL_PADDING,
+      ),
+    );
 
-    cx = startX;
+    if (y + height > CONTENT_BOTTOM) {
+      doc.addPage();
+      y = drawTableHeader(doc, cols, PAGE.margin, headerHeight);
+    }
+
+    // Row border
+    doc.rect(startX, y, tableWidth, height).stroke(GRAY_BORDER);
+
+    let cx = startX;
     for (let i = 0; i < cols.length; i++) {
-      const cellText = (row[i] ?? '').toString();
       doc.font(FONT_REGULAR).fontSize(7).fillColor(BLACK);
-      doc.text(cellText, cx + 3, y + 4, {
+      doc.text(cells[i], cx + 3, y + 4, {
         width: cols[i].width - 6,
         align: 'left',
-        lineBreak: false,
       });
       // Vertical cell divider
       if (i < cols.length - 1) {
         doc
           .moveTo(cx + cols[i].width, y)
-          .lineTo(cx + cols[i].width, y + rowHeight)
+          .lineTo(cx + cols[i].width, y + height)
           .stroke(GRAY_BORDER);
       }
       cx += cols[i].width;
     }
-    y += rowHeight;
+    y += height;
   }
 
   // Bottom border
@@ -218,6 +431,9 @@ export function drawTable(
     .stroke(GRAY_BORDER);
   return y + 6;
 }
+
+/** Vertical space a signature block takes (label, line, name, role, date). */
+const SIGNATURE_BLOCK_HEIGHT = 64;
 
 /**
  * Draws a signature block with equal-width columns.
@@ -229,6 +445,8 @@ export function drawSignatureBlock(
   signatories: { label: string; name: string; role: string; date?: string }[],
   y: number,
 ): number {
+  // Kept together: a block that does not fit under the table starts a new page.
+  y = ensureSpace(doc, y, SIGNATURE_BLOCK_HEIGHT);
   const colW = CONTENT_WIDTH / signatories.length;
   const signLineY = y + 28;
 
@@ -263,6 +481,32 @@ export function drawSignatureBlock(
 }
 
 /**
+ * Writes "Page n of N" at the foot of every page of a multi-page form. A
+ * single-page form is left as the official template has it.
+ */
+function addPageNumbers(doc: PDFKit.PDFDocument): void {
+  const { start, count } = doc.bufferedPageRange();
+  if (count < 2) return;
+  for (let i = 0; i < count; i++) {
+    doc.switchToPage(start + i);
+    // The footer sits inside the bottom margin; drawing there would otherwise
+    // make pdfkit start another page, so lift the margin while writing it.
+    const bottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    doc
+      .font(FONT_REGULAR)
+      .fontSize(7)
+      .fillColor('#666666')
+      .text(`Page ${i + 1} of ${count}`, PAGE.margin, PAGE.height - 28, {
+        width: CONTENT_WIDTH,
+        align: 'center',
+        lineBreak: false,
+      });
+    doc.page.margins.bottom = bottom;
+  }
+}
+
+/**
  * Collects pdfkit stream output into a single Buffer.
  */
 export function bufferize(doc: PDFKit.PDFDocument): Promise<Buffer> {
@@ -271,11 +515,19 @@ export function bufferize(doc: PDFKit.PDFDocument): Promise<Buffer> {
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
+    addPageNumbers(doc);
     doc.end();
   });
 }
 
 /** Formats PHP currency. */
+/** 'for_repair' -> 'For repair'. Forms print words, not database values. */
+export function conditionLabel(condition: string | null | undefined): string {
+  if (!condition) return '—';
+  const words = condition.replace(/_/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 export function phpFormat(amount: number | string): string {
   const n = typeof amount === 'string' ? parseFloat(amount) : amount;
   if (isNaN(n)) return 'PHP 0.00';
@@ -313,6 +565,8 @@ export function roleDisplay(role: string): string {
     supervisor: 'Division Supervisor',
     employee: 'End User',
     management: 'Management',
+    property_custodian: 'Property Custodian',
+    property_officer: 'Property Officer',
   };
   return map[role] ?? role;
 }

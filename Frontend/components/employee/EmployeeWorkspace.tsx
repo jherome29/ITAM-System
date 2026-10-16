@@ -195,7 +195,7 @@ function EmployeeIncidents({ openId }: Readonly<{ openId?: string }>) {
         {isOpen(selected) && <SecondaryButton onClick={() => setCancelling(selected)}>Cancel request</SecondaryButton>}
       </div>}
     </DetailDrawer>
-    <ConfirmDialog open={Boolean(cancelling)} title={`Cancel ${cancelling?.requestNumber ?? ''}?`} detail="The custodian will be notified that you no longer need this request." confirmLabel="Cancel request" onConfirm={() => void confirmCancel()} onCancel={() => setCancelling(null)} />
+    <ConfirmDialog open={Boolean(cancelling)} title={`Cancel ${cancelling?.requestNumber ?? ''}?`} detail="The custodian will be notified that you no longer need this request." confirmLabel="Cancel request" cancelLabel="Keep request" onConfirm={() => void confirmCancel()} onCancel={() => setCancelling(null)} />
     <Toast message={toast} />
   </div>;
 }

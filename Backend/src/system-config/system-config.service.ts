@@ -19,10 +19,15 @@ import {
   USEFUL_LIFE_YEARS,
   MAX_LOGIN_ATTEMPTS,
   REPEAT_REPAIR_LIMIT,
+  FORM_ENTITY_NAME,
 } from '../../../packages/shared/src/constants';
 
 // One repair is routine; the rule is about an item that keeps failing.
 export const MIN_REPEAT_REPAIR_LIMIT = 2;
+
+// Longest text the form header has room for.
+export const MAX_ENTITY_NAME_LENGTH = 150;
+export const MAX_FUND_CLUSTER_LENGTH = 60;
 
 // SVC: Plan — runtime-tunable configuration. Cached on init, refreshed on write.
 // TODO(scale-out): single-instance cache — a TTL on reload() is the cheapest multi-instance upgrade
@@ -101,6 +106,20 @@ export class SystemConfigService implements OnModuleInit {
     );
   }
 
+  /** Agency name for the header of every official form. */
+  getEntityName(): string {
+    const raw = this.cache.get(CONFIG_KEYS.ENTITY_NAME);
+    return typeof raw === 'string' && raw.trim()
+      ? raw.trim()
+      : FORM_ENTITY_NAME;
+  }
+
+  /** The Fund Cluster the forms print; '' until CICC has set one. */
+  getFundCluster(): string {
+    const raw = this.cache.get(CONFIG_KEYS.FUND_CLUSTER);
+    return typeof raw === 'string' ? raw.trim() : '';
+  }
+
   getUsefulLifeYears(): Record<AssetClass, number> {
     const raw = this.cache.get(CONFIG_KEYS.USEFUL_LIFE_YEARS);
     const classes = [AssetClass.PPE, AssetClass.SEP, AssetClass.IES] as const;
@@ -129,6 +148,18 @@ export class SystemConfigService implements OnModuleInit {
     }
   }
 
+  private assertText(v: unknown, max: number, required: boolean): void {
+    if (typeof v !== 'string') {
+      throw new BadRequestException('value must be text');
+    }
+    if (required && !v.trim()) {
+      throw new BadRequestException('value must not be empty');
+    }
+    if (v.trim().length > max) {
+      throw new BadRequestException(`value must be at most ${max} characters`);
+    }
+  }
+
   private assertUsefulLife(v: unknown): void {
     if (!v || typeof v !== 'object') {
       throw new BadRequestException('usefulLifeYears must be an object');
@@ -150,14 +181,20 @@ export class SystemConfigService implements OnModuleInit {
     [CONFIG_KEYS.USEFUL_LIFE_YEARS]: (v) => this.assertUsefulLife(v),
     [CONFIG_KEYS.REPEAT_REPAIR_LIMIT]: (v) =>
       this.assertInt(v, MIN_REPEAT_REPAIR_LIMIT),
+    [CONFIG_KEYS.ENTITY_NAME]: (v) =>
+      this.assertText(v, MAX_ENTITY_NAME_LENGTH, true),
+    [CONFIG_KEYS.FUND_CLUSTER]: (v) =>
+      this.assertText(v, MAX_FUND_CLUSTER_LENGTH, false),
   };
 
-  async update(key: string, value: unknown, updatedBy: string): Promise<void> {
+  async update(key: string, raw: unknown, updatedBy: string): Promise<void> {
     const validate = this.validators[key];
     if (!validate) {
       throw new BadRequestException(`Unknown config key "${key}"`);
     }
-    validate(value);
+    validate(raw);
+    // Text settings are stored trimmed, so what the form prints is what was meant.
+    const value = typeof raw === 'string' ? raw.trim() : raw;
     const updatedAt = new Date();
     await this.repo.save({ key, value, updatedBy, updatedAt });
     this.cache.set(key, value);
@@ -187,6 +224,8 @@ export class SystemConfigService implements OnModuleInit {
       usefulLifeYears: this.getUsefulLifeYears(),
       maxLoginAttempts: this.getMaxLoginAttempts(),
       repeatRepairLimit: this.getRepeatRepairLimit(),
+      entityName: this.getEntityName(),
+      fundCluster: this.getFundCluster(),
       meta: this.getMeta(),
     };
   }

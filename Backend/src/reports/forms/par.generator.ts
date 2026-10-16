@@ -11,6 +11,8 @@ import {
   today,
   roleDisplay,
   fullName,
+  identityFields,
+  documentNumber,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — PAR generated when IT Personnel issues a PPE item to an employee (Appendix 71)
@@ -49,18 +51,14 @@ export async function generatePAR(
     doc,
     'PROPERTY ACKNOWLEDGMENT RECEIPT',
     'PAR No.',
-    asset.propertyNumber ?? '_______________',
+    documentNumber(),
     y,
   );
 
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'Date', value: today() },
       {
         label: 'Office/Section',

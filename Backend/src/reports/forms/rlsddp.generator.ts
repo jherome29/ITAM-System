@@ -13,6 +13,9 @@ import {
   fullName,
   PAGE,
   CONTENT_WIDTH,
+  identityFields,
+  documentNumber,
+  conditionLabel,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — RLSDDP for lost/stolen/damaged/destroyed property (Appendix 75)
@@ -47,7 +50,6 @@ export async function generateRLSSDDP(
   const doc = createDoc();
   let y = drawRepublicHeader(doc);
 
-  const rlsNo = `RLSDDP-${Date.now()}`;
   y = drawFormTitle(
     doc,
     'REPORT OF LOST, STOLEN, DAMAGED OR DESTROYED PROPERTY',
@@ -59,15 +61,14 @@ export async function generateRLSSDDP(
   y = drawMetaFields(
     doc,
     [
-      { label: 'RLSDDP No.', value: rlsNo },
+      { label: 'RLSDDP No.', value: documentNumber() },
       { label: 'Date', value: today() },
-      { label: 'PAR No.', value: asset.propertyNumber ?? '_______________' },
-      { label: 'PAR Date', value: fmtDate(asset.acquisitionDate) },
       {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
+        label: 'Property No.',
+        value: asset.propertyNumber ?? '_______________',
       },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      { label: 'PAR Date', value: fmtDate(asset.acquisitionDate) },
+      ...identityFields(),
       { label: 'Department/Office', value: officer.officeOrSection },
       {
         label: 'Accountable Officer',
@@ -111,7 +112,7 @@ export async function generateRLSSDDP(
         `${asset.itemDescription}${asset.brand ? ' / ' + asset.brand : ''}${asset.serialNumber ? '\nS/N: ' + asset.serialNumber : ''}`,
         fmtDate(asset.acquisitionDate),
         phpFormat(asset.acquisitionCost),
-        asset.condition,
+        conditionLabel(asset.condition),
       ],
     ],
     y,

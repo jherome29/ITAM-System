@@ -6,7 +6,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { AssetEntity } from './entities/asset.entity';
 import { AssetTransactionEntity } from './entities/asset-transaction.entity';
 import { AuditService } from '../audit/audit.service';
@@ -97,6 +97,33 @@ export const OPEN_REQUISITION_STATUSES = [
 //                      │
 //                      └──[Transferred] → [Available (new location)]
 //                      └──[Flagged for Disposal] → [Disposed]
+
+/**
+ * Whether an edit left a field as it was. The stored value and the submitted one
+ * come in different shapes (a Date vs "2025-08-12T00:00:00.000Z", "46500.00" vs
+ * 46500), so compare what they mean, not how they are written.
+ */
+function sameFieldValue(stored: unknown, submitted: unknown): boolean {
+  const text = (v: unknown): string => {
+    if (v instanceof Date) return v.toISOString();
+    if (typeof v === 'string') return v.trim();
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    return '';
+  };
+  const a = text(stored);
+  const b = text(submitted);
+  if (a === b) return true;
+  if (
+    a !== '' &&
+    b !== '' &&
+    !Number.isNaN(Number(a)) &&
+    !Number.isNaN(Number(b))
+  ) {
+    return Number(a) === Number(b);
+  }
+  const day = /^\d{4}-\d{2}-\d{2}/;
+  return day.test(a) && day.test(b) && a.slice(0, 10) === b.slice(0, 10);
+}
 
 const VALID_TRANSITIONS: Record<string, AssetStatus[]> = {
   [AssetStatus.REGISTERED]: [AssetStatus.AVAILABLE],
@@ -248,8 +275,40 @@ export class AssetsService {
     }
 
     const [rows, total] = await qb.getManyAndCount();
-    const data = await this.withHolders(rows);
+    const data = await this.withTransferDestinations(
+      await this.withHolders(rows),
+    );
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  // A transferred asset still shows the place it left until it arrives, so the
+  // list says where it went: the destination of its latest transfer. One batched
+  // lookup, and none at all when nothing in the page is transferred.
+  private async withTransferDestinations<
+    T extends { id: string; status?: AssetStatus },
+  >(assets: T[]): Promise<Array<T & { transferredTo: string | null }>> {
+    const transferred = assets
+      .filter((a) => a.status === AssetStatus.TRANSFERRED)
+      .map((a) => a.id);
+    const latest = new Map<string, string>();
+    if (transferred.length > 0) {
+      const moves = await this.txRepo.find({
+        where: {
+          assetId: In(transferred),
+          action: AuditAction.ASSET_TRANSFERRED,
+        },
+        order: { timestamp: 'DESC' },
+      });
+      for (const move of moves) {
+        if (move.toLocation && !latest.has(move.assetId)) {
+          latest.set(move.assetId, move.toLocation);
+        }
+      }
+    }
+    return assets.map((a) => ({
+      ...a,
+      transferredTo: latest.get(a.id) ?? null,
+    }));
   }
 
   // Custody & Issuance has to say who holds each asset, but the list only has the
@@ -779,7 +838,17 @@ export class AssetsService {
       affectedRecordId: id,
       affectedRecordType: 'asset',
       ipAddress,
-      metadata: { updatedFields: Object.keys(dto) },
+      // Only what actually changed: the edit form sends every field, so listing
+      // the keys it sent made each save read as "changed everything".
+      metadata: {
+        updatedFields: Object.keys(dto).filter(
+          (field) =>
+            !sameFieldValue(
+              (existing as unknown as Record<string, unknown>)[field],
+              (dto as Record<string, unknown>)[field],
+            ),
+        ),
+      },
     });
 
     return this.findOne(id, assetTypeScope);
@@ -862,6 +931,7 @@ export class AssetsService {
     );
 
     this.applyCustody(asset, dto, targetStatus, backToHolder);
+    const arrival = this.applyArrival(asset, previousStatus, dto);
 
     const saved = await this.assetRepo.save(asset);
 
@@ -911,10 +981,45 @@ export class AssetsService {
         toStatus: targetStatus,
         custodianId: dto.custodianId,
         notes: dto.notes,
+        // Where a transfer went (and came from) — the history screen reads this,
+        // not the transactions table — and where an arrival now sits.
+        ...(dto.toLocation ? { toLocation: dto.toLocation } : {}),
+        ...(dto.fromLocation ? { fromLocation: dto.fromLocation } : {}),
+        ...arrival,
       },
     });
 
     return saved;
+  }
+
+  /**
+   * Arrival at the destination (transferred → available): the registry takes the
+   * office/section and room the custodian confirms. Any other transition ignores
+   * them. Returns what was applied, for the audit entry.
+   */
+  private applyArrival(
+    asset: AssetEntity,
+    previousStatus: AssetStatus,
+    dto: UpdateLifecycleDto,
+  ): { officeOrSection?: string; officeLocation?: string } {
+    if (
+      previousStatus !== AssetStatus.TRANSFERRED ||
+      dto.status !== AssetStatus.AVAILABLE
+    ) {
+      return {};
+    }
+    const applied: { officeOrSection?: string; officeLocation?: string } = {};
+    const office = dto.officeOrSection?.trim();
+    const room = dto.officeLocation?.trim();
+    if (office) {
+      asset.officeOrSection = office;
+      applied.officeOrSection = office;
+    }
+    if (room) {
+      asset.officeLocation = room;
+      applied.officeLocation = room;
+    }
+    return applied;
   }
 
   /**

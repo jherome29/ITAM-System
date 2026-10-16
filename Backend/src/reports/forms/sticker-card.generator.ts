@@ -1,5 +1,10 @@
 import PDFDocument from 'pdfkit';
-import { bufferize, phpFormat, fmtDate } from './base-form.generator';
+import {
+  bufferize,
+  phpFormat,
+  fmtDate,
+  conditionLabel,
+} from './base-form.generator';
 
 // SVC: Obtain/Build — Sticker Card printed when IT Personnel tags a registered asset (Appendix 58)
 
@@ -59,7 +64,7 @@ function drawCard(
   if (asset.serialNumber) line('Serial No', asset.serialNumber);
   line('Acq. Cost', phpFormat(asset.acquisitionCost));
   line('Date Acquired', fmtDate(asset.acquisitionDate));
-  line('Condition', asset.condition);
+  line('Condition', conditionLabel(asset.condition));
 
   // QR placeholder
   if (asset.qrCode) {

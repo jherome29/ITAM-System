@@ -1,6 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { Between, ILike, In, Not, Repository } from 'typeorm';
 import PDFDocument from 'pdfkit';
 import ExcelJS from 'exceljs';
 import { GeneratedReportEntity } from './entities/generated-report.entity';
@@ -9,6 +14,9 @@ import { AssetEntity } from '../assets/entities/asset.entity';
 import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { AuditService } from '../audit/audit.service';
+import { SystemConfigService } from '../system-config/system-config.service';
+import { withFormIdentity } from './forms/base-form.generator';
+import { DOCUMENT_SERIES, allocateDocumentNumber } from './document-numbers';
 import {
   OfficialFormType,
   AuditAction,
@@ -55,6 +63,8 @@ export interface GenerateFormInput {
   purpose?: string;
   requestingDivision?: string;
   returneeId?: string;
+  /** CICC employee ID (e.g. CICC-0042) - what a custodian can actually see. */
+  returneeEmployeeId?: string;
   receiverId?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -62,6 +72,15 @@ export interface GenerateFormInput {
   // Returns & Incidents request that produced it.
   assetRequestId?: string;
 }
+
+/** Optional period for the reports that take one (YYYY-MM-DD, end inclusive). */
+export interface ReportRange {
+  from?: string;
+  to?: string;
+}
+
+/** An audit export is held in memory and drawn row by row, so it is bounded. */
+const AUDIT_REPORT_ROW_LIMIT = 10_000;
 
 @Injectable()
 export class ReportsService {
@@ -81,6 +100,7 @@ export class ReportsService {
     @InjectRepository(AssetRepairEntity)
     private readonly repairRepo: Repository<AssetRepairEntity>,
     private readonly auditService: AuditService,
+    private readonly systemConfig: SystemConfigService,
   ) {}
 
   async findAll(page = 1, limit = 50) {
@@ -92,11 +112,61 @@ export class ReportsService {
     return { data, total, page, limit };
   }
 
-  async findAllForms(page = 1, limit = 50) {
-    const [data, total] = await this.formRepo.findAndCount({
+  async findAllForms(
+    page = 1,
+    limit = 50,
+    filter: { formType?: OfficialFormType; search?: string } = {},
+  ) {
+    const search = filter.search?.trim();
+    const [forms, total] = await this.formRepo.findAndCount({
+      where: {
+        ...(filter.formType ? { formType: filter.formType } : {}),
+        // % and _ are typed as text, not wildcards.
+        ...(search
+          ? { documentNumber: ILike(`%${search.replace(/[\\%_]/g, '\\$&')}%`) }
+          : {}),
+      },
       order: { generatedAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
+    });
+
+    // Names for the ids, so the archive can say which laptop and whose slip
+    // instead of "asset 3fa85f64…". One lookup per kind for the whole page.
+    const ids = (pick: (f: GeneratedFormEntity) => string | null) => [
+      ...new Set(forms.map(pick).filter((id): id is string => id !== null)),
+    ];
+    const assetIds = ids((f) => f.relatedAssetId);
+    const requisitionIds = ids((f) => f.relatedRequisitionId);
+    const userIds = ids((f) => f.generatedById);
+    const [assets, requisitions, users] = await Promise.all([
+      assetIds.length
+        ? this.assetRepo.find({ where: { id: In(assetIds) } })
+        : [],
+      requisitionIds.length
+        ? this.reqRepo.find({ where: { id: In(requisitionIds) } })
+        : [],
+      userIds.length ? this.userRepo.find({ where: { id: In(userIds) } }) : [],
+    ]);
+    const assetById = new Map(assets.map((a) => [a.id, a]));
+    const requisitionById = new Map(requisitions.map((r) => [r.id, r]));
+    const userById = new Map(users.map((u) => [u.id, u]));
+
+    const data = forms.map((f) => {
+      const asset = f.relatedAssetId ? assetById.get(f.relatedAssetId) : null;
+      const author = userById.get(f.generatedById);
+      return {
+        ...f,
+        assetLabel: asset
+          ? `${asset.itemDescription}${asset.propertyNumber ? ` (${asset.propertyNumber})` : ''}`
+          : null,
+        requisitionNumber: f.relatedRequisitionId
+          ? (requisitionById.get(f.relatedRequisitionId)?.requestNumber ?? null)
+          : null,
+        generatedByName: author
+          ? `${author.firstName} ${author.lastName}`
+          : null,
+      };
     });
     return { data, total, page, limit };
   }
@@ -195,11 +265,25 @@ export class ReportsService {
     generatedById: string,
     userRole: UserRole,
     ipAddress: string,
+    range: ReportRange = {},
   ): Promise<{ buffer: Buffer; report: GeneratedReportEntity }> {
+    // Role matrix (CLAUDE.md 4): the audit trail is for the System Administrator
+    // and Management. The endpoint is open to IT and the property custodian for
+    // the other reports, so this one is checked here.
+    if (
+      reportType === 'AUDIT_TRAIL' &&
+      userRole !== UserRole.SYSTEM_ADMIN &&
+      userRole !== UserRole.MANAGEMENT
+    ) {
+      throw new ForbiddenException(
+        'The audit trail report is limited to the System Administrator and Management',
+      );
+    }
+
     const buffer =
       format === 'PDF'
-        ? await this.buildPdfReport(reportType)
-        : await this.buildExcelReport(reportType);
+        ? await this.buildPdfReport(reportType, range)
+        : await this.buildExcelReport(reportType, range);
 
     const ext = format === 'PDF' ? 'pdf' : 'xlsx';
     const report = this.reportRepo.create({
@@ -224,8 +308,14 @@ export class ReportsService {
   }
 
   // ── PDF report builder ─────────────────────────────────────────────────────
-  private async buildPdfReport(reportType: string): Promise<Buffer> {
-    const { rows, headers, title } = await this.fetchReportData(reportType);
+  private async buildPdfReport(
+    reportType: string,
+    range: ReportRange,
+  ): Promise<Buffer> {
+    const { rows, headers, title } = await this.fetchReportData(
+      reportType,
+      range,
+    );
 
     return new Promise<Buffer>((resolve, reject) => {
       const doc = new PDFDocument({
@@ -250,7 +340,7 @@ export class ReportsService {
         .font('Helvetica')
         .fontSize(8)
         .text(
-          `Generated: ${new Date().toLocaleString('en-PH')}  |  Cybercrime Investigation and Coordinating Center`,
+          `Generated: ${new Date().toLocaleString('en-PH')}  |  ${this.systemConfig.getEntityName()}`,
           50,
           85,
         );
@@ -308,8 +398,14 @@ export class ReportsService {
   }
 
   // ── Excel report builder ───────────────────────────────────────────────────
-  private async buildExcelReport(reportType: string): Promise<Buffer> {
-    const { rows, headers, title } = await this.fetchReportData(reportType);
+  private async buildExcelReport(
+    reportType: string,
+    range: ReportRange,
+  ): Promise<Buffer> {
+    const { rows, headers, title } = await this.fetchReportData(
+      reportType,
+      range,
+    );
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'AIMRS — CICC';
@@ -331,7 +427,7 @@ export class ReportsService {
     // Generated date row
     sheet.mergeCells(2, 1, 2, headers.length);
     sheet.getCell(2, 1).value =
-      `Generated: ${new Date().toLocaleString('en-PH')} | CICC`;
+      `Generated: ${new Date().toLocaleString('en-PH')} | ${this.systemConfig.getEntityName()}`;
     sheet.getCell(2, 1).font = {
       italic: true,
       size: 9,
@@ -380,7 +476,10 @@ export class ReportsService {
   }
 
   // ── Data fetcher — returns typed rows for a given report type ─────────────
-  private async fetchReportData(reportType: string): Promise<{
+  private async fetchReportData(
+    reportType: string,
+    range: ReportRange = {},
+  ): Promise<{
     headers: string[];
     rows: (string | number | null)[][];
     title: string;
@@ -508,7 +607,10 @@ export class ReportsService {
       }
 
       case 'PHYSICAL_COUNT': {
+        // What is still on the books: disposed assets are gone, and the count
+        // sheet in the app already leaves them out.
         const assets = await this.assetRepo.find({
+          where: { status: Not(AssetStatus.DISPOSED) },
           order: { condition: 'ASC' },
         });
         return {
@@ -616,20 +718,53 @@ export class ReportsService {
         };
       }
 
-      default: {
-        const assets = await this.assetRepo.find({
-          order: { createdAt: 'DESC' },
-        });
+      // SVC: Improve - the audit trail as a document, for COA review.
+      case 'AUDIT_TRAIL': {
+        const { data: entries, total } = await this.auditService.findAll(
+          1,
+          AUDIT_REPORT_ROW_LIMIT,
+          undefined,
+          range.from,
+          range.to,
+        );
+        const users = entries.length
+          ? await this.userRepo.find({
+              where: { id: In([...new Set(entries.map((e) => e.userId))]) },
+            })
+          : [];
+        const byId = new Map(users.map((u) => [u.id, u]));
+        const who = (id: string) => {
+          const u = byId.get(id);
+          return u ? `${u.firstName} ${u.lastName} (${u.employeeId})` : id;
+        };
         return {
-          title: reportType.replaceAll('_', ' '),
-          headers: ['Property #', 'Description', 'Status'],
-          rows: assets.map((a) => [
-            a.propertyNumber ?? '—',
-            a.itemDescription,
-            a.status,
+          title:
+            total > entries.length
+              ? `Audit Trail Report (latest ${entries.length.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} entries)`
+              : 'Audit Trail Report',
+          headers: [
+            'Timestamp (UTC)',
+            'User',
+            'Role',
+            'Action',
+            'Record Type',
+            'Record ID',
+            'IP Address',
+          ],
+          rows: entries.map((e) => [
+            e.timestamp.toISOString().slice(0, 19).replace('T', ' '),
+            who(e.userId),
+            e.userRole,
+            e.action,
+            e.affectedRecordType,
+            e.affectedRecordId,
+            e.ipAddress,
           ]),
         };
       }
+
+      default:
+        throw new BadRequestException(`Unknown report type: ${reportType}`);
     }
   }
 
@@ -661,6 +796,59 @@ export class ReportsService {
     generatedById: string,
     userRole: UserRole,
     ipAddress: string,
+  ): Promise<{ form: GeneratedFormEntity; buffer: Buffer }> {
+    const series = DOCUMENT_SERIES[input.formType];
+    const identity = {
+      entityName: this.systemConfig.getEntityName(),
+      fundCluster: this.systemConfig.getFundCluster(),
+    };
+
+    // The number is taken and the form stored in one transaction: a form that
+    // fails to generate (no custodian, unknown asset) hands its number back
+    // instead of leaving a hole in the series.
+    const saved = await this.formRepo.manager.transaction(async (em) => {
+      const documentNumber = series
+        ? await allocateDocumentNumber(em, series, new Date().getFullYear())
+        : null;
+      // The agency name, Fund Cluster and number in the header are read by the
+      // generators from the request's context rather than fixed text.
+      return withFormIdentity(
+        { ...identity, documentNumber: documentNumber ?? undefined },
+        () =>
+          this.buildFormRecord(
+            input,
+            generatedById,
+            documentNumber,
+            em.getRepository(GeneratedFormEntity),
+          ),
+      );
+    });
+
+    // After the commit, so the trail never records a form that was rolled back.
+    await this.auditService.log({
+      userId: generatedById,
+      userRole,
+      action: AuditAction.FORM_GENERATED,
+      affectedRecordId: saved.form.id,
+      affectedRecordType: 'form',
+      ipAddress,
+      metadata: {
+        formType: input.formType,
+        documentNumber: saved.form.documentNumber ?? undefined,
+        assetId: input.assetId,
+        requisitionId: input.requisitionId,
+        assetRequestId: input.assetRequestId,
+      },
+    });
+
+    return saved;
+  }
+
+  private async buildFormRecord(
+    input: GenerateFormInput,
+    generatedById: string,
+    documentNumber: string | null,
+    formRepo: Repository<GeneratedFormEntity>,
   ): Promise<{ form: GeneratedFormEntity; buffer: Buffer }> {
     const { formType } = input;
     let buffer: Buffer;
@@ -703,6 +891,16 @@ export class ReportsService {
           throw new NotFoundException(`User ${input.returneeId} not found`);
         return u;
       }
+      if (input.returneeEmployeeId) {
+        const u = await this.userRepo.findOne({
+          where: { employeeId: input.returneeEmployeeId },
+        });
+        if (!u)
+          throw new NotFoundException(
+            `No employee with ID ${input.returneeEmployeeId}`,
+          );
+        return u;
+      }
       if (asset.custodianId) return getCustodian(asset);
       const lastReturn = await this.assetRequestRepo.findOne({
         where: {
@@ -712,10 +910,22 @@ export class ReportsService {
         },
         order: { completedAt: 'DESC' },
       });
-      const u = lastReturn ? await getUser(lastReturn.requestedById) : null;
+      // A unit collected by a replacement requisition never had a return
+      // request: the holder is whoever asked for its replacement.
+      const replacement = lastReturn
+        ? null
+        : await this.reqRepo.findOne({
+            where: {
+              replacedAssetId: asset.id,
+              status: RequisitionStatus.FULFILLED,
+            },
+            order: { fulfilledAt: 'DESC' },
+          });
+      const holderId = lastReturn?.requestedById ?? replacement?.requestedById;
+      const u = await getUser(holderId);
       if (!u) {
         throw new NotFoundException(
-          `Asset ${asset.id} has no current custodian or completed return request — specify the returnee.`,
+          `Asset ${asset.id} has no current custodian or completed return — enter the returnee's employee ID.`,
         );
       }
       return u;
@@ -758,10 +968,16 @@ export class ReportsService {
       case OfficialFormType.PTR: {
         const asset = await getAsset(input.assetId);
         const releasingOfficer = await getIssuer();
+        // A transfer report with no destination is not a report; the form used
+        // to print the placeholder "Target Office/Section" instead.
+        if (!input.targetOffice?.trim())
+          throw new BadRequestException(
+            'targetOffice is required for a Property Transfer Report',
+          );
         buffer = await generatePTR(
           asset,
           releasingOfficer,
-          input.targetOffice ?? 'Target Office/Section',
+          input.targetOffice.trim(),
         );
         break;
       }
@@ -775,7 +991,15 @@ export class ReportsService {
 
       case OfficialFormType.RLSDDP: {
         const asset = await getAsset(input.assetId);
-        const officer = await getIssuer();
+        // The accountable officer is whoever holds the property (the requester,
+        // when Returns & Incidents generates it after custody was cleared), not
+        // the custodian who happens to be generating the report.
+        const officer =
+          input.returneeId || input.returneeEmployeeId
+            ? await getReturnee(asset)
+            : asset.custodianId
+              ? await getCustodian(asset)
+              : await getIssuer();
         buffer = await generateRLSSDDP(
           asset,
           officer,
@@ -870,15 +1094,40 @@ export class ReportsService {
           relations: { items: true },
           order: { fulfilledAt: 'ASC' },
         });
-        const items = reqs.flatMap((r) =>
-          r.items.map((i) => ({
-            requestNumber: r.requestNumber,
-            itemDescription: i.itemDescription,
-            assetType: i.assetType,
-            quantity: i.quantity,
-            acquisitionCost: 0,
-          })),
+        // Supplies only: the report is of supplies and materials, and a
+        // laptop or a desk in the same requisition belongs on the PAR/ICS.
+        const supplyLines = reqs.flatMap((r) =>
+          r.items
+            .filter((i) => i.assetClass === AssetClass.IES)
+            .map((i) => ({ requestNumber: r.requestNumber, line: i })),
         );
+        // Unit cost and stock number come from the stock the line was issued
+        // from; a line fulfilled before stock was linked has neither.
+        const stockIds = [
+          ...new Set(
+            supplyLines.flatMap(({ line }) =>
+              line.fulfilledAssetId ? [line.fulfilledAssetId] : [],
+            ),
+          ),
+        ];
+        const stock = stockIds.length
+          ? await this.assetRepo.find({ where: { id: In(stockIds) } })
+          : [];
+        const stockById = new Map(stock.map((a) => [a.id, a]));
+        const items = supplyLines.map(({ requestNumber, line }) => {
+          const unit = line.fulfilledAssetId
+            ? stockById.get(line.fulfilledAssetId)
+            : undefined;
+          return {
+            requestNumber,
+            itemDescription: line.itemDescription,
+            assetType: line.assetType,
+            quantity: line.quantity,
+            // Postgres returns decimals as strings.
+            acquisitionCost: unit ? Number(unit.acquisitionCost) : null,
+            stockNumber: unit?.itemCode || null,
+          };
+        });
         buffer = await generateRSMI(items, from, to);
         break;
       }
@@ -944,6 +1193,21 @@ export class ReportsService {
           const d = a.createdAt ? new Date(a.createdAt) : null;
           return d && d >= from && d <= to;
         });
+        // The ICS an item was issued under is the one stored with it, oldest
+        // first so a re-issue's later number wins.
+        const icsForms = filtered.length
+          ? await this.formRepo.find({
+              where: {
+                formType: OfficialFormType.ICS,
+                relatedAssetId: In(filtered.map((a) => a.id)),
+              },
+              select: { relatedAssetId: true, documentNumber: true },
+              order: { generatedAt: 'ASC' },
+            })
+          : [];
+        const icsNumber = new Map(
+          icsForms.map((f) => [f.relatedAssetId, f.documentNumber]),
+        );
         const enriched = await Promise.all(
           filtered.map(async (a) => {
             const custodian = a.custodianId
@@ -954,6 +1218,7 @@ export class ReportsService {
               custodianName: custodian
                 ? `${custodian.firstName} ${custodian.lastName}`
                 : undefined,
+              icsNumber: icsNumber.get(a.id) ?? null,
             };
           }),
         );
@@ -968,8 +1233,9 @@ export class ReportsService {
     }
 
     // ── Persist form record with PDF content ──────────────────────────────
-    const form = this.formRepo.create({
+    const form = formRepo.create({
       formType,
+      documentNumber,
       relatedAssetId: input.assetId ?? null,
       relatedRequisitionId: input.requisitionId ?? null,
       relatedAssetRequestId: input.assetRequestId ?? null,
@@ -977,22 +1243,7 @@ export class ReportsService {
       generatedById,
       pdfContent: buffer,
     });
-    const saved = await this.formRepo.save(form);
-
-    await this.auditService.log({
-      userId: generatedById,
-      userRole,
-      action: AuditAction.FORM_GENERATED,
-      affectedRecordId: saved.id,
-      affectedRecordType: 'form',
-      ipAddress,
-      metadata: {
-        formType,
-        assetId: input.assetId,
-        requisitionId: input.requisitionId,
-        assetRequestId: input.assetRequestId,
-      },
-    });
+    const saved = await formRepo.save(form);
 
     return { form: saved, buffer };
   }

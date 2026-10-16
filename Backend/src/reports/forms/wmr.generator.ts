@@ -8,6 +8,8 @@ import {
   drawSignatureBlock,
   phpFormat,
   fmtDate,
+  identityFields,
+  conditionLabel,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — WMR documents waste/unserviceable materials for a period (Appendix 65)
@@ -33,11 +35,7 @@ export async function generateWMR(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'Period', value: `${fmtDate(dateFrom)} to ${fmtDate(dateTo)}` },
       { label: 'Date Generated', value: fmtDate(new Date()) },
     ],
@@ -51,7 +49,7 @@ export async function generateWMR(
     a.itemDescription + (a.brand ? ' / ' + a.brand : ''),
     '1',
     phpFormat(a.acquisitionCost),
-    a.condition,
+    conditionLabel(a.condition),
   ]);
 
   y = drawTable(

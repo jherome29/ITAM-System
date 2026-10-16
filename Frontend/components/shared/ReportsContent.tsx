@@ -1,25 +1,28 @@
 'use client';
 
 import { useState } from 'react';
-import { BarChart2, Download } from 'lucide-react';
+import { Download } from 'lucide-react';
+import { AdminPageHeader, Panel, PrimaryButton } from '@/components/admin/AdminUi';
+import { apiErrorMessage } from '@/lib/api/error-message';
 import { reportsApi } from '@/lib/api/reports';
-import { PageHeader } from '@/components/ui/PageHeader';
+import { downloadBlob } from '@/lib/download';
 
 const ALL_REPORT_TYPES = [
-  { value: 'ASSET_MASTER_LIST', label: 'Asset Master List', formats: ['pdf', 'excel'] as const },
-  { value: 'REQUISITION_HISTORY', label: 'Requisition History Log', formats: ['pdf', 'excel'] as const },
-  { value: 'ASSET_ISSUANCE', label: 'Asset Issuance Record', formats: ['pdf'] as const },
-  { value: 'ASSET_RETURN', label: 'Asset Return Record', formats: ['pdf'] as const },
-  { value: 'PHYSICAL_COUNT', label: 'Physical Count Summary', formats: ['pdf', 'excel'] as const },
-  { value: 'DISPOSAL', label: 'Disposal Documentation Report', formats: ['pdf'] as const },
-  { value: 'REPAIR_HISTORY', label: 'Repair History', formats: ['pdf', 'excel'] as const },
+  { value: 'ASSET_MASTER_LIST', label: 'Asset Master List', detail: 'Every asset with its class, status, location and cost.', formats: ['pdf', 'excel'] as const },
+  { value: 'REQUISITION_HISTORY', label: 'Requisition History Log', detail: 'Requisitions with their status, dates and items.', formats: ['pdf', 'excel'] as const },
+  { value: 'ASSET_ISSUANCE', label: 'Asset Issuance Record', detail: 'Assets issued to personnel.', formats: ['pdf'] as const },
+  { value: 'ASSET_RETURN', label: 'Asset Return Record', detail: 'Assets returned to custody.', formats: ['pdf'] as const },
+  { value: 'PHYSICAL_COUNT', label: 'Physical Count Summary', detail: 'Assets on the books, with condition and location. Disposed assets are left out.', formats: ['pdf', 'excel'] as const },
+  { value: 'DISPOSAL', label: 'Disposal Documentation Report', detail: 'Assets flagged for disposal or disposed.', formats: ['pdf'] as const },
+  { value: 'REPAIR_HISTORY', label: 'Repair History', detail: 'Repairs with turnaround, outcome and repeat repairs.', formats: ['pdf', 'excel'] as const },
 ];
 
 export function ReportsContent({
+  eyebrow,
   reportTypes,
   pageTitle = 'Generate Reports',
   panelTitle = 'Management Reports',
-}: Readonly<{ reportTypes?: string[]; pageTitle?: string; panelTitle?: string }>) {
+}: Readonly<{ eyebrow: string; reportTypes?: string[]; pageTitle?: string; panelTitle?: string }>) {
   const REPORT_TYPES = reportTypes ? ALL_REPORT_TYPES.filter((r) => reportTypes.includes(r.value)) : ALL_REPORT_TYPES;
   const [selectedReport, setSelectedReport] = useState('');
   const [format, setFormat] = useState<'pdf' | 'excel'>('pdf');
@@ -38,64 +41,80 @@ export function ReportsContent({
     try {
       const blob = await reportsApi.generate({ reportType: selectedReport, format });
       const ext = format === 'excel' ? 'xlsx' : 'pdf';
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${selectedReport}-${new Date().toISOString().slice(0, 10)}.${ext}`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setSuccess(`${currentReport?.label} downloaded successfully.`);
-    } catch {
-      setError('Failed to generate report. Please try again.');
+      downloadBlob(blob, `${selectedReport}-${new Date().toISOString().slice(0, 10)}.${ext}`);
+      setSuccess(`${currentReport?.label} downloaded.`);
+    } catch (err) {
+      setError(await apiErrorMessage(err, 'Failed to generate the report. Please try again.'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <PageHeader title={pageTitle} />
-      <div className="bg-white rounded-lg shadow-sm border border-blue-200">
-        <div className="p-5 border-b border-blue-200 bg-blue-50 flex items-center gap-2">
-          <BarChart2 className="w-5 h-5 text-[#1a4d7a]" />
-          <h2 className="text-base font-semibold text-[#1a4d7a]">{panelTitle}</h2>
-        </div>
-        <form onSubmit={handleGenerate} className="p-6 space-y-5">
-          {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">{error}</div>}
-          {success && <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-md px-4 py-3">{success}</div>}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Report Type</label>
-            <div className="space-y-2">
+    <div className="space-y-4">
+      <AdminPageHeader eyebrow={eyebrow} title={pageTitle} detail="Reports are generated from live records at the moment you download them." />
+      <Panel title={panelTitle} detail={`${REPORT_TYPES.length} ${REPORT_TYPES.length === 1 ? 'report' : 'reports'} available`}>
+        <form onSubmit={(event) => void handleGenerate(event)} className="space-y-5 p-4">
+          {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
+          {success && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{success}</div>}
+
+          <fieldset>
+            <legend className="mb-2 text-xs font-bold text-slate-600">Report</legend>
+            <div className="grid gap-3 md:grid-cols-2">
               {REPORT_TYPES.map((r) => (
-                <label key={r.value} className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${selectedReport === r.value ? 'border-[#1a4d7a] bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
-                  <input type="radio" name="reportType" value={r.value} checked={selectedReport === r.value} onChange={() => { setSelectedReport(r.value); setFormat(r.formats[0]); }} />
-                  <span className="text-sm text-gray-800">{r.label}</span>
-                  <span className="ml-auto text-xs text-gray-400">{r.formats.join(' / ').toUpperCase()}</span>
+                <label
+                  key={r.value}
+                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-blue-700 ${
+                    selectedReport === r.value ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-600' : 'border-slate-200 bg-white hover:border-blue-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="reportType"
+                    value={r.value}
+                    checked={selectedReport === r.value}
+                    onChange={() => {
+                      setSelectedReport(r.value);
+                      setFormat(r.formats[0]);
+                    }}
+                    className="mt-1 accent-blue-700"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-bold text-slate-950">{r.label}</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">{r.detail}</span>
+                  </span>
+                  <span className="flex-none rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-600 ring-1 ring-slate-200">{r.formats.join(' / ')}</span>
                 </label>
               ))}
             </div>
-          </div>
+          </fieldset>
+
           {currentReport && currentReport.formats.length > 1 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Format</label>
-              <div className="flex gap-3">
+            <fieldset>
+              <legend className="mb-2 text-xs font-bold text-slate-600">Format</legend>
+              <div className="flex gap-2">
                 {currentReport.formats.map((f) => (
-                  <label key={f} className={`flex items-center gap-2 px-4 py-2 border rounded-md cursor-pointer text-sm transition-colors ${format === f ? 'border-[#1a4d7a] bg-blue-50 text-[#1a4d7a] font-medium' : 'border-gray-200 text-gray-700 hover:border-gray-300'}`}>
+                  <label
+                    key={f}
+                    className={`flex h-9 cursor-pointer items-center rounded-md border px-4 text-sm font-semibold focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-blue-700 ${
+                      format === f ? 'border-blue-600 bg-blue-50 text-blue-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
                     <input type="radio" name="format" value={f} checked={format === f} onChange={() => setFormat(f)} className="sr-only" />
                     {f.toUpperCase()}
                   </label>
                 ))}
               </div>
-            </div>
+            </fieldset>
           )}
-          <div className="pt-2">
-            <button type="submit" disabled={loading || !selectedReport} className="flex items-center gap-2 bg-[#1a4d7a] text-white px-6 py-2 rounded-md text-sm font-medium hover:bg-[#143d61] disabled:opacity-60 transition-colors">
-              <Download className="w-4 h-4" />
-              {loading ? 'Generating...' : 'Generate Report'}
-            </button>
+
+          <div className="border-t border-slate-100 pt-4">
+            <PrimaryButton type="submit" icon={Download} disabled={loading || !selectedReport}>
+              {loading ? 'Generating…' : 'Generate report'}
+            </PrimaryButton>
           </div>
         </form>
-      </div>
+      </Panel>
     </div>
   );
 }

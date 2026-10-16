@@ -5,6 +5,10 @@ bottlenecks early; the formal JMeter run across all six workflow scenarios
 (login, requisition, dashboard, QR scan, approval, report) is the
 Testing-&-Evaluation phase deliverable (CLAUDE.md §12).
 
+## Last result
+
+**2026-09-06** (single contended machine): 362 VUs, 22,962 requests, 0 failures, p95 758 ms. **Not re-run since:** the October changes (holder lookups on the asset list, audit names, scope checks) have not been load-tested, so re-run it before quoting the number. The DB query itself is about 1 ms; the ceiling is the single Node event loop, so if the formal JMeter run confirms it, the answer is 2–4 backend replicas behind a load balancer, not a rewrite.
+
 ## What it measures
 
 Authenticated read traffic on `GET /api/v1/assets` — the heaviest common read
@@ -49,7 +53,8 @@ docker compose down -v
   absolute numbers are pessimistic vs a real multi-host deployment.
 - Only one endpoint / one workflow. The formal test exercises all six.
 - No requisition-volume seed yet — add before load-testing the requisition and
-  dashboard endpoints.
+  dashboard endpoints. (PR #107's demo seeder, `npm run seed:demo`, loads realistic requisitions and
+  requests through the real API; it is not a volume seeder, but it is a start.)
 
 ## CI
 

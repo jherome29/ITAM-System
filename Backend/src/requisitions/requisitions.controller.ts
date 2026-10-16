@@ -113,6 +113,22 @@ export class RequisitionsController {
   }
 
   /**
+   * GET /api/v1/requisitions/fulfilment-fallback
+   * Open requisitions filed by the custodian who would fulfil them - kept out of
+   * that custodian's own queue (segregation of duties), so the System
+   * Administrator is the fallback, for exactly these. Declared before `:id`.
+   */
+  @Get('fulfilment-fallback')
+  @Roles(UserRole.SYSTEM_ADMIN)
+  async findFulfilmentFallback() {
+    const result = await this.svc.fulfilmentFallback();
+    return {
+      message: 'Requisitions awaiting the fallback fulfiller',
+      data: result,
+    };
+  }
+
+  /**
    * GET /api/v1/requisitions/stats
    * Per-user counts by status + role-specific extras.
    * Employee → own counts. Supervisor → + pending queue. IT → + fulfillment queue.
@@ -212,11 +228,19 @@ export class RequisitionsController {
 
   /**
    * POST /api/v1/requisitions
-   * Submit a new requisition — Employee, Supervisor, IT Personnel
+   * Submit a new requisition - Employee, Supervisor, IT Personnel, Property
+   * Custodian, Property Officer. Management (read-only oversight) and the System
+   * Administrator (who can approve any requisition) do not file.
    * Status on creation: pending_supervisor
    */
   @Post()
-  @Roles(UserRole.EMPLOYEE, UserRole.SUPERVISOR, UserRole.IT_PERSONNEL)
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
   async create(@Body() dto: CreateRequisitionDto, @Req() req: AuthReq) {
     const result = await this.svc.create(
       dto,
@@ -283,7 +307,13 @@ export class RequisitionsController {
    */
   @Post(':id/hold')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
+  // The System Administrator only for a custodian's own requisition (the service
+  // refuses any other).
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.SYSTEM_ADMIN,
+  )
   async putOnHold(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('reason') reason: string,
@@ -306,7 +336,13 @@ export class RequisitionsController {
    */
   @Post(':id/fulfill')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
+  // The System Administrator only for a custodian's own requisition (the service
+  // refuses any other).
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.SYSTEM_ADMIN,
+  )
   async fulfill(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: FulfillRequisitionDto,

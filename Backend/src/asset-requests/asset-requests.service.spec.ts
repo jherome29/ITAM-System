@@ -11,6 +11,7 @@ import {
   completionTargetStatus,
   requiredDocuments,
   clearsAccountability,
+  requestDateProblem,
   supersededRequests,
 } from './asset-requests.service';
 import { AssetRequestEntity } from './entities/asset-request.entity';
@@ -382,6 +383,58 @@ describe('AssetRequestsService', () => {
     });
   });
 
+  // The form already refuses a future "when did it happen" date and a hand-over
+  // date in the past, but only the form did: the API took both, so the seeded
+  // repair AR-2026-0002 says its problem started three days from now.
+  describe('requestDateProblem()', () => {
+    const today = '2026-10-16';
+    const incidents = [
+      AssetRequestType.REPAIR,
+      AssetRequestType.DAMAGE,
+      AssetRequestType.LOSS,
+      AssetRequestType.THEFT,
+    ];
+
+    it.each(incidents)(
+      '%s: an incident cannot have happened in the future',
+      (type) => {
+        expect(requestDateProblem(type, '2026-10-17', today)).toMatch(
+          /future/i,
+        );
+      },
+    );
+
+    it.each(incidents)('%s: today and earlier are fine', (type) => {
+      expect(requestDateProblem(type, '2026-10-16', today)).toBeNull();
+      expect(requestDateProblem(type, '2026-09-01', today)).toBeNull();
+    });
+
+    it('a return cannot be scheduled for a day that has passed', () => {
+      expect(
+        requestDateProblem(AssetRequestType.RETURN, '2026-10-15', today),
+      ).toMatch(/past/i);
+    });
+
+    it('a return today or later is fine', () => {
+      expect(
+        requestDateProblem(AssetRequestType.RETURN, '2026-10-16', today),
+      ).toBeNull();
+      expect(
+        requestDateProblem(AssetRequestType.RETURN, '2026-12-31', today),
+      ).toBeNull();
+    });
+
+    it('reads the day from a full ISO string', () => {
+      expect(
+        requestDateProblem(
+          AssetRequestType.LOSS,
+          '2026-10-17T00:00:00.000Z',
+          today,
+        ),
+      ).toMatch(/future/i);
+    });
+  });
+
   describe('create()', () => {
     const dto = {
       assetId: 'asset-1',
@@ -390,9 +443,45 @@ describe('AssetRequestsService', () => {
       details: 'Project finished, returning the laptop',
     };
 
+    // Only the date is faked: the return date rule below compares against today.
+    beforeAll(() => {
+      jest.useFakeTimers({
+        now: new Date('2026-10-15T04:00:00Z'),
+        doNotFake: [
+          'nextTick',
+          'setImmediate',
+          'clearImmediate',
+          'setTimeout',
+          'clearTimeout',
+          'setInterval',
+          'clearInterval',
+          'queueMicrotask',
+        ],
+      });
+    });
+    afterAll(() => jest.useRealTimers());
+
     beforeEach(() => {
       txAssetRepo.findOne.mockResolvedValue(ictAsset());
       txReqRepo.find.mockResolvedValue([]);
+    });
+
+    it('rejects an incident dated in the future before touching the database', async () => {
+      await expect(
+        service.create(
+          { ...dto, type: AssetRequestType.LOSS, preferredDate: '2026-10-19' },
+          [],
+          EMP,
+          'ip',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(txAssetRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('rejects a return scheduled in the past', async () => {
+      await expect(
+        service.create({ ...dto, preferredDate: '2026-10-10' }, [], EMP, 'ip'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('rejects a request on an asset not issued to the caller', async () => {
@@ -465,7 +554,7 @@ describe('AssetRequestsService', () => {
       current = makeReq({ type: AssetRequestType.LOSS });
 
       await service.create(
-        { ...dto, type: AssetRequestType.LOSS },
+        { ...dto, type: AssetRequestType.LOSS, preferredDate: '2026-10-10' },
         [],
         EMP,
         'ip',
@@ -752,7 +841,8 @@ describe('AssetRequestsService', () => {
         {
           assetId: 'asset-1',
           type: AssetRequestType.REPAIR,
-          preferredDate: '2026-10-20',
+          // When the problem started: in the past, as the rules require.
+          preferredDate: '2026-10-10',
           details: 'Keyboard keys stopped responding',
         },
         [],

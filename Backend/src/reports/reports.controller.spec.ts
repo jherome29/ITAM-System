@@ -1,7 +1,9 @@
-import { ReportsController } from './reports.controller';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { GenerateReportDto, ReportsController } from './reports.controller';
 import type { ReportsService } from './reports.service';
 import type { Response } from 'express';
-import { UserRole } from '../../../packages/shared/src/enums';
+import { ReportType, UserRole } from '../../../packages/shared/src/enums';
 import type { UserEntity } from '../users/entities/user.entity';
 
 // GenerateReportDto and AuthReq are module-private, so the bodies below are
@@ -41,17 +43,18 @@ describe('ReportsController — generate', () => {
     const controller = new ReportsController(service);
 
     await controller.generate(
-      { reportType: 'asset_master_list', format: wire },
+      { reportType: ReportType.ASSET_MASTER_LIST, format: wire },
       makeReq(),
       makeRes(),
     );
 
     expect(service.generate).toHaveBeenCalledWith(
-      'asset_master_list',
+      ReportType.ASSET_MASTER_LIST,
       expected,
       'user-1',
       UserRole.IT_PERSONNEL,
       '10.0.0.1',
+      { from: undefined, to: undefined },
     );
   });
 
@@ -60,7 +63,7 @@ describe('ReportsController — generate', () => {
     const res = makeRes();
 
     await new ReportsController(service).generate(
-      { reportType: 'asset_master_list', format: 'excel' },
+      { reportType: ReportType.ASSET_MASTER_LIST, format: 'excel' },
       makeReq(),
       res,
     );
@@ -78,7 +81,7 @@ describe('ReportsController — generate', () => {
     const res = makeRes();
 
     await new ReportsController(service).generate(
-      { reportType: 'audit_trail', format: 'pdf' },
+      { reportType: ReportType.AUDIT_TRAIL, format: 'pdf' },
       makeReq(),
       res,
     );
@@ -86,5 +89,79 @@ describe('ReportsController — generate', () => {
     const headers = res.set.mock.calls[0][0] as Record<string, string>;
     expect(headers['Content-Type']).toBe('application/pdf');
     expect(headers['Content-Disposition']).toMatch(/\.pdf"$/);
+  });
+});
+
+// The report type used to be a free string: an unknown one came back as a 200
+// asset list under the name that was asked for.
+describe('GenerateReportDto', () => {
+  const errorsFor = async (body: object) =>
+    (await validate(plainToInstance(GenerateReportDto, body))).map(
+      (e) => e.property,
+    );
+
+  it('accepts every report type the system offers', async () => {
+    for (const reportType of Object.values(ReportType)) {
+      expect(await errorsFor({ reportType, format: 'pdf' })).toEqual([]);
+    }
+  });
+
+  it.each(['SOMETHING_ELSE', 'asset_master_list', ''])(
+    'rejects the report type "%s"',
+    async (reportType) => {
+      expect(await errorsFor({ reportType, format: 'pdf' })).toEqual([
+        'reportType',
+      ]);
+    },
+  );
+
+  it('takes a period as YYYY-MM-DD and rejects anything else', async () => {
+    const ok = { reportType: ReportType.AUDIT_TRAIL, format: 'pdf' };
+    expect(
+      await errorsFor({ ...ok, dateFrom: '2026-10-01', dateTo: '2026-10-15' }),
+    ).toEqual([]);
+    expect(await errorsFor({ ...ok, dateFrom: '10/01/2026' })).toEqual([
+      'dateFrom',
+    ]);
+  });
+});
+
+// The number a form was given is what people quote and file it under, so the
+// download carries it: as the file name, and as a header the page can read.
+describe('ReportsController - generateForm', () => {
+  const makeService = (documentNumber: string | null) =>
+    ({
+      generateFormRecord: jest.fn().mockResolvedValue({
+        buffer: Buffer.from('%PDF'),
+        form: { id: 'f-1', formType: 'PAR', documentNumber },
+      }),
+    }) as unknown as ReportsService & { generateFormRecord: jest.Mock };
+
+  const run = async (documentNumber: string | null) => {
+    const res = makeRes();
+    await new ReportsController(makeService(documentNumber)).generateForm(
+      { formType: 'PAR' as never },
+      makeReq(),
+      res,
+    );
+    return res.set.mock.calls[0][0] as Record<string, string | number>;
+  };
+
+  it('names the file after the document number and exposes the number', async () => {
+    const headers = await run('PAR-2026-0007');
+
+    expect(headers['Content-Disposition']).toBe(
+      'attachment; filename="PAR-2026-0007.pdf"',
+    );
+    expect(headers['X-Document-Number']).toBe('PAR-2026-0007');
+  });
+
+  it('falls back to the form type and date for a form that is not numbered', async () => {
+    const headers = await run(null);
+
+    expect(headers['Content-Disposition']).toMatch(
+      /^attachment; filename="PAR-\d{4}-\d{2}-\d{2}\.pdf"$/,
+    );
+    expect(headers['X-Document-Number']).toBeUndefined();
   });
 });

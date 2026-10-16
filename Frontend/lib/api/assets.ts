@@ -29,6 +29,17 @@ export interface Asset {
   quantity: number;
   reorderLevel: number | null;
   expectedReturnDate: string | null;
+  /** Lists only: while transferred, where the latest transfer sent it (its location column still shows where it came from). */
+  transferredTo?: string | null;
+  /** The asset's own record only: its transfers and other moves, with destinations. */
+  locationHistory?: Array<{
+    id: string;
+    action: string;
+    fromLocation: string | null;
+    toLocation: string | null;
+    notes: string | null;
+    timestamp: string;
+  }>;
   createdAt: string;
   updatedAt: string;
 }
@@ -109,6 +120,8 @@ export interface UpdateLifecycleDto {
   toLocation?: string; // For TRANSFERRED — receiving office/section
   fromLocation?: string;
   expectedReturnDate?: string; // For ISSUED — arms the overdue-return watcher
+  officeOrSection?: string; // Arrival (transferred → available) — where it now sits
+  officeLocation?: string; // Arrival (transferred → available) — room / floor
 }
 
 export interface UpdateAssetDto {

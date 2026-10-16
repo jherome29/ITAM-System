@@ -48,4 +48,17 @@ export class UpdateLifecycleDto {
   @IsOptional()
   @IsDateString()
   expectedReturnDate?: string; // set on ISSUED for loaned assets; drives OVERDUE_RETURN
+
+  // Used only when a transferred asset arrives (transferred → available): the
+  // office/section and room it now sits in, so the registry matches reality.
+  // Ignored on every other transition.
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  officeOrSection?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  officeLocation?: string;
 }

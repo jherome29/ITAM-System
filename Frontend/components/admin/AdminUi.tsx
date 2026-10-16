@@ -128,10 +128,12 @@ export function SearchToolbar({
   filterValue = 'All',
   filterOptions = ['All'],
   onFilterChange,
+  placeholder = 'Search by name, code, office, or status',
   children,
 }: Readonly<{
   value: string;
   onChange: (value: string) => void;
+  placeholder?: string;
   filterLabel?: string;
   filterValue?: string;
   filterOptions?: FilterOption[];
@@ -143,7 +145,7 @@ export function SearchToolbar({
       <label className="relative min-w-0 flex-1 sm:max-w-sm">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <span className="sr-only">Search records</span>
-        <input value={value} onChange={(event) => onChange(event.target.value)} placeholder="Search by name, code, office, or status" className="h-10 w-full rounded-md border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+        <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-label={placeholder} className="h-10 w-full rounded-md border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
       </label>
       <label className="relative flex h-10 min-w-44 items-center rounded-md border border-slate-200 bg-white pl-9 text-sm font-semibold text-slate-700">
         <SlidersHorizontal className="pointer-events-none absolute left-3 h-4 w-4" />

@@ -25,13 +25,25 @@ export function requisitionStatusLabel(status: string): string {
 // Newer ICU puts a narrow no-break space before AM/PM; normalise to a space.
 const tidy = (s: string) => s.replaceAll(' ', ' ');
 
-/** Date-only values (e.g. requiredDate "2026-10-14") are calendar days — format
- *  them in UTC so the day never shifts with the viewer's timezone. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_FORMAT: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
+
+/** A day, for a list column or a sentence.
+ *
+ *  A date-only value (e.g. requiredDate "2026-10-14") is a calendar day — format
+ *  it in UTC so the day never shifts with the viewer's timezone. A full timestamp
+ *  is an event: show the day it happened on in CICC's own time. Reading the UTC
+ *  date out of a timestamp (as this used to) printed the previous day for
+ *  anything between midnight and 8 AM Manila time, while the drawers, which use
+ *  formatDateTime, were right. */
 export function formatDate(value: string | null | undefined): string {
   if (!value) return '—';
-  const day = /^\d{4}-\d{2}-\d{2}/.exec(value)?.[0];
-  if (!day) return '—';
-  return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  if (DATE_ONLY.test(value)) {
+    return new Date(`${value}T00:00:00Z`).toLocaleDateString('en-US', { ...DAY_FORMAT, timeZone: 'UTC' });
+  }
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-US', { ...DAY_FORMAT, timeZone: TZ });
 }
 
 export function formatDateTime(value: string | null | undefined): string {

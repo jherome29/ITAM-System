@@ -1,5 +1,14 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min, ValidateNested } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
 
 export class UsefulLifeYearsDto {
   @IsInt()
@@ -42,6 +51,19 @@ export class UpdateSystemConfigDto {
   @Min(2)
   @Max(20)
   repeatRepairLimit?: number;
+
+  /** Agency name in the header of every official form. */
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(150)
+  entityName?: string;
+
+  /** Fund Cluster printed on the forms; an empty string clears it. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  fundCluster?: string;
 
   @IsOptional()
   @ValidateNested()

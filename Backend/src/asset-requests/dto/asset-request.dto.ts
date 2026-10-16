@@ -9,6 +9,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { AssetRequestType } from '../../../../packages/shared/src/enums';
 
 /** Body of POST /asset-requests (multipart — files travel as `attachments`). */
@@ -39,9 +40,20 @@ export class ApproveAssetRequestDto {
   notes?: string;
 }
 
+/** Shortest rejection reason accepted; the screen enforces the same number. */
+export const MIN_REJECT_REASON_LENGTH = 10;
+
 export class RejectAssetRequestDto {
+  // The reason is the requester's only explanation and stays on the record, so
+  // "no" is not one. Counted after trimming, so padding does not help.
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @IsNotEmpty({ message: 'A reason is required to reject a request.' })
+  @MinLength(MIN_REJECT_REASON_LENGTH, {
+    message: `Give the requester a reason of at least ${MIN_REJECT_REASON_LENGTH} characters.`,
+  })
   @MaxLength(1000)
   reason!: string;
 }

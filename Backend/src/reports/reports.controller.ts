@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -12,13 +13,24 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { IsEnum, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsEnum,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+} from 'class-validator';
 import { Response } from 'express';
 import { ReportsService, GenerateFormInput } from './reports.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { UserRole, OfficialFormType } from '../../../packages/shared/src/enums';
+import {
+  UserRole,
+  OfficialFormType,
+  ReportType,
+} from '../../../packages/shared/src/enums';
 import { UserEntity } from '../users/entities/user.entity';
 
 interface AuthReq {
@@ -26,8 +38,19 @@ interface AuthReq {
   ip: string;
 }
 
-class GenerateReportDto {
-  @IsString() reportType!: string;
+export class GenerateReportDto {
+  // Anything else is a 400: this used to be a free string, and an unknown type
+  // came back as a 200 asset list under the requested name.
+  @IsEnum(ReportType) reportType!: ReportType;
+
+  // Period for the reports that take one (the audit trail); ignored by the rest.
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'dateFrom must be YYYY-MM-DD' })
+  dateFrom?: string;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'dateTo must be YYYY-MM-DD' })
+  dateTo?: string;
 
   // Accepted case-insensitively because the frontend sends 'pdf' / 'excel'
   // (Frontend/lib/api/reports.ts), while generated_reports.format carries a
@@ -53,6 +76,7 @@ class GenerateFormDto implements GenerateFormInput {
   @IsOptional() @IsString() purpose?: string;
   @IsOptional() @IsString() requestingDivision?: string;
   @IsOptional() @IsUUID() returneeId?: string;
+  @IsOptional() @IsString() returneeEmployeeId?: string;
   @IsOptional() @IsUUID() receiverId?: string;
   @IsOptional() @IsString() dateFrom?: string;
   @IsOptional() @IsString() dateTo?: string;
@@ -94,8 +118,21 @@ export class ReportsController {
     UserRole.PROPERTY_CUSTODIAN,
     UserRole.PROPERTY_OFFICER,
   )
-  async findAllForms(@Query('page') page = 1, @Query('limit') limit = 50) {
-    const result = await this.svc.findAllForms(+page, +limit);
+  async findAllForms(
+    @Query('page') page = 1,
+    @Query('limit') limit = 50,
+    @Query('formType') formType?: string,
+    @Query('search') search?: string,
+  ) {
+    if (
+      formType &&
+      !Object.values(OfficialFormType).includes(formType as OfficialFormType)
+    )
+      throw new BadRequestException(`Unknown form type: ${formType}`);
+    const result = await this.svc.findAllForms(+page, +limit, {
+      formType: formType as OfficialFormType | undefined,
+      search,
+    });
     return { message: 'Forms retrieved', data: result };
   }
 
@@ -138,6 +175,7 @@ export class ReportsController {
       req.user.id,
       req.user.role,
       req.ip,
+      { from: dto.dateFrom, to: dto.dateTo },
     );
     const isPdf = format === 'PDF';
     const ext = isPdf ? 'pdf' : 'xlsx';
@@ -198,17 +236,21 @@ export class ReportsController {
     @Req() req: AuthReq,
     @Res() res: Response,
   ) {
-    const buffer = await this.svc.generateForm(
+    const { form, buffer } = await this.svc.generateFormRecord(
       dto,
       req.user.id,
       req.user.role,
       req.ip,
     );
-    const filename = `${dto.formType}-${Date.now()}.pdf`;
+    // Filed and quoted by its number, so the file is named after it.
+    const filename = `${form.documentNumber ?? `${dto.formType}-${new Date().toISOString().slice(0, 10)}`}.pdf`;
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="${filename}"`,
       'Content-Length': buffer.length,
+      ...(form.documentNumber
+        ? { 'X-Document-Number': form.documentNumber }
+        : {}),
     });
     res.end(buffer);
   }
