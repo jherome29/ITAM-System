@@ -231,7 +231,7 @@ export function AssetRegistryList({
   };
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-5">
+    <div className="space-y-5">
       <PageHeader
         eyebrow={assetType === "Fixed" || assetType === "Supplies" ? "Property Custodian" : "IT Asset Custodian"}
         title={title}
@@ -271,7 +271,7 @@ export function AssetRegistryList({
             },
           ]}
         >
-          <div className="flex h-11 overflow-hidden rounded-md border border-slate-300" aria-label="Registry view">
+          <div className="flex h-11 w-fit overflow-hidden rounded-md border border-slate-300" aria-label="Registry view">
             <button
               type="button"
               onClick={() => setView("list")}

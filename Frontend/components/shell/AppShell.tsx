@@ -67,7 +67,7 @@ export function AppShell({ role, children }: Readonly<{ role: ProposedUserRole; 
       )}
       <div className={`${collapsed ? 'lg:pl-20' : 'lg:pl-72'} min-w-0 transition-all`}>
         <TopBar role={role} onMenuClick={() => setMobileOpen(true)} />
-        <main className="min-h-[calc(100vh-4rem)] min-w-0 overflow-x-hidden p-4 md:p-7">{children}</main>
+        <main className="min-h-[calc(100vh-4rem)] min-w-0 overflow-x-hidden p-4 md:p-7"><div className="mx-auto w-full max-w-[1480px]">{children}</div></main>
         <footer className="border-t border-slate-200 bg-white px-5 py-2 text-xs text-slate-500">
           AIMRS v1.0.0 - Cybercrime Investigation and Coordinating Center - ITIL 4 Asset Management
         </footer>

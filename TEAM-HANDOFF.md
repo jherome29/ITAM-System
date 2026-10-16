@@ -50,9 +50,11 @@ If you have an old local clone with a branch called `FE-Updated-not-finished`: t
 
 **Property Officer merged into Property Custodian (2026-10-16).** The Property Officer was a read-only subset of the Property Custodian, so the role was retired: schema `017` turns existing Property Officer accounts into Property Custodians (and invalidates their sessions); the `property_officer` value stays in the Postgres and shared `UserRole` enums, deprecated, because old audit rows carry it; no route grants it and the API refuses to assign it. The Replacement Validation and Disposal Review screens moved into the Property Custodian's menu. **`017` was applied to Supabase dev on 2026-10-16** and moved the one Property Officer account (`property.officer@cicc.gov.ph` until it was renamed `property.custodian2@cicc.gov.ph` the same day) to Property Custodian. Any other database needs it before a backend that includes this change runs against it, or a leftover Property Officer account is refused everywhere.
 
+**UI consistency and bigger text (2026-10-16, branch `refactor/ui-consistency`, no PR yet).** The client asked for bigger text, and the screens differed from page to page, so there is now one shared kit (`Frontend/components/ui/`), one type scale (`Frontend/app/globals.css`: nothing below 14px, body 16px) and a spec (`Frontend/lib/ui-consistency.spec.ts`) that fails the build when a screen goes around them. **Before you build a screen, read the "UI kit" table in CLAUDE.md §16.** The branch is stacked on #110, so merge #110 first and check the new PR's base reads `develop`.
+
 **Open items:** SonarCloud's quality gate fails ("C Reliability Rating on New Code") and the issue is not yet identified; see `NEXT-TIME.md`.
 
-**Health (2026-10-16):** every `CHECKS.md` item clean; backend 800 unit tests (96% statements) and 94 e2e tests on a real Postgres; frontend 333 tests. Screens and all 18 PDFs were also driven/rendered against a throwaway database.
+**Health (2026-10-16):** every `CHECKS.md` item clean; backend 800 unit tests (96% statements) and 94 e2e tests on a real Postgres; frontend 447 tests. Screens and all 18 PDFs were also driven/rendered against a throwaway database.
 
 For a one-screen state map see **`FEATURE-STATUS.md`** (✅ / 🟡 / 🔴 mock / ⬜); for the full path to CICC handover see **`PATH-TO-DONE.md`**; for the plain-language gap list see **`SYSTEM-STATUS.md`**; for a screen-by-screen mock inventory see **`MOCK-DATA-WIRING.md`** — all at the repo root.
 

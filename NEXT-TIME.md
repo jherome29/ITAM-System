@@ -21,10 +21,14 @@ properly, see `RUN-LOCAL.md` §11. Update this file at the end of every session.
   value stays in the Postgres and shared enums (deprecated: old audit rows carry it); no
   route grants it and the API refuses to assign it; Replacement Validation and Disposal
   Review are now in the Property Custodian's menu.
-- Health: backend 800 unit + 94 e2e tests, frontend 333, every `CHECKS.md` item clean.
+- **UI consistency and bigger text** is on branch `refactor/ui-consistency` (pushed, **no PR yet**). It is stacked on #110 (the Property Officer merge) and the two shell-branding commits, so it must wait for #110 and its PR base must read `develop`. Why: the client asked for bigger text after the last demo, and the screens were built one at a time (eight ways to print a date, six page titles, four input styles, three status badges, five filter rows). Now: the type scale lives in `Frontend/app/globals.css` (nothing below 14px, body 16px, controls 44px, sidebar 288px), the shared kit is `Frontend/components/ui/` (CLAUDE.md §16 has the "you need X, use Y" table), and `Frontend/lib/ui-consistency.spec.ts` fails the build when a screen goes around it. Five commits: dates and money helpers, type scale, form kit and filter row, chips / cards / panels / notices / dialogs and wording, then spacing and docs. Checked in a browser (1440, 1366, 820, 390 wide) against a throwaway database as the IT custodian, employee, approving officer, property custodian, administrator and management user.
+- Health: backend 800 unit + 94 e2e tests, frontend 447, every `CHECKS.md` item clean (the production `next build` was not re-run on this branch because `next dev` holds `.next`; CI builds it).
 - **The shared Supabase dev DB is at schema 017** (applied 2026-10-16: it moved the one Property Officer account to Property Custodian; that account was renamed `property.custodian2@cicc.gov.ph` the same day).
 
 ## 2. Do first
+
+- [ ] **Look at `refactor/ui-consistency` yourself** (the dev server on `:3000` already serves it if you are on the branch): the registry and Custody & Issuance filter rows, the Register Asset form, the employee dashboard, Audit Log date range, a lifecycle update (it is now a dialog that closes on Escape), and the screens at a narrow width. Tell us what still reads wrong; the rules are cheap to change in one place.
+- [ ] Open its PR into `develop` once #110 is merged (check the base before you click merge).
 
 - [x] Schema 017 applied to the shared Supabase dev database (2026-10-16) and the local backend
       (`:3001`, `DB_POOL_MAX=8`) restarted on the new build. Check it yourself: sign in as
@@ -43,6 +47,9 @@ properly, see `RUN-LOCAL.md` §11. Update this file at the end of every session.
 - [ ] Promote `develop` → `main` when you are happy.
 
 ## 3. Decisions waiting on you or CICC
+
+- **Native calendar or a custom one?** Every date box is now one styled `DateField`, but the pop-up is still the browser's own, and its displayed format (dd/mm/yyyy or mm/dd/yyyy) follows each viewer's browser setting. A custom calendar would show one format everywhere but adds a small library and changes how the calendar looks. Not done; ask CICC whether the format matters to them.
+- **Is 16px body text big enough for CICC's older staff?** It is 14% above the usual. One line in `globals.css` (`--text-sm`) changes the whole system; ask them at the next demo.
 
 - Should the **Annex A.4** list only issued SEP items (it lists every SEP asset created in the period)?
 - Should the **asset history** name the person, not the role?

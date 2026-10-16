@@ -151,7 +151,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
   const awaitingCount = rows.filter((r) => isOpen(r) && r.canAct).length;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <AdminPageHeader
         eyebrow={eyebrow}
         title="Returns & Incidents"

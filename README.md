@@ -106,7 +106,7 @@ cd Frontend && npm run dev           # http://localhost:3000
 | Database (Dev) | Supabase (managed PostgreSQL) |
 | Database (Prod) | CICC-managed PostgreSQL (raw) |
 | Containerization | Docker + Docker Compose |
-| Testing | Jest (800 backend unit + 94 e2e on a real Postgres), vitest (333 frontend) — as of 2026-10-16 — plus a k6 baseline; JMeter is the formal run still to do |
+| Testing | Jest (800 backend unit + 94 e2e on a real Postgres), vitest (447 frontend) — as of 2026-10-16 — plus a k6 baseline; JMeter is the formal run still to do |
 | Report Generation | pdfkit (PDF) + exceljs (Excel/XLSX) |
 
 ## API Endpoints
@@ -138,7 +138,7 @@ cd Backend && npm run test
 # (plain `npm run test:e2e` targets Supabase and won't connect from jest)
 cd Backend && npm run test:e2e:local      # 94 tests
 
-# Frontend (333)
+# Frontend (447)
 cd Frontend && npm run test
 
 # Coverage report (must meet thresholds — see CHECKS.md)

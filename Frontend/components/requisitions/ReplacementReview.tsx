@@ -65,7 +65,7 @@ export function ReplacementReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow
     assetBasePath ? <Link href={`${assetBasePath}/${id}`} className="font-bold text-slate-950 hover:text-blue-700 hover:underline">{label}</Link> : <span className="font-bold text-slate-950">{label}</span>;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <AdminPageHeader
         eyebrow={eyebrow}
         title="Replacement Validation"

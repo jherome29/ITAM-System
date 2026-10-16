@@ -36,7 +36,7 @@ export function PhysicalInventorySheet({ eyebrow, formsPath }: Readonly<{ eyebro
   const { rows, totals } = buildCountSheet(assets);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <AdminPageHeader
         eyebrow={eyebrow}
         title="Physical Inventory"

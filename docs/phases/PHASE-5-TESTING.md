@@ -10,7 +10,7 @@ The build is feature-complete, so this phase can start once the PR stack (#105 �
 | Step | State |
 |---|---|
 | 5.1 Jest security tests | **Done.** All 8 scenarios in `Backend/test/security.e2e-spec.ts`, gating CI; per-module privilege-escalation cases in the other e2e specs (e.g. `property-requisitions.e2e-spec.ts`) |
-| 5.2 Coverage | **Met.** Backend 800 unit tests, 96.3% statements / 88.6% branches / 95.2% functions; 94 e2e tests on a real Postgres; frontend 333 tests (no coverage gate on `Frontend/` yet) |
+| 5.2 Coverage | **Met.** Backend 800 unit tests, 96.3% statements / 88.6% branches / 95.2% functions; 94 e2e tests on a real Postgres; frontend 447 tests (no coverage gate on `Frontend/` yet) |
 | 5.3 / 5.4 OWASP ZAP | **Not run.** See the rate-limit warning in 5.3 |
 | 5.5 Load test | **k6 baseline done** (`perf/`: 362 VUs, 0 errors, p95 758 ms on one contended box). The formal JMeter run is still to do |
 | UAT with CICC | **Not started.** The flows verified in a browser on 2026-10-15/16 (file → approve → fulfil, returns, repairs, replacement, forms) are the script |

@@ -100,7 +100,7 @@ export function ApprovingOfficerDashboard() {
   const unreadCount = data?.unreadCount ?? 0;
 
   return (
-    <div className="mx-auto w-full max-w-[1480px] space-y-5">
+    <div className="space-y-5">
       <RoleDashboardHeader eyebrow="Approving Officer" />
       <DashboardError message={error} />
 

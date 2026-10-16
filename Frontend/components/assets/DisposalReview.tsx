@@ -36,7 +36,7 @@ export function DisposalReview({ eyebrow, assetBasePath }: Readonly<{ eyebrow: s
   const summary = disposalReviewSummary(assets);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <AdminPageHeader
         eyebrow={eyebrow}
         title="Disposal Review"

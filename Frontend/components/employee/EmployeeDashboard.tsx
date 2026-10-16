@@ -101,7 +101,7 @@ export function EmployeeDashboard() {
   if (loading) return <DashboardSkeleton />;
 
   return (
-    <div className="mx-auto w-full max-w-[1480px] space-y-5">
+    <div className="space-y-5">
       <PageHeader
         eyebrow="Employee workspace"
         title={`Good day, ${user?.firstName ?? 'there'}`}

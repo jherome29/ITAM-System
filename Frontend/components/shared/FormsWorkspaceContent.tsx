@@ -54,7 +54,7 @@ export function FormsWorkspaceContent({ eyebrow, canGenerate = true }: Readonly<
   const latest = summary?.latest ?? null;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <AdminPageHeader
         eyebrow={eyebrow}
         title="Reports & Forms"

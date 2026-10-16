@@ -276,7 +276,7 @@ export function RepairQueue({
   })();
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <AdminPageHeader
         eyebrow={eyebrow}
         title={adminFallback ? 'Repairs (escalations)' : 'Maintenance & Repair'}

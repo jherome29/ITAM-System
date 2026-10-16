@@ -201,7 +201,7 @@ function UsersPage() {
     }
   };
 
-  return <div className="space-y-4">
+  return <div className="space-y-5">
     <AdminPageHeader title="Users & Accounts" detail="Manage the identity data required for AIMRS access and account lifecycle." action={<div className="flex flex-wrap gap-2"><SecondaryButton icon={RefreshCw} onClick={handleRefresh}>Refresh</SecondaryButton><PrimaryButton icon={Plus} onClick={() => setCreating(true)}>Create account</PrimaryButton></div>} />
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <MetricCard label="Total accounts" value={String(users.length)} detail="" tone="blue" icon={Users} />
@@ -486,7 +486,7 @@ function RolesPage() {
     }
   };
 
-  return <div className="space-y-4">
+  return <div className="space-y-5">
     <AdminPageHeader title="Roles & Assignment" detail="Assign one of the system's fixed roles to a user. Roles and their permissions are defined in code, not configurable here." />
     <SearchToolbar value={search} onChange={setSearch} placeholder="Search by name, email, or role" filters={[]} />
     <Panel title="User Role Assignment" detail={`${rows.length} accounts shown`}>

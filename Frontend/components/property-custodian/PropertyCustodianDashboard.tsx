@@ -39,7 +39,7 @@ export function PropertyCustodianDashboard() {
   const unreadCount = data?.unreadCount ?? 0;
 
   return (
-    <div className="mx-auto w-full max-w-[1480px] space-y-5">
+    <div className="space-y-5">
       <RoleDashboardHeader eyebrow="Property Custodian" />
       <DashboardError message={error} />
 

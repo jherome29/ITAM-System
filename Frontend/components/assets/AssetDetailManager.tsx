@@ -470,7 +470,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
       </Panel>
 
       <CenteredModal open={showLifecycle} title="Update Lifecycle" size="sm" onClose={closeLifecycle}>
-            <div className="space-y-4">
+            <div className="space-y-5">
               {/* Status selector */}
               <div>
                 <label htmlFor="asset-field-1" className={labelClass}>

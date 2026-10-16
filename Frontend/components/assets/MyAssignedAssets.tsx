@@ -102,7 +102,7 @@ export function MyAssignedAssets({
     }
   };
 
-  return <div className="space-y-4">
+  return <div className="space-y-5">
     <AdminPageHeader eyebrow={eyebrow} title="My Assigned Assets" detail={`Property currently issued to you. Request a return or repair, report damage, loss or theft${canRequestReplacement ? ', or request a replacement once an asset qualifies' : ''} — the responsible custodian is notified.`} />
     {error && <Notice tone="red">{error}</Notice>}
     <div className="grid gap-3 sm:grid-cols-3">

@@ -127,7 +127,7 @@ function SystemSettingsPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <AdminPageHeader
         title="System Settings"
         detail="Runtime AIMRS rules. Changes apply immediately once saved and are recorded in the audit trail."
@@ -388,7 +388,7 @@ export function AuditLogPage({ eyebrow }: Readonly<{ eyebrow?: string }> = {}) {
     }
   };
 
-  return <div className="space-y-4"><AdminPageHeader eyebrow={eyebrow} title="Audit Log" detail="Inspect append-only evidence of authentication, authorization, asset, requisition, report, and administrative activity." action={<div className="flex flex-wrap gap-2"><SecondaryButton icon={Download} onClick={handleExport}>Export CSV</SecondaryButton><SecondaryButton icon={Download} onClick={() => void handleReport('pdf')} disabled={reporting}>Report (PDF)</SecondaryButton><SecondaryButton icon={Download} onClick={() => void handleReport('excel')} disabled={reporting}>Report (Excel)</SecondaryButton></div>} />
+  return <div className="space-y-5"><AdminPageHeader eyebrow={eyebrow} title="Audit Log" detail="Inspect append-only evidence of authentication, authorization, asset, requisition, report, and administrative activity." action={<div className="flex flex-wrap gap-2"><SecondaryButton icon={Download} onClick={handleExport}>Export CSV</SecondaryButton><SecondaryButton icon={Download} onClick={() => void handleReport('pdf')} disabled={reporting}>Report (PDF)</SecondaryButton><SecondaryButton icon={Download} onClick={() => void handleReport('excel')} disabled={reporting}>Report (Excel)</SecondaryButton></div>} />
     <div className="flex items-start gap-3 border border-blue-200 bg-blue-50 px-4 py-3"><Archive className="mt-0.5 h-5 w-5 flex-none text-blue-700" /><div><p className="text-sm font-bold text-blue-950">Immutable audit evidence</p><p className="mt-0.5 text-xs text-blue-800">Audit records cannot be edited or deleted. Every logged action succeeded by definition; timestamps are recorded in UTC.</p></div></div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><MetricCard label="Events loaded" value={String(logs.length)} detail={from || to ? 'Within the selected date range' : 'Most recent audit records from the API'} tone="blue" icon={Activity} /><MetricCard label="Unique users" value={String(uniqueUsers)} detail="Distinct accounts represented" tone="blue" icon={KeyRound} /><MetricCard label="Unique actions" value={String(uniqueActions)} detail="Distinct action types represented" tone="blue" icon={FileClock} /></div>
     <SearchToolbar value={search} onChange={setSearch} placeholder="Search by user, role, action, record, or IP" filters={[]}>

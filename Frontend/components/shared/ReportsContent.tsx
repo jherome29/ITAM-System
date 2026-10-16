@@ -53,7 +53,7 @@ export function ReportsContent({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <AdminPageHeader eyebrow={eyebrow} title={pageTitle} detail="Reports are generated from live records at the moment you download them." />
       <Panel title={panelTitle} detail={`${REPORT_TYPES.length} ${REPORT_TYPES.length === 1 ? 'report' : 'reports'} available`}>
         <form onSubmit={(event) => void handleGenerate(event)} className="space-y-5 p-4">

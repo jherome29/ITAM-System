@@ -134,6 +134,12 @@ describe('cards, labels and messages', () => {
   });
 });
 
+describe('layout', () => {
+  it('sets the page width once, in the shell, so every page starts at the same place', () => {
+    expect(offenders(/max-w-\[1[45]00px\]/, ['components/shell/AppShell.tsx'])).toEqual([]);
+  });
+});
+
 describe('wording', () => {
   it('spells it fulfillment, as the menus do (the API route keeps its own spelling)', () => {
     expect(offenders(/\bFulfilment\b/)).toEqual([]);

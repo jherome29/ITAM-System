@@ -96,7 +96,7 @@ cicc/
 │   │   ├── property-custodian/ # Property Custodian workspace   (catch-all router)
 │   │   ├── master-admin/       # Master Administrator workspace (catch-all router)
 │   │   └── management-audit/   # Management & Audit viewer workspace, read-only (catch-all router)
-│   ├── components/             # Shared UI components
+│   ├── components/             # UI components; components/ui/ is the shared kit (see §16 "UI kit")
 │   ├── lib/                    # Utilities, API clients, hooks
 │   └── public/                 # Static assets (logo.png, etc.)
 ├── Backend/                    # NestJS backend
@@ -611,12 +611,15 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 - **Critical-path pass rate:** 100% — no exceptions
 - Tests run automatically in CI on every push; failing tests block merges to `main`
 - Key test areas: asset status transitions, requisition approval routing, RBAC enforcement, audit log generation, QR code utility functions, database interaction layers
-- **Where it stands (2026-10-16):** backend 800 unit tests in 40 suites (96.3% statements, 88.6% branches, 95.2% functions; gate is 65 / 55 / 55 / 65), 94 e2e tests in 12 suites on a real Postgres, frontend 333 vitest tests in 42 files. A request-routing or guard change needs an e2e test, because the unit tests mock the database
+- **Where it stands (2026-10-16):** backend 800 unit tests in 40 suites (96.3% statements, 88.6% branches, 95.2% functions; gate is 65 / 55 / 55 / 65), 94 e2e tests in 12 suites on a real Postgres, frontend 447 vitest tests in 53 files. A request-routing or guard change needs an e2e test, because the unit tests mock the database
 
 ### Integration Testing (Jest)
 - API endpoint behavior across service boundaries
 - Role-based access control across all protected routes
 - Requisition workflow end-to-end (submit → approve → fulfill → update asset)
+
+### UI consistency guardrail
+`Frontend/lib/ui-consistency.spec.ts` reads the source and fails on a raw date input, a per-screen input class, a hand-rolled error box or pill, a second `<h1>` component, `gray-*`, a hex colour, a one-off pixel font size, light-grey text, `toLocaleString()` with no locale, "Fulfilment", "Failed to" and three-dot ellipses, and it checks `globals.css` so the type scale cannot shrink. Add a rule in the same change as the migration that makes the code obey it (and prove it can fail by planting a violation: a rule that can never match passes for ever). When a pattern has a good reason to exist, name the file in the rule's allow-list with a comment, do not weaken the rule.
 
 ### Verifying screens and PDFs by driving them
 Unit and e2e tests do not prove a screen or a PDF looks right. For UI and form changes, run the stack against a **throwaway Postgres** (never the shared Supabase), drive it with Playwright, and render the PDFs to images — recipe in `RUN-LOCAL.md` §11. Things this found that tests had not: a form number printed over its own label, tables running off the page, an audit log showing truncated ids.
@@ -786,6 +789,28 @@ cd Backend && npm run seed:demo
 - **TypeORM entity naming:** `SnakeNamingStrategy` is active — camelCase properties map automatically to snake_case columns. Do not add redundant `@Column({ name: '...' })` overrides unless deliberately changing the column name.
 - **TypeORM migrations:** `synchronize: false` — every entity change that affects the schema must be accompanied by a SQL file in `Database/schemas/` (next number, idempotent) listed in `docker-compose.yml` and executed manually (`Database/migrations/` is reserved for post-launch changes and does not exist yet). Never use `synchronize: true` outside of a throw-away local environment.
 - **webpack externals:** If a backend package reads files from `__dirname` at runtime (like `pdfkit`), it must be added to `Backend/webpack.config.js` externals so webpack doesn't bundle it. Check this before installing any new native or file-system-dependent library.
+- **UI kit (`Frontend/components/ui/`) — one way to build each thing.** The screens used to be built one at a time (eight ways to print a date, six page titles, four input styles, three status badges, five filter rows), so every role saw a different look. They now draw from one kit, and `Frontend/lib/ui-consistency.spec.ts` fails the build when a screen goes around it. Reach for these, never a per-screen copy:
+
+  | You need | Use | Not |
+  |---|---|---|
+  | page title, eyebrow, help line, main action | `PageHeader` (the only `<h1>`; `AdminPageHeader` is a thin wrapper) | your own heading |
+  | input, select, textarea, search box | `controlClass` / `textareaClass` / `searchControlClass` from `controls.ts`, inside `Field` (label, hint, error, required) | a local `inputClass` |
+  | a date | `DateField` (one date), `DateRange` (From / To) | `<input type="date">` |
+  | a filter row | `SearchToolbar` (search + any number of drop-downs + room for a date range or view switch; `bare` inside a card) | a hand-built row |
+  | a button, or a link that looks like one | `buttonClass({ variant, size })`, `PrimaryButton` / `SecondaryButton` / `DangerButton` | `bg-blue-700 …` |
+  | a titled white card | `Panel` (badge and action slots); plain cards use `surfaceClass` | your own border and shadow |
+  | a figure with a label | `MetricCard` (icon, figure, detail, optional link) | KPI tiles |
+  | a status, a count, a code | `StatusBadge` (maps the real enum values), `Chip` (any small label) | a hand-built pill |
+  | an error or notice | `Notice` (`red` is announced to screen readers) | a red box |
+  | nothing to list | `EmptyRow` (in a table), `EmptyMessage` | a hand-built row |
+  | a dialog or drawer | `CenteredModal` (`size="sm"` for a few fields), `ConfirmDialog`, `DetailDrawer` | `fixed inset-0` |
+  | a table | `thClass` / `tdClass` / `tdWrapClass` from `AdminUi` | cell classes of your own |
+  | a date or an amount on screen | `formatDate` / `formatDateTime` / `formatTime` / `formatPeso` from `lib/dates.ts` (Manila time; a calendar day never shifts) | `toLocaleString()`, `Intl.DateTimeFormat` |
+
+  `components/admin/AdminUi.tsx` still exports several of these under their old names so the screens built on it keep one import path.
+- **Type scale: bigger text, set once (`Frontend/app/globals.css`).** CICC's staff include older employees and the client asked for bigger text after the last demo, so every step of the scale is about 15% above Tailwind's default: `xs` 14px (captions, table headers), `sm` 16px (body, fields, cells, buttons), `base` 18px, `lg` 20px, `xl` 22px, `2xl` 28px (page titles), `3xl` 34px. **Nothing on screen is smaller than 14px**, controls and buttons are 44px tall (36px compact in table rows) and the sidebar is 288px wide so its labels wrap instead of truncating. Change a size in `globals.css` and it changes everywhere; never write `text-[Npx]`. One typeface (DM Sans). Light-grey text (`slate`/`gray` 300-400) fails contrast, use `slate-500` or darker.
+- **Palette:** one neutral grey (`slate`, never `gray`) and named brand colours (`text-brand`, `bg-brand-dark`, `bg-canvas`, `bg-navy`, declared once in `globals.css`), never a hex value in a class. Status colours come from `ui/tones.ts`.
+- **Wording:** "Fulfillment" (the API route `/requisitions/fulfilment-fallback` keeps its own spelling), "Could not …" for a failure (not "Failed to …"), one ellipsis character (`…`) on a progress message, Title Case for a page title or menu item and sentence case for everything else. A record's page is "Details" in the breadcrumb, never its id. "Requisition" is the formal request for an asset; "request" is a return or incident request: do not mix them.
 - **Quality checklist:** Before marking any task done, run every check in `CHECKS.md` in order. All must pass with zero errors.
 
 ---

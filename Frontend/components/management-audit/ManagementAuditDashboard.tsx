@@ -63,7 +63,7 @@ export function ManagementAuditDashboard() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1480px] space-y-5">
+    <div className="space-y-5">
       <PageHeader eyebrow="Management" title="Executive Dashboard" detail="Asset and requisition status across the organization. Read-only." />
 
       {error && (

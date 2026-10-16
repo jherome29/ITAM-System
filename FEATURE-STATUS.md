@@ -125,7 +125,8 @@ editable at runtime (System Admin only, audited, with "last changed … by …")
   up Postgres (all 17 schemas + seed) + backend + frontend with `/api/health`
   healthchecks; prod compose fails fast on missing secrets; CI builds both images.
 - Formal security e2e suite (8 ASVS scenarios) gates CI. Backend 800 unit tests
-  (96% statements), 94 e2e on a real Postgres, frontend 333 tests.
+  (96% statements), 94 e2e on a real Postgres, frontend 447 tests.
+- UI: one shared kit (`Frontend/components/ui/`), one type scale with nothing below 14px (client feedback: bigger text for older staff), and a spec that fails the build when a screen goes around them (branch `refactor/ui-consistency`, not yet merged).
 - k6 load baseline: 362 VUs, 0 errors, p95 758 ms (single contended box), `perf/`.
 
 ---

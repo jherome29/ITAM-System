@@ -39,7 +39,7 @@ export function ApprovalHistory({ eyebrow }: Readonly<{ eyebrow: string }>) {
   const summary = approvalHistorySummary(rows);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <AdminPageHeader
         eyebrow={eyebrow}
         title="Approval History"

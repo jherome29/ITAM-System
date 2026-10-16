@@ -289,7 +289,7 @@ cd Backend;  npm run audit:check
 cd Frontend; npx tsc --noEmit
 cd Frontend; npx eslint . --max-warnings 0
 cd Frontend; npm run build
-cd Frontend; npm test                # 333 vitest tests (2026-10-16)
+cd Frontend; npm test                # 447 vitest tests (2026-10-16)
 cd Frontend; npm run audit:check
 cd ..;       npm run secretlint
 ```
@@ -397,6 +397,29 @@ Drive it with Playwright. Things that bite: wait about two seconds after the log
 page loads and *type* into the fields (`fill()` before hydration submits a blank
 login); move between pages with `window.next.router.push(path)` instead of a full
 reload; close a drawer before clicking Sign out.
+
+**Looking at a screen without stopping your `:3000` dev server** (the quick way, used for the UI-consistency work). Start only the throwaway Postgres and a sandbox backend (steps 1 and 2) with `ALLOWED_ORIGIN=http://localhost:3000`, seed it, then let the browser's requests to `:3001` be answered by the sandbox instead. In Playwright:
+
+```js
+const cors = { 'access-control-allow-origin': 'http://localhost:3000', 'access-control-allow-credentials': 'true',
+  'access-control-allow-headers': 'authorization,content-type', 'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS' };
+await context.route('http://localhost:3001/api/**', async (route) => {
+  const req = route.request();
+  if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+  const resp = await route.fetch({ url: req.url().replace('localhost:3001', 'localhost:3101') });
+  await route.fulfill({ response: resp, headers: { ...resp.headers(), ...cors } });
+});
+// log in to the SANDBOX over HTTP, then hand the page the token the way the app does after a login:
+await context.addInitScript((t) => sessionStorage.setItem('aimrs_at', t), token);
+await page.goto('http://localhost:3000/it-asset-custodian/dashboard');
+```
+
+Three traps cost an hour each:
+- **Do not use `route.continue({ url })` to redirect.** Chromium drops the `Authorization` header when a request is rewritten to another origin (as on a cross-origin redirect), so every call is a 401 "Session expired". `route.fetch` + `route.fulfill`, as above, keeps it.
+- **`addInitScript` outlives everything.** A script from an earlier login keeps re-writing its (now stale) token on every navigation, and `unrouteAll` does not remove it. Scripts run in registration order, so register a new one with the fresh token each time and the last one wins; to start clean, open a new browser context.
+- **The `response` event reports the original URL** (`:3001`) even when the sandbox answered. To see which backend answered, compare `GET /api/health` `uptime` from the page with the two servers'. A page-level `page.route` from an earlier session also beats a context-level one, so call `page.unrouteAll()` first.
+
+Also check horizontal overflow (`document.documentElement.scrollWidth > clientWidth`) at 1366, 820 and 390 wide, and look at the screenshot: a green test does not tell you a toolbar looks right.
 
 **For PDFs**, generate each form through `POST /api/v1/reports/forms/generate` (and
 the management reports through `POST /api/v1/reports/generate`), render the pages to

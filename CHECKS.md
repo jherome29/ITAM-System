@@ -193,7 +193,7 @@ cd Frontend && npm run build
 ```bash
 cd Frontend && npm run test
 ```
-**Pass condition:** All test files pass (333 tests in 42 files as of 2026-10-16).
+**Pass condition:** All test files pass (447 tests in 53 files as of 2026-10-16).
 **What it checks:** vitest unit tests for the pure logic the screens depend on: role navigation and the live-page allow-list, requisition and asset-request rules, date and status formatting, API clients, server-rendered component specs. CI's `frontend-ci` job runs this.
 **If it fails:** Fix the code or the test; never skip one. A menu or allow-list change (`lib/roles/role-navigation.ts`, `lib/workflow/live-pages.ts`) needs its spec updated in the same commit.
 

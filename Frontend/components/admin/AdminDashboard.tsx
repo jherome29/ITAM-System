@@ -190,7 +190,7 @@ export function AdminDashboard() {
   const roleMax = stats ? Math.max(1, ...Object.values(stats.users.byRole)) : 1;
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-5">
+    <div className="space-y-5">
       <AdminPageHeader
         title="Administration Overview"
         detail="Live account, requisition, asset, and platform figures — every number below is read straight from the system of record."
