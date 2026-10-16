@@ -1,6 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { AssignRoleDto, CreateUserDto } from './user.dto';
+import { AssignRoleDto, CreateUserDto, UpdateUserDto } from './user.dto';
+import { FIELD_MAX } from '../../common/field-limits';
 import {
   ASSIGNABLE_USER_ROLES,
   UserRole,
@@ -60,5 +61,52 @@ describe('assigning a role', () => {
     expect(messages).not.toEqual([]);
     expect(messages.join(' ')).not.toContain('property_officer');
     expect(messages.join(' ')).toContain('property_custodian');
+  });
+});
+
+// first_name, last_name, division and office_or_section are VARCHAR(100), employee_id (50) and
+// email (255) in Database/schemas/001_initial_schema.sql. A longer name went to Postgres and came
+// back as a bare 500; the field is now named in a 400.
+describe('account text limits', () => {
+  const LIMITED = [
+    ['employeeId', FIELD_MAX.employeeId],
+    ['firstName', FIELD_MAX.code],
+    ['lastName', FIELD_MAX.code],
+    ['division', FIELD_MAX.code],
+    ['officeOrSection', FIELD_MAX.code],
+  ] as const;
+
+  describe.each([
+    ['CreateUserDto', CreateUserDto],
+    ['UpdateUserDto', UpdateUserDto],
+  ])('%s', (name, cls) => {
+    it.each(LIMITED)(
+      'refuses a %s longer than %i characters, by name',
+      async (field, max) => {
+        if (name === 'UpdateUserDto' && field === 'employeeId') return; // an account's ID is never edited
+        const dto = plainToInstance(cls as new () => object, {
+          ...newUser('employee'),
+          [field]: 'N'.repeat(max + 1),
+        });
+
+        const found = await problems(dto);
+
+        expect(found).toEqual([expect.stringContaining(field)]);
+        expect(found[0]).toContain(String(max));
+      },
+    );
+
+    it.each(LIMITED)(
+      'accepts a %s of exactly %i characters',
+      async (field, max) => {
+        if (name === 'UpdateUserDto' && field === 'employeeId') return;
+        const dto = plainToInstance(cls as new () => object, {
+          ...newUser('employee'),
+          [field]: 'N'.repeat(max),
+        });
+
+        expect(await problems(dto)).toEqual([]);
+      },
+    );
   });
 });

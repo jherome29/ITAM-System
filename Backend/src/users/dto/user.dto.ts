@@ -15,18 +15,22 @@ import {
   ASSIGNABLE_USER_ROLES,
   UserRole,
 } from '../../../../packages/shared/src/enums';
+import { FIELD_MAX } from '../../common/field-limits';
 
 export class CreateUserDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(FIELD_MAX.employeeId)
   employeeId!: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(FIELD_MAX.code)
   firstName!: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(FIELD_MAX.code)
   lastName!: string;
 
   @IsEmail()
@@ -48,19 +52,21 @@ export class CreateUserDto {
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(FIELD_MAX.code)
   division!: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(FIELD_MAX.code)
   officeOrSection!: string;
 }
 
 export class UpdateUserDto {
-  @IsOptional() @IsString() firstName?: string;
-  @IsOptional() @IsString() lastName?: string;
+  @IsOptional() @IsString() @MaxLength(FIELD_MAX.code) firstName?: string;
+  @IsOptional() @IsString() @MaxLength(FIELD_MAX.code) lastName?: string;
   @IsOptional() @IsEmail() email?: string;
-  @IsOptional() @IsString() division?: string;
-  @IsOptional() @IsString() officeOrSection?: string;
+  @IsOptional() @IsString() @MaxLength(FIELD_MAX.code) division?: string;
+  @IsOptional() @IsString() @MaxLength(FIELD_MAX.code) officeOrSection?: string;
 
   // Alternate Approver (CLAUDE.md §5, §17) — accepted only on SUPERVISOR rows.
   // A uuid designates the backup; null clears it.
