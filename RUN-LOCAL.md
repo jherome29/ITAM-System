@@ -1,7 +1,10 @@
 # AIMRS — Local Development Runbook
 
 How to get the stack running on this machine. Written 2026-09-30 against
-Windows 11 / PowerShell, Node v25.2.1, npm 11.6.2, Docker Desktop 29.4.3.
+Windows 11 / PowerShell, Node v25.2.1, npm 11.6.2, Docker Desktop 29.4.3;
+reviewed 2026-10-16 (Next.js 16.4, schemas 001–016, test counts, and §11, how to
+verify a screen or a PDF on a throwaway database). Folder paths below are the
+original machine's (`D:\Documents(D)\CAPSTONE`): use your own clone's path.
 
 First-time setup is already done on this machine — if you just want to start
 working, read **§1 and stop**. The rest is for a fresh clone, a teammate's
@@ -58,8 +61,10 @@ reachable — go to §5.
 
 ## 2. Login credentials
 
-Open http://localhost:3000/login. Credentials match `users.md` (reset to those
-values on 2026-10-07 via the admin API):
+Open http://localhost:3000/login. These are the dev accounts in `docs/guides/ROLES.md`
+(the canonical list; keep this table in sync with it). They exist in the shared
+Supabase dev database; your own local Docker database only has the accounts you
+created there:
 
 | Role | Email | Password | Lands on |
 |---|---|---|---|
@@ -71,6 +76,7 @@ values on 2026-10-07 via the admin API):
 | Management | `management@cicc.gov.ph` | `Management@CICC2026!` | `/management-audit/dashboard` |
 | Property Custodian | `property.custodian@cicc.gov.ph` | `PropertyCustodian@2026!` | `/property-custodian/dashboard` |
 | Property Officer | `property.officer@cicc.gov.ph` | `PropertyOfficer@2026!` | `/property-officer/dashboard` |
+| Supervisor (Property and Supply Management, approves the two property roles) | `psm.approver@cicc.gov.ph` | `PSMApprover@2026!` | `/approving-officer/dashboard` |
 
 > After a DB reset (§6) the seed recreates only `admin@` and `it.personnel@`
 > (note the dot), both with `ChangeMe@1234!`.
@@ -108,11 +114,12 @@ restricts asset queries by role:
 So IT Personnel showing "Total assets 5" while 9 exist is correct, not a bug.
 Registering a `Fixed` asset as IT Personnel returns **403** by design.
 
-### Parts of the employee dashboard are mock data
+### There is no mock data in the frontend
 
-Tiles badged **"PREVIEW DATA"** (assigned assets, acknowledgements, my property)
-are not wired to the API yet — see `MOCK-DATA-WIRING.md`. Requisitions and the
-asset registry are real.
+Every screen reads real records and every button saves through the API (PR #106),
+so an empty dashboard means an empty database, not a mock. To fill a *throwaway*
+database with realistic data, use the demo seeder (`npm run seed:demo`, PR #107)
+or §11 below.
 
 ---
 
@@ -142,6 +149,13 @@ docker compose stop postgres
 and `cmd.exe` cannot resolve `node` from it. PowerShell passes a Windows `PATH`
 and the build succeeds. Same applies to any npm script that compiles native
 code.
+
+### A second `next dev` refuses to start ("existing server at :3000")
+
+Next 16 allows **one dev server per project folder**. To run a second frontend
+against another backend (§11), stop the first, run the second, then start the first
+again. `Get-NetTCPConnection -LocalPort 3000 -State Listen` gives the PID; the
+`next dev` parent process must be stopped too.
 
 ### Port 3000 already in use — frontend starts on 3002
 
@@ -183,6 +197,8 @@ Every successful login increments that user's `tokenVersion`, which invalidates
 all of that user's earlier tokens (CLAUDE.md §11#14). Logging the same account
 in from a script while it is open in the browser will kick the browser session.
 Just log in again in the browser — and use one login per account per script run.
+The login route is also limited to **10 attempts per minute per IP**, so a script that
+logs in a dozen accounts gets `429 Too Many Requests`: wait and retry.
 
 ### Clicking "Sign In" reloads the page and clears the form
 
@@ -202,7 +218,7 @@ docker exec aimrs_postgres psql -v ON_ERROR_STOP=1 -U aimrs_user -d aimrs_dev -f
 ```
 
 Then add it to the `postgres.volumes` list in `docker-compose.yml` so fresh
-bootstraps pick it up. **The files in `Database/schemas/` only run on the
+bootstraps pick it up (`Database/schemas/` currently runs 001 to 016). **The files in `Database/schemas/` only run on the
 FIRST boot of an empty volume** — adding one to the compose file does nothing
 to a database that already exists.
 
@@ -268,12 +284,12 @@ clean — run from PowerShell:
 cd Backend;  npx tsc --noEmit
 cd Backend;  npx eslint "{src,apps,libs,test}/**/*.ts" --max-warnings 0
 cd Backend;  npm run build
-cd Backend;  npm run test:cov        # 310 tests, coverage gate 65%
+cd Backend;  npm run test:cov        # 728 tests (2026-10-16), coverage gate 65%
 cd Backend;  npm run audit:check
 cd Frontend; npx tsc --noEmit
 cd Frontend; npx eslint . --max-warnings 0
 cd Frontend; npm run build
-cd Frontend; npm test                # 40 vitest tests
+cd Frontend; npm test                # 320 vitest tests (2026-10-16)
 cd Frontend; npm run audit:check
 cd ..;       npm run secretlint
 ```
@@ -281,7 +297,8 @@ cd ..;       npm run secretlint
 `cd Frontend && npm run build` writes to the same `.next/` the dev server uses —
 **stop `npm run dev` first**, or the running dev server gets confused.
 
-Backend e2e (spins its own throwaway Postgres on port 5433, needs Docker):
+Backend e2e (spins its own throwaway Postgres on port 5433, needs Docker; 89 tests
+in 12 suites as of 2026-10-16):
 
 ```powershell
 cd Backend; npm run test:e2e:local
@@ -337,3 +354,57 @@ docker exec aimrs_postgres psql -U aimrs_user -d aimrs_dev -c "SELECT (SELECT co
 # Backend logs, if started detached rather than in a visible terminal
 docker logs aimrs_backend --tail 50
 ```
+
+---
+
+## 11. Verifying a screen or a PDF on a throwaway database
+
+Use this when a change touches what a user sees or what gets printed: unit tests
+do not catch an overprinted form number, a table running off the page, or an audit
+log full of truncated ids. **Never do this against the shared Supabase database.**
+
+```powershell
+# 1. A throwaway Postgres on :5433 (tmpfs, gone with `down -v`). This is the same
+#    container the e2e suite uses, so run it when no e2e run is in progress.
+docker compose -p aimrs-e2e -f docker-compose.e2e.yml up -d --wait
+
+# 2. A sandbox backend on :3101, started FROM A FOLDER WITH NO .env and with an
+#    explicit DATABASE_URL, so it can never read Backend\.env (the Supabase string).
+#    NODE_ENV=test makes it build the schema from the entities.
+cd Backend; npm run build
+$env:NODE_ENV='test'; $env:PORT='3101'; $env:DATABASE_SSL='disable'
+# DATABASE_URL: the container's connection string. User, password and database are all
+# `aimrs_test`, host `localhost`, port `5433`, with `?sslmode=disable` (it is spelled out
+# in Backend/test/e2e-local.mjs, built from parts so secretlint does not flag it).
+$env:DATABASE_URL = '<postgresql URL for that container>'
+$env:JWT_SECRET='<32+ random chars>'; $env:JWT_REFRESH_SECRET='<32+ random chars>'
+$env:ALLOWED_ORIGIN='http://localhost:3100'; $env:THROTTLE_LIMIT='5000'
+cd $env:TEMP; node "<repo>\Backend\dist\main.js"
+
+# 3. A sandbox frontend on :3100 against it. Stop your :3000 dev server first (one
+#    `next dev` per folder) and start it again afterwards.
+$env:NEXT_PUBLIC_API_URL='http://localhost:3101/api'
+cd <repo>\Frontend; npx next dev -p 3100
+```
+
+Seed it: insert users straight into the `users` table (one shared dev password,
+bcrypt with 12 rounds, the roles you need, and a supervisor per division so routing
+works) and create everything else through the API as those users: assets, lifecycle
+moves, requisitions, requests. Log in as few accounts as possible, because a login
+bumps `tokenVersion` and the route is limited to 10 per minute (retry on 429).
+
+Drive it with Playwright. Things that bite: wait about two seconds after the login
+page loads and *type* into the fields (`fill()` before hydration submits a blank
+login); move between pages with `window.next.router.push(path)` instead of a full
+reload; close a drawer before clicking Sign out.
+
+**For PDFs**, generate each form through `POST /api/v1/reports/forms/generate` (and
+the management reports through `POST /api/v1/reports/generate`), render the pages to
+images and *read* them. Without poppler, a throwaway venv does it:
+`python -m venv v; v\Scripts\pip install pymupdf`, then `page.get_pixmap()`. A
+useful objective check: the rightmost ink on every page must stay within 555.3 pt
+(A4 is 595.28 pt wide, margin 40).
+
+Tear down: stop the :3100 and :3101 processes, run
+`docker compose -p aimrs-e2e -f docker-compose.e2e.yml down -v`, restart
+`npm run dev`, and confirm `http://localhost:3001/api/health`.
