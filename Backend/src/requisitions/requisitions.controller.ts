@@ -54,7 +54,6 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findAll(
     @Req() req: AuthReq,
@@ -84,7 +83,6 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findMine(
     @Req() req: AuthReq,
@@ -141,7 +139,6 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async getStats(@Req() req: AuthReq) {
     const result = await this.svc.getStats(req.user.id, req.user.role);
@@ -156,7 +153,6 @@ export class RequisitionsController {
    */
   @Get('replacement-review')
   @Roles(
-    UserRole.PROPERTY_OFFICER,
     UserRole.PROPERTY_CUSTODIAN,
     UserRole.IT_PERSONNEL,
     UserRole.SYSTEM_ADMIN,
@@ -179,7 +175,6 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthReq) {
     const result = await this.svc.findOneForView(
@@ -203,7 +198,6 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async document(
     @Param('id', ParseUUIDPipe) id: string,
@@ -229,8 +223,8 @@ export class RequisitionsController {
   /**
    * POST /api/v1/requisitions
    * Submit a new requisition - Employee, Supervisor, IT Personnel, Property
-   * Custodian, Property Officer. Management (read-only oversight) and the System
-   * Administrator (who can approve any requisition) do not file.
+   * Custodian. Management (read-only oversight) and the System Administrator
+   * (who can approve any requisition) do not file.
    * Status on creation: pending_supervisor
    */
   @Post()
@@ -239,7 +233,6 @@ export class RequisitionsController {
     UserRole.SUPERVISOR,
     UserRole.IT_PERSONNEL,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async create(@Body() dto: CreateRequisitionDto, @Req() req: AuthReq) {
     const result = await this.svc.create(

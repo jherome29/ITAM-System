@@ -561,7 +561,7 @@ describe('roleDisplay', () => {
     },
   );
 
-  it('names the two property roles', () => {
+  it('names the Property Custodian, and still names the retired Property Officer for old records', () => {
     expect(roleDisplay(UserRole.PROPERTY_CUSTODIAN)).toBe('Property Custodian');
     expect(roleDisplay(UserRole.PROPERTY_OFFICER)).toBe('Property Officer');
   });

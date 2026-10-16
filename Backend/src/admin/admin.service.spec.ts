@@ -7,7 +7,11 @@ import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
 import { AuditLogEntity } from '../audit/entities/audit-log.entity';
 import { SystemConfigService } from '../system-config/system-config.service';
-import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
+import {
+  ASSIGNABLE_USER_ROLES,
+  AuditAction,
+  UserRole,
+} from '../../../packages/shared/src/enums';
 import { AUDIT_REASON_REFRESH_TOKEN_REUSE } from '../audit/audit-reasons';
 
 type Where = Record<string, unknown> | undefined;
@@ -94,14 +98,25 @@ describe('AdminService.getDashboardStats', () => {
     });
   });
 
-  it('zero-fills every role in byRole and overlays the grouped counts', async () => {
+  it('zero-fills every assignable role in byRole and overlays the grouped counts', async () => {
     const { users } = await service.getDashboardStats();
     expect(Object.keys(users.byRole).sort()).toEqual(
-      Object.values(UserRole).sort(),
+      [...ASSIGNABLE_USER_ROLES].sort(),
     );
     expect(users.byRole[UserRole.EMPLOYEE]).toBe(6);
     expect(users.byRole[UserRole.SYSTEM_ADMIN]).toBe(1);
     expect(users.byRole[UserRole.SUPERVISOR]).toBe(0);
+  });
+
+  it('shows the retired Property Officer role only while an account still holds it', async () => {
+    userQb.getRawMany.mockResolvedValueOnce([
+      { role: UserRole.EMPLOYEE, count: '6' },
+      { role: UserRole.PROPERTY_OFFICER, count: '1' },
+    ]);
+
+    const { users } = await service.getDashboardStats();
+
+    expect(users.byRole[UserRole.PROPERTY_OFFICER]).toBe(1);
   });
 
   it('reports pending-supervisor requisitions and the SLA-breached subset', async () => {

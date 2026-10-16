@@ -2,13 +2,13 @@
 
 This directory contains all database-related files for the Asset Inventory Management and Requisition System.
 
-> Last reviewed 2026-10-16. Schemas **001–016**. If you add a file, update this table, the init list in `docker-compose.yml`, and `PATH-TO-DONE.md` §D.
+> Last reviewed 2026-10-16. Schemas **001–017**. If you add a file, update this table, the init list in `docker-compose.yml`, and `PATH-TO-DONE.md` §D.
 
 ## Structure
 
 ```
 Database/
-├── schemas/          # SQL schema files — applied in name order (001…016)
+├── schemas/          # SQL schema files — applied in name order (001…017)
 └── seeds/            # Development seed data only — never run in production
     └── 001_dev_seed.sql
 ```
@@ -35,6 +35,7 @@ Database/
 | `014_repair_loaner.sql` | loaner unit on a repair |
 | `015_function_search_path.sql` | pins the `search_path` of the two trigger functions (Supabase security advisor) |
 | `016_document_numbers.sql` | `document_counters` and `generated_forms.document_number` (running form numbers) |
+| `017_retire_property_officer.sql` | turns accounts that hold the retired Property Officer role into Property Custodians and invalidates their sessions. **The enum value stays** (Postgres cannot drop it; old audit rows carry it). Plain `UPDATE`: idempotent, safe in a transaction |
 
 ¹ Uses `ALTER TYPE … ADD VALUE`, which cannot run inside a transaction: apply these with plain `psql -f` (no `--single-transaction`), or statement by statement in the Supabase SQL editor. Every file is idempotent and safe to re-run.
 
@@ -49,7 +50,7 @@ Database/
 ### Via Docker (recommended for dev)
 ```bash
 docker compose up --build
-# postgres:16 applies every schemas/*.sql (001…016, listed in docker-compose.yml) then the
+# postgres:16 applies every schemas/*.sql (001…017, listed in docker-compose.yml) then the
 # dev seed on first start (empty volume). `docker compose down -v` to reset.
 ```
 The files only run on the **first** boot of an empty volume. For a database that already exists, apply the new file yourself (`RUN-LOCAL.md` §5).
@@ -59,7 +60,7 @@ The files only run on the **first** boot of an empty volume. For a database that
 # Paste the file into the Supabase SQL editor, or:
 psql $DATABASE_URL -f schemas/016_document_numbers.sql
 ```
-**Status of the shared dev Supabase database:** at `016` (008–014 applied 2026-10-11, 015 on 2026-10-14, 016 on 2026-10-15). No production database exists yet: when CICC provides one, apply `001…016` in order.
+**Status of the shared dev Supabase database:** at `017` (008–014 applied 2026-10-11, 015 on 2026-10-14, 016 on 2026-10-15, 017 on 2026-10-16). 017 moved the one Property Officer account (`property.officer@cicc.gov.ph` until it was renamed `property.custodian2@cicc.gov.ph` the same day) to Property Custodian and left the 23 old audit rows that say `property_officer` untouched; it is recorded as `017_retire_property_officer`. Any other database needs it before a backend that includes the role merge runs against it, or a leftover Property Officer account is refused everywhere. No production database exists yet: when CICC provides one, apply `001…017` in order.
 
 ### The e2e suite does not use these files
 `NODE_ENV=test` builds the schema from the TypeORM entities (`synchronize: true`) on a throwaway Postgres, so a missing or wrong schema file does **not** fail CI. A table that is written only with raw SQL (like `document_counters`) still needs an entity declaring it.

@@ -44,7 +44,6 @@ const HOLDER_BASES = new Set([
   '/approving-officer',
   '/it-asset-custodian',
   '/property-custodian',
-  '/property-officer',
   '/master-admin',
   '/management-audit',
 ]);

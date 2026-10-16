@@ -6,7 +6,7 @@
 
 A government-grade web platform implementing ITIL 4 ITAM practices, replacing CICC's manual paper-based asset management and requisition processes.
 
-**Status (2026-10-16):** feature-complete for all seven roles on real data (the frontend has no mock data). What is left is merging the open PR stack, the rest of the COA form fidelity, Phase 5 testing (JMeter, ZAP, UAT) and the production / handover work that waits on CICC. The one-screen map is [`FEATURE-STATUS.md`](./FEATURE-STATUS.md); the checklist to handover is [`PATH-TO-DONE.md`](./PATH-TO-DONE.md).
+**Status (2026-10-16):** feature-complete for all six roles on real data (the frontend has no mock data). What is left is merging the open PR stack, the rest of the COA form fidelity, Phase 5 testing (JMeter, ZAP, UAT) and the production / handover work that waits on CICC. The one-screen map is [`FEATURE-STATUS.md`](./FEATURE-STATUS.md); the checklist to handover is [`PATH-TO-DONE.md`](./PATH-TO-DONE.md).
 
 ---
 
@@ -31,9 +31,9 @@ cicc/
 │   └── Dockerfile
 ├── Frontend/           ← Next.js 16 (React 19, TypeScript, App Router, Tailwind 4)
 │   ├── app/            ← One workspace per role: employee, approving-officer, it-asset-custodian,
-│   │                      property-custodian, property-officer, master-admin, management-audit
+│   │                      property-custodian, master-admin, management-audit
 │   └── Dockerfile
-├── Database/           ← PostgreSQL schemas 001…016 and the dev seed
+├── Database/           ← PostgreSQL schemas 001…017 and the dev seed
 ├── packages/
 │   └── shared/         ← Shared TS types, enums, interfaces, constants
 ├── docs/               ← guides/ (ROLES, SECURITY, COA-FORMS-AUDIT, FUTURE-TOOLING), phases/
@@ -57,7 +57,7 @@ Start with **`CLAUDE.md`** (rules, roles, modules, constraints), then:
 | [`TEAM-HANDOFF.md`](./TEAM-HANDOFF.md) | onboarding: branches, PR stack, accounts, what is built |
 | [`RUN-LOCAL.md`](./RUN-LOCAL.md) | running it locally, troubleshooting, verifying screens and PDFs |
 | [`CHECKS.md`](./CHECKS.md) | the quality gate every change must pass |
-| [`docs/guides/ROLES.md`](./docs/guides/ROLES.md) | the seven roles, permission matrix, routes, dev credentials |
+| [`docs/guides/ROLES.md`](./docs/guides/ROLES.md) | the six roles, permission matrix, routes, dev credentials |
 | [`docs/guides/SECURITY.md`](./docs/guides/SECURITY.md) | the security contract |
 | [`docs/guides/COA-FORMS-AUDIT.md`](./docs/guides/COA-FORMS-AUDIT.md) | how the 18 forms compare with the official templates |
 | [`Database/README.md`](./Database/README.md) | the schema files and how to apply them |
@@ -106,7 +106,7 @@ cd Frontend && npm run dev           # http://localhost:3000
 | Database (Dev) | Supabase (managed PostgreSQL) |
 | Database (Prod) | CICC-managed PostgreSQL (raw) |
 | Containerization | Docker + Docker Compose |
-| Testing | Jest (728 backend unit + 89 e2e on a real Postgres), vitest (320 frontend) — as of 2026-10-16 — plus a k6 baseline; JMeter is the formal run still to do |
+| Testing | Jest (800 backend unit + 94 e2e on a real Postgres), vitest (327 frontend) — as of 2026-10-16 — plus a k6 baseline; JMeter is the formal run still to do |
 | Report Generation | pdfkit (PDF) + exceljs (Excel/XLSX) |
 
 ## API Endpoints
@@ -131,14 +131,14 @@ Every route is role-guarded (CLAUDE.md §4 has the permission matrix). All under
 ## Running Tests
 
 ```bash
-# Unit tests (728)
+# Unit tests (800)
 cd Backend && npm run test
 
 # E2E tests — needs Docker; spins a throwaway Postgres like CI's backend-e2e job
 # (plain `npm run test:e2e` targets Supabase and won't connect from jest)
-cd Backend && npm run test:e2e:local      # 89 tests
+cd Backend && npm run test:e2e:local      # 94 tests
 
-# Frontend (320)
+# Frontend (327)
 cd Frontend && npm run test
 
 # Coverage report (must meet thresholds — see CHECKS.md)

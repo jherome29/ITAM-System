@@ -94,7 +94,6 @@ cicc/
 │   │   ├── approving-officer/  # Approving Officer workspace (catch-all [[...slug]] router)
 │   │   ├── it-asset-custodian/ # IT Asset Custodian workspace   (catch-all router)
 │   │   ├── property-custodian/ # Property Custodian workspace   (catch-all router)
-│   │   ├── property-officer/   # Property Officer workspace     (catch-all router)
 │   │   ├── master-admin/       # Master Administrator workspace (catch-all router)
 │   │   └── management-audit/   # Management & Audit viewer workspace, read-only (catch-all router)
 │   ├── components/             # Shared UI components
@@ -122,7 +121,7 @@ cicc/
 ├── packages/
 │   └── shared/                 # Shared TypeScript types/enums (OfficialFormType, UserRole, etc.)
 ├── Database/
-│   ├── schemas/                # 001…016 SQL, applied in name order (the source of truth for the schema)
+│   ├── schemas/                # 001…017 SQL, applied in name order (the source of truth for the schema)
 │   └── seeds/                  # Dev seed data (never run in production)
 ├── FORMS/                      # Reference copies of official COA form templates
 ├── docker-compose.yml          # Dev environment
@@ -139,44 +138,43 @@ cicc/
 
 ## 4. User Roles & Access Control (RBAC)
 
-There are **seven user roles** with strictly differentiated permissions: Employee, Supervisor, IT Personnel, System Administrator and Management, plus the **Property Custodian** and **Property Officer**, who work on Fixed assets and Supplies the way IT Personnel work on ICT. Every API endpoint must enforce role-based guards at the NestJS controller level. The frontend renders only functions permitted for the active user's role. This matrix is read from the controllers' `@Roles(...)` lists; when a guard changes, change it here and in `docs/guides/ROLES.md`.
+There are **six user roles** with strictly differentiated permissions: Employee, Supervisor, IT Personnel, System Administrator and Management, plus the **Property Custodian**, who works on Fixed assets and Supplies the way IT Personnel work on ICT. (There used to be a seventh, the **Property Officer**: a read-only subset of the Property Custodian, merged into it on 2026-10-16. The `property_officer` value stays in the Postgres enum and the shared `UserRole` enum, marked deprecated, because old audit rows carry it; no route grants it and no account may be given it, see `ASSIGNABLE_USER_ROLES` and schema `017`.) Every API endpoint must enforce role-based guards at the NestJS controller level. The frontend renders only functions permitted for the active user's role. This matrix is read from the controllers' `@Roles(...)` lists; when a guard changes, change it here and in `docs/guides/ROLES.md`.
 
 ### Role Matrix
 
-| Feature | Employee | Supervisor | IT Personnel | Property Custodian | Property Officer | System Admin | Management |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Login | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Submit requisition / replacement | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| Track own requests | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| Browse the asset catalogue (requisition picker) | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
-| See assets I hold; file return / repair / damage / loss / theft on them | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Receive notifications | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Approve / reject requisitions | — | ✓ | — | — | — | ✓ | — |
-| Approval history (decisions I made) | — | ✓ | — | — | — | ✓ | — |
-| Fulfil / hold requisitions | — | — | ✓ ¹ | ✓ ¹ | — | ✓ ² | — |
-| Decide returns & incidents requests | — | — | ✓ ¹ | ✓ ¹ | — | ✓ ² | — |
-| Run maintenance & repair (incl. loaner) | — | — | ✓ ¹ | ✓ ¹ | — | ✓ ² | — |
-| Register assets, edit non-status fields | — | — | ✓ ³ | ✓ ³ | — | — | — |
-| Update asset lifecycle (issue / return / transfer / repair / flag for disposal) | — | — | ✓ ³ | ✓ ³ | — | — | — |
-| Generate / scan QR and barcodes | — | — | ✓ ³ | ✓ ³ | — | — | — |
-| View the asset registry and inventory dashboard | — | — | ✓ ³ | ✓ ³ | ✓ ³ | ✓ | ✓ |
-| View an asset's transaction history | — | — | ✓ ³ | ✓ ³ | ✓ ³ | ✓ | ✓ |
-| See the replacement-validation list and assets flagged for disposal (read-only) | — | — | ✓ ³ | ✓ ³ | ✓ ³ | ✓ | ✓ |
-| Generate official forms (PAR, ICS, RIS…) | — | — | ✓ | ✓ | — | ✓ | — |
-| View / download the forms archive | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Generate management reports | — | — | ✓ | ✓ | — | ✓ | ✓ |
-| User accounts, role assignment, system configuration | — | — | — | — | — | ✓ | — |
-| View the full audit trail (all records) | — | — | — | — | — | ✓ | ✓ |
-| Executive KPI dashboard | — | — | — | — | — | ✓ | ✓ |
+| Feature | Employee | Supervisor | IT Personnel | Property Custodian | System Admin | Management |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Login | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Submit requisition / replacement | ✓ | ✓ | ✓ | ✓ | — | — |
+| Track own requests | ✓ | ✓ | ✓ | ✓ | — | — |
+| Browse the asset catalogue (requisition picker) | ✓ | ✓ | ✓ | ✓ | — | — |
+| See assets I hold; file return / repair / damage / loss / theft on them | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Receive notifications | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Approve / reject requisitions | — | ✓ | — | — | ✓ | — |
+| Approval history (decisions I made) | — | ✓ | — | — | ✓ | — |
+| Fulfil / hold requisitions | — | — | ✓ ¹ | ✓ ¹ | ✓ ² | — |
+| Decide returns & incidents requests | — | — | ✓ ¹ | ✓ ¹ | ✓ ² | — |
+| Run maintenance & repair (incl. loaner) | — | — | ✓ ¹ | ✓ ¹ | ✓ ² | — |
+| Register assets, edit non-status fields | — | — | ✓ ³ | ✓ ³ | — | — |
+| Update asset lifecycle (issue / return / transfer / repair / flag for disposal) | — | — | ✓ ³ | ✓ ³ | — | — |
+| Generate / scan QR and barcodes | — | — | ✓ ³ | ✓ ³ | — | — |
+| View the asset registry and inventory dashboard | — | — | ✓ ³ | ✓ ³ | ✓ | ✓ |
+| View an asset's transaction history | — | — | ✓ ³ | ✓ ³ | ✓ | ✓ |
+| See the replacement-validation list and assets flagged for disposal (read-only) | — | — | ✓ ³ | ✓ ³ | ✓ | ✓ |
+| Generate official forms (PAR, ICS, RIS…) | — | — | ✓ | ✓ | ✓ | — |
+| View / download the forms archive | — | — | ✓ | ✓ | ✓ | ✓ |
+| Generate management reports | — | — | ✓ | ✓ | ✓ | ✓ |
+| User accounts, role assignment, system configuration | — | — | — | — | ✓ | — |
+| View the full audit trail (all records) | — | — | — | — | ✓ | ✓ |
+| Executive KPI dashboard | — | — | — | — | ✓ | ✓ |
 
-¹ Never for a requisition or request they filed themselves. ² Only for a custodian's own request or requisition (the fallback). ³ Inside the role's own asset-type scope: IT Personnel see and change **ICT** only; Property Custodian and Property Officer see **Fixed** and **Supplies** only. Enforced in the service layer on every read and write (`resolveAssetTypeScope`), not just in the menu.
+¹ Never for a requisition or request they filed themselves. ² Only for a custodian's own request or requisition (the fallback). ³ Inside the role's own asset-type scope: IT Personnel see and change **ICT** only; Property Custodian sees **Fixed** and **Supplies** only. Enforced in the service layer on every read and write (`resolveAssetTypeScope`), not just in the menu.
 
 ### Role Notes
 - **Employee** — Service requester. Submits requisitions, asks for a replacement from My Assigned Assets, files return / repair / damage / loss / theft requests for what they hold, tracks their own requests.
 - **Supervisor (Approving Officer)** — First-level approver. Reviews requisitions routed to them (their section, else division) and approves or rejects with comments. Can mark themselves unavailable and designate an alternate approver. Their own requisitions go to their alternate. Also files requisitions as a requester.
 - **IT Personnel (IT Asset Custodian)** — Custodian of ICT assets: registry, lifecycle, QR, issuance / returns / transfers, fulfilment of ICT requisitions, returns & incidents, maintenance & repair, disposal recommendations, official forms and management reports. Files requisitions but never fulfils their own.
-- **Property Custodian** — The same for Fixed assets and Supplies, including supply stock and the physical-inventory count sheet. Files requisitions and replacements like any other holder; never fulfils their own.
-- **Property Officer** — Oversight of Fixed assets and Supplies: read-only consolidated registry, replacement validation, disposal review and the forms archive. Cannot register or change assets, or fulfil anything. Files their own requisitions.
+- **Property Custodian** — The same for Fixed assets and Supplies, including supply stock and the physical-inventory count sheet, plus the read-only **Replacement Validation** and **Disposal Review** lists (the screens the retired Property Officer used to have). Files requisitions and replacements like any other holder; never fulfils their own.
 - **System Administrator** — Accounts, roles, system settings, the full audit log. Can approve any requisition. The **fallback decider** for exactly the requests a custodian filed themselves (returns & incidents, repairs, requisitions). Has no operational asset role: cannot register or edit assets, and does not file requisitions.
 - **Management** — Read-only oversight: dashboards, reports, the audit log, the forms archive. Never files, approves or fulfils anything.
 
@@ -302,11 +300,11 @@ Key screens (matching Figma mockup):
 
 **SLA Target:** 24-hour requisition approval turnaround
 
-**Who files, and who may not fulfil their own (2026-10-16):** `POST /api/v1/requisitions` takes Employee, Supervisor, IT Personnel, **Property Custodian and Property Officer** (they hold property like anyone, so they request and replace like anyone; the catalogue endpoints allow them too). Management and the System Administrator do not file (403). Routing is unchanged — the active Approving Officer of the requester's section, else division — so each division that files needs an Approving Officer; the Property and Supply Management division's is `CICC-SUP-002` (alternate `CICC-ALT01`; credentials in `docs/guides/ROLES.md`). **Segregation of duties:** a custodian never fulfils or holds a requisition they filed — `isCustodianOwnRequisition()` (requester is IT Personnel / Property Custodian and every line is in their own asset-type scope) hides it from their own queue and `assertMayFulfil()` refuses it (403). Another custodian fulfils it, or — for exactly those requests — the System Administrator, via `GET /api/v1/requisitions/fulfilment-fallback` (Master Admin → Requisition Fulfilment); the admin is refused on any other requisition. Mirrors the Returns & Incidents fallback (§Module 6).
+**Who files, and who may not fulfil their own (2026-10-16):** `POST /api/v1/requisitions` takes Employee, Supervisor, IT Personnel, **Property Custodian** (they hold property like anyone, so they request and replace like anyone; the catalogue endpoints allow them too). Management and the System Administrator do not file (403). Routing is unchanged — the active Approving Officer of the requester's section, else division — so each division that files needs an Approving Officer; the Property and Supply Management division's is `CICC-SUP-002` (alternate `CICC-ALT01`; credentials in `docs/guides/ROLES.md`). **Segregation of duties:** a custodian never fulfils or holds a requisition they filed — `isCustodianOwnRequisition()` (requester is IT Personnel / Property Custodian and every line is in their own asset-type scope) hides it from their own queue and `assertMayFulfil()` refuses it (403). Another custodian fulfils it, or — for exactly those requests — the System Administrator, via `GET /api/v1/requisitions/fulfilment-fallback` (Master Admin → Requisition Fulfilment); the admin is refused on any other requisition. Mirrors the Returns & Incidents fallback (§Module 6).
 
 **Request type is derived, never picked:** `supply` for an IES item, `new` otherwise, `replacement` only when started from My Assigned Assets. A `repair` requisition is refused (400) — repairs go through Returns & Incidents (Module 6); the enum value stays for historical rows.
 
-**Replacement flow (§17):** holder clicks "Request replacement" on an asset that qualifies — `GET /api/v1/assets/mine` returns `replacement: { eligible, basis, reason, openRequestNumber }` per asset (`Backend/src/assets/replacement-eligibility.ts`: not serviceable → `condition`, repaired ≥ `repeat_repair_limit` times (system config, default 3, min 2) in the last 12 months → `repeat_repair`, past useful life → `useful_life`, held while flagged for disposal → `loss_or_damage`). The holder's button and the requisition guard both go through `AssetsService.replacementEligibilityFor`, so they never disagree. The server re-checks: requester must hold it, one unit of the same `assetType`, one open replacement per asset (409). Approver and custodian see `replacedAsset` on the requisition. **Replacement Validation** (`GET /api/v1/requisitions/replacement-review`, Property Officer / Property Custodian / IT / Admin / Management, scoped by asset type; `/property-officer/replacements`) lists every replacement request with the basis it was justified on at submission (read from its `requisition_submitted` audit entry) and the old unit's repairs in 12 months, plus held items that already qualify but have no open request. **Fulfilling takes the old unit back** — an issued old unit becomes `returned` (custodian cleared) and its Receipt of Returned Property/SEP is generated, linked via `related_requisition_id`; a lost/stolen unit has nothing to collect and stays on the holder. **…and can issue the new one in the same step:** when the custodian picks a unit on Fulfil (`fulfilledItems` for the single line), it must be `available`, the same `assetType`, not IES and not the old unit — checked before anything is written — and it is issued to the requester right after the fulfilment commits (an issue failure is logged and audited as `issued: false`; the custodian can still issue from Custody & Issuance). No pick = the old behaviour. **Requester documents:** `GET /api/v1/requisitions/:id` carries `documents` (forms with `related_requisition_id`), and `GET /api/v1/requisitions/:id/documents/:formId` downloads one with the same read access as the requisition — the receipt shows on the requisition detail for the requester too.
+**Replacement flow (§17):** holder clicks "Request replacement" on an asset that qualifies — `GET /api/v1/assets/mine` returns `replacement: { eligible, basis, reason, openRequestNumber }` per asset (`Backend/src/assets/replacement-eligibility.ts`: not serviceable → `condition`, repaired ≥ `repeat_repair_limit` times (system config, default 3, min 2) in the last 12 months → `repeat_repair`, past useful life → `useful_life`, held while flagged for disposal → `loss_or_damage`). The holder's button and the requisition guard both go through `AssetsService.replacementEligibilityFor`, so they never disagree. The server re-checks: requester must hold it, one unit of the same `assetType`, one open replacement per asset (409). Approver and custodian see `replacedAsset` on the requisition. **Replacement Validation** (`GET /api/v1/requisitions/replacement-review`, Property Custodian / IT / Admin / Management, scoped by asset type; `/property-custodian/replacements`) lists every replacement request with the basis it was justified on at submission (read from its `requisition_submitted` audit entry) and the old unit's repairs in 12 months, plus held items that already qualify but have no open request. **Fulfilling takes the old unit back** — an issued old unit becomes `returned` (custodian cleared) and its Receipt of Returned Property/SEP is generated, linked via `related_requisition_id`; a lost/stolen unit has nothing to collect and stays on the holder. **…and can issue the new one in the same step:** when the custodian picks a unit on Fulfil (`fulfilledItems` for the single line), it must be `available`, the same `assetType`, not IES and not the old unit — checked before anything is written — and it is issued to the requester right after the fulfilment commits (an issue failure is logged and audited as `issued: false`; the custodian can still issue from Custody & Issuance). No pick = the old behaviour. **Requester documents:** `GET /api/v1/requisitions/:id` carries `documents` (forms with `related_requisition_id`), and `GET /api/v1/requisitions/:id/documents/:formId` downloads one with the same read access as the requisition — the receipt shows on the requisition detail for the requester too.
 
 ### Module 3: Dashboard & Reporting
 
@@ -364,14 +362,14 @@ Notifications carry `relatedRecordType` + `relatedRecordId`; clicking one (bell 
 The holder of an **issued** asset files a return, repair, damage, loss or theft request (`POST /api/v1/asset-requests`, multipart: up to 3 JPG/PNG/WEBP/PDF attachments × 5 MB, type checked by magic bytes, stored as `bytea` with `select: false` like COA PDFs).
 
 - **Two-step:** `submitted` → custodian **approves** (optional hand-over date) → `approved` → custodian **marks received** → `completed`. `rejected` (reason required; **only before approval** — approve and reject are the two alternatives at step one) and `cancelled` (requester only, any open state) are terminal.
-- **Routing:** ICT → IT Personnel, Fixed/Supplies → Property Custodian (`resolveAssetTypeScope`); Property Officer / Admin / Management read-only. A custodian can never act on their own request — the **System Administrator is the fallback decider for exactly those** (Master Admin → Returns & Incidents). Views carry a server-computed `canAct`; the queue shows decision controls only when it is true.
+- **Routing:** ICT → IT Personnel, Fixed/Supplies → Property Custodian (`resolveAssetTypeScope`); Admin / Management read-only. A custodian can never act on their own request — the **System Administrator is the fallback decider for exactly those** (Master Admin → Returns & Incidents). Views carry a server-computed `canAct`; the queue shows decision controls only when it is true.
 - **One open case per asset** (409), except a loss/theft may still be reported while a return/repair/damage is pending — and filing it **supersedes** that request (auto-`cancelled`, `decisionNotes` = "Superseded by AR-…", audited), because the item can no longer be handed over. Older pairs that are both open: a hand-over cannot be completed while the incident is open (409), and completing the incident closes it. No supervisor step. Closed requests never block — the holder can file again once a request is completed, rejected or cancelled and the asset is issued to them again.
 - **Repair loop:** a repaired item goes back to its holder via `under_repair → issued` (allowed only to the current holder, no employee ID needed). `→ available` always clears the holder — before, a repaired item sat in stock *and* on the old holder's list at once.
 
 ### Module 7: Maintenance & Repair (`Backend/src/assets` — `asset-repairs.service.ts`, `repairs.controller.ts`, schema `013`)
 
 - **One `asset_repairs` row per stay in `under_repair`**, opened and closed inside `AssetsService.updateLifecycle` — so a repair is recorded whichever screen moved the asset (Returns & Incidents completion, asset page, Maintenance queue). Carries holder-at-the-time, the AR that sent it in, reported problem, in-house vs external + service provider, expected completion date, findings, work done, outcome. At most one open per asset (partial unique index). No cost columns (§11 #7-8).
-- **Endpoints:** `GET /api/v1/repairs?status=open|closed` (scoped by asset type; IT / Property Custodian / Property Officer / Admin / Management), `GET …/asset/:assetId` (asset page history), `PATCH …/:id` (progress), `POST …/:id/complete` `{ outcome: repaired|unrepairable, findings, actionTaken, returnToStock? }`. Same `canAct` rule as Returns & Incidents: the custodian role for the type, never the holder; System Admin only for a custodian's own item.
+- **Endpoints:** `GET /api/v1/repairs?status=open|closed` (scoped by asset type; IT / Property Custodian / Admin / Management), `GET …/asset/:assetId` (asset page history), `PATCH …/:id` (progress), `POST …/:id/complete` `{ outcome: repaired|unrepairable, findings, actionTaken, returnToStock? }`. Same `canAct` rule as Returns & Incidents: the custodian role for the type, never the holder; System Admin only for a custodian's own item.
 - **Outcomes:** repaired → back to the holder (`issued`) or into stock (`available`, holder cleared) · unrepairable (findings required — they are the disposal justification) → `flagged_for_disposal`, holder **keeps** accountability and becomes eligible for a replacement. The holder is notified either way.
 - **Loaner while under repair** (schema `014`, `asset_repairs.loaner_asset_id`): `POST /api/v1/repairs/:id/loaner { assetId, expectedReturnDate? }` (same `canAct` rule) issues an available unit of the same asset type — not IES, not the item itself — to the holder with an expected return date (default: the repair's due date, never in the past), so the overdue-return watcher covers it; one loaner out per repair (409). Closing the repair asks the holder to bring it back and moves its return date up to that day (re-arming the watcher). The repair view carries `loaner { …, withHolder }`; the drawer has **Issue loaner** while open and **Mark loaner returned** once closed (custodian queue only).
 - **Condition follows the lifecycle** (`conditionAfter`): serviceable → `for_repair` going in; `serviceable` when repaired; `unserviceable` when written off (also a damaged item surrendered for disposal). It used to never change, which also skewed replacement eligibility.
@@ -440,7 +438,7 @@ All reports are generated from live database records at time of export. Access g
 - Tables paginate (`drawTable` / `ensureSpace` / "Page n of N"); text drawn below `CONTENT_BOTTOM` makes pdfkit start a new page per call, so anything after a table goes through `ensureSpace`.
 - RSMI lists supply (IES) lines only, priced from the stock they were issued from (`fulfilledAssetId`); a line with no stock link prints a dash and is left out of the total. RPCI carries the stock on record and leaves the physical count blank. Conditions print as words (`conditionLabel`).
 - Receipts accept `returneeEmployeeId`; a unit collected by a replacement requisition takes its holder from that requisition. A PTR without `targetOffice` is a 400.
-- `GET /api/v1/reports/forms` returns `assetLabel`, `requisitionNumber`, `generatedByName`, `documentNumber` and filters by `formType` / `search` (document number) with paging. The page is **Reports & Forms** (`components/shared/FormsWorkspaceContent.tsx`): a catalogue of the 18 forms (`lib/forms/form-catalog.ts`) with a drawer per form (record pickers, not UUIDs) and the archive; Property Officer / Management get the archive only.
+- `GET /api/v1/reports/forms` returns `assetLabel`, `requisitionNumber`, `generatedByName`, `documentNumber` and filters by `formType` / `search` (document number) with paging. The page is **Reports & Forms** (`components/shared/FormsWorkspaceContent.tsx`): a catalogue of the 18 forms (`lib/forms/form-catalog.ts`) with a drawer per form (record pickers, not UUIDs) and the archive; Management gets the archive only.
 
 **Layout and content rules (`Backend/src/reports/forms/base-form.generator.ts`, found by rendering and reading all 18 forms on 2026-10-16):**
 - `drawFormTitle` stacks the reference box: label on top, value (document number / appendix / form code) under it, shrinking a long code to fit. Never draw both at the same y.
@@ -549,13 +547,12 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 
 ### Property Custodian (`/property-custodian/`)
 - `dashboard`, `fixed-assets`, `supplies` (+ `/new`, `assets/[id]`), `qr-scanner`
-- `fulfillment`, `custody`, `returns-incidents`, `maintenance`, `physical-inventory`, `disposal`
+- `fulfillment`, `custody`, `returns-incidents`, `maintenance`, `physical-inventory`, `disposal` (recommend disposal)
+- `replacements` — Replacement Validation (read-only); `disposal-review` — Disposal Review (read-only). Both were the Property Officer's screens
 - `requisitions` — My own requisitions (their own are fulfilled by another custodian or the System Administrator)
-- `reports` — Generate official COA forms
+- `reports` — Generate official COA forms and the archive
 
-### Property Officer (`/property-officer/`)
-- `dashboard`, `assets` (consolidated registry), `replacements` (replacement validation), `disposal` (disposal review, read-only), `reports` (forms archive)
-- `requisitions` — My own requisitions
+> `/property-officer/*` no longer exists: old links redirect (`next.config.ts`) to the two screens above or to the custodian's dashboard.
 
 ### Master Administrator (`/master-admin/`)
 - `dashboard` — System health, user activity, audit summary
@@ -614,7 +611,7 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 - **Critical-path pass rate:** 100% — no exceptions
 - Tests run automatically in CI on every push; failing tests block merges to `main`
 - Key test areas: asset status transitions, requisition approval routing, RBAC enforcement, audit log generation, QR code utility functions, database interaction layers
-- **Where it stands (2026-10-16, PR #108 branch):** backend 728 unit tests in 33 suites (96.3% statements, 88.7% branches, 95.2% functions; gate is 65 / 55 / 55 / 65), 89 e2e tests in 12 suites on a real Postgres, frontend 320 vitest tests in 41 files. A request-routing or guard change needs an e2e test, because the unit tests mock the database
+- **Where it stands (2026-10-16):** backend 800 unit tests in 40 suites (96.3% statements, 88.6% branches, 95.2% functions; gate is 65 / 55 / 55 / 65), 94 e2e tests in 12 suites on a real Postgres, frontend 327 vitest tests in 41 files. A request-routing or guard change needs an e2e test, because the unit tests mock the database
 
 ### Integration Testing (Jest)
 - API endpoint behavior across service boundaries

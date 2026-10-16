@@ -29,7 +29,7 @@ function RepairCount({ count }: Readonly<{ count: number }>) {
 }
 
 /**
- * Replacement Validation (Property Officer, read-only). Every replacement
+ * Replacement Validation (Property Custodian, read-only). Every replacement
  * requisition with the criterion it was justified on at submission and the
  * replaced unit's repair count, plus the held assets that already qualify —
  * no longer serviceable, aged out, repaired too often, or written off — but

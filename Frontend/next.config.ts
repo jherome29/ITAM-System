@@ -31,11 +31,13 @@ const nextConfig: NextConfig = {
       { source: "/property-custodian/custody-issuance", destination: "/property-custodian/custody", permanent: false },
       { source: "/property-custodian/inventory", destination: "/property-custodian/physical-inventory", permanent: false },
       { source: "/property-custodian/reports-forms", destination: "/property-custodian/reports", permanent: false },
-      { source: "/property-officer/registry-overview", destination: "/property-officer/assets", permanent: false },
-      { source: "/property-officer/replacement-validation", destination: "/property-officer/replacements", permanent: false },
-      { source: "/property-officer/disposal-review", destination: "/property-officer/disposal", permanent: false },
-      { source: "/property-officer/reports-forms", destination: "/property-officer/reports", permanent: false },
-      { source: "/property-officer/audit-history", destination: "/property-officer/audit", permanent: false },
+      // The Property Officer was merged into the Property Custodian: send old bookmarks to the
+      // two screens it had that still exist, and everything else to the custodian's dashboard.
+      { source: "/property-officer/replacements", destination: "/property-custodian/replacements", permanent: false },
+      { source: "/property-officer/replacement-validation", destination: "/property-custodian/replacements", permanent: false },
+      { source: "/property-officer/disposal", destination: "/property-custodian/disposal-review", permanent: false },
+      { source: "/property-officer/disposal-review", destination: "/property-custodian/disposal-review", permanent: false },
+      { source: "/property-officer/:path*", destination: "/property-custodian/dashboard", permanent: false },
       { source: "/management-audit/maintenance-disposal-reports", destination: "/management-audit/maintenance-disposal", permanent: false },
       { source: "/management-audit/physical-count-reports", destination: "/management-audit/physical-count", permanent: false },
       { source: "/management-audit/audit-log", destination: "/management-audit/audit", permanent: false },

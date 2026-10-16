@@ -23,9 +23,11 @@ const ROLE_LABELS: Record<string, string> = {
   system_admin: 'System Administrator',
   management: 'Management',
   property_custodian: 'Property Custodian',
-  property_officer: 'Property Officer',
 };
 const ROLE_ORDER = Object.keys(ROLE_LABELS);
+// The retired Property Officer role is listed only while an account still holds it: that is a
+// leftover for the administrator to move to Property Custodian.
+const RETIRED_ROLE_LABELS: Record<string, string> = { property_officer: 'Property Officer (retired)' };
 
 const plural = (n: number) => (n === 1 ? '' : 's');
 
@@ -258,11 +260,11 @@ export function AdminDashboard() {
         <Panel title="Accounts by role" detail="Active and inactive accounts, grouped by assigned role">
           <div className="space-y-3 p-4">
             {stats ? (
-              ROLE_ORDER.map((role) => {
+              [...ROLE_ORDER, ...Object.keys(RETIRED_ROLE_LABELS).filter((role) => (stats.users.byRole[role] ?? 0) > 0)].map((role) => {
                 const count = stats.users.byRole[role] ?? 0;
                 return (
                   <div key={role} className="grid grid-cols-[10rem_1fr_2.5rem] items-center gap-3">
-                    <span className="truncate text-sm text-slate-700">{ROLE_LABELS[role]}</span>
+                    <span className="truncate text-sm text-slate-700">{ROLE_LABELS[role] ?? RETIRED_ROLE_LABELS[role]}</span>
                     <span className="h-2 rounded-full bg-slate-100">
                       <span className="block h-full rounded-full bg-blue-600" style={{ width: `${(count / roleMax) * 100}%` }} />
                     </span>

@@ -11,8 +11,8 @@ date* and are kept as a record, not maintained).
 
 ## Where things stand (2026-10-16)
 
-The system now does what the capstone describes, end to end, for all seven roles,
-on real data. The work since the last full status (2026-09-10) landed in three
+The system now does what the capstone describes, end to end, for all six roles,
+on real data. The work since the last full status (2026-09-10) landed in four
 waves:
 
 | Wave | What | Where |
@@ -20,12 +20,13 @@ waves:
 | **Returns, repairs, replacement** (2026-10-09 → 10-14) | Returns & Incidents with attachments and auto-generated COA documents; Maintenance & Repair with loaner units; derived request types; the replacement flow (repeat repairs qualify, the new unit is issued on fulfilment, the requester gets the receipt); catalogue item picker; notification deep-links; self-approval routing fix; per-watcher status | PR #102 / #103, **on `develop`** |
 | **Audit + clean-up** (2026-10-14 → 10-15) | The 2026-10-14 verification's fixes: scope bypass on `/audit/record/:id`, requisition-number race, TZ default, SLA KPI, real client IP, `GET /users` admin-only, restore-from-flagged; **every mock screen removed** (the frontend has no sample data); disposal review, physical-inventory count sheet, real approval history, real management dashboard, the audit log for Management; the demo-data seeder | PR #105, #106, #107 — open against `develop` |
 | **UI + export audit, and the property roles** (2026-10-15 → 10-16) | 12 defects from a button-by-button and PDF-by-PDF audit (supply stock draw-down, real running document numbers, entity name / Fund Cluster as settings, the Audit Trail Report, paginating tables, the Reports & Forms redesign); a second pass (Manila-day dates, server-side request date rules, a real reason to reject, names instead of UUIDs in the audit screens); **Property Custodian and Property Officer file requisitions**, custodians never fulfil their own (the System Administrator is the fallback); a read of all 18 PDFs that fixed overprinted form numbers, tables running off the page, a wrong Accountable Officer on the RLSDDP and an invented ICS number on the Annex A.4 | PR #108 — open, stacked on #106 |
+| **Role merge** (2026-10-16) | The Property Officer was a read-only subset of the Property Custodian, so the role was retired: schema 017 migrates its accounts, the value stays in the enum for old audit rows, nothing grants it and the API refuses to assign it; its Replacement Validation and Disposal Review screens moved into the Property Custodian's menu | the `refactor/merge-property-officer-into-custodian` PR |
 
-Health on the #108 branch (2026-10-16): backend `tsc` / ESLint / webpack build
-clean, **728 unit tests** (96.3% statements) and **89 e2e tests** on a real
-Postgres passing; frontend `tsc` / ESLint / production build clean and **320
-tests** passing; `secretlint` clean; CI green (Backend CI, Backend E2E, Frontend
-CI, Shared Package; SonarCloud and Docker Build were still running). One
+Health (2026-10-16): backend `tsc` / ESLint / webpack build clean, **800 unit
+tests** (96.3% statements) and **94 e2e tests** on a real Postgres passing;
+frontend `tsc` / ESLint / production build clean and **327 tests** passing;
+`secretlint` and both dependency audits clean; CI green except SonarCloud's quality
+gate ("C Reliability Rating on New Code", issue not yet identified). One
 transient failure of 4 tests in `auth.service.spec` (the lockout threshold) was
 seen once on a coverage run and did not reproduce in four later runs; if it
 recurs, capture the output.
@@ -39,8 +40,8 @@ layout bugs the unit tests could not (see CLAUDE.md §12, `RUN-LOCAL.md` §11).
 **Product gaps (no backend or no behaviour yet)**
 - **Recording a physical count / reconciliation.** The count sheet is read-only;
   there is nowhere to enter a count and compare it with the records, so the RPCI /
-  RPCPPE cannot yet support a real reconciliation. Property Officer inventory
-  corrections do not exist either.
+  RPCPPE cannot yet support a real reconciliation. Inventory corrections do not
+  exist either.
 - **Trends / utilisation** — no endpoint, and the **Asset Utilization Summary**
   report does not exist.
 - **Asset Issuance Record and Asset Return Record** filter on the asset's
@@ -69,12 +70,17 @@ for an asset flagged through the lifecycle endpoint (the flag does not change th
 condition); dates print MM/DD/YYYY.
 
 **Delivery**
-- **Review and merge the PR stack** (#105 → #106 → #107 → #108; retarget #108 to
-  `develop` when #106 merges). `develop` needs one review per PR.
+- **`develop` → `main`** (2 reviews, every check green). #105, #106, #107 and #109 are in
+  `develop`; **#108 had been merged into a dead branch by mistake**, so #109 delivered
+  it. Schema `017` (it retires the Property Officer role) was applied to the shared
+  Supabase dev database on 2026-10-16.
+- **SonarCloud's quality gate fails** on the merged work ("C Reliability Rating on New
+  Code"). Its API blocks non-main branches, so the issue has to be read in the
+  SonarCloud dashboard.
 - **CICC inputs:** their property office's real document-number series (ours is a
   placeholder), and the Fund Cluster value.
 - **Before handover:** rotate the dev passwords in `ROLES.md` (the repo is public);
-  apply schemas 001–016 to CICC's production Postgres; `deploy.yml` is a placeholder
+  apply schemas 001–017 to CICC's production Postgres; `deploy.yml` is a placeholder
   (no CICC server access yet); do not run the pilot on the shared Supabase dev
   database (15-connection cap, test and demo rows in it).
 - **Approver coverage:** every division that files needs an active Approving
@@ -86,7 +92,7 @@ checklist report for the paper. The Jest security suite and a k6 baseline are do
 
 ## Suggested order of next work
 
-1. **Get the PR stack reviewed and merged** — everything else piles onto it.
+1. **Promote `develop` → `main`**; read the SonarCloud issue.
 2. **Fix the end-date bug in the period reports**; decide the other flagged
    questions above (Annex A.4 scope, asset history by person).
 3. **Compare the generated PDFs against the official templates in `FORMS/`**
@@ -103,7 +109,7 @@ checklist report for the paper. The Jest security suite and a k6 baseline are do
 ## About Phase 5 (Testing & Evaluation)
 
 `docs/phases/PHASE-5-TESTING.md`. The core workflows are built and verified, so
-this phase can start once the PR stack is merged. Status: the **formal Jest
+this phase can start now. Status: the **formal Jest
 security suite is done** (8 ASVS scenarios, gating CI); the k6 baseline is done
 (`perf/`); coverage is 96% statements; **still to run:** JMeter at 362 users on
 prod-like infra, OWASP ZAP, UAT with CICC. Run the whole-system tools once, at the

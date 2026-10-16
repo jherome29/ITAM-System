@@ -2,7 +2,7 @@
 
 How to get the stack running on this machine. Written 2026-09-30 against
 Windows 11 / PowerShell, Node v25.2.1, npm 11.6.2, Docker Desktop 29.4.3;
-reviewed 2026-10-16 (Next.js 16.4, schemas 001–016, test counts, and §11, how to
+reviewed 2026-10-16 (Next.js 16.4, schemas 001–017, test counts, and §11, how to
 verify a screen or a PDF on a throwaway database). Folder paths below are the
 original machine's (`D:\Documents(D)\CAPSTONE`): use your own clone's path.
 
@@ -75,8 +75,8 @@ created there:
 | Supervisor (IT Division — approves IT Personnel's requests) | `it.supervisor@cicc.gov.ph` | `ItSupervisor@CICC2026!` | `/approving-officer/dashboard` |
 | Management | `management@cicc.gov.ph` | `Management@CICC2026!` | `/management-audit/dashboard` |
 | Property Custodian | `property.custodian@cicc.gov.ph` | `PropertyCustodian@2026!` | `/property-custodian/dashboard` |
-| Property Officer | `property.officer@cicc.gov.ph` | `PropertyOfficer@2026!` | `/property-officer/dashboard` |
-| Supervisor (Property and Supply Management, approves the two property roles) | `psm.approver@cicc.gov.ph` | `PSMApprover@2026!` | `/approving-officer/dashboard` |
+| Property Custodian (second account; was the Property Officer, `property.officer@cicc.gov.ph` until 2026-10-16) | `property.custodian2@cicc.gov.ph` | `PropertyOfficer@2026!` | `/property-custodian/dashboard` |
+| Supervisor (Property and Supply Management, approves the Property Custodian) | `psm.approver@cicc.gov.ph` | `PSMApprover@2026!` | `/approving-officer/dashboard` |
 
 > After a DB reset (§6) the seed recreates only `admin@` and `it.personnel@`
 > (note the dot), both with `ChangeMe@1234!`.
@@ -108,7 +108,7 @@ restricts asset queries by role:
 | Role | Can see / register |
 |---|---|
 | IT Personnel | `ICT` only |
-| Property Custodian, Property Officer | `Fixed` + `Supplies` only |
+| Property Custodian | `Fixed` + `Supplies` only |
 | Admin, Management, Employee, Supervisor | no asset-type restriction |
 
 So IT Personnel showing "Total assets 5" while 9 exist is correct, not a bug.
@@ -218,7 +218,7 @@ docker exec aimrs_postgres psql -v ON_ERROR_STOP=1 -U aimrs_user -d aimrs_dev -f
 ```
 
 Then add it to the `postgres.volumes` list in `docker-compose.yml` so fresh
-bootstraps pick it up (`Database/schemas/` currently runs 001 to 016). **The files in `Database/schemas/` only run on the
+bootstraps pick it up (`Database/schemas/` currently runs 001 to 017). **The files in `Database/schemas/` only run on the
 FIRST boot of an empty volume** — adding one to the compose file does nothing
 to a database that already exists.
 
@@ -284,12 +284,12 @@ clean — run from PowerShell:
 cd Backend;  npx tsc --noEmit
 cd Backend;  npx eslint "{src,apps,libs,test}/**/*.ts" --max-warnings 0
 cd Backend;  npm run build
-cd Backend;  npm run test:cov        # 728 tests (2026-10-16), coverage gate 65%
+cd Backend;  npm run test:cov        # 800 tests (2026-10-16), coverage gate 65%
 cd Backend;  npm run audit:check
 cd Frontend; npx tsc --noEmit
 cd Frontend; npx eslint . --max-warnings 0
 cd Frontend; npm run build
-cd Frontend; npm test                # 320 vitest tests (2026-10-16)
+cd Frontend; npm test                # 327 vitest tests (2026-10-16)
 cd Frontend; npm run audit:check
 cd ..;       npm run secretlint
 ```
@@ -297,7 +297,7 @@ cd ..;       npm run secretlint
 `cd Frontend && npm run build` writes to the same `.next/` the dev server uses —
 **stop `npm run dev` first**, or the running dev server gets confused.
 
-Backend e2e (spins its own throwaway Postgres on port 5433, needs Docker; 89 tests
+Backend e2e (spins its own throwaway Postgres on port 5433, needs Docker; 94 tests
 in 12 suites as of 2026-10-16):
 
 ```powershell

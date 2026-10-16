@@ -45,7 +45,7 @@ describe('wrongWorkspaceRedirect', () => {
     ['employee', ProposedUserRole.IT_ASSET_CUSTODIAN, '/employee/dashboard'],
     ['supervisor', ProposedUserRole.IT_ASSET_CUSTODIAN, '/approving-officer/dashboard'],
     ['system_admin', ProposedUserRole.EMPLOYEE, '/master-admin/dashboard'],
-    ['property_custodian', ProposedUserRole.PROPERTY_OFFICER, '/property-custodian/dashboard'],
+    ['property_custodian', ProposedUserRole.MASTER_ADMIN, '/property-custodian/dashboard'],
     ['management', ProposedUserRole.MASTER_ADMIN, '/management-audit/dashboard'],
   ])('sends a %s who opened the %s workspace to %s', (role, shell, home) => {
     expect(wrongWorkspaceRedirect(asUser(role), false, shell)).toBe(home);
@@ -53,5 +53,11 @@ describe('wrongWorkspaceRedirect', () => {
 
   it('treats an unrecognised backend role as an employee', () => {
     expect(wrongWorkspaceRedirect(asUser('visitor'), false, ADMIN_SHELL)).toBe('/employee/dashboard');
+  });
+
+  // An account that somehow kept the retired role is refused by every backend
+  // guard, so the UI must not give it a privileged workspace either.
+  it('treats the retired property_officer backend role as an employee, not a custodian', () => {
+    expect(wrongWorkspaceRedirect(asUser('property_officer'), false, ADMIN_SHELL)).toBe('/employee/dashboard');
   });
 });

@@ -32,12 +32,6 @@ export const rolePermissions: Record<ProposedUserRole, UiPermission[]> = {
     'reconcile_inventory',
     'view_reports',
   ],
-  [ProposedUserRole.PROPERTY_OFFICER]: [
-    'reconcile_inventory',
-    'recommend_disposal',
-    'view_reports',
-    'view_audit',
-  ],
   [ProposedUserRole.MASTER_ADMIN]: ['manage_users', 'view_audit'],
   [ProposedUserRole.MANAGEMENT_AUDIT_VIEWER]: ['view_reports', 'view_audit', 'read_only'],
 };

@@ -301,7 +301,9 @@ describe('RequisitionsService', () => {
         { id: 'asset-uuid-2' },
       ]);
 
-      const result = await service.replacementReview(UserRole.PROPERTY_OFFICER);
+      const result = await service.replacementReview(
+        UserRole.PROPERTY_CUSTODIAN,
+      );
 
       expect(qb.where).toHaveBeenCalledWith(
         'replacedAsset.assetType IN (:...scope)',
@@ -2259,7 +2261,6 @@ describe('RequisitionsService', () => {
       // Not a custodian at all.
       [UserRole.EMPLOYEE, ict, false],
       [UserRole.SUPERVISOR, fixed, false],
-      [UserRole.PROPERTY_OFFICER, fixed, false],
     ])('requester %s asking for %j -> %s', (role, items, expected) => {
       expect(isCustodianOwnRequisition(role, items as never)).toBe(expected);
     });
@@ -2496,7 +2497,7 @@ describe('RequisitionsService', () => {
 
       beforeEach(() => mockApprovalRepo.find.mockResolvedValue([]));
 
-      it.each([UserRole.PROPERTY_CUSTODIAN, UserRole.PROPERTY_OFFICER])(
+      it.each([UserRole.PROPERTY_CUSTODIAN])(
         'forbids %s from reading an ICT requisition by id',
         async (role) => {
           mockReqRepo.findOne.mockResolvedValue(ictReq());
@@ -2513,10 +2514,10 @@ describe('RequisitionsService', () => {
         ).rejects.toThrow(ForbiddenException);
       });
 
-      it('lets Property roles read supply requisitions', async () => {
+      it('lets the Property Custodian read supply requisitions', async () => {
         mockReqRepo.findOne.mockResolvedValue(supplyReq());
         await expect(
-          service.findOne('req-uuid-1', 'po-1', UserRole.PROPERTY_OFFICER),
+          service.findOne('req-uuid-1', 'pc-1', UserRole.PROPERTY_CUSTODIAN),
         ).resolves.toBeDefined();
       });
 
@@ -2866,19 +2867,6 @@ describe('RequisitionsService', () => {
       expect(qb.andWhere).toHaveBeenCalledWith(
         'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...pcScope))',
         { pcScope: [AssetType.FIXED, AssetType.SUPPLIES] },
-      );
-    });
-
-    it('scopes PROPERTY_OFFICER to Fixed/Supplies items across all statuses', async () => {
-      const qb = makeListQb();
-      mockReqRepo.createQueryBuilder.mockReturnValue(qb);
-
-      await service.findAll('po-1', UserRole.PROPERTY_OFFICER);
-
-      expect(qb.where).not.toHaveBeenCalled();
-      expect(qb.andWhere).toHaveBeenCalledWith(
-        'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...poScope))',
-        { poScope: [AssetType.FIXED, AssetType.SUPPLIES] },
       );
     });
 

@@ -77,12 +77,12 @@ cd Backend && npm run test
 **What it checks:** Jest unit tests for all service files. Every test must pass — no exceptions.
 **If it fails:** Read the failing test output. Fix the underlying service logic or test, do not skip or comment out tests.
 
-**Current state (2026-10-16):** 728 tests in 33 suites, all passing.
+**Current state (2026-10-16):** 800 tests in 40 suites, all passing.
 
 > **If the change touches a controller, a guard, a DTO, request routing, or the DB
 > layer**, also run the e2e suite: `cd Backend && npm run test:e2e:local` (needs
-> Docker — it spins a throwaway `postgres:16` like CI's `backend-e2e` job; 89 tests
-> in 12 suites). The unit tests mock the database, so routing and guard rules are only
+> Docker — it spins a throwaway `postgres:16` like CI's `backend-e2e` job; 94 tests
+> in 12 suites, with a 30 s test timeout: the hooks do real bcrypt hashing and logins, and Jest's 5 s default made them flaky on a busy machine). The unit tests mock the database, so routing and guard rules are only
 > proven there. Plain `npm run test:e2e` targets Supabase and will not connect from jest.
 > A single suite: `npm run test:e2e:local -- property-requisitions`.
 >
@@ -105,7 +105,7 @@ cd Backend && npm run test:cov
 - Functions: ≥ 55%
 - Lines: ≥ 65%
 
-**Current state (2026-10-16):** 728 tests passing · 96.28% statements · 88.65% branches · 95.18% functions · 96.28% lines.
+**Current state (2026-10-16):** 800 tests passing · 96.27% statements · 88.64% branches · 95.18% functions · 96.27% lines.
 
 Target to work toward: **70% across all metrics** (CLAUDE.md §12): met.
 
@@ -133,7 +133,7 @@ cd Backend && npm run audit:check
 ```
 **Pass condition:** Exit code 0.
 **What it checks:** `node ../scripts/audit-allowlist.mjs .` — runs `npm audit` and fails on any **high/critical** advisory that is **not** in `scripts/audit-allowlist.mjs`.
-**Note:** The allowlist (as of 2026-10-16) holds the four `multer` DoS advisories — `multer` is pulled in transitively by every `@nestjs/*` package and the only "fix" npm offers is downgrading NestJS 11 → 7 — and one `braces` advisory (stack exhaustion in lint-time globbing, no fix released). Each entry has a written reason; re-check when `@nestjs/platform-express` bumps `multer` or `braces` ships a fix. Everything else high/critical still fails the gate.
+**Note:** As of 2026-10-16 the Backend needs nothing allowlisted (`multer` is 2.4.0, past the DoS advisories), and the Frontend allowlists one `braces` advisory (stack exhaustion in lint-time globbing, no fix released). `scripts/audit-allowlist.mjs` still lists the four old `multer` GHSA ids; they are obsolete and can be dropped. Each remaining entry has a written reason. Everything else high/critical still fails the gate.
 **If it fails:** Prefer a targeted in-range bump — `npm update <pkg>` (or edit the pin) then `npm install` — and re-verify tests/build. Only add a GHSA to the allowlist when there is genuinely no non-breaking fix, with a reason. Never `npm audit fix` (it reshuffles the whole tree) and never `--force`.
 
 ---
@@ -193,7 +193,7 @@ cd Frontend && npm run build
 ```bash
 cd Frontend && npm run test
 ```
-**Pass condition:** All test files pass (320 tests in 41 files as of 2026-10-16).
+**Pass condition:** All test files pass (327 tests in 41 files as of 2026-10-16).
 **What it checks:** vitest unit tests for the pure logic the screens depend on: role navigation and the live-page allow-list, requisition and asset-request rules, date and status formatting, API clients, server-rendered component specs. CI's `frontend-ci` job runs this.
 **If it fails:** Fix the code or the test; never skip one. A menu or allow-list change (`lib/roles/role-navigation.ts`, `lib/workflow/live-pages.ts`) needs its spec updated in the same commit.
 
