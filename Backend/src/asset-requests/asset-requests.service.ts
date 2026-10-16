@@ -38,6 +38,7 @@ import {
   UserRole,
 } from '../../../packages/shared/src/enums';
 import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
+import { ciccToday } from '../common/utils/cicc-date.util';
 
 // SVC: Deliver & Support — returns, repairs and incident reporting.
 // Flow: holder submits → custodian approves (schedules hand-over) → custodian
@@ -71,6 +72,26 @@ const TYPE_TITLE: Record<AssetRequestType, string> = {
   [AssetRequestType.LOSS]: 'Loss Report',
   [AssetRequestType.THEFT]: 'Theft Report',
 };
+
+/**
+ * What is wrong with the date on a request, or null. For an incident (repair,
+ * damage, loss, theft) the date is when it happened, which cannot be in the
+ * future; for a return it is the day the holder proposes to hand the item in,
+ * which cannot already have passed. `today` is the CICC calendar day. The form
+ * enforces the same, but a client that skips the form must not be able to file a
+ * repair whose problem "started" next week.
+ */
+export function requestDateProblem(
+  type: AssetRequestType,
+  preferredDate: string,
+  today: string,
+): string | null {
+  const day = preferredDate.slice(0, 10);
+  if (type === AssetRequestType.RETURN) {
+    return day < today ? 'The return date cannot be in the past.' : null;
+  }
+  return day > today ? 'The date it happened cannot be in the future.' : null;
+}
 
 /**
  * Which already-open request (if any) blocks filing `type` on the same asset.
@@ -613,6 +634,13 @@ export class AssetRequestsService {
     ipAddress: string,
   ) {
     const attachments = checkAttachments(files);
+
+    const dateProblem = requestDateProblem(
+      dto.type,
+      dto.preferredDate,
+      ciccToday(),
+    );
+    if (dateProblem) throw new BadRequestException(dateProblem);
 
     const created = await this.repo.manager.transaction(async (em) => {
       // Lock the asset row so two submissions for the same asset serialise and

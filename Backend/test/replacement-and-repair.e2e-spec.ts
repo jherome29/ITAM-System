@@ -55,6 +55,8 @@ describe('Replacement and repair workflows (e2e)', () => {
   const auth = (key: string) => ({ Authorization: `Bearer ${tokens[key]}` });
   const inAWeek = () =>
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const yesterday = () =>
+    new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   const makeUser = async (
     key: string,
@@ -122,7 +124,9 @@ describe('Replacement and repair workflows (e2e)', () => {
       .set(auth(who))
       .field('assetId', assets[assetKey].id)
       .field('type', type)
-      .field('preferredDate', inAWeek())
+      // A return proposes a hand-in day (not in the past); an incident says when
+      // it happened (not in the future).
+      .field('preferredDate', type === 'return' ? inAWeek() : yesterday())
       .field('details', 'Keyboard and trackpad stopped responding');
 
   // Approve + receive. Returns the completed request body.
