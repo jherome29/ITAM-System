@@ -60,7 +60,7 @@ The files only run on the **first** boot of an empty volume. For a database that
 # Paste the file into the Supabase SQL editor, or:
 psql $DATABASE_URL -f schemas/016_document_numbers.sql
 ```
-**Status of the shared dev Supabase database:** at `017` (008–014 applied 2026-10-11, 015 on 2026-10-14, 016 on 2026-10-15, 017 on 2026-10-16). 017 moved the one Property Officer account (`property.officer@cicc.gov.ph`) to Property Custodian and left the 23 old audit rows that say `property_officer` untouched; it is recorded as `017_retire_property_officer`. Any other database needs it before a backend that includes the role merge runs against it, or a leftover Property Officer account is refused everywhere. No production database exists yet: when CICC provides one, apply `001…017` in order.
+**Status of the shared dev Supabase database:** at `017` (008–014 applied 2026-10-11, 015 on 2026-10-14, 016 on 2026-10-15, 017 on 2026-10-16). 017 moved the one Property Officer account (`property.officer@cicc.gov.ph` until it was renamed `property.custodian2@cicc.gov.ph` the same day) to Property Custodian and left the 23 old audit rows that say `property_officer` untouched; it is recorded as `017_retire_property_officer`. Any other database needs it before a backend that includes the role merge runs against it, or a leftover Property Officer account is refused everywhere. No production database exists yet: when CICC provides one, apply `001…017` in order.
 
 ### The e2e suite does not use these files
 `NODE_ENV=test` builds the schema from the TypeORM entities (`synchronize: true`) on a throwaway Postgres, so a missing or wrong schema file does **not** fail CI. A table that is written only with raw SQL (like `document_counters`) still needs an entity declaring it.

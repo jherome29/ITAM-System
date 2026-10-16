@@ -48,7 +48,7 @@ If you have an old local clone with a branch called `FE-Updated-not-finished`: t
 
 `main` is still behind `develop`; `develop` → `main` needs 2 reviews and every check green. **Schemas 008–017 must be applied to every database that predates them** (shared Supabase is at 017; your local Docker Postgres may be older) — `Database/README.md` has the table. Several contain `ALTER TYPE … ADD VALUE`, so run them with plain `psql -f`, not one transaction; all are safe to re-run.
 
-**Property Officer merged into Property Custodian (2026-10-16).** The Property Officer was a read-only subset of the Property Custodian, so the role was retired: schema `017` turns existing Property Officer accounts into Property Custodians (and invalidates their sessions); the `property_officer` value stays in the Postgres and shared `UserRole` enums, deprecated, because old audit rows carry it; no route grants it and the API refuses to assign it. The Replacement Validation and Disposal Review screens moved into the Property Custodian's menu. **`017` was applied to Supabase dev on 2026-10-16** and moved the one Property Officer account (`property.officer@cicc.gov.ph`) to Property Custodian. Any other database needs it before a backend that includes this change runs against it, or a leftover Property Officer account is refused everywhere.
+**Property Officer merged into Property Custodian (2026-10-16).** The Property Officer was a read-only subset of the Property Custodian, so the role was retired: schema `017` turns existing Property Officer accounts into Property Custodians (and invalidates their sessions); the `property_officer` value stays in the Postgres and shared `UserRole` enums, deprecated, because old audit rows carry it; no route grants it and the API refuses to assign it. The Replacement Validation and Disposal Review screens moved into the Property Custodian's menu. **`017` was applied to Supabase dev on 2026-10-16** and moved the one Property Officer account (`property.officer@cicc.gov.ph` until it was renamed `property.custodian2@cicc.gov.ph` the same day) to Property Custodian. Any other database needs it before a backend that includes this change runs against it, or a leftover Property Officer account is refused everywhere.
 
 **Open items:** SonarCloud's quality gate fails ("C Reliability Rating on New Code") and the issue is not yet identified; see `NEXT-TIME.md`.
 
@@ -132,7 +132,7 @@ cd Frontend && npm run dev
 | Employee | employee@cicc.gov.ph | Employee@CICC2026! |
 | Management | management@cicc.gov.ph | Management@CICC2026! |
 | Property Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
-| Property Custodian (second account, formerly the Property Officer) | property.officer@cicc.gov.ph | PropertyOfficer@2026! |
+| Property Custodian (second account; was the Property Officer, `property.officer@cicc.gov.ph` until 2026-10-16) | property.custodian2@cicc.gov.ph | PropertyOfficer@2026! |
 | Supervisor (Approving Officer, Property and Supply Management) | psm.approver@cicc.gov.ph | PSMApprover@2026! |
 
 The 2 Property role accounts, scoped to Fixed + Supplies assets, already existed in the shared dev DB but had no known-working password until 2026-08-21, when they were reset via the real `PATCH /api/v1/users/:id/reset-password` endpoint and verified with a live login. If these no longer work, someone has reset them again since — check with the team rather than assuming this doc is wrong.

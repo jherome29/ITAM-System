@@ -22,13 +22,13 @@ properly, see `RUN-LOCAL.md` §11. Update this file at the end of every session.
   route grants it and the API refuses to assign it; Replacement Validation and Disposal
   Review are now in the Property Custodian's menu.
 - Health: backend 800 unit + 94 e2e tests, frontend 327, every `CHECKS.md` item clean.
-- **The shared Supabase dev DB is at schema 017** (applied 2026-10-16: it moved the one Property Officer account, `property.officer@cicc.gov.ph`, to Property Custodian).
+- **The shared Supabase dev DB is at schema 017** (applied 2026-10-16: it moved the one Property Officer account to Property Custodian; that account was renamed `property.custodian2@cicc.gov.ph` the same day).
 
 ## 2. Do first
 
 - [x] Schema 017 applied to the shared Supabase dev database (2026-10-16) and the local backend
       (`:3001`, `DB_POOL_MAX=8`) restarted on the new build. Check it yourself: sign in as
-      `property.officer@cicc.gov.ph` and you should land on the Property Custodian dashboard.
+      `property.custodian2@cicc.gov.ph` and you should land on the Property Custodian dashboard.
       Any other database still needs 017 before it runs this backend.
 - [ ] **Look at SonarCloud's failing quality gate** ("C Reliability Rating on New Code",
       required ≥ A; it failed on #106, #107 and #108, passed on #105). The issue is not

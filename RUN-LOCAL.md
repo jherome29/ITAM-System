@@ -75,7 +75,7 @@ created there:
 | Supervisor (IT Division — approves IT Personnel's requests) | `it.supervisor@cicc.gov.ph` | `ItSupervisor@CICC2026!` | `/approving-officer/dashboard` |
 | Management | `management@cicc.gov.ph` | `Management@CICC2026!` | `/management-audit/dashboard` |
 | Property Custodian | `property.custodian@cicc.gov.ph` | `PropertyCustodian@2026!` | `/property-custodian/dashboard` |
-| Property Custodian (second account, formerly the Property Officer) | `property.officer@cicc.gov.ph` | `PropertyOfficer@2026!` | `/property-custodian/dashboard` |
+| Property Custodian (second account; was the Property Officer, `property.officer@cicc.gov.ph` until 2026-10-16) | `property.custodian2@cicc.gov.ph` | `PropertyOfficer@2026!` | `/property-custodian/dashboard` |
 | Supervisor (Property and Supply Management, approves the Property Custodian) | `psm.approver@cicc.gov.ph` | `PSMApprover@2026!` | `/approving-officer/dashboard` |
 
 > After a DB reset (§6) the seed recreates only `admin@` and `it.personnel@`

@@ -16,7 +16,7 @@
 | Employee | employee@cicc.gov.ph | Employee@CICC2026! |
 | Management | management@cicc.gov.ph | Management@CICC2026! |
 | Property Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
-| Property Custodian (second account, formerly the Property Officer) | property.officer@cicc.gov.ph | PropertyOfficer@2026! |
+| Property Custodian (second account; was the Property Officer, `property.officer@cicc.gov.ph` until 2026-10-16) | property.custodian2@cicc.gov.ph | PropertyOfficer@2026! |
 | Supervisor (Approving Officer, Property and Supply Management) | psm.approver@cicc.gov.ph | PSMApprover@2026! |
 
 > **The last row is the approver for the Property Custodian.** The role sits in the *Property and Supply Management* division (section *Property Custody Unit*; the retired Property Officer's section was *Property Governance*); requisitions route to the active Approving Officer of the requester's section, then their division, so this account (employee ID `CICC-SUP-002`, section *Property and Supply Approving Office*) receives theirs. Its own requisitions go to its alternate approver, `alt.supervisor@cicc.gov.ph` (`CICC-ALT01`). Created 2026-10-16 through `POST /api/v1/users` and verified with a live login. The `supervisor@cicc.gov.ph` account (Maria Santos, *Operations / Field Operations*) is unchanged and approves for that section only.
@@ -280,7 +280,7 @@ Every role also has **My Assigned Assets** and **Notifications**. The menu for e
 
 The Property Officer could see the registry, replacement validation, disposal review and the forms archive and file requisitions, and could change nothing. The Property Custodian can do all of that and more, so the two were merged on 2026-10-16. What happened:
 
-- Accounts that held the role became Property Custodians (schema `017`; their sessions were invalidated so the next login shows the new menu). In the shared dev database that was one account, `property.officer@cicc.gov.ph`, migrated on 2026-10-16 (it keeps its login; it now lands on the Property Custodian dashboard).
+- Accounts that held the role became Property Custodians (schema `017`; their sessions were invalidated so the next login shows the new menu). In the shared dev database that was one account (`property.officer@cicc.gov.ph`, Carmela Bautista, `CICC-PO-001`), migrated on 2026-10-16 and renamed `property.custodian2@cicc.gov.ph` the same day, with its section moved from *Property Governance* to *Property Custody Unit*. It keeps its password and its employee ID (an ID is permanent and cannot be edited through the app); it lands on the Property Custodian dashboard.
 - The `property_officer` value stays in the Postgres `user_role` enum and in the shared `UserRole` enum, marked deprecated: Postgres cannot drop an enum value, and old audit entries still carry it. No route grants it, the API refuses to assign it (`ASSIGNABLE_USER_ROLES`), and the admin dashboard lists it only while an account still holds it.
 - The two Property Officer screens that read real records, **Replacement Validation** and **Disposal Review**, are now in the Property Custodian's menu; the consolidated registry and dashboard were dropped (the custodian has the Fixed Assets and Supplies registries). `/property-officer/*` redirects.
 - Trade-off accepted: a custodian both recommends a disposal and can review it. That is harmless while the review is read-only, but it means the role cannot later become an independent approval gate without being re-added.
