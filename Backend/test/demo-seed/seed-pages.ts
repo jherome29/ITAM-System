@@ -1,6 +1,6 @@
 import { SeedRole } from './accounts';
 import { ApiClient, Session } from './client';
-import { dayOffset } from './dates';
+import { dayOffset, requestDate } from './dates';
 import { custodianFor } from './scenario';
 import {
   Holder,
@@ -363,7 +363,7 @@ export async function applyPages(
         const form = new FormData();
         form.set('assetId', target.id);
         form.set('type', step.type);
-        form.set('preferredDate', dayOffset(step.preferredInDays));
+        form.set('preferredDate', requestDate(step.type, step.preferredInDays));
         form.set('details', step.details);
         const created = await api.call<AssetRequest>(
           `file ${step.key}`,

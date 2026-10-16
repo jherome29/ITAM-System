@@ -14,7 +14,7 @@ import {
   custodianFor,
   validateScenario,
 } from './scenario';
-import { dayOffset } from './dates';
+import { dayOffset, requestDate } from './dates';
 import { applyPages } from './seed-pages';
 import {
   PAGES_ASSETS,
@@ -398,7 +398,7 @@ async function applyBase(opts: Options) {
     const form = new FormData();
     form.set('assetId', target.id);
     form.set('type', r.type);
-    form.set('preferredDate', dayOffset(r.preferredInDays));
+    form.set('preferredDate', requestDate(r.type, r.preferredInDays));
     form.set('details', r.details);
     const created = await api.call<AssetRequest>(
       `file ${r.key}`,
