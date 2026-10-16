@@ -116,6 +116,12 @@ export class AssetRepairsService {
       serviceProvider: r.serviceProvider,
       expectedCompletionDate: r.expectedCompletionDate,
       dueDate: due,
+      // What the due date would be with no expected date, so the screen can say
+      // so without repeating the turnaround rule.
+      defaultDueDate: repairDueDate({
+        expectedCompletionDate: null,
+        openedAt: r.openedAt,
+      }),
       overdue: open && due < isoDay(new Date()),
       findings: r.findings,
       actionTaken: r.actionTaken,

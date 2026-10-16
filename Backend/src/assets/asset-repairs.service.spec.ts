@@ -194,6 +194,39 @@ describe('AssetRepairsService', () => {
     });
   });
 
+  // The repair drawer tells the custodian what happens if no expected date is
+  // set. It used to print the current due date there, which is the expected date
+  // itself whenever one was set - so the hint named the wrong day.
+  describe('the default due date', () => {
+    it('is the default turnaround after it was opened, whatever the expected date', async () => {
+      current = repair({
+        openedAt: new Date('2026-10-15T16:45:10Z'),
+        expectedCompletionDate: '2026-10-22',
+      });
+
+      const view = await service.findOneForUser('rep-1', IT);
+
+      expect(view).toMatchObject({
+        dueDate: '2026-10-22',
+        defaultDueDate: '2026-10-29',
+      });
+    });
+
+    it('is also the due date when no expected date is set', async () => {
+      current = repair({
+        openedAt: new Date('2026-10-15T16:45:10Z'),
+        expectedCompletionDate: null,
+      });
+
+      const view = await service.findOneForUser('rep-1', IT);
+
+      expect(view).toMatchObject({
+        dueDate: '2026-10-29',
+        defaultDueDate: '2026-10-29',
+      });
+    });
+  });
+
   describe('update()', () => {
     it('records service details and re-arms the overdue alert on a new date', async () => {
       await service.update(

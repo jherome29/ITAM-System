@@ -358,7 +358,7 @@ export function RepairQueue({
                   )}
                   <Field label="Findings (diagnosis)"><textarea className={`${inputClass} h-20 py-2`} value={draft.findings} maxLength={2000} placeholder="What is actually wrong — e.g. faulty DC jack, swollen battery." onChange={(e) => edit({ findings: e.target.value })} /></Field>
                   <Field label="Work done"><textarea className={`${inputClass} h-20 py-2`} value={draft.actionTaken} maxLength={2000} placeholder="Parts replaced, settings changed, tests run." onChange={(e) => edit({ actionTaken: e.target.value })} /></Field>
-                  <p className="text-xs text-slate-500">Without an expected date it is due {formatDate(selected.dueDate)} (default turnaround); the custodian is alerted once it is overdue.</p>
+                  <p className="text-xs text-slate-500">Without an expected date it is due {formatDate(selected.defaultDueDate)} (default turnaround); the custodian is alerted once it is overdue.</p>
                   <SecondaryButton disabled={busy} onClick={() => void saveProgress()}>Save progress</SecondaryButton>
                 </section>
 
