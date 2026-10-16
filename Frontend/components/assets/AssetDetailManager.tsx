@@ -11,6 +11,7 @@ import { historyEntries, lastTransfer } from '@/lib/assets/asset-history';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { ASSET_LIFECYCLE_TRANSITIONS as NEXT_TRANSITIONS, lifecycleNotesRequired } from '@/lib/assets/lifecycle-transitions';
+import { formatDateTime, formatPeso } from '@/lib/dates';
 
 function optionLabel(value: string): string {
   return value.split('_').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ');
@@ -363,15 +364,15 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
           <EditableDetail label="Condition" field="condition" value={asset.condition ? optionLabel(asset.condition) : asset.condition} editValue={editForm.condition} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} options={['serviceable', 'unserviceable', 'for_repair', 'for_disposal']} />
           <EditableDetail label="Components" field="components" value={asset.components} editValue={editForm.components} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
           {asset.status === 'issued' && asset.expectedReturnDate && (
-            <Detail label="Expected Return" value={new Date(asset.expectedReturnDate).toLocaleDateString()} />
+            <Detail label="Expected Return" value={formatDate(asset.expectedReturnDate)} />
           )}
         </DetailSection>
 
         <DetailSection title="Acquisition">
-          <EditableDetail label="Cost (PHP)" field="acquisitionCost" value={asset.acquisitionCost ? `₱ ${Number(asset.acquisitionCost).toLocaleString()}` : null} editValue={editForm.acquisitionCost} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v === '' ? undefined : Number(v) }))} type="number" />
-          <EditableDetail label="Acquisition Date" field="acquisitionDate" value={asset.acquisitionDate ? new Date(asset.acquisitionDate).toLocaleDateString() : null} editValue={editForm.acquisitionDate?.slice(0, 10)} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} type="date" />
+          <EditableDetail label="Cost (PHP)" field="acquisitionCost" value={asset.acquisitionCost ? formatPeso(asset.acquisitionCost) : null} editValue={editForm.acquisitionCost} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v === '' ? undefined : Number(v) }))} type="number" />
+          <EditableDetail label="Acquisition Date" field="acquisitionDate" value={asset.acquisitionDate ? formatDate(asset.acquisitionDate) : null} editValue={editForm.acquisitionDate?.slice(0, 10)} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} type="date" />
           <EditableDetail label="Supplier" field="supplier" value={asset.supplier} editValue={editForm.supplier} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
-          <EditableDetail label="Date of Delivery" field="dateOfDelivery" value={asset.dateOfDelivery ? new Date(asset.dateOfDelivery).toLocaleDateString() : null} editValue={editForm.dateOfDelivery?.slice(0, 10)} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} type="date" />
+          <EditableDetail label="Date of Delivery" field="dateOfDelivery" value={asset.dateOfDelivery ? formatDate(asset.dateOfDelivery) : null} editValue={editForm.dateOfDelivery?.slice(0, 10)} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} type="date" />
           {asset.assetClass === 'IES' && (
             <>
               <EditableDetail label="Quantity on Hand" field="quantity" value={asset.quantity} editValue={editForm.quantity} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v === '' ? undefined : Number(v) }))} type="number" />
@@ -384,8 +385,8 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
           <Detail label="Asset ID" value={asset.id} />
           <Detail label="Custodian ID" value={asset.custodianId ? `···${asset.custodianId.slice(-8)}` : null} />
           <Detail label="Barcode" value={asset.barcodeValue} />
-          <Detail label="Registered" value={new Date(asset.createdAt).toLocaleDateString()} />
-          <Detail label="Last Updated" value={new Date(asset.updatedAt).toLocaleDateString()} />
+          <Detail label="Registered" value={formatDate(asset.createdAt)} />
+          <Detail label="Last Updated" value={formatDate(asset.updatedAt)} />
         </DetailSection>
       </div>
 
@@ -442,7 +443,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                 {history.map((entry) => (
                   <tr key={entry.id} className="align-top hover:bg-blue-50 transition-colors">
                     <td className="px-5 py-3 text-sm text-gray-600 whitespace-nowrap">
-                      {new Date(entry.when).toLocaleString()}
+                      {formatDateTime(entry.when)}
                     </td>
                     <td className="px-5 py-3">
                       <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium whitespace-nowrap">{entry.event}</span>

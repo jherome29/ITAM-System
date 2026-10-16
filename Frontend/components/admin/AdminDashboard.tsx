@@ -12,6 +12,7 @@ import { auditEventLabel } from '@/lib/audit-label';
 import { attentionPanelState } from '@/lib/admin-attention';
 import { schedulerApi, type WatcherName, type WatcherStatus, type WatcherSweep } from '@/lib/api/scheduler';
 import { AdminPageHeader, MetricCard, Panel, StatusChip, type AdminTone } from './AdminUi';
+import { formatDateTime, formatTime } from '@/lib/dates';
 
 // Backend UserRole enum value -> the label already used on the Users & Roles
 // screens (AdminIdentityPages USER_ROLE_OPTIONS). Kept local so the dashboard
@@ -51,7 +52,7 @@ const SWEEP_TRIGGER_LABEL: Record<WatcherSweep['trigger'], string> = {
 // just means none has run since the backend last started.
 function formatSweep(sweep: WatcherSweep | null): string {
   if (!sweep) return 'No sweep recorded yet';
-  return `${new Date(sweep.at).toLocaleString()} · ${SWEEP_TRIGGER_LABEL[sweep.trigger]}`;
+  return `${formatDateTime(sweep.at)} · ${SWEEP_TRIGGER_LABEL[sweep.trigger]}`;
 }
 
 // Every watcher, in run order, with what its count means.
@@ -76,7 +77,7 @@ function WatcherRows({ status }: Readonly<{ status: WatcherStatus | null }>) {
           <li key={w.name} className="flex items-start justify-between gap-3 px-3 py-2 text-xs">
             <span>
               <span className="font-semibold text-slate-800">{w.label}</span>
-              <span className="block text-slate-500">{run ? `${new Date(run.at).toLocaleString()} · ${SWEEP_TRIGGER_LABEL[run.trigger]}` : w.cadence}</span>
+              <span className="block text-slate-500">{run ? `${formatDateTime(run.at)} · ${SWEEP_TRIGGER_LABEL[run.trigger]}` : w.cadence}</span>
             </span>
             <span className={`text-right font-semibold ${tone}`}>{value}</span>
           </li>
@@ -94,7 +95,7 @@ function latestConfigChange(meta: SystemConfig['meta']): string {
     .filter((value): value is string => Boolean(value))
     .map((value) => new Date(value).getTime());
   if (times.length === 0) return 'never — built-in defaults in effect';
-  return new Date(Math.max(...times)).toLocaleString();
+  return formatDateTime(new Date(Math.max(...times)).toISOString());
 }
 
 interface AttentionItem {
@@ -193,7 +194,7 @@ export function AdminDashboard() {
       <AdminPageHeader
         title="Administration Overview"
         detail="Live account, requisition, asset, and platform figures — every number below is read straight from the system of record."
-        action={stats ? <span className="text-xs text-slate-500">Updated {new Date(stats.generatedAt).toLocaleTimeString()}</span> : undefined}
+        action={stats ? <span className="text-xs text-slate-500">Updated {formatTime(stats.generatedAt)}</span> : undefined}
       />
 
       {failed && (
@@ -364,7 +365,7 @@ export function AdminDashboard() {
                     <p className="text-sm font-semibold text-slate-900">{auditEventLabel(log)}</p>
                     <StatusChip status={log.userRole.replace(/_/g, ' ')} />
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">{log.ipAddress || 'no-ip'} · {new Date(log.timestamp).toLocaleString()}</p>
+                  <p className="mt-1 text-xs text-slate-500">{log.ipAddress || 'no-ip'} · {formatDateTime(log.timestamp)}</p>
                 </div>
               ))
             )}

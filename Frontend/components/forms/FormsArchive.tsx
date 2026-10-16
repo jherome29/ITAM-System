@@ -9,12 +9,11 @@ import { apiErrorMessage } from '@/lib/api/error-message';
 import { reportsApi, type FormMeta } from '@/lib/api/reports';
 import { downloadBlob } from '@/lib/download';
 import { FORM_CATALOG, formByType, formTypeLabel } from '@/lib/forms/form-catalog';
+import { formatDateTime } from '@/lib/dates';
 
 const PAGE_SIZE = 15;
 const TYPE_OPTIONS = [{ value: 'All', label: 'All form types' }, ...FORM_CATALOG.map((f) => ({ value: f.type, label: `${f.abbr} — ${f.name}` }))];
 
-const when = (iso: string) =>
-  new Date(iso).toLocaleString('en-PH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 /** What a stored form is about, in words: the asset, the requisition, or the period it reports on. */
 function subjectOf(form: FormMeta): string {
@@ -127,7 +126,7 @@ export function FormsArchive({ refreshKey }: Readonly<{ refreshKey: number }>) {
                     <td className={tdClass}>{form.documentNumber ? <StatusChip status={form.documentNumber} tone="blue" /> : <span className="text-slate-400">—</span>}</td>
                     <td className={`${tdClass} max-w-48 truncate`} title={subjectOf(form)}>{subjectOf(form)}</td>
                     <td className={tdClass}>{form.generatedByName ?? '—'}</td>
-                    <td className={tdClass}>{when(form.generatedAt)}</td>
+                    <td className={tdClass}>{formatDateTime(form.generatedAt)}</td>
                     <td className={`${tdClass} text-right`}>
                       <SecondaryButton icon={Download} onClick={() => void download(form)} disabled={downloading === form.id || form.filePath !== 'stored'}>
                         {downloading === form.id ? 'Downloading…' : 'Download'}

@@ -2,7 +2,6 @@
 // dates, the 24h approval SLA badge, and a timeline built from the stored
 // decision timestamps. Pure functions so vitest (node env) can cover them.
 
-const TZ = 'Asia/Manila';
 const SLA_WARN_HOURS = 6;
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -22,36 +21,7 @@ export function requisitionStatusLabel(status: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-// Newer ICU puts a narrow no-break space before AM/PM; normalise to a space.
-const tidy = (s: string) => s.replaceAll(' ', ' ');
-
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-const DAY_FORMAT: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
-
-/** A day, for a list column or a sentence.
- *
- *  A date-only value (e.g. requiredDate "2026-10-14") is a calendar day — format
- *  it in UTC so the day never shifts with the viewer's timezone. A full timestamp
- *  is an event: show the day it happened on in CICC's own time. Reading the UTC
- *  date out of a timestamp (as this used to) printed the previous day for
- *  anything between midnight and 8 AM Manila time, while the drawers, which use
- *  formatDateTime, were right. */
-export function formatDate(value: string | null | undefined): string {
-  if (!value) return '—';
-  if (DATE_ONLY.test(value)) {
-    return new Date(`${value}T00:00:00Z`).toLocaleDateString('en-US', { ...DAY_FORMAT, timeZone: 'UTC' });
-  }
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-US', { ...DAY_FORMAT, timeZone: TZ });
-}
-
-export function formatDateTime(value: string | null | undefined): string {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '—';
-  return tidy(d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: TZ }));
-}
+export { formatDate, formatDateTime } from '../dates';
 
 export type SlaTone = 'red' | 'amber' | 'slate';
 

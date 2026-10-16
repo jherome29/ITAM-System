@@ -192,7 +192,7 @@ export function EmployeeDashboard() {
                       <p className="truncate text-sm font-bold text-slate-950 group-hover:text-blue-700">{primaryItem}{extraItems}</p>
                       <p className="mt-1 text-xs text-slate-500">{request.requestNumber} · Needed {String(request.requiredDate).slice(0, 10)}</p>
                     </div>
-                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-500"><CalendarClock className="h-3.5 w-3.5" />{new Date(request.updatedAt).toLocaleDateString()}</span>
+                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-500"><CalendarClock className="h-3.5 w-3.5" />{formatDate(request.updatedAt)}</span>
                     <StatusChip status={request.status.replace(/_/g, ' ')} tone={request.status === 'on_hold' ? 'amber' : 'blue'} />
                     <ChevronRight className="hidden h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600 sm:block" />
                   </Link>

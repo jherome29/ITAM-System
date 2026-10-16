@@ -8,6 +8,7 @@ import { ProposedUserRole } from '@/lib/roles/proposed-roles';
 import { roleNavigation } from '@/lib/roles/role-navigation';
 import { notificationsApi, type Notification } from '@/lib/api/notifications';
 import { notificationTarget, workspaceBasePath } from '@/lib/notifications/notification-target';
+import { formatDate, formatMonthDay } from '@/lib/dates';
 
 // Turns a backend notification into the "ASSETS - TODAY" caption the dropdown shows.
 // Prefer the related record type; fall back to the alert type (e.g. "LOW STOCK").
@@ -21,7 +22,7 @@ function captionFor(n: Notification): string {
     created.getDate() === now.getDate();
   const when = sameDay
     ? 'TODAY'
-    : created.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+    : formatMonthDay(n.createdAt).toUpperCase();
   return `${label} - ${when}`;
 }
 
@@ -29,11 +30,7 @@ export function TopBar({ role, onMenuClick }: Readonly<{ role: ProposedUserRole;
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const date = new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(new Date());
+  const date = formatDate(new Date().toISOString());
   const notificationHref =
     roleNavigation[role].find((item) => item.label === 'Notifications')?.href ??
     roleNavigation[role].find((item) => item.label.includes('Audit'))?.href ??

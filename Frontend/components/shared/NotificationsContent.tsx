@@ -8,6 +8,7 @@ import { notificationsApi, type Notification } from '@/lib/api/notifications';
 import { notificationTarget, workspaceBasePath } from '@/lib/notifications/notification-target';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
+import { formatDate } from '@/lib/dates';
 
 function NotifIcon({ type }: Readonly<{ type: string }>) {
   if (type === 'requisition_approved' || type === 'requisition_fulfilled')
@@ -64,7 +65,7 @@ export function NotificationsContent() {
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-start gap-4">
                     <p className={`text-sm ${n.isRead ? 'text-gray-700' : 'font-medium text-gray-900'}`}>{n.title}</p>
-                    <span className="text-xs text-gray-400 shrink-0">{new Date(n.createdAt).toLocaleDateString()}</span>
+                    <span className="text-xs text-gray-400 shrink-0">{formatDate(n.createdAt)}</span>
                   </div>
                   <p className="text-sm text-gray-600 mt-1">{n.message}</p>
                 </div>

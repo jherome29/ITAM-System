@@ -9,6 +9,7 @@ import { FormsArchive } from '@/components/forms/FormsArchive';
 import { Toast } from '@/components/ui/Toast';
 import { reportsApi, type FormMeta } from '@/lib/api/reports';
 import { FORM_CATALOG, formTypeLabel, type FormDef } from '@/lib/forms/form-catalog';
+import { formatDate } from '@/lib/dates';
 
 type Tab = 'generate' | 'archive';
 
@@ -17,7 +18,6 @@ const TABS: Array<{ id: Tab; label: string; icon: typeof FileText }> = [
   { id: 'archive', label: 'Forms archive', icon: Archive },
 ];
 
-const shortDate = (iso: string) => new Date(iso).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
 
 /**
  * Reports & Forms: the official COA / CICC forms. Custodians generate them from
@@ -69,7 +69,7 @@ export function FormsWorkspaceContent({ eyebrow, canGenerate = true }: Readonly<
         <MetricCard label="Forms on file" value={summary ? summary.total.toLocaleString('en-PH') : '—'} detail="Stored with their PDF for audit" tone="blue" icon={Archive} />
         <MetricCard
           label="Last generated"
-          value={latest ? shortDate(latest.generatedAt) : '—'}
+          value={latest ? formatDate(latest.generatedAt) : '—'}
           detail={latest ? `${formTypeLabel(latest.formType)}${latest.documentNumber ? ` · ${latest.documentNumber}` : ''}` : 'Nothing generated yet'}
           tone="slate"
           icon={Clock}
