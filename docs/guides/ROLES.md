@@ -29,16 +29,17 @@
 
 ## UAT accounts (Railway + Cloudflare, created 2026-10-17)
 
-Five extra Employee accounts exist on the UAT site for the officers' testing. **Their passwords are not recorded in this repo** (it is public):
-each is random and unique, and was handed to its tester privately. Reset one from Master Admin > Users if it is lost.
+Five extra Employee accounts for the officers' testing on the UAT site. **Demo accounts only**: random, unique passwords, used on a
+test system with synthetic data behind the access-password page. Do not reuse them anywhere, and reset or delete them before a
+real deployment (Master Admin > Users). Only the Employee role exists here; use the accounts above for the other roles.
 
-| Employee ID | Email | Role | Division / section |
-|---|---|---|---|
-| UAT-EMP-001 | uat.employee1@cicc.gov.ph | Employee | Operations / Field Operations |
-| UAT-EMP-002 | uat.employee2@cicc.gov.ph | Employee | Operations / Field Operations |
-| UAT-EMP-003 | uat.employee3@cicc.gov.ph | Employee | Operations / Field Operations |
-| UAT-EMP-004 | uat.employee4@cicc.gov.ph | Employee | Operations / Field Operations |
-| UAT-EMP-005 | uat.employee5@cicc.gov.ph | Employee | Operations / Field Operations |
+| Employee ID | Email | Password | Role | Division / section |
+|---|---|---|---|---|
+| UAT-EMP-001 | uat.employee1@cicc.gov.ph | Xzm$d=egyw6Gr-E= | Employee | Operations / Field Operations |
+| UAT-EMP-002 | uat.employee2@cicc.gov.ph | Gq%P5n-enz%u-&YX | Employee | Operations / Field Operations |
+| UAT-EMP-003 | uat.employee3@cicc.gov.ph | *z7w^MMhCus=E%-e | Employee | Operations / Field Operations |
+| UAT-EMP-004 | uat.employee4@cicc.gov.ph | UFs*!D9Vb!xQT#@p | Employee | Operations / Field Operations |
+| UAT-EMP-005 | uat.employee5@cicc.gov.ph | 6YaB9G&6vjE6yewn | Employee | Operations / Field Operations |
 
 ---
 
