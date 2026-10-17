@@ -70,6 +70,14 @@ Recommendation: B once real testers are using it; A is enough until then.
   `*.up.railway.app` address so the gate cannot be bypassed, and recheck `TRUST_PROXY` against the audit-log IP.
 - Dependabot (or Renovate) for the GitHub Actions pins and the Dockerfile base images.
 
+### 6b. Audit IP behind the Worker (found 2026-10-17)
+Through the Worker gate the audit log records a Cloudflare address (`104.22.x`), not the officer's. Direct to Railway it is right (`TRUST_PROXY=3`),
+and a forged `X-Forwarded-For` is ignored (tested: sent `203.0.113.7`, the log kept the real IP). Railway replaces `X-Forwarded-For` with the address
+it sees, so the Worker's attempt to pass the visitor's IP in that header (already in `uat-gate-worker.js`, harmless) is discarded.
+Accepted for UAT (synthetic data). The proper fix, for COA-grade audit trails, is a small backend change: the Worker sends the visitor's IP in its own
+header plus a shared-secret header (a Worker secret and a backend env var); the backend uses that IP only when the secret matches, otherwise
+falls back to `req.ip`. Needs a unit test for both cases, the Worker update and a re-check of the audit log. Moot if CICC's own reverse proxy is used in production.
+
 ### 7. Production handover (CICC-managed host)
 The same two images are what CICC runs. Prepare: `deploy.yml` filled in for their server (SSH or their registry), the pre-deploy migration step
 (`node scripts/db-migrate.mjs` with their `DATABASE_URL`), `docker-compose.prod.yml` env list (already documented), TLS and the proxy hop count
