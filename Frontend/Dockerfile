@@ -25,10 +25,16 @@ COPY --from=deps /repo/node_modules ./node_modules
 COPY package.json package-lock.json ./
 COPY packages/shared ./packages/shared
 COPY Frontend ./Frontend
-ARG NEXT_PUBLIC_API_URL
+# Default /api: the browser calls its own origin and Next forwards /api to the backend. Without
+# a default an unset build arg inlines "" and every request goes to the wrong address.
+ARG NEXT_PUBLIC_API_URL=/api
 ARG NEXT_PUBLIC_APP_NAME=AIMRS
+# Where that forwarding goes (a private address on a host that has one, e.g. Railway). Read by
+# next.config.ts at BUILD time and baked into the routes, so it must be a build arg here too.
+ARG BACKEND_INTERNAL_URL=http://127.0.0.1:3001
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_PUBLIC_APP_NAME=${NEXT_PUBLIC_APP_NAME}
+ENV BACKEND_INTERNAL_URL=${BACKEND_INTERNAL_URL}
 RUN npm run build --workspace=frontend
 
 # ── development: source + full deps, next dev ─────────────────────────────
