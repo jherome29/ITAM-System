@@ -49,7 +49,12 @@ export default {
     target.hostname = ORIGIN;
     target.protocol = 'https:';
     target.port = '';
-    const res = await fetch(new Request(target, request), { redirect: 'manual' });
+    const proxied = new Request(target, request);
+    // The real visitor address, so the audit log records the officer and not a Cloudflare address.
+    // Set here (never taken from the visitor's own headers): CF-Connecting-IP is added by Cloudflare.
+    const clientIp = request.headers.get('CF-Connecting-IP');
+    if (clientIp) proxied.headers.set('X-Forwarded-For', clientIp);
+    const res = await fetch(proxied, { redirect: 'manual' });
     const out = new Response(res.body, res);
     const loc = out.headers.get('Location');
     if (loc) out.headers.set('Location', loc.replace('https://' + ORIGIN, incoming.origin));
