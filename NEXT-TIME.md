@@ -28,6 +28,8 @@ properly, see `RUN-LOCAL.md` §11. Update this file at the end of every session.
 
 ## 2. Do first
 
+- [ ] **Do the CD plan** in `docs/guides/CD-PLAN.md` (start with item 1, the migration runner: `Backend/scripts/db-migrate.mjs` and `Backend/test/db-migrate.e2e-spec.ts` exist as untested, untracked drafts). UAT is already deployed on Railway behind a Cloudflare Worker password gate (`docs/guides/DEPLOY-UAT.md`); the officers can test now. Redeploy the Worker with the updated `docs/guides/uat-gate-worker.js` so the audit log records real IPs.
+
 - [ ] **Look at `refactor/ui-consistency` yourself** (the dev server on `:3000` already serves it if you are on the branch): the registry and Custody & Issuance filter rows, the Register Asset form, the employee dashboard, Audit Log date range, a lifecycle update (it is now a dialog that closes on Escape), and the screens at a narrow width. Tell us what still reads wrong; the rules are cheap to change in one place.
 - [ ] Open its PR into `develop` once #110 is merged (check the base before you click merge).
 - [ ] **Restart your `:3001` backend.** `Backend/dist` was rebuilt on disk for the 2026-10-17 fixes (report PDFs, form header lines, field limits, 400 / 409 / 413) but the process on `:3001` was left running on the old bundle. Restart it the usual way (`DB_POOL_MAX=8`, RUN-LOCAL §1). Until then Supabase-backed screens still show the old behaviour for those.
