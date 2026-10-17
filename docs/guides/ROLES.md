@@ -27,6 +27,21 @@
 
 ---
 
+## UAT accounts (Railway + Cloudflare, created 2026-10-17)
+
+Five extra Employee accounts exist on the UAT site for the officers' testing. **Their passwords are not recorded in this repo** (it is public):
+each is random and unique, and was handed to its tester privately. Reset one from Master Admin > Users if it is lost.
+
+| Employee ID | Email | Role | Division / section |
+|---|---|---|---|
+| UAT-EMP-001 | uat.employee1@cicc.gov.ph | Employee | Operations / Field Operations |
+| UAT-EMP-002 | uat.employee2@cicc.gov.ph | Employee | Operations / Field Operations |
+| UAT-EMP-003 | uat.employee3@cicc.gov.ph | Employee | Operations / Field Operations |
+| UAT-EMP-004 | uat.employee4@cicc.gov.ph | Employee | Operations / Field Operations |
+| UAT-EMP-005 | uat.employee5@cicc.gov.ph | Employee | Operations / Field Operations |
+
+---
+
 ## Role Descriptions & Access
 
 ### Employee
