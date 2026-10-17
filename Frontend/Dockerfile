@@ -60,7 +60,9 @@ COPY package.json ./
 COPY Frontend/package.json ./Frontend/package.json
 COPY Frontend/next.config.ts ./Frontend/next.config.ts
 COPY Frontend/public ./Frontend/public
-COPY --from=builder /repo/Frontend/.next ./Frontend/.next
+# Owned by the app user: Next writes its image cache under .next/cache at runtime, and as root-owned
+# files that failed (EACCES) on every image request.
+COPY --from=builder --chown=nextjs:nodejs /repo/Frontend/.next ./Frontend/.next
 USER nextjs
 WORKDIR /repo/Frontend
 EXPOSE 3000
