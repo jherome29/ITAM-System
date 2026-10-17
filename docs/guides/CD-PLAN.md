@@ -74,9 +74,9 @@ Recommendation: B once real testers are using it; A is enough until then.
 Through the Worker gate the audit log records a Cloudflare address (`104.22.x`), not the officer's. Direct to Railway it is right (`TRUST_PROXY=3`),
 and a forged `X-Forwarded-For` is ignored (tested: sent `203.0.113.7`, the log kept the real IP). Railway replaces `X-Forwarded-For` with the address
 it sees, so the Worker's attempt to pass the visitor's IP in that header (already in `uat-gate-worker.js`, harmless) is discarded.
-Accepted for UAT (synthetic data). The proper fix, for COA-grade audit trails, is a small backend change: the Worker sends the visitor's IP in its own
+Fixed the same day (see below); the original finding is kept for the record. The proper fix, for COA-grade audit trails, is a small backend change: the Worker sends the visitor's IP in its own
 header plus a shared-secret header (a Worker secret and a backend env var); the backend uses that IP only when the secret matches, otherwise
-falls back to `req.ip`. Needs a unit test for both cases, the Worker update and a re-check of the audit log. Moot if CICC's own reverse proxy is used in production.
+falls back to `req.ip`. Done: `Backend/src/common/trusted-client-ip.ts` (tested), enabled by the backend variable `CLIENT_IP_SECRET` (24+ characters) and the same value as a Worker secret. Moot if CICC's own reverse proxy is used in production.
 
 ### 7. Production handover (CICC-managed host)
 The same two images are what CICC runs. Prepare: `deploy.yml` filled in for their server (SSH or their registry), the pre-deploy migration step

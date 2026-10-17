@@ -1,6 +1,6 @@
 // The UAT password gate: a Cloudflare Worker that sits in front of the Railway frontend.
 // Deploy it as a Worker (Compute > Workers & Pages > Hello World > Edit code) and add two SECRET variables,
-// GATE_PASSWORD and COOKIE_SECRET. Set ORIGIN to the frontend's Railway host. See DEPLOY-UAT.md.
+// GATE_PASSWORD, COOKIE_SECRET and CLIENT_IP_SECRET (the same value as the backend's CLIENT_IP_SECRET variable). Set ORIGIN to the frontend's Railway host. See DEPLOY-UAT.md.
 const ORIGIN = 'frontend-production-8900.up.railway.app';
 const DAYS = 7;
 const enc = new TextEncoder();
@@ -51,9 +51,14 @@ export default {
     target.port = '';
     const proxied = new Request(target, request);
     // The real visitor address, so the audit log records the officer and not a Cloudflare address.
-    // Set here (never taken from the visitor's own headers): CF-Connecting-IP is added by Cloudflare.
+    // Railway discards X-Forwarded-For, so it goes in its own header with a shared secret; the backend
+    // (CLIENT_IP_SECRET, src/common/trusted-client-ip.ts) believes it only when the secret matches.
+    // CF-Connecting-IP is added by Cloudflare and cannot be set by the visitor.
     const clientIp = request.headers.get('CF-Connecting-IP');
-    if (clientIp) proxied.headers.set('X-Forwarded-For', clientIp);
+    if (clientIp && env.CLIENT_IP_SECRET) {
+      proxied.headers.set('X-UAT-Client-IP', clientIp);
+      proxied.headers.set('X-UAT-Gate-Secret', env.CLIENT_IP_SECRET);
+    }
     const res = await fetch(proxied, { redirect: 'manual' });
     const out = new Response(res.body, res);
     const loc = out.headers.get('Location');

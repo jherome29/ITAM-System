@@ -29,6 +29,7 @@ DATABASE_URL=${{Postgres.DATABASE_URL}}   DATABASE_SSL=no-verify   (disable if t
 JWT_SECRET=<secret 1>          JWT_REFRESH_SECRET=<secret 2>
 ALLOWED_ORIGIN=https://<site>  TRUST_PROXY=3   (verify: the audit log must show the real client IP)
 THROTTLE_LIMIT=600             DB_POOL_MAX=10
+CLIENT_IP_SECRET=<secret 3, 24+ chars>   (also a Worker secret: lets the audit log record the officer's IP behind the gate)
 ```
 
 `frontend`: build variables `BACKEND_INTERNAL_URL=http://backend.railway.internal:3001` and
