@@ -54,6 +54,21 @@ THROTTLE_LIMIT=600             DB_POOL_MAX=10
    `*.up.railway.app` address still works directly and skips it.
 5. In the admin screen create one account per role, each with its own password.
 
+## Continuous deployment
+
+- **Deploy:** Railway watches `develop` for both services and rebuilds on every push (the Railway GitHub app must be
+  installed on the repo's owner). Put both services' **Source branch** on `develop`. If **Wait for CI** is on and SonarCloud's
+  quality gate is red, Railway can wait for ever: turn Wait for CI off (the smoke test below is the safety net).
+- **Check:** `.github/workflows/uat-smoke.yml` runs after each push to `develop`: it waits (up to 25 minutes) until the backend's
+  `uptime` shows it restarted, then runs `Backend/test/uat-smoke.mjs` (about 40 checks as all six roles: sign-in, pages,
+  what each role is refused, one requisition filed, approved and fulfilled, PDFs and reports, the audit trail). Red means the
+  live site is broken or the deploy never happened. Run it by hand from the Actions tab (it then tests what is live now).
+- **GitHub setup, once:** Settings > Environments > New environment `uat` (optionally add yourself as a required reviewer), with two
+  secrets: `UAT_BASE_URL` (the frontend's `https://` address, no trailing slash, the Railway one: the smoke test goes around the
+  password gate) and `UAT_ACCOUNTS`, one line of JSON: `{"admin":["email","password"],"it":[..],"supervisor":[..],"employee":[..],"management":[..],"property":[..]}`.
+  Use dedicated smoke accounts once the officers have real ones, so a password change does not turn the run red.
+- **Freeze during a test window:** repoint the Railway source to a fixed branch, or hold merges to `develop`.
+
 ## Things that went wrong once, so they do not again
 
 - Builder left on **Railpack** fails: the Dockerfile is not at the repo root.

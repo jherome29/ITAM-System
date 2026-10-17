@@ -686,7 +686,7 @@ Promotion flow: `feature/<ticket-id>-<desc>` → `develop` → `main`
 
 #### Deploy Environments (activated when CICC provides server access)
 - `main` branch → `prod-server` GitHub Environment (manual approval gate required)
-- No dedicated deploy environment for `develop` — internal/JMeter/security testing runs against CI and local/Docker environments rather than a persistently deployed staging server (see CLAUDE.md §12)
+- `develop` → **UAT** (2026-10-17): the temporary Railway + Cloudflare environment CICC officers test on (`docs/guides/DEPLOY-UAT.md`). Railway rebuilds both services on every push to `develop`; `.github/workflows/uat-smoke.yml` (GitHub Environment `uat`, secrets `UAT_BASE_URL` and `UAT_ACCOUNTS`) then waits for the new build and drives the live site as each role (`Backend/test/uat-smoke.mjs`), going red if anything is wrong. It holds no deploy credentials. Synthetic data only; production stays the CICC-managed host above. To freeze what officers see during a test window, repoint Railway at a fixed commit or hold merges to `develop`.
 
 ### Sprint Structure (Agile Scrum)
 - **Sprint length:** 2 weeks

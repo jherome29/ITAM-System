@@ -1,0 +1,42 @@
+name: UAT smoke test
+
+# Railway deploys `develop` to the UAT site on every push (docs/guides/DEPLOY-UAT.md). This waits for that new
+# build to go live, then drives the live site as each role (Backend/test/uat-smoke.mjs) and goes red if anything is
+# wrong, so a merge that breaks the deployed system shows up straight away. Holds no deploy credentials.
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push supersedes a run that is still waiting for its build.
+concurrency:
+  group: uat-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Smoke test the deployed UAT site
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # Secrets live in the `uat` Environment: UAT_BASE_URL (the frontend's https address, no trailing slash)
+    # and UAT_ACCOUNTS (JSON: {"admin":["email","password"],"it":[...],"supervisor":[...],"employee":[...],
+    # "management":[...],"property":[...]}).
+    environment: uat
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Wait for the new build, then smoke test the live site
+        env:
+          UAT_BASE_URL: ${{ secrets.UAT_BASE_URL }}
+          UAT_ACCOUNTS: ${{ secrets.UAT_ACCOUNTS }}
+          # A push triggers a deploy: wait for it. A manual run tests whatever is live now.
+          WAIT_FOR_DEPLOY: ${{ github.event_name == 'push' && '1' || '0' }}
+        run: node Backend/test/uat-smoke.mjs
