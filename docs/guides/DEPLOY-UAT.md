@@ -11,7 +11,7 @@ One Railway project in **Southeast Asia (Singapore)** with three services:
 |---|---|---|
 | `Postgres` | Railway database | no (the public TCP address is switched on only to load the schema or create the admin, then removed) |
 | `backend` | `Backend/Dockerfile` (set Builder = Dockerfile, path `Backend/Dockerfile`) | **no**: reached only by the frontend over `backend.railway.internal` |
-| `frontend` | `Frontend/Dockerfile` | yes, behind Cloudflare Access |
+| `frontend` | `Frontend/Dockerfile` | yes, but officers use the Cloudflare Worker address, which asks for a shared access password first |
 
 The browser only ever talks to the frontend's own address. Next forwards `/api/*` to the backend
 (`BACKEND_INTERNAL_URL`, baked in at build). Why not a public API address: the refresh cookie is
@@ -43,8 +43,15 @@ THROTTLE_LIMIT=600             DB_POOL_MAX=10
    The password goes to `.env.admin.local` (git-ignored) and is never printed. Then remove the public address.
 3. `backend` and `frontend` services from the GitHub repo (install the Railway GitHub app on the owning account first:
    pasting a repo URL clones it read-only and sees only `main`). Set the branch and turn on Wait for CI.
-4. Cloudflare: the domain's DNS on Cloudflare, SSL/TLS mode **Full** (not Full strict; Railway cannot do it),
-   a proxied CNAME to the frontend's Railway domain, and an Access application (one-time PIN, officers' emails only).
+4. Cloudflare gate (free, no card, no domain): a Worker named `aimrs-uat` on the account's `workers.dev` address.
+   It shows a password page, sets a signed 7-day cookie when the shared password is right, and otherwise forwards
+   every request to the frontend's Railway address (`ORIGIN` in its code). Two Worker secrets: `GATE_PASSWORD`
+   (given to the officers) and `COOKIE_SECRET` (changing it logs everyone out of the gate). The Worker's code is
+   `docs/guides/uat-gate-worker.js`.
+   Better, once a domain exists: Cloudflare Access (one-time PIN per officer's email) on `uat.<domain>`, SSL/TLS
+   mode **Full** (not Full strict; Railway cannot do it). Zero Trust asked for a card, so it was not used.
+   Weakness of the Worker gate: one shared password (cannot revoke one person), and the original
+   `*.up.railway.app` address still works directly and skips it.
 5. In the admin screen create one account per role, each with its own password.
 
 ## Things that went wrong once, so they do not again
