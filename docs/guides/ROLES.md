@@ -18,28 +18,19 @@
 | Property Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
 | Property Custodian (second account; was the Property Officer, `property.officer@cicc.gov.ph` until 2026-10-16) | property.custodian2@cicc.gov.ph | PropertyOfficer@2026! |
 | Supervisor (Approving Officer, Property and Supply Management) | psm.approver@cicc.gov.ph | PSMApprover@2026! |
+| Employee (UAT demo account 1) | uat.employee1@cicc.gov.ph | Xzm$d=egyw6Gr-E= |
+| Employee (UAT demo account 2) | uat.employee2@cicc.gov.ph | Gq%P5n-enz%u-&YX |
+| Employee (UAT demo account 3) | uat.employee3@cicc.gov.ph | *z7w^MMhCus=E%-e |
+| Employee (UAT demo account 4) | uat.employee4@cicc.gov.ph | UFs*!D9Vb!xQT#@p |
+| Employee (UAT demo account 5) | uat.employee5@cicc.gov.ph | 6YaB9G&6vjE6yewn |
+
+> **UAT demo accounts (2026-10-17):** the five `uat.employee1`-`5` rows are Employee accounts created for the officers' testing on the Railway site (employee IDs `UAT-EMP-001` to `005`, Operations / Field Operations). Random, unique passwords, demo accounts only: reset or delete them before any real deployment (Master Admin > Users).
 
 > **The last row is the approver for the Property Custodian.** The role sits in the *Property and Supply Management* division (section *Property Custody Unit*; the retired Property Officer's section was *Property Governance*); requisitions route to the active Approving Officer of the requester's section, then their division, so this account (employee ID `CICC-SUP-002`, section *Property and Supply Approving Office*) receives theirs. Its own requisitions go to its alternate approver, `alt.supervisor@cicc.gov.ph` (`CICC-ALT01`). Created 2026-10-16 through `POST /api/v1/users` and verified with a live login. The `supervisor@cicc.gov.ph` account (Maria Santos, *Operations / Field Operations*) is unchanged and approves for that section only.
 
 > **Note:** If an account gets locked after too many failed login attempts, a System Administrator can unlock it via `PATCH /api/v1/users/:id/unlock` or reset the password via `PATCH /api/v1/users/:id/reset-password`. To end a possibly-compromised session without changing the password, use `PATCH /api/v1/users/:id/revoke-sessions`.
 >
 > The 2 Property role passwords above were reset 2026-08-21 via the real `PATCH /api/v1/users/:id/reset-password` endpoint and verified with a live login (both accounts existed with no known-working password before this). If you find these no longer work, someone has reset them again since — check with the team rather than assuming this doc is wrong.
-
----
-
-## UAT accounts (Railway + Cloudflare, created 2026-10-17)
-
-Five extra Employee accounts for the officers' testing on the UAT site. **Demo accounts only**: random, unique passwords, used on a
-test system with synthetic data behind the access-password page. Do not reuse them anywhere, and reset or delete them before a
-real deployment (Master Admin > Users). Only the Employee role exists here; use the accounts above for the other roles.
-
-| Employee ID | Email | Password | Role | Division / section |
-|---|---|---|---|---|
-| UAT-EMP-001 | uat.employee1@cicc.gov.ph | Xzm$d=egyw6Gr-E= | Employee | Operations / Field Operations |
-| UAT-EMP-002 | uat.employee2@cicc.gov.ph | Gq%P5n-enz%u-&YX | Employee | Operations / Field Operations |
-| UAT-EMP-003 | uat.employee3@cicc.gov.ph | *z7w^MMhCus=E%-e | Employee | Operations / Field Operations |
-| UAT-EMP-004 | uat.employee4@cicc.gov.ph | UFs*!D9Vb!xQT#@p | Employee | Operations / Field Operations |
-| UAT-EMP-005 | uat.employee5@cicc.gov.ph | 6YaB9G&6vjE6yewn | Employee | Operations / Field Operations |
 
 ---
 
