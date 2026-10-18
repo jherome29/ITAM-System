@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { Not } from 'typeorm';
 import {
   BadRequestException,
   ConflictException,
@@ -650,6 +651,21 @@ describe('AssetRequestsService', () => {
         userId: EMP.id,
       });
       expect(row.decidedBy?.name).toBe('Test it-1');
+    });
+
+    it('keeps record printouts out of the official documents a request lists', async () => {
+      current = makeReq({ status: AssetRequestStatus.COMPLETED });
+      mockFormRepo.find.mockClear();
+
+      await service.findMine(EMP.id);
+
+      expect(mockFormRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            formType: Not(OfficialFormType.RECORD_PRINT),
+          }),
+        }),
+      );
     });
 
     it('serves an attachment only to someone who can read the request', async () => {

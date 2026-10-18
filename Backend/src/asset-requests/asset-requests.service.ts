@@ -10,7 +10,7 @@ import { GeneratedFormEntity } from '../reports/entities/generated-form.entity';
 import { ReportsService } from '../reports/reports.service';
 import { buildAssetRequestPrint } from './asset-request-print';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { AssetRequestEntity } from './entities/asset-request.entity';
 import { AssetRequestAttachmentEntity } from './entities/asset-request-attachment.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
@@ -408,7 +408,11 @@ export class AssetRequestsService {
             generatedAt: true,
             relatedAssetRequestId: true,
           },
-          where: { relatedAssetRequestId: In(reqs.map((r) => r.id)) },
+          // A record printout is not an official document (it has its own Paper copy list).
+          where: {
+            relatedAssetRequestId: In(reqs.map((r) => r.id)),
+            formType: Not(OfficialFormType.RECORD_PRINT),
+          },
           order: { generatedAt: 'ASC' },
         })
       : [];

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import request from 'supertest';
@@ -125,6 +125,15 @@ describe('Record printouts (e2e)', () => {
       expect(res.headers['content-type']).toContain('application/pdf');
       expect((res.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
       expect(res.headers['x-document-number']).toMatch(/^PR-\d{4}-\d{4}$/);
+    });
+
+    it('a printout is not an official document: the requisition lists none under documents', async () => {
+      const detail = await request(server())
+        .get(`/api/v1/requisitions/${reqId}`)
+        .set(auth('EMP'))
+        .expect(200);
+
+      expect(detail.body.data.documents).toEqual([]);
     });
 
     it('a second print is the next copy with its own number, and both are listed', async () => {
@@ -355,15 +364,50 @@ describe('Record printouts (e2e)', () => {
   });
 
   it('every print across the three kinds has its own number', async () => {
-    const forms = await request(server())
-      .get('/api/v1/reports/forms?formType=RECORD_PRINT&limit=100')
-      .set(auth('ADMIN'))
-      .expect(200);
-    const numbers = (
-      forms.body.data.data as Array<{ documentNumber: string }>
-    ).map((f) => f.documentNumber);
+    const rows: Array<{ document_number: string }> = await app
+      .get(DataSource)
+      .query(
+        `SELECT document_number FROM generated_forms WHERE form_type = 'RECORD_PRINT'`,
+      );
+    const numbers = rows.map((r) => r.document_number);
 
     expect(numbers.length).toBeGreaterThanOrEqual(8);
     expect(new Set(numbers).size).toBe(numbers.length);
+  });
+
+  // The archive is not scoped by asset type and its download route only checks the
+  // caller's role, so a printout there would be readable across scopes. A printout
+  // is read through its own record (checked above), never through the archive.
+  describe('the forms archive', () => {
+    it('does not list printouts, whether or not they are asked for by type', async () => {
+      const asked = await request(server())
+        .get('/api/v1/reports/forms?formType=RECORD_PRINT&limit=100')
+        .set(auth('ADMIN'))
+        .expect(200);
+      expect(asked.body.data.data).toEqual([]);
+
+      const all = await request(server())
+        .get('/api/v1/reports/forms?limit=100')
+        .set(auth('ADMIN'))
+        .expect(200);
+      const types = (all.body.data.data as Array<{ formType: string }>).map(
+        (f) => f.formType,
+      );
+      expect(types).not.toContain('RECORD_PRINT');
+    });
+
+    it('will not hand a printout over through the archive download', async () => {
+      const rows: Array<{ id: string }> = await app
+        .get(DataSource)
+        .query(
+          `SELECT id FROM generated_forms WHERE form_type = 'RECORD_PRINT' LIMIT 1`,
+        );
+
+      await pdf(
+        'get',
+        `/api/v1/reports/forms/${rows[0].id}/download`,
+        'IT',
+      ).expect(404);
+    });
   });
 });

@@ -254,6 +254,27 @@ describe('ReportsService', () => {
       );
     });
 
+    // Printouts have their own access-checked routes (a custodian may only read
+    // the ones in their asset-type scope); the archive is not scoped, so a
+    // printout listed here would be readable across scopes.
+    it('never lists record printouts, even when asked for them by type', async () => {
+      mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAllForms();
+      expect(mockFormRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { formType: Not(OfficialFormType.RECORD_PRINT) },
+        }),
+      );
+
+      mockFormRepo.findAndCount.mockClear();
+      const asked = await service.findAllForms(1, 15, {
+        formType: OfficialFormType.RECORD_PRINT,
+      });
+      expect(asked).toMatchObject({ data: [], total: 0, page: 1, limit: 15 });
+      expect(mockFormRepo.findAndCount).not.toHaveBeenCalled();
+    });
+
     it('treats % and _ in the search as text, not wildcards', async () => {
       mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
 
@@ -261,18 +282,24 @@ describe('ReportsService', () => {
 
       expect(mockFormRepo.findAndCount).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { documentNumber: ILike('%50\\%\\_off%') },
+          where: {
+            formType: Not(OfficialFormType.RECORD_PRINT),
+            documentNumber: ILike('%50\\%\\_off%'),
+          },
         }),
       );
     });
 
-    it('applies no filter when none is given', async () => {
+    it('applies only the printout exclusion when no filter is given', async () => {
       mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
 
       await service.findAllForms();
 
+      // Only the standing exclusion of record printouts; no type or search.
       expect(mockFormRepo.findAndCount).toHaveBeenCalledWith(
-        expect.objectContaining({ where: {} }),
+        expect.objectContaining({
+          where: { formType: Not(OfficialFormType.RECORD_PRINT) },
+        }),
       );
     });
 
@@ -1191,6 +1218,23 @@ describe('ReportsService', () => {
     });
   });
 
+  describe('formsForRequisition()', () => {
+    it('leaves record printouts out, so they never show up as official COA documents', async () => {
+      mockFormRepo.find.mockResolvedValue([]);
+
+      await service.formsForRequisition('r-1');
+
+      expect(mockFormRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            relatedRequisitionId: 'r-1',
+            formType: Not(OfficialFormType.RECORD_PRINT),
+          },
+        }),
+      );
+    });
+  });
+
   describe('recordPrints() / recordPrintPdf()', () => {
     it('lists the prints of one record with who printed them, oldest first', async () => {
       mockFormRepo.find.mockResolvedValue([
@@ -1661,6 +1705,20 @@ describe('ReportsService', () => {
 
       expect(result.buffer).toEqual(pdfContent);
       expect(result.form).toMatchObject({ id: 'f-1' });
+    });
+
+    it('refuses a record printout, which is only served through its own record', async () => {
+      mockFormRepo.createQueryBuilder.mockReturnValue(
+        makeFormQb({
+          id: 'f-1',
+          formType: OfficialFormType.RECORD_PRINT,
+          pdfContent: Buffer.from('pdf-data'),
+        }),
+      );
+
+      await expect(service.downloadForm('f-1')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('throws NotFoundException when form record does not exist', async () => {

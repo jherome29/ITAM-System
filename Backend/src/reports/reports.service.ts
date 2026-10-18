@@ -127,10 +127,15 @@ export class ReportsService {
     limit = 50,
     filter: { formType?: OfficialFormType; search?: string } = {},
   ) {
+    // Record printouts are not archive documents: the archive is not scoped by
+    // asset type, and a printout may only be read through its own record.
+    if (filter.formType === OfficialFormType.RECORD_PRINT) {
+      return { data: [], total: 0, page, limit };
+    }
     const search = filter.search?.trim();
     const [forms, total] = await this.formRepo.findAndCount({
       where: {
-        ...(filter.formType ? { formType: filter.formType } : {}),
+        formType: filter.formType ?? Not(OfficialFormType.RECORD_PRINT),
         // % and _ are typed as text, not wildcards.
         ...(search
           ? { documentNumber: ILike(`%${search.replace(/[\\%_]/g, '\\$&')}%`) }
@@ -1372,10 +1377,17 @@ export class ReportsService {
     return { documentNumber: form.documentNumber, buffer: form.pdfContent };
   }
 
-  /** Forms generated for a requisition (no PDF blob), oldest first. */
+  /**
+   * COA forms generated for a requisition (no PDF blob), oldest first. Record
+   * printouts are the same table but not an official document: they have their
+   * own Paper copy list, so they stay out of "Official documents".
+   */
   formsForRequisition(requisitionId: string) {
     return this.formRepo.find({
-      where: { relatedRequisitionId: requisitionId },
+      where: {
+        relatedRequisitionId: requisitionId,
+        formType: Not(OfficialFormType.RECORD_PRINT),
+      },
       select: { id: true, formType: true, generatedAt: true },
       order: { generatedAt: 'ASC' },
     });
@@ -1412,7 +1424,10 @@ export class ReportsService {
       .where('f.id = :id', { id })
       .getOne();
 
-    if (!form) throw new NotFoundException(`Form record ${id} not found`);
+    // A printout is served by its record's own route, which checks access to
+    // that record; this route only checks the caller's role.
+    if (!form || form.formType === OfficialFormType.RECORD_PRINT)
+      throw new NotFoundException(`Form record ${id} not found`);
     if (!form.pdfContent)
       throw new NotFoundException(
         `Form ${id} has no stored PDF — it may have been generated before this feature was enabled`,
