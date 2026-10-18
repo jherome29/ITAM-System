@@ -221,6 +221,58 @@ export class RequisitionsController {
   }
 
   /**
+   * POST /api/v1/requisitions/:id/print
+   * A numbered paper copy of this requisition (what it is, every step so far, signature lines). Anyone who
+   * may see the requisition may print it; each print is stored, numbered and audited, and a later one is
+   * marked REPRINT.
+   */
+  @Post(':id/print')
+  @HttpCode(HttpStatus.OK)
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
+  async print(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthReq,
+    @Res() res: Response,
+  ) {
+    const doc = await this.svc.printRecord(
+      id,
+      req.user.id,
+      req.user.role,
+      req.ip,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Length': String(doc.buffer.length),
+      'Content-Disposition': `inline; filename="${doc.documentNumber}.pdf"`,
+      'X-Document-Number': doc.documentNumber ?? '',
+      'Cache-Control': 'private, no-store',
+    });
+    res.end(doc.buffer);
+  }
+
+  /** GET /api/v1/requisitions/:id/prints - the prints made of this requisition (same read access). */
+  @Get(':id/prints')
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
+  async prints(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthReq) {
+    const data = await this.svc.listPrints(id, req.user.id, req.user.role);
+    return { message: 'Printouts retrieved', data };
+  }
+
+  /**
    * POST /api/v1/requisitions
    * Submit a new requisition - Employee, Supervisor, IT Personnel, Property
    * Custodian. Management (read-only oversight) and the System Administrator

@@ -21,6 +21,7 @@ import {
 } from '../assets/assets.service';
 import { ReplacementBasis } from '../assets/replacement-eligibility';
 import { ReportsService } from '../reports/reports.service';
+import { buildRequisitionPrint } from './requisition-print';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
@@ -442,6 +443,72 @@ export class RequisitionsService {
     const req = await this.findOne(id, requestingUserId, requestingRole);
     const pdf = await this.reportsService.requisitionFormPdf(req.id, formId);
     return { ...pdf, requestNumber: req.requestNumber };
+  }
+
+  // ── Paper copy of a requisition ─────────────────────────────────────────────
+  // CICC asked for a printout after every step, as proof beyond the digital record. Same read access as
+  // the requisition itself (findOne's IDOR and scope guards): whoever can see it can print it.
+  async printRecord(
+    id: string,
+    requestingUserId: string,
+    requestingRole: UserRole,
+    ipAddress: string,
+  ) {
+    const req = await this.findOne(id, requestingUserId, requestingRole);
+    const lookup = (userId: string | null) =>
+      userId ? this.usersService.findOne(userId).catch(() => null) : null;
+    const [requester, approver, fulfiller, replaced, printer, holdEntries] =
+      await Promise.all([
+        lookup(req.requestedById),
+        lookup(req.supervisorId),
+        lookup(req.itPersonnelId),
+        req.replacedAssetId
+          ? this.assetsService.findOne(req.replacedAssetId).catch(() => null)
+          : null,
+        lookup(requestingUserId),
+        this.auditService.findByRecordsAndAction(
+          [req.id],
+          AuditAction.REQUISITION_ON_HOLD,
+        ),
+      ]);
+    const holders = await Promise.all(
+      holdEntries.map(async (e) => lookup(e.userId)),
+    );
+    const record = buildRequisitionPrint({
+      requisition: req,
+      requester,
+      approver,
+      fulfiller,
+      holds: holdEntries.map((e, i) => ({
+        at: e.timestamp,
+        by: holders[i]
+          ? `${holders[i]?.firstName} ${holders[i]?.lastName}`.trim()
+          : 'Custodian',
+      })),
+      replacedAsset: replaced,
+    });
+    const { form, buffer } = await this.reportsService.createRecordPrint(
+      record,
+      {
+        id: requestingUserId,
+        name: printer
+          ? `${printer.firstName} ${printer.lastName}`.trim()
+          : 'Unknown',
+        role: requestingRole,
+      },
+      ipAddress,
+    );
+    return { buffer, documentNumber: form.documentNumber, id: form.id };
+  }
+
+  /** The prints made of this requisition so far. Same read access as the requisition. */
+  async listPrints(
+    id: string,
+    requestingUserId: string,
+    requestingRole: UserRole,
+  ) {
+    const req = await this.findOne(id, requestingUserId, requestingRole);
+    return this.reportsService.recordPrints('requisition', req.id);
   }
 
   // ── Requisition stats — dashboard counts in flat shape matching frontend ────
