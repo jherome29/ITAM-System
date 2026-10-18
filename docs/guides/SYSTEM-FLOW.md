@@ -123,6 +123,7 @@ flowchart LR
   B --> D[("Database<br/>assets, requests,<br/>accounts, history")]
   B --> P["Forms and reports<br/>PDF and Excel"]
   B --> L["Audit log<br/>who did what, when,<br/>from which address"]
+  B --> R["Paper copies<br/>numbered printouts<br/>of a record"]
 ```
 
 ---
@@ -151,3 +152,23 @@ flowchart TB
   NOTE -.-> QUEUE
   NOTE -.-> CRI
 ```
+
+---
+
+## 8. A paper copy after a step
+
+CICC asked for a printed proof after every step on a requisition, a return or incident report, and a repair. Printing is always optional and never holds up the step.
+
+```mermaid
+flowchart TD
+  A["Someone saves a step<br/>send, approve, reject, hand over,<br/>close a repair"] --> B{"Box asks:<br/>Keep a paper copy?"}
+  B -->|"Not now"| C["Nothing changes<br/>the step is already saved"]
+  B -->|"Print copy"| D["Server checks you may<br/>see this record"]
+  G["Any time later:<br/>Paper copy box on the record"] -->|"Print copy"| D
+  G -->|"Open"| H["Shows an earlier copy again"]
+  D --> E["Numbered PDF is made<br/>for example PR-2026-0001<br/>facts, steps so far,<br/>signature lines, verification code"]
+  E --> F["Opens in a new tab to print<br/>kept with the record<br/>and written to the audit log"]
+  F -.-> I["A second copy of the same record<br/>says REPRINT: copy 2"]
+```
+
+A paper copy is not an official COA form, so it is kept on its record and is not listed in the Forms Archive.

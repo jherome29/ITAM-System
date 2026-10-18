@@ -1,7 +1,7 @@
 # AIMRS — Asset Inventory Management and Requisition System
 ## CLAUDE.md — Project Intelligence File
 
-> **Last reviewed against the code: 2026-10-16.** §18 lists every other markdown file and what must be updated when something changes.
+> **Last reviewed against the code: 2026-10-18.** §18 lists every other markdown file and what must be updated when something changes.
 
 > **For:** Cybercrime Investigation and Coordinating Center (CICC)
 > **Academic Institution:** University of Santo Tomas, College of Information and Computing Sciences, Department of Information Systems
@@ -121,7 +121,7 @@ cicc/
 ├── packages/
 │   └── shared/                 # Shared TypeScript types/enums (OfficialFormType, UserRole, etc.)
 ├── Database/
-│   ├── schemas/                # 001…017 SQL, applied in name order (the source of truth for the schema)
+│   ├── schemas/                # 001…018 SQL, applied in name order (the source of truth for the schema)
 │   └── seeds/                  # Dev seed data (never run in production)
 ├── FORMS/                      # Reference copies of official COA form templates
 ├── docker-compose.yml          # Dev environment
@@ -150,6 +150,7 @@ There are **six user roles** with strictly differentiated permissions: Employee,
 | Browse the asset catalogue (requisition picker) | ✓ | ✓ | ✓ | ✓ | — | — |
 | See assets I hold; file return / repair / damage / loss / theft on them | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Receive notifications | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Print a numbered paper copy of a record I can see (requisition, return / incident request, repair) — Module 8 | ✓ ⁴ | ✓ ⁴ | ✓ ³ | ✓ ³ | ✓ | ✓ |
 | Approve / reject requisitions | — | ✓ | — | — | ✓ | — |
 | Approval history (decisions I made) | — | ✓ | — | — | ✓ | — |
 | Fulfil / hold requisitions | — | — | ✓ ¹ | ✓ ¹ | ✓ ² | — |
@@ -168,7 +169,7 @@ There are **six user roles** with strictly differentiated permissions: Employee,
 | View the full audit trail (all records) | — | — | — | — | ✓ | ✓ |
 | Executive KPI dashboard | — | — | — | — | ✓ | ✓ |
 
-¹ Never for a requisition or request they filed themselves. ² Only for a custodian's own request or requisition (the fallback). ³ Inside the role's own asset-type scope: IT Personnel see and change **ICT** only; Property Custodian sees **Fixed** and **Supplies** only. Enforced in the service layer on every read and write (`resolveAssetTypeScope`), not just in the menu.
+¹ Never for a requisition or request they filed themselves. ² Only for a custodian's own request or requisition (the fallback). ³ Inside the role's own asset-type scope: IT Personnel see and change **ICT** only; Property Custodian sees **Fixed** and **Supplies** only. Enforced in the service layer on every read and write (`resolveAssetTypeScope`), not just in the menu. ⁴ Only a record they can already read: their own requisition or request, a requisition routed to them, or a repair of an item they hold (a repair's holder may print it although the repair queue is the custodians').
 
 ### Role Notes
 - **Employee** — Service requester. Submits requisitions, asks for a replacement from My Assigned Assets, files return / repair / damage / loss / theft requests for what they hold, tracks their own requests.
@@ -388,6 +389,16 @@ The holder of an **issued** asset files a return, repair, damage, loss or theft 
 - **Condition-on-receipt photos:** `PATCH …/:id/complete` also accepts multipart `attachments` (same limits). Attachments carry `stage` — `request` (holder's evidence) or `receipt` (custodian's photos) — plus `uploadedById` (schema `011`); the UI shows them as separate galleries.
 - `GET /api/v1/assets/mine` backs "My Assigned Assets" (`components/assets/MyAssignedAssets.tsx`), which **every role** has — anyone can hold property. Only Employee / Approving Officer / IT Asset Custodian get "Request replacement" (requisition RBAC).
 
+### Module 8: Record printouts (`Backend/src/reports/record-print.ts`, `forms/record-print.generator.ts`, schema `018`)
+
+CICC asked for a paper copy after every step on a requisition, a return / incident request and a repair, as proof beyond the digital record. A **record printout** is a numbered A4 PDF of one record as it stands now: CICC header and seal, the facts, the items table, the notes, a step-by-step timeline (oldest first, from the stored timestamps and the audit trail), the next step, signature lines and a verification code. It is not a COA form and does not replace one.
+
+- **Endpoints:** `POST /api/v1/requisitions/:id/print`, `POST /api/v1/asset-requests/:id/print`, `POST /api/v1/repairs/:id/print` → `200`, `application/pdf` inline, number in `X-Document-Number`. `GET …/:id/prints` lists the copies made (`id, documentNumber, verificationCode, generatedAt, copy, printedByName`). A stored copy is read again through its record: `GET /requisitions/:id/documents/:formId`, `GET /asset-requests/:id/documents/:formId`, `GET /repairs/:id/prints/:formId`.
+- **Access = access to the record.** Each owning service checks that the caller may read the record (requisition: `findOne` access; request: `canRead`; repair: its holder, or IT Personnel / Property Custodian inside their asset-type scope, or Admin / Management) and builds a plain `PrintableRecord`; `ReportsService.createRecordPrint` only numbers, draws, stores and audits it. A print of record A is never served under record B (404). Printing never blocks or changes the action: it is a button and a prompt, not a step.
+- **Numbering:** `PR-YYYY-NNNN` from `document_counters` (series `PR`) in the same transaction that stores the PDF, so a failed print leaves no hole. Every print gets a new number and a verification code (`K7Q2-9DXM`, an alphabet without look-alike characters) printed on the paper and kept with the stored copy, so a paper can be matched to the record later. Later prints say `REPRINT: copy N`. There is no public verify endpoint.
+- **Storage:** `generated_forms` (`form_type = 'RECORD_PRINT'`, a VARCHAR, so no enum change; new columns `related_asset_repair_id`, `verification_code`), audited as `FORM_GENERATED` with the record and print number in metadata. **A printout is not an archive document:** it is left out of a record's "Official documents" list and out of the Forms archive, because the archive is not asset-type-scoped and its download route checks only the role, so listing it there would let an IT custodian read a Property Custodian's printout. `GET /reports/forms` excludes it, `GET /reports/forms/:id/download` answers 404 for one, and `POST /reports/forms/generate` with `RECORD_PRINT` is a 400.
+- **Frontend:** `Frontend/components/shared/RecordPrints.tsx`. `RecordPrints` is the **Paper copy** section (Print copy button and the last five copies with Open) in `RequisitionDetailView`, `AssetRequestDetail` and the repair drawer, so every role's view of a record has it. `usePrintPrompt()` shows **"Keep a paper copy?"** right after a step is saved: file / approve / reject / fulfil / hold a requisition; file / approve / reject / complete / cancel a return or incident request; close a repair; issue a loaner. `Frontend/lib/print-record.ts` opens the tab inside the click (a popup blocker refuses one opened after an await) and falls back to a download. Direct asset moves from Custody & Issuance are not covered: they already generate their COA forms.
+
 ---
 
 ## 7. System-Generated Reports
@@ -433,7 +444,7 @@ All reports are generated from live database records at time of export. Access g
 | Appendix 76 - PTR | Property Transfer Report | Inter-office/inter-unit property transfer |
 
 **Numbering, identity, archive (schema `016`):**
-- PAR, ICS, PTR, IAR, Receipt of Returned Property (RRPE) / SEP (RRSP), RLSDDP and Move-Out take a real running number `<SERIES>-<YYYY>-<NNNN>` (`Backend/src/reports/document-numbers.ts`), allocated from `document_counters` with one atomic upsert **inside the transaction that stores the form** — a form that fails to generate rolls its number back (no holes), and two at once never share one. Stored in `generated_forms.document_number`, shown on the PDF, in the download file name / `X-Document-Number` header (exposed via CORS) and in the archive. RIS keeps the requisition number; the periodic reports (RPCI, RPCPPE, RSMI, RSPI, WMR, Annex A.4) are not numbered. The format is a placeholder until CICC's property office gives its own series.
+- PAR, ICS, PTR, IAR, Receipt of Returned Property (RRPE) / SEP (RRSP), RLSDDP and Move-Out take a real running number `<SERIES>-<YYYY>-<NNNN>` (`Backend/src/reports/document-numbers.ts`), allocated from `document_counters` with one atomic upsert **inside the transaction that stores the form** — a form that fails to generate rolls its number back (no holes), and two at once never share one. Stored in `generated_forms.document_number`, shown on the PDF, in the download file name / `X-Document-Number` header (exposed via CORS) and in the archive. RIS keeps the requisition number; the periodic reports (RPCI, RPCPPE, RSMI, RSPI, WMR, Annex A.4) are not numbered. Record printouts (Module 8) take series `PR` from the same counters but are not archive documents. The format is a placeholder until CICC's property office gives its own series.
 - **Entity name and Fund Cluster are system settings** (`entity_name`, `fund_cluster`; Master Admin → System Settings → Official forms), not fixed text. The generators are plain functions, so ReportsService runs them inside `withFormIdentity()` (AsyncLocalStorage) and `identityFields()` / `documentNumber()` read it back. An unset Fund Cluster prints a fill-in line.
 - Tables paginate (`drawTable` / `ensureSpace` / "Page n of N"); text drawn below `CONTENT_BOTTOM` makes pdfkit start a new page per call, so anything after a table goes through `ensureSpace`.
 - RSMI lists supply (IES) lines only, priced from the stock they were issued from (`fulfilledAssetId`); a line with no stock link prints a dash and is left out of the total. RPCI carries the stock on record and leaves the physical count blank. Conditions print as words (`conditionLabel`).
@@ -612,7 +623,7 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 - **Critical-path pass rate:** 100% — no exceptions
 - Tests run automatically in CI on every push; failing tests block merges to `main`
 - Key test areas: asset status transitions, requisition approval routing, RBAC enforcement, audit log generation, QR code utility functions, database interaction layers
-- **Where it stands (2026-10-16):** backend 900 unit tests in 43 suites (96.3% statements, 88.6% branches, 95.2% functions; gate is 65 / 55 / 55 / 65), 94 e2e tests in 12 suites on a real Postgres, frontend 494 vitest tests in 58 files. A request-routing or guard change needs an e2e test, because the unit tests mock the database
+- **Where it stands (2026-10-18):** backend 976 unit tests in 48 suites (95.2% statements, 88.6% branches, 93.2% functions; gate is 65 / 55 / 55 / 65), 114 e2e tests in 14 suites on a real Postgres, frontend 503 vitest tests in 60 files. A request-routing or guard change needs an e2e test, because the unit tests mock the database
 
 ### Integration Testing (Jest)
 - API endpoint behavior across service boundaries

@@ -51,6 +51,21 @@ frontend contains no sample data, see below.)
 - Supply requisitions draw stock down transactionally on fulfilment (stock
   record is chosen on the fulfil dialog).
 
+**Paper copies (record printouts)** — CICC's request for a printout after every step
+- **Print copy** on a requisition, a return / incident request and a repair: a
+  numbered A4 PDF (`PR-YYYY-NNNN`) with the facts, items, notes, a step-by-step
+  timeline, the next step, signature lines and a verification code. A later print
+  says REPRINT: copy N. Whoever can see the record can print it (the holder of a
+  repaired item too); the Paper copy section on the record lists the copies and
+  reopens any of them.
+- **"Keep a paper copy?"** is asked right after a step is saved (file / approve /
+  reject / fulfil / hold a requisition; file / approve / reject / complete / cancel
+  a request; close a repair; issue a loaner). Printing never blocks the step.
+- A printout is not a COA form: it is not in "Official documents" and not in the
+  Forms archive (that list is not scoped by asset type), only on its own record.
+- Not covered: direct asset moves in Custody & Issuance (they already generate
+  their COA forms).
+
 **Assets**
 - Register / edit / lifecycle (issue, return, transfer, repair, flag for disposal,
   restore a flagged asset with a written justification), QR + barcode generate and
@@ -124,8 +139,8 @@ editable at runtime (System Admin only, audited, with "last changed … by …")
 - Docker: both images build (repo-root context); `docker compose up --build` brings
   up Postgres (all 17 schemas + seed) + backend + frontend with `/api/health`
   healthchecks; prod compose fails fast on missing secrets; CI builds both images.
-- Formal security e2e suite (8 ASVS scenarios) gates CI. Backend 900 unit tests
-  (96% statements), 94 e2e on a real Postgres, frontend 494 tests.
+- Formal security e2e suite (8 ASVS scenarios) gates CI. Backend 976 unit tests
+  (95% statements), 114 e2e on a real Postgres, frontend 503 tests.
 - UI: one shared kit (`Frontend/components/ui/`), one type scale with nothing below 14px (client feedback: bigger text for older staff), and a spec that fails the build when a screen goes around them (branch `refactor/ui-consistency`, not yet merged).
 - k6 load baseline: 362 VUs, 0 errors, p95 758 ms (single contended box), `perf/`.
 

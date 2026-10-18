@@ -2,7 +2,7 @@
 
 How to get the stack running on this machine. Written 2026-09-30 against
 Windows 11 / PowerShell, Node v25.2.1, npm 11.6.2, Docker Desktop 29.4.3;
-reviewed 2026-10-16 (Next.js 16.4, schemas 001–017, test counts, and §11, how to
+reviewed 2026-10-18 (Next.js 16.4, schemas 001–018, test counts, and §11, how to
 verify a screen or a PDF on a throwaway database). Folder paths below are the
 original machine's (`D:\Documents(D)\CAPSTONE`): use your own clone's path.
 
@@ -218,7 +218,7 @@ docker exec aimrs_postgres psql -v ON_ERROR_STOP=1 -U aimrs_user -d aimrs_dev -f
 ```
 
 Then add it to the `postgres.volumes` list in `docker-compose.yml` so fresh
-bootstraps pick it up (`Database/schemas/` currently runs 001 to 017). **The files in `Database/schemas/` only run on the
+bootstraps pick it up (`Database/schemas/` currently runs 001 to 018). **The files in `Database/schemas/` only run on the
 FIRST boot of an empty volume** — adding one to the compose file does nothing
 to a database that already exists.
 
@@ -284,12 +284,12 @@ clean — run from PowerShell:
 cd Backend;  npx tsc --noEmit
 cd Backend;  npx eslint "{src,apps,libs,test}/**/*.ts" --max-warnings 0
 cd Backend;  npm run build
-cd Backend;  npm run test:cov        # 900 tests (2026-10-17), coverage gate 65%
+cd Backend;  npm run test:cov        # 976 tests (2026-10-18), coverage gate 65%
 cd Backend;  npm run audit:check
 cd Frontend; npx tsc --noEmit
 cd Frontend; npx eslint . --max-warnings 0
 cd Frontend; npm run build
-cd Frontend; npm test                # 494 vitest tests (2026-10-17)
+cd Frontend; npm test                # 503 vitest tests (2026-10-18)
 cd Frontend; npm run audit:check
 cd ..;       npm run secretlint
 ```

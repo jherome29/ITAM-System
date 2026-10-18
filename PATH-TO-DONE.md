@@ -31,6 +31,14 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
       in the Postgres enum). Schema `017` is applied to the shared Supabase dev database
       (2026-10-16); any other database needs it before it runs this backend, or a leftover
       Property Officer account is refused everywhere.
+- [x] Record printouts (2026-10-18): a numbered paper copy of a requisition, a return / incident request
+      and a repair, with a "Keep a paper copy?" prompt after each step (CLAUDE.md Module 8, schema `018`).
+      Branch `feat/record-printouts`, stacked on `refactor/ui-consistency`: it needs the same PR path to
+      `develop`. Schema `018` is applied by the migration runner on Railway; apply it by hand to the
+      shared Supabase dev database and to any other database before this backend runs there.
+- [ ] Ask CICC about the printout layout: they gave no template, so ours is a first version (header,
+      facts, steps, signature lines, verification code, `PR-YYYY-NNNN` numbers). Their own template or
+      number series would replace `record-print.generator.ts` and the `PR` series.
 - [ ] SonarCloud's quality gate fails on the merged work ("C Reliability Rating on New Code"); the
       issue itself is not identified yet (SonarCloud's API blocks non-main branches: open the
       dashboard and read it).

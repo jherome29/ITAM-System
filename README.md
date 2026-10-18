@@ -33,7 +33,7 @@ cicc/
 │   ├── app/            ← One workspace per role: employee, approving-officer, it-asset-custodian,
 │   │                      property-custodian, master-admin, management-audit
 │   └── Dockerfile
-├── Database/           ← PostgreSQL schemas 001…017 and the dev seed
+├── Database/           ← PostgreSQL schemas 001…018 and the dev seed
 ├── packages/
 │   └── shared/         ← Shared TS types, enums, interfaces, constants
 ├── docs/               ← guides/ (ROLES, SECURITY, COA-FORMS-AUDIT, FUTURE-TOOLING), phases/
@@ -117,9 +117,9 @@ Every route is role-guarded (CLAUDE.md §4 has the permission matrix). All under
 |---|---|---|
 | Auth | `/auth` | POST /login, /refresh, /logout; GET /profile |
 | Assets | `/assets` | GET (scoped by asset type), GET /mine, GET /catalogue, POST, PATCH /:id, PATCH /:id/lifecycle, POST /:id/qr |
-| Requisitions | `/requisitions` | GET, GET /mine, POST, POST /:id/approve\|reject\|hold\|fulfill, GET /decided, GET /replacement-review, GET /fulfilment-fallback (System Admin), GET /:id/documents/:formId |
-| Asset requests (Returns & Incidents) | `/asset-requests` | POST (multipart, up to 3 attachments), GET /mine, PATCH /:id/approve\|reject\|complete\|cancel, GET /:id/documents/:formId |
-| Repairs | `/repairs` | GET, GET /asset/:assetId, PATCH /:id, POST /:id/loaner, POST /:id/complete |
+| Requisitions | `/requisitions` | GET, GET /mine, POST, POST /:id/approve\|reject\|hold\|fulfill, GET /decided, GET /replacement-review, GET /fulfilment-fallback (System Admin), GET /:id/documents/:formId, POST /:id/print, GET /:id/prints |
+| Asset requests (Returns & Incidents) | `/asset-requests` | POST (multipart, up to 3 attachments), GET /mine, PATCH /:id/approve\|reject\|complete\|cancel, GET /:id/documents/:formId, POST /:id/print, GET /:id/prints |
+| Repairs | `/repairs` | GET, GET /asset/:assetId, PATCH /:id, POST /:id/loaner, POST /:id/complete, POST /:id/print, GET /:id/prints, GET /:id/prints/:formId |
 | Users | `/users` | GET, POST, PATCH /:id/role\|deactivate\|activate\|unlock\|reset-password\|revoke-sessions, PATCH /me/availability |
 | Notifications | `/notifications` | GET, PATCH /:id/read, PATCH /read-all, POST /run-checks, GET /watcher-status |
 | Audit | `/audit` | GET (read-only; `action` + `startDate`/`endDate`), GET /user/:id, GET /record/:id (scoped) |

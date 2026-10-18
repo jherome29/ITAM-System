@@ -5,7 +5,7 @@
 //
 // UAT_ACCOUNTS holds one [email, password] per role: admin, it, supervisor, employee, management, property.
 // Set WAIT_FOR_DEPLOY=1 to first wait until the backend has restarted after this run started (a new build is live).
-// It files, approves and fulfils one requisition marked [UAT-SMOKE]; those records stay in the audit log.
+// It files, approves and fulfils one requisition marked [UAT-SMOKE] and prints it twice; those records stay in the audit log.
 const BASE = (process.env.UAT_BASE_URL || '').replace(/\/$/, '');
 if (!BASE || !process.env.UAT_ACCOUNTS) {
   console.error('Set UAT_BASE_URL and UAT_ACCOUNTS.');
@@ -37,7 +37,7 @@ async function call(role, method, path, body) {
       return { status: res.status, data: j.data, message: j.message };
     }
     const buf = Buffer.from(await res.arrayBuffer());
-    return { status: res.status, pdf: buf.subarray(0, 4).toString() === '%PDF', bytes: buf.length };
+    return { status: res.status, pdf: buf.subarray(0, 4).toString() === '%PDF', bytes: buf.length, docNumber: res.headers.get('x-document-number') };
   }
   return { status: 429 };
 }
@@ -125,6 +125,21 @@ else {
     check(`${owner === 'it' ? 'IT' : 'Property'} custodian fulfils it`, fu.status === 200, `HTTP ${fu.status} ${fu.message || ''}`);
     const done = await call('employee', 'GET', `/v1/requisitions/${reqId}`);
     check('employee sees it fulfilled', done.data?.status === 'fulfilled', `status ${done.data?.status}`);
+
+    // Paper copies (CLAUDE.md Module 8): whoever can see the record prints it; each print is a new number.
+    const first = await call('employee', 'POST', `/v1/requisitions/${reqId}/print`);
+    check('employee prints a paper copy of the requisition (numbered PDF)', first.status === 200 && first.pdf && /^PR-\d{4}-\d{4}$/.test(first.docNumber || ''), `HTTP ${first.status} ${first.docNumber || ''}`);
+    const second = await call(owner, 'POST', `/v1/requisitions/${reqId}/print`);
+    check('the custodian prints a second copy with its own number', second.status === 200 && second.pdf && !!second.docNumber && second.docNumber !== first.docNumber, `HTTP ${second.status} ${second.docNumber || ''}`);
+    const prints = await call('employee', 'GET', `/v1/requisitions/${reqId}/prints`);
+    check('the requisition lists both copies, oldest first', Array.isArray(prints.data) && prints.data.map((p) => p.copy).join() === '1,2', `copies ${(prints.data || []).map((p) => p.copy).join()}`);
+    const other = owner === 'it' ? 'property' : 'it';
+    const denied = await call(other, 'POST', `/v1/requisitions/${reqId}/print`);
+    check(`the ${other} custodian cannot print a requisition outside their asset type`, denied.status === 403 || denied.status === 404, `HTTP ${denied.status}`);
+    const archive = await call('admin', 'GET', '/v1/reports/forms?formType=RECORD_PRINT&limit=5');
+    check('paper copies are not in the forms archive', archive.status === 200 && (archive.data?.data || []).length === 0, `HTTP ${archive.status}, ${(archive.data?.data || []).length} listed`);
+    const after = await call('employee', 'GET', `/v1/requisitions/${reqId}`);
+    check('paper copies are not listed as official documents', !(after.data?.documents || []).some((d) => d.formType === 'RECORD_PRINT'), '');
   }
 }
 

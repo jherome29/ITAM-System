@@ -32,6 +32,14 @@ confused you.
 4. The employee later **returns** it, or reports it **broken, lost or stolen**.
 5. The **Custodian** deals with that, and **Management** and the **Admin** can see the whole history.
 
+**Keep a paper copy (everyone)**
+CICC asked for a printed proof after every step. You can print a copy of any **requisition**, **return or incident report** and **repair** that you can see.
+- Right after you save a step (send a request, approve, reject, hand over, close a repair), a box asks **"Keep a paper copy?"**. Press **Print copy**, or **Not now**: it never blocks your work.
+- Or open the record any time and use the **Paper copy** box at the bottom: **Print copy** makes a new copy, and **Open** shows an earlier one again.
+- The copy opens in a new tab as a PDF. Print it from there. If nothing opens, allow pop-ups for this site; the file is downloaded instead.
+- Each copy has its own number (like **PR-2026-0001**), the story so far step by step, a **verification code**, and lines to sign. A later copy of the same record says **REPRINT: copy 2**.
+- Paper copies are not official COA forms, so they are **not** in the Forms Archive. They are found on the record itself.
+
 ---
 
 ## Page 2: Employee
@@ -63,7 +71,7 @@ confused you.
 | Employee 5 | uat.employee5@cicc.gov.ph | Employee5@CICC2026! | A chair. A requisition for a laptop is **approved and waiting for the IT custodian** (REQ-2026-0055). **Try:** watch it get issued |
 | Employee (older account) | employee@cicc.gov.ph | Employee@CICC2026! | Many items and past requests (27 items, 48 requisitions): good for seeing a full history |
 
-**Try this:** open the Asset Catalogue, request something, then follow it in My Requisitions as the other roles act on it.
+**Try this:** open the Asset Catalogue, request something, then follow it in My Requisitions as the other roles act on it. When you send it, the **"Keep a paper copy?"** box appears: print it and check the number, the steps and the signature lines. Open the same request later and use **Paper copy** to print a second one: it says **REPRINT**.
 
 ---
 
@@ -91,7 +99,7 @@ confused you.
 | Approving Officer | supervisor@cicc.gov.ph | Supervisor@CICC2026! | Operations / Field Operations (the demo employees above) |
 | Approving Officer (Property & Supply) | psm.approver@cicc.gov.ph | PSMApprover@2026! | Property and Supply Management staff |
 
-**Try this:** sign in as supervisor@, open the Approval Queue, and approve or reject **REQ-2026-0054** (Employee 3's request).
+**Try this:** sign in as supervisor@, open the Approval Queue, and approve or reject **REQ-2026-0054** (Employee 3's request). After you decide, the **"Keep a paper copy?"** box offers a printed proof of your decision.
 
 ---
 
@@ -122,7 +130,7 @@ confused you.
 |---|---|---|
 | IT Asset Custodian | itpersonnel@cicc.gov.ph | CiccIT@2026!Sec |
 
-**Try this:** open ICT Requisition Fulfillment and fulfil **REQ-2026-0055** (Employee 5's laptop). Then open ICT Reports & Forms and make a form.
+**Try this:** open ICT Requisition Fulfillment and fulfil **REQ-2026-0055** (Employee 5's laptop). Then open ICT Reports & Forms and make a form. Each step you finish (fulfil, hold, approve or complete a return or incident report, close a repair, lend a spare) offers a **paper copy**; the **Paper copy** box on every record has the earlier ones. You see only ICT records.
 
 ---
 
@@ -152,7 +160,7 @@ confused you.
 | Property Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
 | Property Custodian (second) | property.custodian2@cicc.gov.ph | PropertyOfficer@2026! |
 
-**Try this:** open Returns & Incidents. **AR-2026-0021** (a chair return) and **AR-2026-0022** (an air conditioner damage report) are waiting. Approve one, mark it received, and see what happens next (a repair record opens for the damage).
+**Try this:** open Returns & Incidents. **AR-2026-0021** (a chair return) and **AR-2026-0022** (an air conditioner damage report) are waiting. Approve one, mark it received, and see what happens next (a repair record opens for the damage). Each step offers a **paper copy**; try printing the request and then its repair. You see only fixed assets and supplies.
 
 ---
 
@@ -176,7 +184,7 @@ confused you.
 |---|---|---|
 | System Administrator | admin@cicc.gov.ph | Admin@CICC2026! |
 
-**Try this:** open Users & Accounts and look at the demo accounts, then open the Audit Log and find the actions you saw other testers do.
+**Try this:** open Users & Accounts and look at the demo accounts, then open the Audit Log and find the actions you saw other testers do. Every paper copy printed shows there too (**form generated**, with the copy number and who printed it).
 
 ---
 
@@ -195,4 +203,4 @@ confused you.
 |---|---|---|
 | Management | management@cicc.gov.ph | Management@CICC2026! |
 
-**Try this:** make an Asset Master List PDF, open the Forms Archive, and check the Audit Log shows what the other testers did.
+**Try this:** make an Asset Master List PDF, open the Forms Archive, and check the Audit Log shows what the other testers did. You can also open any record you are shown and print a **paper copy** of it from its **Paper copy** box (paper copies are not in the Forms Archive).

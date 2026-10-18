@@ -246,6 +246,7 @@ The custodian of **Fixed assets and Supplies** (furniture, vehicles, office equi
 | Browse the asset catalogue (requisition picker) | ✓ | ✓ | ✓ | ✓ | — | — |
 | See assets I hold; file return / repair / damage / loss / theft on them | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Receive notifications | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Print a numbered paper copy of a record I can see (requisition, return / incident request, repair) | ✓ ⁴ | ✓ ⁴ | ✓ ³ | ✓ ³ | ✓ | ✓ |
 | Approve / reject requisitions | — | ✓ | — | — | ✓ | — |
 | Approval history (decisions I made) | — | ✓ | — | — | ✓ | — |
 | Fulfil / hold requisitions | — | — | ✓ ¹ | ✓ ¹ | ✓ ² | — |
@@ -258,13 +259,13 @@ The custodian of **Fixed assets and Supplies** (furniture, vehicles, office equi
 | View an asset's transaction history | — | — | ✓ ³ | ✓ ³ | ✓ | ✓ |
 | See the replacement-validation list and assets flagged for disposal (read-only) | — | — | ✓ ³ | ✓ ³ | ✓ | ✓ |
 | Generate official forms (PAR, ICS, RIS…) | — | — | ✓ | ✓ | ✓ | — |
-| View / download the forms archive | — | — | ✓ | ✓ | ✓ | ✓ |
+| View / download the forms archive (COA forms; paper-copy printouts are read through their own record, never from here) | — | — | ✓ | ✓ | ✓ | ✓ |
 | Generate management reports | — | — | ✓ | ✓ | ✓ | ✓ |
 | User accounts, role assignment, system configuration | — | — | — | — | ✓ | — |
 | View the full audit trail (all records) | — | — | — | — | ✓ | ✓ |
 | Executive KPI dashboard | — | — | — | — | ✓ | ✓ |
 
-¹ Never for a requisition or request they filed themselves. ² Only for a custodian's own request or requisition (the fallback). ³ Inside the role's own asset-type scope: IT Personnel see and change **ICT** only; Property Custodian sees **Fixed** and **Supplies** only. Enforced in the service layer on every read and write (`resolveAssetTypeScope`), not just in the menu.
+¹ Never for a requisition or request they filed themselves. ² Only for a custodian's own request or requisition (the fallback). ³ Inside the role's own asset-type scope: IT Personnel see and change **ICT** only; Property Custodian sees **Fixed** and **Supplies** only. Enforced in the service layer on every read and write (`resolveAssetTypeScope`), not just in the menu. ⁴ Only a record they can already read: their own requisition or request, a requisition routed to them, or a repair of an item they hold (a repair's holder may print it although the repair queue is the custodians'). Each print is numbered `PR-YYYY-NNNN`, stored and audited; a later one is marked REPRINT.
 
 ---
 
