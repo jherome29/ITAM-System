@@ -271,7 +271,11 @@ export function drawMetaFields(
     const left = fields[i];
     const right = fields[i + 1];
     doc.font(FONT_BOLD).fontSize(7.5).fillColor(BLACK);
-    doc.text(`${left.label}:`, PAGE.margin, y, { continued: true });
+    // The line takes its width from this first call: without one, a long value ran the page's full width.
+    doc.text(`${left.label}:`, PAGE.margin, y, {
+      continued: true,
+      width: half - 10,
+    });
     doc
       .font(FONT_REGULAR)
       .fontSize(7.5)
@@ -279,7 +283,10 @@ export function drawMetaFields(
     // An empty label is a filler that keeps the pairs aligned: draw nothing.
     if (right?.label) {
       doc.font(FONT_BOLD).fontSize(7.5).fillColor(BLACK);
-      doc.text(`${right.label}:`, PAGE.margin + half, y, { continued: true });
+      doc.text(`${right.label}:`, PAGE.margin + half, y, {
+        continued: true,
+        width: half - 10,
+      });
       doc
         .font(FONT_REGULAR)
         .fontSize(7.5)

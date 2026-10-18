@@ -715,6 +715,38 @@ describe('drawMetaFields', () => {
 
   // The rows advanced a fixed 13pt however many lines their text took: a 100-character property
   // number or a long office wrapped onto the next row and printed over it.
+  // A "Label: value" pair is drawn as two continued text calls, and the line takes its width from the FIRST
+  // call. The label call had none, so a long value ran the full width of the page and over the field
+  // beside it (a 90-character name printed across the next column).
+  it('gives the label the column width, so a long value wraps inside its own column', () => {
+    const doc = createDoc();
+    const widths: Array<number | undefined> = [];
+    const original = doc.text.bind(doc);
+    jest.spyOn(doc, 'text').mockImplementation(((
+      text: string,
+      x?: number | string,
+      y?: number | string,
+      options?: PDFKit.Mixins.TextOptions,
+    ) => {
+      if (/:$/.test(String(text))) widths.push(options?.width);
+      return original(text, x as number, y as number, options);
+    }) as unknown as typeof doc.text);
+
+    drawMetaFields(
+      doc,
+      [
+        { label: 'Requested by', value: 'N'.repeat(90) },
+        { label: 'Type', value: 'New' },
+      ],
+      100,
+    );
+
+    expect(widths).toHaveLength(2);
+    expect(
+      widths.every((w) => typeof w === 'number' && w > 200 && w < 260),
+    ).toBe(true);
+  });
+
   it('keeps the usual spacing for short values', () => {
     const doc = createDoc();
 
