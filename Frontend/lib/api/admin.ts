@@ -22,6 +22,12 @@ export interface AdminDashboardStats {
     failedLoginsToday: number;
     eventsToday: number;
   };
+  /** What only the administrator may decide: what a custodian filed for themselves. */
+  decisions: {
+    returnsIncidents: number;
+    repairs: number;
+    requisitions: number;
+  };
   generatedAt: string;
 }
 

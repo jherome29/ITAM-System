@@ -355,6 +355,33 @@ describe('ReportsService', () => {
       expect(result.generatedAt).toBeDefined();
     });
 
+    // "Record completeness" only asked IS NOT NULL, so an asset saved with an empty serial number or property
+    // number (the dev database has one of each) counted as complete: the dashboard said 100% beside two gaps.
+    it('counts a blank property or serial number as missing, not as complete', async () => {
+      mockAssetRepo.count.mockResolvedValue(10);
+      mockReqRepo.count.mockResolvedValue(0);
+      const assetQb = makeQb(8);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(assetQb);
+      mockReqRepo.createQueryBuilder
+        .mockReturnValueOnce(makeQb(0, []))
+        .mockReturnValueOnce(makeQb(0))
+        .mockReturnValueOnce(makeQb(0))
+        .mockReturnValueOnce(makeQb(0));
+
+      await service.getKpi();
+
+      const conditions = [
+        ...assetQb.where.mock.calls,
+        ...assetQb.andWhere.mock.calls,
+      ]
+        .map((call) => String(call[0]))
+        .join(' AND ');
+      expect(conditions).toContain(
+        "COALESCE(TRIM(a.propertyNumber), '') <> ''",
+      );
+      expect(conditions).toContain("COALESCE(TRIM(a.serialNumber), '') <> ''");
+    });
+
     it('returns 100% defaults and zero avg when no data exists', async () => {
       mockAssetRepo.count.mockResolvedValue(0);
       mockReqRepo.count.mockResolvedValue(0);

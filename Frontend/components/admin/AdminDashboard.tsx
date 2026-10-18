@@ -10,6 +10,7 @@ import { reportsApi, type KpiData } from '@/lib/api/reports';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { auditEventLabel } from '@/lib/audit-label';
 import { attentionPanelState } from '@/lib/admin-attention';
+import { auditActor, buildAttention, decisionDetail, decisionHref, decisionTotal, watcherResult, type WatcherTone } from '@/lib/admin-dashboard';
 import { schedulerApi, type WatcherName, type WatcherStatus, type WatcherSweep } from '@/lib/api/scheduler';
 import { AdminPageHeader, MetricCard, Panel, StatusChip, type AdminTone } from './AdminUi';
 import { formatDateTime, formatTime } from '@/lib/dates';
@@ -30,8 +31,6 @@ const ROLE_ORDER = Object.keys(ROLE_LABELS);
 // The retired Property Officer role is listed only while an account still holds it: that is a
 // leftover for the administrator to move to Property Custodian.
 const RETIRED_ROLE_LABELS: Record<string, string> = { property_officer: 'Property Officer (retired)' };
-
-const plural = (n: number) => (n === 1 ? '' : 's');
 
 function formatUptime(seconds: number): string {
   if (seconds <= 0) return '—';
@@ -56,31 +55,40 @@ function formatSweep(sweep: WatcherSweep | null): string {
   return `${formatDateTime(sweep.at)} · ${SWEEP_TRIGGER_LABEL[sweep.trigger]}`;
 }
 
-// Every watcher, in run order, with what its count means.
-const WATCHERS: Array<{ name: WatcherName; label: string; unit: string; cadence: string }> = [
-  { name: 'slaBreaches', label: 'SLA breaches', unit: 'requisition', cadence: 'hourly' },
-  { name: 'pendingNudges', label: 'Pending-approval nudges', unit: 'requisition', cadence: 'hourly' },
-  { name: 'overdueReturns', label: 'Overdue returns', unit: 'asset', cadence: 'daily 7:00' },
-  { name: 'lowStock', label: 'Low stock', unit: 'supply line', cadence: 'daily 7:00' },
-  { name: 'overdueRepairs', label: 'Overdue repairs', unit: 'repair', cadence: 'daily 7:00' },
+// Every watcher, in run order. `live` is the figure right now, because the watcher itself only reports the NEW
+// alerts it sent (each one goes out once): "0 new alerts sent" next to "11 past SLA now" is not a contradiction.
+const WATCHERS: Array<{ name: WatcherName; label: string; schedule: string; live?: (stats: AdminDashboardStats) => string }> = [
+  { name: 'slaBreaches', label: 'SLA breaches', schedule: 'every hour', live: (s) => `${s.requisitions.slaBreached} past SLA now` },
+  { name: 'pendingNudges', label: 'Pending-approval reminders', schedule: 'every hour' },
+  { name: 'overdueReturns', label: 'Overdue returns', schedule: 'daily at 7:00 AM' },
+  { name: 'lowStock', label: 'Low stock', schedule: 'daily at 7:00 AM', live: (s) => `${s.assets.lowStock} at or below reorder level now` },
+  { name: 'overdueRepairs', label: 'Overdue repairs', schedule: 'daily at 7:00 AM' },
 ];
 
-function WatcherRows({ status }: Readonly<{ status: WatcherStatus | null }>) {
+const WATCHER_TONE: Record<WatcherTone, string> = {
+  red: 'text-red-700',
+  amber: 'text-amber-700',
+  neutral: 'text-slate-700',
+  muted: 'text-slate-500',
+};
+
+function WatcherRows({ status, stats }: Readonly<{ status: WatcherStatus | null; stats: AdminDashboardStats | null }>) {
   return (
     <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
       {WATCHERS.map((w) => {
         const run = status?.watchers?.[w.name];
-        let value = 'Not run yet';
-        let tone = 'text-slate-500';
-        if (run && run.count < 0) { value = 'Failed — see server log'; tone = 'text-red-700'; }
-        else if (run) { value = run.count === 0 ? 'Nothing to alert' : `${run.count} ${w.unit}${plural(run.count)} alerted`; tone = run.count > 0 ? 'text-amber-700' : 'text-slate-700'; }
+        const result = watcherResult(run, w.schedule);
+        const live = stats && w.live ? w.live(stats) : null;
         return (
           <li key={w.name} className="flex items-start justify-between gap-3 px-3 py-2 text-xs">
             <span>
               <span className="font-semibold text-slate-800">{w.label}</span>
-              <span className="block text-slate-500">{run ? `${formatDateTime(run.at)} · ${SWEEP_TRIGGER_LABEL[run.trigger]}` : w.cadence}</span>
+              {run && <span className="block text-slate-500">{`${formatDateTime(run.at)} · ${SWEEP_TRIGGER_LABEL[run.trigger]}`}</span>}
             </span>
-            <span className={`text-right font-semibold ${tone}`}>{value}</span>
+            <span className="text-right">
+              <span className={`block font-semibold ${WATCHER_TONE[result.tone]}`}>{result.text}</span>
+              {live && <span className="block text-slate-500">{live}</span>}
+            </span>
           </li>
         );
       })}
@@ -97,32 +105,6 @@ function latestConfigChange(meta: SystemConfig['meta']): string {
     .map((value) => new Date(value).getTime());
   if (times.length === 0) return 'never — built-in defaults in effect';
   return formatDateTime(new Date(Math.max(...times)).toISOString());
-}
-
-interface AttentionItem {
-  tone: AdminTone;
-  text: string;
-  href?: string;
-}
-
-function buildAttention(stats: AdminDashboardStats, health: HealthStatus | null): AttentionItem[] {
-  const items: AttentionItem[] = [];
-  if (health && !health.db) {
-    items.push({ tone: 'red', text: 'Database unreachable — GET /api/health is reporting the connection down.' });
-  }
-  if (stats.users.locked > 0) {
-    items.push({ tone: 'amber', text: `${stats.users.locked} account${plural(stats.users.locked)} locked out of sign-in.`, href: '/master-admin/users' });
-  }
-  if (stats.requisitions.slaBreached > 0) {
-    items.push({ tone: 'red', text: `${stats.requisitions.slaBreached} requisition${plural(stats.requisitions.slaBreached)} past the 24-hour approval SLA.` });
-  }
-  if (stats.assets.lowStock > 0) {
-    items.push({ tone: 'amber', text: `${stats.assets.lowStock} supply line${plural(stats.assets.lowStock)} at or below reorder level.` });
-  }
-  if (stats.audit.failedLoginsToday >= 10) {
-    items.push({ tone: 'amber', text: `${stats.audit.failedLoginsToday} failed login attempts recorded today.`, href: '/master-admin/audit' });
-  }
-  return items;
 }
 
 const attentionRowClass: Record<AdminTone, string> = {
@@ -172,7 +154,9 @@ export function AdminDashboard() {
       schedulerApi.watcherStatus(),
     ]).then(([s, h, c, k, a, w]) => {
       if (cancelled) return;
-      if (s.status === 'fulfilled') setStats(s.value.data);
+      // No `decisions` means an older backend is still answering (the two services deploy separately): say the
+      // figures are unavailable rather than show a wrong "nothing waiting for you".
+      if (s.status === 'fulfilled' && s.value.data?.decisions) setStats(s.value.data);
       else setFailed(true);
       if (h.status === 'fulfilled') setHealth(h.value);
       if (c.status === 'fulfilled') setConfig(c.value.data);
@@ -236,11 +220,12 @@ export function AdminDashboard() {
           icon={Users}
         />
         <MetricCard
-          label="Pending approvals"
-          value={stats ? String(stats.requisitions.pendingSupervisor) : '—'}
-          detail={stats ? (stats.requisitions.slaBreached > 0 ? `${stats.requisitions.slaBreached} past SLA` : 'All within SLA') : 'Loading…'}
-          tone={stats && stats.requisitions.slaBreached > 0 ? 'amber' : 'slate'}
+          label="Needs your decision"
+          value={stats ? String(decisionTotal(stats.decisions)) : '—'}
+          detail={stats ? decisionDetail(stats.decisions) : 'Loading…'}
+          tone={stats && decisionTotal(stats.decisions) > 0 ? 'amber' : 'slate'}
           icon={ClipboardCheck}
+          href={stats ? decisionHref(stats.decisions) : undefined}
         />
         <MetricCard
           label="Assets tracked"
@@ -309,7 +294,6 @@ export function AdminDashboard() {
         >
           <div className="divide-y divide-slate-100 px-4">
             {([
-              { label: 'Admin console', value: 'Loaded', tone: 'green' },
               { label: 'Backend API', value: health?.reachable ? 'Responding' : 'Unreachable', tone: health?.reachable ? 'green' : 'red' },
               { label: 'Database', value: health?.db ? 'Connected' : 'Unreachable', tone: health?.db ? 'green' : 'red' },
             ] as Array<{ label: string; value: string; tone: AdminTone }>).map((row) => (
@@ -327,7 +311,7 @@ export function AdminDashboard() {
                 <span className="text-sm text-slate-600">Background watchers</span>
                 <span className="text-right text-sm font-semibold text-slate-900">{formatSweep(sweep)}</span>
               </div>
-              <WatcherRows status={watcherStatus} />
+              <WatcherRows status={watcherStatus} stats={stats} />
               <div className="flex items-center justify-between gap-3">
                 <span className="text-xs text-slate-500">Each row is that watcher&apos;s last run since the backend started.</span>
                 <button type="button" onClick={() => void runChecks()} disabled={runningChecks} className="shrink-0 rounded-md border border-slate-200 px-2.5 py-1 text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50">
@@ -366,7 +350,7 @@ export function AdminDashboard() {
                     <p className="text-sm font-semibold text-slate-900">{auditEventLabel(log)}</p>
                     <StatusChip status={roleLabel(log.userRole)} />
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">{log.ipAddress || 'no-ip'} · {formatDateTime(log.timestamp)}</p>
+                  <p className="mt-1 text-xs text-slate-500">{[auditActor(log), log.ipAddress || 'no-ip', formatDateTime(log.timestamp)].filter(Boolean).join(' · ')}</p>
                 </div>
               ))
             )}

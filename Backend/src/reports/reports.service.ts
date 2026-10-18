@@ -200,8 +200,9 @@ export class ReportsService {
     const totalAssets = await this.assetRepo.count();
     const completeAssets = await this.assetRepo
       .createQueryBuilder('a')
-      .where('a.propertyNumber IS NOT NULL')
-      .andWhere('a.serialNumber IS NOT NULL')
+      // Blank text is as missing as NULL: an empty serial number is not a serial number.
+      .where("COALESCE(TRIM(a.propertyNumber), '') <> ''")
+      .andWhere("COALESCE(TRIM(a.serialNumber), '') <> ''")
       .getCount();
     const recordCompleteness =
       totalAssets > 0 ? Math.round((completeAssets / totalAssets) * 100) : 100;
