@@ -5,6 +5,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
+import { usePrintPrompt } from '@/components/shared/RecordPrints';
 import { AdminPageHeader, Field, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, inputClass, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
 import { AssetRequestDetail } from './AssetRequestDetail';
 import { AttachmentPicker } from './AttachmentPicker';
@@ -75,6 +76,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
   const [confirmingReject, setConfirmingReject] = useState(false);
   const [outcome, setOutcome] = useState<'' | 'repair' | 'disposal'>('');
   const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
+  const { ask: askToPrint, prompt: printPrompt } = usePrintPrompt();
 
   const notify = (message: string) => {
     setToast(message);
@@ -113,7 +115,8 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
     setReceiptFiles([]);
   };
 
-  const run = async (label: string, action: () => Promise<{ data: AssetRequest }>) => {
+  // `offerCopy`: ask whether to keep a paper copy once the step is saved (CICC wants one per step).
+  const run = async (label: string, action: () => Promise<{ data: AssetRequest }>, offerCopy = true) => {
     if (busy) return;
     setBusy(true);
     setActionError('');
@@ -124,6 +127,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
       setReason('');
       setReceiptFiles([]);
       notify(`${res.data.requestNumber} ${label}.`);
+      if (offerCopy) askToPrint('asset_request', res.data.id, res.data.requestNumber);
       await load().catch(() => {});
     } catch (err) {
       setActionError(errorMessage(err, `Could not ${label.replace(/ed$/, '')} the request.`));
@@ -211,7 +215,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
           <div className="space-y-5">
             <AssetRequestDetail
               request={selected}
-              onRegenerate={() => void run('documents generated', () => assetRequestsApi.regenerateDocuments(selected.id))}
+              onRegenerate={() => void run('documents generated', () => assetRequestsApi.regenerateDocuments(selected.id), false)}
             />
 
             {actions.includes('approve') && (
@@ -305,6 +309,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
         }}
       />
       <Toast message={toast} />
+      {printPrompt}
     </div>
   );
 }

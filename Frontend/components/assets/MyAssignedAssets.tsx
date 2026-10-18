@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
+import { usePrintPrompt } from '@/components/shared/RecordPrints';
 import { assetsApi, type MyAsset } from '@/lib/api/assets';
 import { assetRequestsApi, type AssetRequest, type AssetRequestType } from '@/lib/api/asset-requests';
 import { REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE, REQUEST_TYPE_LABEL, blockingRequest, isOpen } from '@/lib/asset-requests/asset-request-rules';
@@ -76,6 +77,7 @@ export function MyAssignedAssets({
   const [viewing, setViewing] = useState<AssetRequest | null>(null);
   const [cancelling, setCancelling] = useState<AssetRequest | null>(null);
   const [toast, setToast] = useState('');
+  const { ask: askToPrint, prompt: printPrompt } = usePrintPrompt();
 
   const load = useCallback(
     () => Promise.all([assetsApi.mine(), assetRequestsApi.mine()]).then(([a, r]) => { setAssets(a.data); setRequests(r.data); }),
@@ -100,6 +102,7 @@ export function MyAssignedAssets({
     try {
       const res = await assetRequestsApi.cancel(cancelling.id);
       notify(`${cancelling.requestNumber} cancelled.`);
+      askToPrint('asset_request', cancelling.id, cancelling.requestNumber);
       if (viewing?.id === res.data.id) setViewing(res.data);
       await load();
     } catch {
@@ -157,11 +160,11 @@ export function MyAssignedAssets({
         myRequests={requests}
         fixedAssetId={filing.asset.id}
         {...(filing.type === 'loss' ? { initialType: 'loss' as const } : { fixedType: filing.type })}
-        onSubmitted={(r) => { setFiling(null); notify(`${r.requestNumber} submitted — the ${r.custodianLabel ?? 'custodian'} has been notified.`); void load(); }}
+        onSubmitted={(r) => { setFiling(null); notify(`${r.requestNumber} submitted — the ${r.custodianLabel ?? 'custodian'} has been notified.`); askToPrint('asset_request', r.id, r.requestNumber); void load(); }}
       />}
     </DetailDrawer>
     <CenteredModal open={Boolean(replacing)} title={replacing ? `Replace ${replacing.itemDescription}` : 'Request replacement'} description="Pick the replacement item. The request goes to your Approving Officer, then the custodian issues it and collects your current unit." onClose={() => setReplacing(null)}>
-      {replacing && <RequisitionForm key={replacing.id} replacing={replacing} onSubmit={(created) => { setReplacing(null); notify(`${created.requestNumber} submitted for approval.`); void load(); }} />}
+      {replacing && <RequisitionForm key={replacing.id} replacing={replacing} onSubmit={(created) => { setReplacing(null); notify(`${created.requestNumber} submitted for approval.`); askToPrint('requisition', created.id, created.requestNumber); void load(); }} />}
     </CenteredModal>
     <DetailDrawer open={Boolean(viewing)} title={viewing?.requestNumber ?? 'Request'} onClose={() => setViewing(null)}>
       {viewing && <div className="space-y-4">
@@ -171,6 +174,7 @@ export function MyAssignedAssets({
     </DetailDrawer>
     <ConfirmDialog open={Boolean(cancelling)} title={`Cancel ${cancelling?.requestNumber ?? ''}?`} detail="The custodian will be notified that you no longer need this request." confirmLabel="Cancel request" cancelLabel="Keep request" onConfirm={() => void confirmCancel()} onCancel={() => setCancelling(null)} />
     <Toast message={toast} />
+    {printPrompt}
   </div>;
 }
 

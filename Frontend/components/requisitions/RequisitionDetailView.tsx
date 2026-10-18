@@ -16,6 +16,7 @@ import {
   type SlaTone,
 } from '@/lib/requisitions/requisition-view';
 import { Chip } from '@/components/ui/Chip';
+import { RecordPrints } from '@/components/shared/RecordPrints';
 import type { Tone } from '@/components/ui/tones';
 import { humanize } from '@/lib/text';
 
@@ -167,5 +168,7 @@ export function RequisitionDetailView({ request }: Readonly<{ request: Requisiti
         </li>)}
       </ol>
     </div>
+
+    <RecordPrints key={request.id} kind="requisition" recordId={request.id} />
   </div>;
 }

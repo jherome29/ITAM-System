@@ -18,6 +18,7 @@ import { Notice } from '@/components/ui/Notice';
 import { EmptyRow } from '@/components/ui/EmptyRow';
 import { ClampText } from '@/components/ui/ClampText';
 import { Pager } from '@/components/ui/Pager';
+import { RecordPrints, usePrintPrompt } from '@/components/shared/RecordPrints';
 import { usePaged } from '@/lib/use-paged';
 
 const FILTERS = [
@@ -43,10 +44,12 @@ function statusOf(r: Repair): { label: string; tone: 'amber' | 'red' | 'green' |
  * it), and once the repair closes, collect it back. `canReturn` is the
  * custodian's queue — the System Admin's escalation view only reads.
  */
-function LoanerSection({ repair, canReturn, onChanged, onError }: Readonly<{
+function LoanerSection({ repair, canReturn, onChanged, onIssued, onError }: Readonly<{
   repair: Repair;
   canReturn: boolean;
   onChanged: (message: string) => Promise<void>;
+  /** After a loaner has been handed out, so the screen can offer a paper copy. */
+  onIssued: () => void;
   onError: (message: string) => void;
 }>) {
   const [units, setUnits] = useState<Asset[] | null>(null);
@@ -72,6 +75,7 @@ function LoanerSection({ repair, canReturn, onChanged, onError }: Readonly<{
     try {
       await repairsApi.issueLoaner(repair.id, { assetId: unitId, expectedReturnDate: returnBy || undefined });
       await onChanged('Loaner issued — the holder has been notified.');
+      onIssued();
     } catch (err) {
       onError(errorMessage(err, 'Could not issue the loaner.'));
     } finally {
@@ -177,6 +181,7 @@ export function RepairQueue({
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
   const [toast, setToast] = useState('');
+  const { ask: askToPrint, prompt: printPrompt } = usePrintPrompt();
 
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2600); };
   const load = useCallback(() => repairsApi.list().then((res) => setRows(res.data)), []);
@@ -251,6 +256,7 @@ export function RepairQueue({
       });
       open(res.data);
       notify(outcome === 'repaired' ? 'Repair completed — the holder has been notified.' : 'Marked not repairable — flagged for disposal.');
+      askToPrint('repair', selected.id, `The repair of ${selected.asset?.itemDescription ?? 'this item'}`);
       await load().catch(() => {});
     } catch (err) {
       setActionError(errorMessage(err, 'Could not complete the repair.'));
@@ -395,12 +401,15 @@ export function RepairQueue({
                 notify(message);
                 await load().catch(() => {});
               }}
+              onIssued={() => askToPrint('repair', selected.id, `The loaner for ${selected.asset?.itemDescription ?? 'this repair'}`)}
               onError={setActionError}
             />
+            <RecordPrints key={selected.id} kind="repair" recordId={selected.id} />
             {actionError && <Notice tone="red">{actionError}</Notice>}
           </div>
         )}
       </DetailDrawer>
+      {printPrompt}
       <ConfirmDialog
         open={confirming}
         title={outcome === 'repaired' ? 'Complete this repair?' : 'Mark as not repairable?'}

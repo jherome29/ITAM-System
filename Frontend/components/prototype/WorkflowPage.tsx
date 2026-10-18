@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { CenteredModal } from '@/components/ui/CenteredModal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { RequisitionForm } from '@/components/requisitions/RequisitionForm';
+import { usePrintPrompt } from '@/components/shared/RecordPrints';
 import { RequisitionDetailView, SlaBadge } from '@/components/requisitions/RequisitionDetailView';
 import { requisitionItemsLabel } from '@/lib/requisitions/catalogue-items';
 import {
@@ -213,6 +214,8 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   const [supplyStock, setSupplyStock] = useState<{ requisitionId: string; options: Record<string, StockOption[] | null> } | null>(null);
   const [stockPicks, setStockPicks] = useState<Record<string, string>>({});
   const [actionSubmitting, setActionSubmitting] = useState(false);
+  // CICC wants a paper copy after each step on a requisition; this asks right after one is saved.
+  const { ask: askToPrint, prompt: printPrompt } = usePrintPrompt();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const statuses = ['All', ...Array.from(new Set(rows.map((row) => String(row.status ?? 'Open'))))];
   const pageSize = DEFAULT_PAGE_SIZE;
@@ -257,6 +260,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       setRemarks('');
       setErrors({});
       notify(action === 'Approve' ? 'Requisition approved.' : 'Requisition rejected.');
+      askToPrint('requisition', id, requisitionById[id]?.requestNumber ?? 'The requisition');
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
     } catch {
       notify(`Could not ${action.toLowerCase()} the requisition. Please try again.`);
@@ -353,6 +357,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
               : 'Requisition fulfilled.'
           : 'Requisition placed on hold.',
       );
+      askToPrint('requisition', id, requisitionById[id]?.requestNumber ?? 'The requisition');
       setReplacementUnitId('');
       setStockPicks({});
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
@@ -687,11 +692,13 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
             onSubmit={(created) => {
               setCreatingRequisition(false);
               notify(`${created.requestNumber} was submitted for approval.`);
+              askToPrint('requisition', created.id, created.requestNumber);
               void fetchLiveRows().catch(() => notify('Submitted, but the list failed to refresh — reload the page to see it.'));
             }}
           />
         )}
       </CenteredModal>
+      {printPrompt}
     </div>
   );
 }
