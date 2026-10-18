@@ -89,10 +89,10 @@ properly, see `RUN-LOCAL.md` §11. Update this file at the end of every session.
 - [x] The `[VERIFY-2026-10-14]` test data was removed from the shared Supabase DB on 2026-10-18 (5 assets,
       23 requisitions, 8 requests, 4 repairs, 4 forms, 75 notifications; a full backup is in
       `Desktop\AIMRS-VERIFY-data-backup`; the 49 audit entries about them cannot be deleted, the audit log
-      is append-only). **Still there: the same rows on the Railway UAT database** (it was copied from Supabase
-      before), where officers see them (two available units in the catalogue, 23 old requisitions under
-      `employee@cicc.gov.ph`). Removing them needs the Railway database's public URL; the script is the same
-      one (dry run first, then `--apply`).
+      is append-only). The same rows were removed from the Railway UAT database the same evening (its copy
+      of them: 87 assets to 82, 58 requisitions to 35, 22 requests to 14; its own backup file is beside the
+      other), so officers no longer see the two catalogue units or the 23 old requisitions under
+      `employee@cicc.gov.ph`. Re-running it needs the Railway database's public URL again.
 - [ ] The seeder's `DEMO-` rows (PR #107) are still in Supabase. Harmless but they clutter queues; clean up
       before a pilot.
 - [ ] Frontend `lifecycle-transitions.ts` duplicates the backend `VALID_TRANSITIONS`; moving it
