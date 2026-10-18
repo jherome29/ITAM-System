@@ -1,6 +1,6 @@
 # AIMRS test guide for CICC officers
 
-**Written for:** CICC officers and staff trying out the AIMRS Asset Inventory Management and Requisition System. No technical knowledge needed.
+This guide helps you try out AIMRS, the Asset Inventory Management and Requisition System. No technical knowledge is needed.
 Page 1 is for everyone. After that, **each role has its own page**: read the page for your role only.
 Pictures of the flow are in `SYSTEM-FLOW.md` (paste into https://mermaid.live to see them).
 

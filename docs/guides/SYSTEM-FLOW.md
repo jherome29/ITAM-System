@@ -130,7 +130,7 @@ flowchart LR
 ## 7. Which screens connect to which
 
 ```mermaid
-flowchart LR
+flowchart TB
   CAT["Employee: Asset Catalogue"] --> REQ["Employee: My Requisitions"]
   REQ --> QUEUE["Approving Officer: Approval Queue"]
   QUEUE --> HIST["Approving Officer: Approval History"]
