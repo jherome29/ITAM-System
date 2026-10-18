@@ -230,6 +230,38 @@ export class AssetRequestsController {
     res.end(pdf);
   }
 
+  /**
+   * POST /api/v1/asset-requests/:id/print — a numbered paper copy of this request (what was reported, every
+   * step so far, signature lines). Anyone who may see the request may print it; each print is stored,
+   * numbered and audited, and a later one is marked REPRINT.
+   */
+  @Post(':id/print')
+  @HttpCode(HttpStatus.OK)
+  @Roles(...ALL_ROLES)
+  async print(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthReq,
+    @Res() res: Response,
+  ) {
+    const doc = await this.svc.printRecord(id, req.user, req.ip);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Length': String(doc.buffer.length),
+      'Content-Disposition': `inline; filename="${doc.documentNumber}.pdf"`,
+      'X-Document-Number': doc.documentNumber ?? '',
+      'Cache-Control': 'private, no-store',
+    });
+    res.end(doc.buffer);
+  }
+
+  /** GET /api/v1/asset-requests/:id/prints — the prints made of this request (same read access). */
+  @Get(':id/prints')
+  @Roles(...ALL_ROLES)
+  async prints(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthReq) {
+    const data = await this.svc.listPrints(id, req.user);
+    return { message: 'Printouts retrieved', data };
+  }
+
   /** Custodian retry for documents that failed to generate on completion. */
   @Post(':id/documents')
   @HttpCode(HttpStatus.OK)

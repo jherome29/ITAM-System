@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { GeneratedFormEntity } from '../reports/entities/generated-form.entity';
 import { ReportsService } from '../reports/reports.service';
+import { buildAssetRequestPrint } from './asset-request-print';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { AssetRequestEntity } from './entities/asset-request.entity';
@@ -1064,6 +1065,49 @@ export class AssetRequestsService {
       .getOne();
     if (!form?.pdfContent) throw new NotFoundException('Document not found');
     return { form, req };
+  }
+
+  // ── Paper copy of a request ────────────────────────────────────────────────
+  // CICC asked for a printout after every step, as proof beyond the digital record. Same read access as
+  // the request itself: whoever can see it can print it.
+  async printRecord(id: string, user: UserEntity, ipAddress: string) {
+    const req = await this.load(id);
+    if (!this.canRead(req, user)) {
+      throw new ForbiddenException('You do not have access to this request.');
+    }
+    const lookup = async (userId: string | null) =>
+      userId ? this.usersService.findOne(userId).catch(() => null) : null;
+    const [requester, decider, completer] = await Promise.all([
+      lookup(req.requestedById),
+      lookup(req.decidedById),
+      lookup(req.completedById),
+    ]);
+    const record = buildAssetRequestPrint({
+      request: req,
+      asset: req.asset,
+      requester,
+      decider,
+      completer,
+    });
+    const { form, buffer } = await this.reportsService.createRecordPrint(
+      record,
+      {
+        id: user.id,
+        name: `${user.firstName} ${user.lastName}`.trim(),
+        role: user.role,
+      },
+      ipAddress,
+    );
+    return { buffer, documentNumber: form.documentNumber, id: form.id };
+  }
+
+  /** The prints made of this request so far. Same read access as the request. */
+  async listPrints(id: string, user: UserEntity) {
+    const req = await this.load(id);
+    if (!this.canRead(req, user)) {
+      throw new ForbiddenException('You do not have access to this request.');
+    }
+    return this.reportsService.recordPrints('asset_request', req.id);
   }
 
   // ── Requester cancels ──────────────────────────────────────────────────────
