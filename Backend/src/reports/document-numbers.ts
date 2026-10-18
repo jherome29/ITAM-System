@@ -17,6 +17,7 @@ export const DOCUMENT_SERIES: Partial<Record<OfficialFormType, string>> = {
   [OfficialFormType.RECEIPT_RETURNED_SEP]: 'RRSP',
   [OfficialFormType.RLSDDP]: 'RLSDDP',
   [OfficialFormType.MOVE_OUT]: 'MOF',
+  [OfficialFormType.RECORD_PRINT]: 'PR',
 };
 
 export function formatDocumentNumber(

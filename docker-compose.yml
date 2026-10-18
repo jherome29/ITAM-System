@@ -39,6 +39,7 @@ services:
       - ./Database/schemas/015_function_search_path.sql:/docker-entrypoint-initdb.d/15_function_search_path.sql:ro
       - ./Database/schemas/016_document_numbers.sql:/docker-entrypoint-initdb.d/16_document_numbers.sql:ro
       - ./Database/schemas/017_retire_property_officer.sql:/docker-entrypoint-initdb.d/17_retire_property_officer.sql:ro
+      - ./Database/schemas/018_record_printouts.sql:/docker-entrypoint-initdb.d/18_record_printouts.sql:ro
       - ./Database/seeds/001_dev_seed.sql:/docker-entrypoint-initdb.d/99_seed.sql:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U aimrs_user -d aimrs_dev']

@@ -177,6 +177,9 @@ export enum OfficialFormType {
   IIRUP = 'IIRUP',                         // Appendix 74
   RLSDDP = 'RLSDDP',                      // Appendix 75
   PTR = 'PTR',                             // Appendix 76
+  // Not a COA form: the numbered paper copy of a requisition, return / incident request or repair
+  // (schema 018). Made by the print buttons, never from the form generator.
+  RECORD_PRINT = 'RECORD_PRINT',
 }
 
 // Management reports (CLAUDE.md 7.1). The API validates against this list, so a

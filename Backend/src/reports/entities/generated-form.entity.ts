@@ -28,6 +28,14 @@ export class GeneratedFormEntity {
   @Column({ nullable: true, type: 'uuid' })
   relatedAssetRequestId!: string | null;
 
+  // Repair this printout shows (schema 018); requisition and request prints use the two links above.
+  @Column({ nullable: true, type: 'uuid' })
+  relatedAssetRepairId!: string | null;
+
+  // Printed on a record printout so a paper copy can be checked against the system (schema 018).
+  @Column({ type: 'varchar', length: 12, nullable: true })
+  verificationCode!: string | null;
+
   // Running number of the per-transaction forms, e.g. PAR-2026-0007 (schema
   // 016). Null for periodic reports and for forms generated before it existed.
   @Column({ type: 'text', nullable: true })
