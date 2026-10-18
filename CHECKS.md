@@ -77,7 +77,7 @@ cd Backend && npm run test
 **What it checks:** Jest unit tests for all service files. Every test must pass — no exceptions.
 **If it fails:** Read the failing test output. Fix the underlying service logic or test, do not skip or comment out tests.
 
-**Current state (2026-10-18):** 976 tests in 48 suites, all passing.
+**Current state (2026-10-18):** 981 tests in 48 suites, all passing.
 
 > **If the change touches a controller, a guard, a DTO, request routing, or the DB
 > layer**, also run the e2e suite: `cd Backend && npm run test:e2e:local` (needs
@@ -105,7 +105,7 @@ cd Backend && npm run test:cov
 - Functions: ≥ 55%
 - Lines: ≥ 65%
 
-**Current state (2026-10-18):** 976 tests passing · 95.16% statements · 88.58% branches · 93.20% functions · 95.16% lines.
+**Current state (2026-10-18):** 981 tests passing · 95.19% statements · 88.61% branches · 93.23% functions · 95.19% lines.
 
 Target to work toward: **70% across all metrics** (CLAUDE.md §12): met.
 

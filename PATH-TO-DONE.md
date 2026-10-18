@@ -136,7 +136,7 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 - [x] Shared dev Supabase is at `016` (008–014 applied 2026-10-11, 015 on 2026-10-14, 016 on
       2026-10-15). Any teammate's older local Docker Postgres still needs the missing files.
 - [ ] The pilot must **not** use the shared Supabase dev database: 15-connection cap, and it holds
-      test rows (`[VERIFY-2026-10-14]`) and demo rows (`DEMO-`).
+      demo rows (`DEMO-`). (The `[VERIFY-2026-10-14]` rows were removed on 2026-10-18.)
 
 ## E. Data onboarding  (not tracked elsewhere)
 

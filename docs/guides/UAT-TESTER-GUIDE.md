@@ -173,7 +173,7 @@ CICC asked for a printed proof after every step. You can print a copy of any **r
 
 | Menu | What it does |
 |---|---|
-| Admin Dashboard | System health, user activity, the audit overview |
+| Admin Dashboard | What is waiting for **your decision** (requests a custodian filed for themselves, each with an Open link), system health, the background checks that send alerts, and the latest audit entries |
 | Users & Accounts | Create, search, deactivate, unlock or sign out accounts; reset a password |
 | Roles & Permissions | Change which of the six roles an account has |
 | System Settings | Limits such as the approval time target, the repeat-repair limit, sign-in attempts, and the name and fund cluster printed on forms |
@@ -184,7 +184,7 @@ CICC asked for a printed proof after every step. You can print a copy of any **r
 |---|---|---|
 | System Administrator | admin@cicc.gov.ph | Admin@CICC2026! |
 
-**Try this:** open Users & Accounts and look at the demo accounts, then open the Audit Log and find the actions you saw other testers do. Every paper copy printed shows there too (**form generated**, with the copy number and who printed it).
+**Try this:** on the Admin Dashboard, the **Needs your decision** card and the amber lines above it show what custodians filed for themselves; press **Open** to go to it. Then open Users & Accounts and look at the demo accounts, then open the Audit Log and find the actions you saw other testers do. Every paper copy printed shows there too (**form generated**, with the copy number and who printed it).
 
 ---
 

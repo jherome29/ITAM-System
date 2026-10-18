@@ -149,7 +149,7 @@ The asset custodian and primary operational role. IT Personnel manages the entir
 Full system access. Manages user accounts, roles, and system configuration. Also has access to the audit trail and can generate reports.
 
 **Can do:**
-- Log in and view the system health / admin dashboard
+- Log in and open the Administration Overview: what is waiting for your decision (what a custodian filed for themselves), system health, the background alert checks and recent audit activity
 - Create new user accounts
 - Deactivate user accounts (no deletion — preserves audit trail)
 - Reactivate a deactivated account (`PATCH /api/v1/users/:id/activate` — also clears the lockout)

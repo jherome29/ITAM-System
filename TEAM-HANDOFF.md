@@ -283,7 +283,7 @@ Before opening any PR, run every check in **`CHECKS.md`** in order — or tell C
 - **Schema changes:** write a `.sql` file in `Database/schemas/` (or `Database/migrations/` for post-launch changes) and run it manually in the Supabase SQL Editor. `synchronize: false` means nothing happens automatically. Schemas **001–017** are applied to dev Supabase as of 2026-10-16 (008–014 on 2026-10-11, 015 on 2026-10-14, 016 on 2026-10-15, 017 on 2026-10-16). Not yet applied to any production database (there is none). `Database/README.md` lists every file.
 - **Production:** raw PostgreSQL managed by CICC IT. No Supabase SDK features in application code — see `Database/README.md`.
 - The `user_role` enum includes `property_custodian` and the retired `property_officer` (kept for old audit rows; never assigned); the `audit_action` enum has 34 values (e.g. `system_config_updated`, `requisition_reassigned`, `asset_request_*`, `repair_*`, `form_generated`), so a new audit action needs a schema file too.
-- **Do not run the pilot on the shared Supabase dev DB**: it caps at 15 connections (run the backend with `DB_POOL_MAX=8`), and it holds test rows (`[VERIFY-2026-10-14]`) and demo rows (`DEMO-`).
+- **Do not run the pilot on the shared Supabase dev DB**: it caps at 15 connections (run the backend with `DB_POOL_MAX=8`), and it holds demo rows (`DEMO-`).
 
 ---
 

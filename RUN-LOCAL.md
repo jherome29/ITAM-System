@@ -284,12 +284,12 @@ clean — run from PowerShell:
 cd Backend;  npx tsc --noEmit
 cd Backend;  npx eslint "{src,apps,libs,test}/**/*.ts" --max-warnings 0
 cd Backend;  npm run build
-cd Backend;  npm run test:cov        # 976 tests (2026-10-18), coverage gate 65%
+cd Backend;  npm run test:cov        # 981 tests (2026-10-18), coverage gate 65%
 cd Backend;  npm run audit:check
 cd Frontend; npx tsc --noEmit
 cd Frontend; npx eslint . --max-warnings 0
 cd Frontend; npm run build
-cd Frontend; npm test                # 506 vitest tests (2026-10-18)
+cd Frontend; npm test                # 521 vitest tests (2026-10-18)
 cd Frontend; npm run audit:check
 cd ..;       npm run secretlint
 ```

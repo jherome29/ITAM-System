@@ -99,6 +99,11 @@ frontend contains no sample data, see below.)
 - Cron watchers: SLA breach, 12 h pending-approval nudge, overdue return, low
   stock, overdue repair — each fires once (dedup), in-system, live TopBar bell.
   Clicking one deep-links to the record's drawer (`?open=<id>`).
+- **Administration Overview** shows what is waiting for the administrator ("Needs your
+  decision": return / incident requests, repairs and requisitions that a custodian filed
+  for themselves, each linking to its screen), the watcher rows as "N new alerts sent"
+  beside the live figure, and who did each recent audit event. Record completeness no
+  longer counts a blank serial or property number as complete.
 - `GET /notifications/watcher-status` and the admin dashboard show each watcher's
   last run and count; `POST /notifications/run-checks` triggers a pass.
 - The server runs on CICC time (Asia/Manila), so the daily jobs and day
@@ -139,8 +144,8 @@ editable at runtime (System Admin only, audited, with "last changed … by …")
 - Docker: both images build (repo-root context); `docker compose up --build` brings
   up Postgres (all 17 schemas + seed) + backend + frontend with `/api/health`
   healthchecks; prod compose fails fast on missing secrets; CI builds both images.
-- Formal security e2e suite (8 ASVS scenarios) gates CI. Backend 976 unit tests
-  (95% statements), 114 e2e on a real Postgres, frontend 506 tests.
+- Formal security e2e suite (8 ASVS scenarios) gates CI. Backend 981 unit tests
+  (95% statements), 120 e2e on a real Postgres, frontend 521 tests.
 - UI: one shared kit (`Frontend/components/ui/`), one type scale with nothing below 14px (client feedback: bigger text for older staff), and a spec that fails the build when a screen goes around them (branch `refactor/ui-consistency`, not yet merged).
 - k6 load baseline: 362 VUs, 0 errors, p95 758 ms (single contended box), `perf/`.
 
