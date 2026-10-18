@@ -32,7 +32,16 @@ interface AuthenticatedRequest {
   ip: string;
 }
 
-const ALL_ROLES = Object.values(UserRole);
+// Every role that can hold property (and so can be a repair's holder). Listed by hand, not
+// Object.values(UserRole): that would grant the retired Property Officer, which no route may.
+const ALL_ROLES = [
+  UserRole.EMPLOYEE,
+  UserRole.SUPERVISOR,
+  UserRole.IT_PERSONNEL,
+  UserRole.PROPERTY_CUSTODIAN,
+  UserRole.SYSTEM_ADMIN,
+  UserRole.MANAGEMENT,
+];
 
 const READERS = [
   UserRole.IT_PERSONNEL,
