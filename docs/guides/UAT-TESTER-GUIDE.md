@@ -23,7 +23,7 @@ confused you.
 - **One person per login at a time.** If two people use the same login, they keep signing each other out.
 - **Use only the link above**, not any other address you may have seen.
 - **Nothing is deleted.** Every action is kept in a history (the Audit Log) for COA. That is on purpose.
-- **Stuck or confused? That is useful.** Write down what you clicked and what you expected, and tell us (see the last page).
+- **Stuck or confused? That is useful.** Write down what you clicked and what you expected, and tell us.
 
 **The story in five steps**
 1. An **Employee** asks for an item (a requisition).
@@ -196,15 +196,3 @@ confused you.
 | Management | management@cicc.gov.ph | Management@CICC2026! |
 
 **Try this:** make an Asset Master List PDF, open the Forms Archive, and check the Audit Log shows what the other testers did.
-
----
-
-## Last page: telling us what you found
-
-For each problem, write three lines:
-1. **Where:** which role, which menu, which screen.
-2. **What you did:** what you clicked or typed.
-3. **What happened, and what you expected.** A screenshot helps.
-
-Things worth reporting: anything that confused you, a button that did nothing, a message you did not understand, a step that felt
-too long, a word you did not know. **There are no wrong answers.**
