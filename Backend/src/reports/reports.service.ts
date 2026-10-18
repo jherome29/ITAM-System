@@ -24,6 +24,9 @@ import {
   withFormIdentity,
 } from './forms/base-form.generator';
 import { DOCUMENT_SERIES, allocateDocumentNumber } from './document-numbers';
+import { randomInt } from 'node:crypto';
+import { generateRecordPrint } from './forms/record-print.generator';
+import type { PrintableRecord, RecordKind } from './record-print';
 import {
   OfficialFormType,
   AuditAction,
@@ -764,6 +767,13 @@ export class ReportsService {
     userRole: UserRole,
     ipAddress: string,
   ): Promise<{ form: GeneratedFormEntity; buffer: Buffer }> {
+    // A record printout is made by the Print copy button on the record (createRecordPrint), which has
+    // already checked that the caller may see it; the COA form generator has no record to draw.
+    if (input.formType === OfficialFormType.RECORD_PRINT) {
+      throw new BadRequestException(
+        'A record printout is made with the Print copy button on the record itself.',
+      );
+    }
     const series = DOCUMENT_SERIES[input.formType];
     const identity = {
       entityName: this.systemConfig.getEntityName(),
@@ -1213,6 +1223,153 @@ export class ReportsService {
     const saved = await formRepo.save(form);
 
     return { form: saved, buffer };
+  }
+
+  // ── Record printouts (schema 018) ──────────────────────────────────────────
+
+  private static readonly PRINT_LINK = {
+    requisition: 'relatedRequisitionId',
+    asset_request: 'relatedAssetRequestId',
+    repair: 'relatedAssetRepairId',
+  } as const;
+
+  /** Eight characters without the look-alikes (0 O 1 I), as K7Q2-9DXM: easy to read aloud and to type. */
+  private newVerificationCode(): string {
+    const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    const pick = () => alphabet[randomInt(alphabet.length)];
+    return `${Array.from({ length: 4 }, pick).join('')}-${Array.from({ length: 4 }, pick).join('')}`;
+  }
+
+  /**
+   * A numbered paper copy of one record. The caller (the service that owns the record) has already checked
+   * that the user may see it. Every print is stored, so a paper copy can be checked against what the system
+   * showed at that moment; a later print of the same record is the next copy and says REPRINT.
+   * SVC: Deliver and Support - proof beyond the digital record.
+   */
+  async createRecordPrint(
+    record: PrintableRecord,
+    printedBy: { id: string; name: string; role: UserRole },
+    ipAddress: string,
+  ): Promise<{ form: GeneratedFormEntity; buffer: Buffer }> {
+    const link = ReportsService.PRINT_LINK[record.kind];
+    const prior = await this.formRepo.find({
+      where: {
+        formType: OfficialFormType.RECORD_PRINT,
+        [link]: record.recordId,
+      },
+      select: { id: true, generatedAt: true },
+      order: { generatedAt: 'ASC' },
+    });
+    const copy = prior.length + 1;
+    const code = this.newVerificationCode();
+    const identity = {
+      entityName: this.systemConfig.getEntityName(),
+      fundCluster: this.systemConfig.getFundCluster(),
+    };
+
+    // Number and row in one transaction, as for every other form: a print that fails to draw gives its
+    // number back, so the series has no gaps.
+    const saved = await this.formRepo.manager.transaction(async (em) => {
+      const documentNumber = await allocateDocumentNumber(
+        em,
+        DOCUMENT_SERIES[OfficialFormType.RECORD_PRINT] as string,
+        new Date().getFullYear(),
+      );
+      const buffer = await withFormIdentity(
+        { ...identity, documentNumber },
+        () =>
+          generateRecordPrint(record, {
+            printNumber: documentNumber,
+            printedAt: new Date(),
+            printedBy: { name: printedBy.name, role: printedBy.role },
+            copy,
+            firstPrintedAt: prior[0]?.generatedAt,
+            verificationCode: code,
+          }),
+      );
+      const repo = em.getRepository(GeneratedFormEntity);
+      const form = await repo.save(
+        repo.create({
+          formType: OfficialFormType.RECORD_PRINT,
+          documentNumber,
+          [link]: record.recordId,
+          verificationCode: code,
+          filePath: 'stored',
+          generatedById: printedBy.id,
+          pdfContent: buffer,
+        }),
+      );
+      return { form, buffer };
+    });
+
+    // After the commit, so the trail never records a print that was rolled back.
+    await this.auditService.log({
+      userId: printedBy.id,
+      userRole: printedBy.role,
+      action: AuditAction.FORM_GENERATED,
+      affectedRecordId: saved.form.id,
+      affectedRecordType: 'form',
+      ipAddress,
+      metadata: {
+        formType: OfficialFormType.RECORD_PRINT,
+        documentNumber: saved.form.documentNumber ?? undefined,
+        recordKind: record.kind,
+        recordReference: record.reference,
+        copy,
+      },
+    });
+    return saved;
+  }
+
+  /** The prints of one record, oldest first, with who made each (no PDF blob). */
+  async recordPrints(kind: RecordKind, recordId: string) {
+    const link = ReportsService.PRINT_LINK[kind];
+    const forms = await this.formRepo.find({
+      where: { formType: OfficialFormType.RECORD_PRINT, [link]: recordId },
+      select: {
+        id: true,
+        documentNumber: true,
+        generatedAt: true,
+        generatedById: true,
+        verificationCode: true,
+      },
+      order: { generatedAt: 'ASC' },
+    });
+    const users = forms.length
+      ? await this.userRepo.find({
+          where: { id: In([...new Set(forms.map((f) => f.generatedById))]) },
+        })
+      : [];
+    const names = new Map(
+      users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]),
+    );
+    return forms.map((f, i) => ({
+      id: f.id,
+      documentNumber: f.documentNumber,
+      verificationCode: f.verificationCode,
+      generatedAt: f.generatedAt,
+      copy: i + 1,
+      printedByName: names.get(f.generatedById) ?? 'Unknown',
+    }));
+  }
+
+  /** A stored print, only if it belongs to this record: the link is what lets the people on the record read it. */
+  async recordPrintPdf(kind: RecordKind, recordId: string, formId: string) {
+    const link = ReportsService.PRINT_LINK[kind];
+    const form = await this.formRepo
+      .createQueryBuilder('f')
+      .select(['f.id', 'f.documentNumber', 'f.pdfContent'])
+      .where(
+        `f.id = :formId AND f.${link} = :recordId AND f.formType = :type`,
+        {
+          formId,
+          recordId,
+          type: OfficialFormType.RECORD_PRINT,
+        },
+      )
+      .getOne();
+    if (!form?.pdfContent) throw new NotFoundException('Printout not found');
+    return { documentNumber: form.documentNumber, buffer: form.pdfContent };
   }
 
   /** Forms generated for a requisition (no PDF blob), oldest first. */

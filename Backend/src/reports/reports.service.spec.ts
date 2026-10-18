@@ -1059,6 +1059,209 @@ describe('ReportsService', () => {
   });
 
   // ── document numbers ──────────────────────────────────────────────────────
+  // CICC asked for a paper copy after every step. The owning service (requisitions, requests, repairs)
+  // checks who may see the record and hands over a plain description; this numbers, draws, stores and
+  // records the print. A second print of the same record is a new numbered copy, marked REPRINT.
+  describe('createRecordPrint()', () => {
+    const printable = {
+      kind: 'requisition' as const,
+      recordId: '11111111-1111-4111-8111-111111111111',
+      title: 'REQUISITION RECORD',
+      reference: 'REQ-2026-0054',
+      status: 'Approved, waiting for the custodian',
+      facts: [],
+      notes: [],
+      events: [
+        {
+          at: new Date('2026-10-18T06:30:00Z'),
+          what: 'Filed',
+          by: 'Juan dela Cruz',
+        },
+      ],
+      signatories: [
+        { label: 'Requester', name: 'Juan dela Cruz', role: 'Employee' },
+      ],
+    };
+    const by = { id: 'u-1', name: 'Maria Santos', role: UserRole.SUPERVISOR };
+
+    beforeEach(() => {
+      mockFormRepo.find.mockResolvedValue([]);
+      mockFormRepo.create.mockImplementation((v: object) => ({
+        id: 'f-1',
+        ...v,
+      }));
+      mockFormRepo.save.mockImplementation((v: object) => Promise.resolve(v));
+    });
+
+    it('numbers the print from the PR series and stores it linked to the record', async () => {
+      const { form, buffer } = await service.createRecordPrint(
+        printable,
+        by,
+        '10.0.0.1',
+      );
+
+      expect(form.documentNumber).toBe(`PR-${new Date().getFullYear()}-0007`);
+      expect(mockEntityManager.query).toHaveBeenCalledWith(
+        expect.stringContaining('document_counters'),
+        ['PR', new Date().getFullYear()],
+      );
+      expect(mockFormRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          formType: 'RECORD_PRINT',
+          relatedRequisitionId: printable.recordId,
+          generatedById: 'u-1',
+        }),
+      );
+      expect(buffer.subarray(0, 4).toString()).toBe('%PDF');
+    });
+
+    it('links a return / incident request and a repair through their own columns', async () => {
+      await service.createRecordPrint(
+        { ...printable, kind: 'asset_request' },
+        by,
+        '10.0.0.1',
+      );
+      await service.createRecordPrint(
+        { ...printable, kind: 'repair' },
+        by,
+        '10.0.0.1',
+      );
+
+      expect(mockFormRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ relatedAssetRequestId: printable.recordId }),
+      );
+      expect(mockFormRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ relatedAssetRepairId: printable.recordId }),
+      );
+    });
+
+    it('gives the paper a verification code that is also stored', async () => {
+      const { form } = await service.createRecordPrint(
+        printable,
+        by,
+        '10.0.0.1',
+      );
+
+      expect(form.verificationCode).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    });
+
+    it('counts a later print of the same record as a copy, and finds the first print date', async () => {
+      const first = new Date('2026-10-17T02:00:00Z');
+      mockFormRepo.find.mockResolvedValue([
+        { id: 'a', generatedAt: first },
+        { id: 'b', generatedAt: new Date() },
+      ]);
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+      try {
+        await service.createRecordPrint(printable, by, '10.0.0.1');
+        const drawn = text.mock.calls.map(([t]) => String(t));
+        expect(drawn.some((t) => t.includes('REPRINT: copy 3'))).toBe(true);
+      } finally {
+        text.mockRestore();
+      }
+    });
+
+    it('writes the print to the audit trail after it is stored', async () => {
+      await service.createRecordPrint(printable, by, '10.0.0.1');
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'u-1',
+          action: 'form_generated',
+          ipAddress: '10.0.0.1',
+          metadata: expect.objectContaining({
+            formType: 'RECORD_PRINT',
+            recordKind: 'requisition',
+            recordReference: 'REQ-2026-0054',
+            copy: 1,
+          }),
+        }),
+      );
+    });
+
+    it('cannot be made through the COA form generator', async () => {
+      await expect(
+        service.generateForm(
+          { formType: 'RECORD_PRINT' as never },
+          'u-1',
+          UserRole.IT_PERSONNEL,
+          '10.0.0.1',
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('recordPrints() / recordPrintPdf()', () => {
+    it('lists the prints of one record with who printed them, oldest first', async () => {
+      mockFormRepo.find.mockResolvedValue([
+        {
+          id: 'f-1',
+          documentNumber: 'PR-2026-0001',
+          generatedAt: new Date('2026-10-17T02:00:00Z'),
+          generatedById: 'u-1',
+          verificationCode: 'AAAA-BBBB',
+        },
+        {
+          id: 'f-2',
+          documentNumber: 'PR-2026-0002',
+          generatedAt: new Date('2026-10-18T02:00:00Z'),
+          generatedById: 'u-2',
+          verificationCode: 'CCCC-DDDD',
+        },
+      ]);
+      mockUserRepo.find.mockResolvedValue([
+        { id: 'u-1', firstName: 'Juan', lastName: 'dela Cruz' },
+        { id: 'u-2', firstName: 'Maria', lastName: 'Santos' },
+      ]);
+
+      const list = await service.recordPrints('requisition', 'r-1');
+
+      expect(
+        list.map((p) => [p.documentNumber, p.copy, p.printedByName]),
+      ).toEqual([
+        ['PR-2026-0001', 1, 'Juan dela Cruz'],
+        ['PR-2026-0002', 2, 'Maria Santos'],
+      ]);
+      expect(mockFormRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { formType: 'RECORD_PRINT', relatedRequisitionId: 'r-1' },
+        }),
+      );
+    });
+
+    it('hands back the stored PDF only for a print of that record', async () => {
+      const qb = {
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({
+          pdfContent: Buffer.from('%PDF-x'),
+          documentNumber: 'PR-2026-0001',
+        }),
+      };
+      mockFormRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const pdf = await service.recordPrintPdf('repair', 'rep-1', 'f-1');
+
+      expect(pdf.documentNumber).toBe('PR-2026-0001');
+      expect(qb.where).toHaveBeenCalledWith(
+        expect.stringContaining('relatedAssetRepairId'),
+        expect.objectContaining({ recordId: 'rep-1', formId: 'f-1' }),
+      );
+    });
+
+    it('answers 404 when the print belongs to a different record', async () => {
+      mockFormRepo.createQueryBuilder.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      });
+
+      await expect(
+        service.recordPrintPdf('requisition', 'r-1', 'f-x'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
   describe('generateFormRecord() — document numbers', () => {
     const year = new Date().getFullYear();
     const user = {
