@@ -12,9 +12,7 @@ work that turns the quick setup into a proper, safe delivery pipeline. None of i
 | Verification | `.github/workflows/uat-smoke.yml` (waits for the new build, then 39 checks as all six roles). Pushed. Needs the `uat` GitHub Environment and its two secrets (`UAT_BASE_URL`, `UAT_ACCOUNTS`) before it can pass |
 | Production | `deploy.yml` is still the placeholder for the CICC-managed host |
 
-Draft work that exists but is **untested and uncommitted** (untracked files, change nothing live):
-`Backend/scripts/db-migrate.mjs` (the migration runner) and `Backend/test/db-migrate.e2e-spec.ts` (its e2e test).
-Finish and prove them (item 1) before committing; do not commit them as they are.
+Item 1 is **built and proven** (2026-10-18): `Backend/scripts/db-migrate.mjs` + `Backend/test/db-migrate.e2e-spec.ts` (4 tests passing on a real Postgres, which also caught a bug: a refused run left a history table behind), copied into the backend image. Still to do for item 1: set Railway's pre-deploy command and the one-off `MIGRATE_BASELINE=017`.
 
 ## What "best practice" means here, and the work to get there (in this order)
 

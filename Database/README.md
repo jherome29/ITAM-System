@@ -15,6 +15,13 @@ Database/
 
 `Database/migrations/` is reserved for post-launch incremental changes and does not exist yet: until the first production deploy every change is a new numbered file in `schemas/`.
 
+### Applying them
+
+`node Backend/scripts/db-migrate.mjs` (with `DATABASE_URL`, and `DATABASE_SSL` as for the app) applies every file not yet recorded in the
+`schema_migrations` table, in order. Hosted environments run it as the pre-deploy command, so merging a new numbered file is enough. Never edit a
+file once it has been applied anywhere: add the next number. A database built by hand before the runner existed is recorded once with
+`MIGRATE_BASELINE=<last applied number>` (for example `017`).
+
 ### The schema files
 
 | File | What it adds |

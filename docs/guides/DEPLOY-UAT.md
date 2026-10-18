@@ -57,6 +57,11 @@ CLIENT_IP_SECRET=<secret 3, 24+ chars>   (also a Worker secret: lets the audit l
 
 ## Continuous deployment
 
+- **Database migrations:** the `backend` service's **Pre-deploy command** is `node scripts/db-migrate.mjs`. It applies any new
+  `Database/schemas/NNN_*.sql` before the new backend starts, so a schema file merged with the code reaches the database. The
+  first time on this database (17 files already applied by hand) add the variable `MIGRATE_BASELINE=017` for that one deploy,
+  then delete it. A failed migration fails the deploy, so the old backend keeps serving.
+
 - **Deploy:** Railway watches `develop` for both services and rebuilds on every push (the Railway GitHub app must be
   installed on the repo's owner). Put both services' **Source branch** on `develop`. If **Wait for CI** is on and SonarCloud's
   quality gate is red, Railway can wait for ever: turn Wait for CI off (the smoke test below is the safety net).
