@@ -10,8 +10,10 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { AssetsService } from './assets.service';
 import { AssetRepairsService } from './asset-repairs.service';
 import {
@@ -29,6 +31,8 @@ interface AuthenticatedRequest {
   user: UserEntity;
   ip: string;
 }
+
+const ALL_ROLES = Object.values(UserRole);
 
 const READERS = [
   UserRole.IT_PERSONNEL,
@@ -85,6 +89,62 @@ export class RepairsController {
       message: 'Repair retrieved',
       data: await this.repairs.findOneForUser(id, req.user),
     };
+  }
+
+  /**
+   * POST /api/v1/repairs/:id/print — a numbered paper copy of this repair. The item's holder (an employee)
+   * and the custodians, Admin and Management within their scope may print it; each print is stored,
+   * numbered and audited, and a later one is marked REPRINT.
+   */
+  @Post(':id/print')
+  @HttpCode(HttpStatus.OK)
+  @Roles(...ALL_ROLES)
+  async print(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const doc = await this.repairs.printRecord(id, req.user, req.ip);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Length': String(doc.buffer.length),
+      'Content-Disposition': `inline; filename="${doc.documentNumber}.pdf"`,
+      'X-Document-Number': doc.documentNumber ?? '',
+      'Cache-Control': 'private, no-store',
+    });
+    res.end(doc.buffer);
+  }
+
+  /** GET /api/v1/repairs/:id/prints — the prints made of this repair (same access). */
+  @Get(':id/prints')
+  @Roles(...ALL_ROLES)
+  async prints(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return {
+      message: 'Printouts retrieved',
+      data: await this.repairs.listPrints(id, req.user),
+    };
+  }
+
+  /** GET /api/v1/repairs/:id/prints/:formId — one stored print again. */
+  @Get(':id/prints/:formId')
+  @Roles(...ALL_ROLES)
+  async printFile(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('formId', ParseUUIDPipe) formId: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const doc = await this.repairs.printPdf(id, formId, req.user);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Length': String(doc.buffer.length),
+      'Content-Disposition': `inline; filename="${doc.documentNumber}.pdf"`,
+      'Cache-Control': 'private, no-store',
+    });
+    res.end(doc.buffer);
   }
 
   /** PATCH /api/v1/repairs/:id — service details, expected date, findings. */

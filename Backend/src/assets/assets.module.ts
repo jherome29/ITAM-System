@@ -11,6 +11,7 @@ import { AuditModule } from '../audit/audit.module';
 import { UsersModule } from '../users/users.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
+import { ReportsModule } from '../reports/reports.module';
 
 // SVC: Obtain/Build & Deliver and Support — asset registration and lifecycle management
 
@@ -25,6 +26,7 @@ import { SystemConfigModule } from '../system-config/system-config.module';
     UsersModule, // Required — employeeId lookup for ISSUED transitions
     NotificationsModule, // Required — overdue-return watcher fires alerts
     SystemConfigModule, // Required — default reorder level for low-stock checks
+    ReportsModule, // a repair's paper copy (record printouts)
   ],
   controllers: [AssetsController, RepairsController],
   providers: [AssetsService, AssetRepairsService],

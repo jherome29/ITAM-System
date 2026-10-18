@@ -21,6 +21,8 @@ import {
   RepairOutcome,
   UserRole,
 } from '../../../packages/shared/src/enums';
+import { ReportsService } from '../reports/reports.service';
+import { buildRepairPrint } from './repair-print';
 import { REPAIR_DEFAULT_TURNAROUND_DAYS } from '../../../packages/shared/src/constants';
 import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 
@@ -96,6 +98,7 @@ export class AssetRepairsService {
     private readonly auditService: AuditService,
     private readonly notificationsService: NotificationsService,
     private readonly usersService: UsersService,
+    private readonly reportsService: ReportsService,
   ) {}
 
   // ── View ─────────────────────────────────────────────────────────────────
@@ -239,6 +242,65 @@ export class AssetRepairsService {
         ? 'Your own item is handled by another custodian or the System Administrator.'
         : `This repair is handled by the ${custodianLabelFor(r.asset.assetType)}.`,
     );
+  }
+
+  // ── Paper copy of a repair ───────────────────────────────────────────────
+  // CICC asked for a printout after every step. The item's holder may print it (they signed for the item and
+  // are told it is under repair, but the repair queue itself is the custodians'); custodians, the System
+  // Administrator and Management read within their scope, as for the queue. Nobody else.
+  private assertCanPrint(r: AssetRepairEntity, user: UserEntity) {
+    if (r.holderId === user.id) return;
+    const readers = [
+      UserRole.IT_PERSONNEL,
+      UserRole.PROPERTY_CUSTODIAN,
+      UserRole.SYSTEM_ADMIN,
+      UserRole.MANAGEMENT,
+    ];
+    if (!readers.includes(user.role)) {
+      throw new ForbiddenException('You do not have access to this repair.');
+    }
+    this.assertCanRead(r, user);
+  }
+
+  async printRecord(id: string, user: UserEntity, ipAddress: string) {
+    const r = await this.load(id);
+    this.assertCanPrint(r, user);
+    const lookup = async (userId: string | null) =>
+      userId ? this.usersService.findOne(userId).catch(() => null) : null;
+    const [openedBy, completedBy] = await Promise.all([
+      lookup(r.openedById),
+      lookup(r.completedById),
+    ]);
+    const record = buildRepairPrint({
+      repair: r,
+      asset: r.asset,
+      holder: r.holder,
+      loaner: r.loaner,
+      openedBy,
+      completedBy,
+    });
+    const { form, buffer } = await this.reportsService.createRecordPrint(
+      record,
+      {
+        id: user.id,
+        name: `${user.firstName} ${user.lastName}`.trim(),
+        role: user.role,
+      },
+      ipAddress,
+    );
+    return { buffer, documentNumber: form.documentNumber, id: form.id };
+  }
+
+  async listPrints(id: string, user: UserEntity) {
+    const r = await this.load(id);
+    this.assertCanPrint(r, user);
+    return this.reportsService.recordPrints('repair', r.id);
+  }
+
+  async printPdf(id: string, formId: string, user: UserEntity) {
+    const r = await this.load(id);
+    this.assertCanPrint(r, user);
+    return this.reportsService.recordPrintPdf('repair', r.id, formId);
   }
 
   // ── Reads ────────────────────────────────────────────────────────────────
