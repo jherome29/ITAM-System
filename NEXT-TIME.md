@@ -33,7 +33,7 @@ properly, see `RUN-LOCAL.md` §11. Update this file at the end of every session.
 
 - [ ] **Look at `refactor/ui-consistency` yourself** (the dev server on `:3000` already serves it if you are on the branch): the registry and Custody & Issuance filter rows, the Register Asset form, the employee dashboard, Audit Log date range, a lifecycle update (it is now a dialog that closes on Escape), and the screens at a narrow width. Tell us what still reads wrong; the rules are cheap to change in one place.
 - [ ] Open its PR into `develop` once #110 is merged (check the base before you click merge).
-- [ ] **Apply `Database/schemas/018_record_printouts.sql` to the shared Supabase dev database**, then restart your `:3001` backend. Until 018 is applied, a backend built from this branch fails every query on `generated_forms` against Supabase (the entity reads the two new columns). Railway needs nothing: its pre-deploy runner applies 018 by itself.
+- [x] Schema 018 applied to the shared Supabase dev database (2026-10-18, plain file, one transaction). Railway applied it by itself (pre-deploy runner). Restart your `:3001` backend onto the new build to use paper copies locally.
 - [ ] **Restart your `:3001` backend.** `Backend/dist` was rebuilt on disk for the 2026-10-17 fixes (report PDFs, form header lines, field limits, 400 / 409 / 413) but the process on `:3001` was left running on the old bundle. Restart it the usual way (`DB_POOL_MAX=8`, RUN-LOCAL §1). Until then Supabase-backed screens still show the old behaviour for those.
 
 - [x] Schema 017 applied to the shared Supabase dev database (2026-10-16) and the local backend

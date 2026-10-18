@@ -34,8 +34,8 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 - [x] Record printouts (2026-10-18): a numbered paper copy of a requisition, a return / incident request
       and a repair, with a "Keep a paper copy?" prompt after each step (CLAUDE.md Module 8, schema `018`).
       Branch `feat/record-printouts`, stacked on `refactor/ui-consistency`: it needs the same PR path to
-      `develop`. Schema `018` is applied by the migration runner on Railway; apply it by hand to the
-      shared Supabase dev database and to any other database before this backend runs there.
+      `develop`. Schema `018` is applied on Railway (the migration runner) and on the shared Supabase dev
+      database (2026-10-18); any other database needs it before this backend runs there.
 - [ ] Ask CICC about the printout layout: they gave no template, so ours is a first version (header,
       facts, steps, signature lines, verification code, `PR-YYYY-NNNN` numbers). Their own template or
       number series would replace `record-print.generator.ts` and the `PR` series.
