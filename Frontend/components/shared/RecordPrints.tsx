@@ -45,8 +45,6 @@ export function RecordPrints({ kind, recordId }: Readonly<{ kind: PrintKind; rec
     );
   };
 
-  const recent = [...prints].reverse().slice(0, MAX_LISTED);
-
   return (
     <section aria-label="Paper copy" className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -62,26 +60,37 @@ export function RecordPrints({ kind, recordId }: Readonly<{ kind: PrintKind; rec
         </button>
       </div>
       {error && <Notice tone="red">{error}</Notice>}
-      {recent.length > 0 && (
-        <div>
-          <p className="text-sm font-semibold text-slate-700">
-            Printed {prints.length} time{prints.length === 1 ? '' : 's'}
-          </p>
-          <ul className="mt-1 divide-y divide-slate-200 text-sm text-slate-700">
-            {recent.map((p) => (
-              <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
-                <span>
-                  <span className="font-semibold">{p.documentNumber ?? 'Printout'}</span> · {formatDateTime(p.generatedAt)} · {p.printedByName}
-                </span>
-                <button type="button" onClick={() => again(p)} className="font-semibold text-blue-700 hover:underline">
-                  Open
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <PrintList prints={prints} onOpen={again} />
     </section>
+  );
+}
+
+/**
+ * The copies made so far, newest first (`prints` comes oldest first). The paper says to check it against the
+ * system with its print number and code, so both are shown here.
+ */
+export function PrintList({ prints, onOpen }: Readonly<{ prints: RecordPrint[]; onOpen: (print: RecordPrint) => void }>) {
+  if (prints.length === 0) return null;
+  const recent = [...prints].reverse().slice(0, MAX_LISTED);
+  return (
+    <div>
+      <p className="text-sm font-semibold text-slate-700">
+        Printed {prints.length} time{prints.length === 1 ? '' : 's'}
+      </p>
+      <ul className="mt-1 divide-y divide-slate-200 text-sm text-slate-700">
+        {recent.map((p) => (
+          <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+            <span>
+              <span className="font-semibold">{p.documentNumber ?? 'Printout'}</span>
+              {p.verificationCode && <> · Code {p.verificationCode}</>} · {formatDateTime(p.generatedAt)} · {p.printedByName}
+            </span>
+            <button type="button" onClick={() => onOpen(p)} className="font-semibold text-blue-700 hover:underline">
+              Open
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

@@ -289,7 +289,7 @@ cd Backend;  npm run audit:check
 cd Frontend; npx tsc --noEmit
 cd Frontend; npx eslint . --max-warnings 0
 cd Frontend; npm run build
-cd Frontend; npm test                # 503 vitest tests (2026-10-18)
+cd Frontend; npm test                # 506 vitest tests (2026-10-18)
 cd Frontend; npm run audit:check
 cd ..;       npm run secretlint
 ```

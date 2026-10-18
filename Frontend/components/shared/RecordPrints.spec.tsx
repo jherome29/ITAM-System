@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { PrintPromptDialog, RecordPrints } from './RecordPrints';
+import { PrintList, PrintPromptDialog, RecordPrints } from './RecordPrints';
 
 // The Print copy button on a record, and the "Keep a paper copy?" question right after an action.
 
@@ -19,6 +19,35 @@ describe('RecordPrints', () => {
 
   it('is a labelled region, so a screen reader can find it', () => {
     expect(renderToStaticMarkup(<RecordPrints kind="repair" recordId="p-1" />)).toContain('aria-label="Paper copy"');
+  });
+});
+
+// The paper says "check this paper against the system with the print number and code", so the list has to show both.
+describe('PrintList', () => {
+  const prints = [
+    { id: 'f-1', documentNumber: 'PR-2026-0001', verificationCode: 'K7Q2-9DXM', generatedAt: '2026-10-18T07:41:00Z', copy: 1, printedByName: 'Juan dela Cruz' },
+    { id: 'f-2', documentNumber: 'PR-2026-0002', verificationCode: null, generatedAt: '2026-10-18T08:00:00Z', copy: 2, printedByName: 'Maria Santos' },
+  ];
+
+  it('shows each copy with its number, verification code and who printed it, newest first', () => {
+    const html = renderToStaticMarkup(<PrintList prints={prints} onOpen={() => undefined} />);
+
+    expect(html).toContain('Printed 2 times');
+    expect(html).toContain('PR-2026-0001');
+    expect(html).toContain('K7Q2-9DXM');
+    expect(html).toContain('Juan dela Cruz');
+    expect(html.indexOf('PR-2026-0002')).toBeLessThan(html.indexOf('PR-2026-0001'));
+  });
+
+  it('says nothing about a code a copy does not have', () => {
+    const html = renderToStaticMarkup(<PrintList prints={[prints[1]]} onOpen={() => undefined} />);
+
+    expect(html).toContain('Printed 1 time');
+    expect(html).not.toContain('Code');
+  });
+
+  it('draws nothing when there are no copies yet', () => {
+    expect(renderToStaticMarkup(<PrintList prints={[]} onOpen={() => undefined} />)).toBe('');
   });
 });
 

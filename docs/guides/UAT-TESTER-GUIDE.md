@@ -35,7 +35,7 @@ confused you.
 **Keep a paper copy (everyone)**
 CICC asked for a printed proof after every step. You can print a copy of any **requisition**, **return or incident report** and **repair** that you can see.
 - Right after you save a step (send a request, approve, reject, hand over, close a repair), a box asks **"Keep a paper copy?"**. Press **Print copy**, or **Not now**: it never blocks your work.
-- Or open the record any time and use the **Paper copy** box at the bottom: **Print copy** makes a new copy, and **Open** shows an earlier one again.
+- Or open the record any time and use the **Paper copy** box at the bottom: **Print copy** makes a new copy, and **Open** shows an earlier one again. The box lists each copy with its number and code, so you can match a paper to the system.
 - The copy opens in a new tab as a PDF. Print it from there. If nothing opens, allow pop-ups for this site; the file is downloaded instead.
 - Each copy has its own number (like **PR-2026-0001**), the story so far step by step, a **verification code**, and lines to sign. A later copy of the same record says **REPRINT: copy 2**.
 - Paper copies are not official COA forms, so they are **not** in the Forms Archive. They are found on the record itself.
