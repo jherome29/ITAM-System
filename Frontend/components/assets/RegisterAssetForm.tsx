@@ -3,6 +3,11 @@
 import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
+import { controlClass } from "@/components/ui/controls";
+import { buttonClass } from "@/components/ui/buttons";
+import { DateField } from "@/components/ui/DateField";
+import { Notice } from "@/components/ui/Notice";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { assetsApi, type Asset, type CreateAssetDto } from "@/lib/api/assets";
 
 import { classifyRegisteredAsset } from "../../../packages/shared/src/utils/asset-classification";
@@ -83,16 +88,14 @@ const CONDITIONS = [
   "for_repair",
 ] as const;
 
-const inputClass =
-  "w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors bg-white";
 
 function Section({
   title,
   children,
 }: Readonly<{ title: string; children: ReactNode }>) {
   return (
-    <fieldset className="border border-gray-200 rounded-lg p-5 mb-5">
-      <legend className="px-2 text-xs font-semibold text-[#1a4d7a] uppercase tracking-wider">
+    <fieldset className="border border-slate-200 rounded-lg p-5 mb-5">
+      <legend className="px-2 text-xs font-semibold text-brand uppercase tracking-wider">
         {title}
       </legend>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
@@ -109,7 +112,7 @@ function Field({
 }: Readonly<{ label: string; required?: boolean; children: ReactNode }>) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-gray-600 mb-1">
+      <label className="block text-xs font-semibold text-slate-600 mb-1">
         {label}
         {required && <span className="text-red-500 ml-0.5">*</span>}
       </label>
@@ -210,7 +213,7 @@ export function RegisterAssetForm({
       setError(
         Array.isArray(msg)
           ? msg.join(" · ")
-          : (msg ?? "Failed to register asset."),
+          : (msg ?? "Could not register asset."),
       );
     } finally {
       setSaving(false);
@@ -229,25 +232,19 @@ export function RegisterAssetForm({
           <button
             type="button"
             onClick={handleCancel}
-            className="flex items-center gap-2 text-sm text-[#1a4d7a] hover:underline"
+            className="flex items-center gap-2 text-sm text-brand hover:underline"
           >
             <ArrowLeft className="w-4 h-4" /> Back to Inventory
           </button>
-          <div>
-            <h1 className="text-2xl font-semibold text-[#1a4d7a]">
-              {isSupplies ? "Record New Stock" : isFixed ? "Register Fixed Asset" : isIT ? "Register IT Asset" : "Register New Asset"}
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">
-              {isSupplies ? "Enter the supply details and opening stock quantity." : "All fields marked * are required. Complete per CICC asset tagging procedure."}
-            </p>
-          </div>
+          <PageHeader
+            title={isSupplies ? "Record New Stock" : isFixed ? "Register Fixed Asset" : isIT ? "Register IT Asset" : "Register New Asset"}
+            detail={isSupplies ? "Enter the supply details and opening stock quantity." : "Complete the required fields to register the asset."}
+          />
         </>
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">
-          {error}
-        </div>
+        <Notice tone="red">{error}</Notice>
       )}
 
       <form onSubmit={handleSubmit}>
@@ -256,7 +253,7 @@ export function RegisterAssetForm({
             <Field label="Item Description" required>
               <input
                 aria-label="Item description"
-                className={inputClass}
+                className={controlClass}
                 value={form.itemDescription}
                 onChange={(e) => set("itemDescription", e.target.value)}
                 placeholder={itemPlaceholder}
@@ -266,7 +263,7 @@ export function RegisterAssetForm({
           {!isSupplies && <Field label="Asset Class (Automatic)">
             <input
               aria-label="Asset class"
-              className={inputClass + " bg-gray-50"}
+              className={controlClass + " bg-slate-50"}
               readOnly
               value={
                 assetClass
@@ -274,7 +271,7 @@ export function RegisterAssetForm({
                   : "Enter acquisition cost per item"
               }
             />
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-slate-500">
               Reusable property with useful life over one year: below ₱50,000 per item = SEP; ₱50,000 or more = PPE.
             </p>
           </Field>}
@@ -282,12 +279,12 @@ export function RegisterAssetForm({
             <Field label="Asset Type" required>
               <select
                 aria-label="Asset type"
-                className={inputClass}
+                className={controlClass}
                 value={form.assetType}
                 onChange={(e) => set("assetType", e.target.value)}
                 required
               >
-                <option value="">Select type...</option>
+                <option value="">Select type…</option>
                 {ASSET_TYPES.map((t) => (
                   <option key={t} value={t}>
                     {t}
@@ -298,7 +295,7 @@ export function RegisterAssetForm({
           )}
           <Field label="SAP Classification">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.sapClassification}
               onChange={(e) => set("sapClassification", e.target.value)}
               placeholder="SAP code"
@@ -306,7 +303,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label={isSupplies ? "Stock Item Code" : "Item Code"}>
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.itemCode}
               onChange={(e) => set("itemCode", e.target.value)}
               placeholder={itemCodePlaceholder}
@@ -317,7 +314,7 @@ export function RegisterAssetForm({
               <input
                 aria-label="Property Supplies Code"
                 aria-describedby="property-supplies-code-help"
-                className={inputClass}
+                className={controlClass}
                 value={form.propertyNumber}
                 onChange={(e) => set("propertyNumber", e.target.value)}
                 placeholder="e.g. PSC-000123"
@@ -332,7 +329,7 @@ export function RegisterAssetForm({
             <Field label="Asset Class (Automatic)">
               <input
                 aria-label="Asset class"
-                className={inputClass + " bg-gray-50"}
+                className={controlClass + " bg-slate-50"}
                 value={ASSET_CLASS_LABELS.IES}
                 readOnly
               />
@@ -340,7 +337,7 @@ export function RegisterAssetForm({
           )}
           {!isSupplies && <Field label="Property Number">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.propertyNumber}
               onChange={(e) => set("propertyNumber", e.target.value)}
               placeholder="Official CICC property #"
@@ -348,7 +345,7 @@ export function RegisterAssetForm({
           </Field>}
           <Field label={isIT ? "Device Brand" : "Brand / Make"}>
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.brand}
               onChange={(e) => set("brand", e.target.value)}
               placeholder={isFixed ? "Manufacturer, if applicable" : "e.g. Dell, HP, Canon"}
@@ -356,7 +353,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label={isFixed ? "Serial Number (if applicable)" : "Serial Number"}>
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.serialNumber}
               onChange={(e) => set("serialNumber", e.target.value)}
               placeholder="Manufacturer serial #"
@@ -365,7 +362,7 @@ export function RegisterAssetForm({
           {!isFixed && <div className="md:col-span-2">
             <Field label={isSupplies ? "Components" : "Included Accessories"}>
               <input
-                className={inputClass}
+                className={controlClass}
                 value={form.components}
                 onChange={(e) => set("components", e.target.value)}
                 placeholder={isSupplies ? "Contents or parts, if applicable" : "e.g. charger, mouse, carrying bag"}
@@ -376,13 +373,13 @@ export function RegisterAssetForm({
 
         <Section title={`${photoLabel} (Optional)`}>
           <div className="md:col-span-2">
-            <input aria-label={photoLabel} className={inputClass} type="file" accept="image/jpeg,image/png,image/webp"
+            <input aria-label={photoLabel} className={controlClass} type="file" accept="image/jpeg,image/png,image/webp"
               onChange={(e) => {
                 const file = e.target.files?.[0] ?? null;
                 if (file && file.size > 5 * 1024 * 1024) { setError("Photo must be 5 MB or smaller."); e.target.value = ""; setPhoto(null); return; }
                 setError(""); setPhoto(file);
               }} />
-            <p className="mt-1 text-xs text-gray-500">JPEG, PNG, or WebP, up to 5 MB. You can also add or replace it later.</p>
+            <p className="mt-1 text-xs text-slate-500">JPEG, PNG, or WebP, up to 5 MB. You can also add or replace it later.</p>
           </div>
         </Section>
 
@@ -392,7 +389,7 @@ export function RegisterAssetForm({
             required={assetType !== "Supplies"}
           >
             <input
-              className={inputClass}
+              className={controlClass}
               type="number"
               min="0.01"
               required={assetType !== "Supplies"}
@@ -403,25 +400,21 @@ export function RegisterAssetForm({
             />
           </Field>
           <Field label="Acquisition Date">
-            <input
-              className={inputClass}
-              type="date"
+            <DateField
               value={form.acquisitionDate}
               onChange={(e) => set("acquisitionDate", e.target.value)}
             />
           </Field>
           <Field label="Supplier / Vendor">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.supplier}
               onChange={(e) => set("supplier", e.target.value)}
               placeholder="e.g. PCMS Technologies"
             />
           </Field>
           <Field label="Date of Delivery">
-            <input
-              className={inputClass}
-              type="date"
+            <DateField
               value={form.dateOfDelivery}
               onChange={(e) => set("dateOfDelivery", e.target.value)}
             />
@@ -431,7 +424,7 @@ export function RegisterAssetForm({
         <Section title="Accountability & Location">
           <Field label="Accountable Officer">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.accountableOfficer}
               onChange={(e) => set("accountableOfficer", e.target.value)}
               placeholder="Full name"
@@ -439,7 +432,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label="Division">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.division}
               onChange={(e) => set("division", e.target.value)}
               placeholder="e.g. Operations Division"
@@ -447,7 +440,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label="Office / Section">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.officeOrSection}
               onChange={(e) => set("officeOrSection", e.target.value)}
               placeholder="e.g. ICT Section"
@@ -455,7 +448,7 @@ export function RegisterAssetForm({
           </Field>
           <Field label="Office Location">
             <input
-              className={inputClass}
+              className={controlClass}
               value={form.officeLocation}
               onChange={(e) => set("officeLocation", e.target.value)}
               placeholder="e.g. Room 302, 3F CICC Bldg"
@@ -467,7 +460,7 @@ export function RegisterAssetForm({
           <Section title="Supply Stock">
             <Field label="Quantity on Hand">
               <input
-                className={inputClass}
+                className={controlClass}
                 type="number"
                 min="0"
                 value={form.quantity}
@@ -477,7 +470,7 @@ export function RegisterAssetForm({
             </Field>
             <Field label="Reorder Level">
               <input
-                className={inputClass}
+                className={controlClass}
                 type="number"
                 min="0"
                 value={form.reorderLevel}
@@ -491,7 +484,7 @@ export function RegisterAssetForm({
         <Section title="Physical Condition">
           <Field label="Condition" required>
             <select
-              className={inputClass}
+              className={controlClass}
               value={form.condition}
               onChange={(e) => set("condition", e.target.value)}
             >
@@ -510,16 +503,16 @@ export function RegisterAssetForm({
           <button
             type="button"
             onClick={handleCancel}
-            className="px-6 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            className={buttonClass({ variant: 'secondary' })}
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={saving}
-            className="px-6 py-2 bg-[#1a4d7a] text-white rounded-md text-sm font-medium hover:bg-[#143d61] disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-150"
+            className={buttonClass()}
           >
-            {saving ? "Registering..." : "Register Asset"}
+            {saving ? "Registering…" : "Register Asset"}
           </button>
         </div>
       </form>

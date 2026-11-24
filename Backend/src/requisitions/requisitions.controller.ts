@@ -10,7 +10,9 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { RequisitionsService } from './requisitions.service';
 import { CreateRequisitionDto } from './dto/create-requisition.dto';
 import {
@@ -52,7 +54,6 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findAll(
     @Req() req: AuthReq,
@@ -84,7 +85,6 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findMine(
     @Req() req: AuthReq,
@@ -93,6 +93,39 @@ export class RequisitionsController {
   ) {
     const result = await this.svc.findMine(req.user.id, +page, +limit);
     return { message: 'My requisitions retrieved', data: result };
+  }
+
+  /**
+   * GET /api/v1/requisitions/decided
+   * The requisitions this approver has approved or rejected, newest decision
+   * first — the history that GET / (pending only) does not return.
+   * Declared before `:id` so the literal path is not parsed as a UUID.
+   */
+  @Get('decided')
+  @Roles(UserRole.SUPERVISOR, UserRole.SYSTEM_ADMIN)
+  async findDecided(
+    @Req() req: AuthReq,
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+  ) {
+    const result = await this.svc.findDecidedBy(req.user.id, +page, +limit);
+    return { message: 'Decided requisitions retrieved', data: result };
+  }
+
+  /**
+   * GET /api/v1/requisitions/fulfilment-fallback
+   * Open requisitions filed by the custodian who would fulfil them - kept out of
+   * that custodian's own queue (segregation of duties), so the System
+   * Administrator is the fallback, for exactly these. Declared before `:id`.
+   */
+  @Get('fulfilment-fallback')
+  @Roles(UserRole.SYSTEM_ADMIN)
+  async findFulfilmentFallback() {
+    const result = await this.svc.fulfilmentFallback();
+    return {
+      message: 'Requisitions awaiting the fallback fulfiller',
+      data: result,
+    };
   }
 
   /**
@@ -108,11 +141,28 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async getStats(@Req() req: AuthReq) {
     const result = await this.svc.getStats(req.user.id, req.user.role);
     return { message: 'Requisition statistics retrieved', data: result };
+  }
+
+  /**
+   * GET /api/v1/requisitions/replacement-review
+   * Replacement requisitions with their justification, plus held assets that
+   * already qualify for one. Read-only oversight, scoped by asset type.
+   * Declared before `:id` so the literal path is not parsed as a UUID.
+   */
+  @Get('replacement-review')
+  @Roles(
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+  )
+  async replacementReview(@Req() req: AuthReq) {
+    const result = await this.svc.replacementReview(req.user.role);
+    return { message: 'Replacement review retrieved', data: result };
   }
 
   /**
@@ -127,20 +177,117 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthReq) {
-    const result = await this.svc.findOne(id, req.user.id, req.user.role);
+    const result = await this.svc.findOneForView(
+      id,
+      req.user.id,
+      req.user.role,
+    );
     return { message: 'Requisition retrieved', data: result };
   }
 
   /**
+   * GET /api/v1/requisitions/:id/documents/:formId
+   * A COA document generated for this requisition (the replacement's return
+   * receipt). Same read access as GET /:id, so the requester can download it.
+   */
+  @Get(':id/documents/:formId')
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
+  async document(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('formId', ParseUUIDPipe) formId: string,
+    @Req() req: AuthReq,
+    @Res() res: Response,
+  ) {
+    const doc = await this.svc.getDocument(
+      id,
+      formId,
+      req.user.id,
+      req.user.role,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Length': String(doc.buffer.length),
+      'Content-Disposition': `attachment; filename="${doc.formType}-${doc.requestNumber}.pdf"`,
+      'Cache-Control': 'private, no-store',
+    });
+    res.end(doc.buffer);
+  }
+
+  /**
+   * POST /api/v1/requisitions/:id/print
+   * A numbered paper copy of this requisition (what it is, every step so far, signature lines). Anyone who
+   * may see the requisition may print it; each print is stored, numbered and audited, and a later one is
+   * marked REPRINT.
+   */
+  @Post(':id/print')
+  @HttpCode(HttpStatus.OK)
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
+  async print(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthReq,
+    @Res() res: Response,
+  ) {
+    const doc = await this.svc.printRecord(
+      id,
+      req.user.id,
+      req.user.role,
+      req.ip,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Length': String(doc.buffer.length),
+      'Content-Disposition': `inline; filename="${doc.documentNumber}.pdf"`,
+      'X-Document-Number': doc.documentNumber ?? '',
+      'Cache-Control': 'private, no-store',
+    });
+    res.end(doc.buffer);
+  }
+
+  /** GET /api/v1/requisitions/:id/prints - the prints made of this requisition (same read access). */
+  @Get(':id/prints')
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
+  async prints(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthReq) {
+    const data = await this.svc.listPrints(id, req.user.id, req.user.role);
+    return { message: 'Printouts retrieved', data };
+  }
+
+  /**
    * POST /api/v1/requisitions
-   * Submit a new requisition — Employee, Supervisor, IT Personnel
+   * Submit a new requisition - Employee, Supervisor, IT Personnel, Property
+   * Custodian. Management (read-only oversight) and the System Administrator
+   * (who can approve any requisition) do not file.
    * Status on creation: pending_supervisor
    */
   @Post()
-  @Roles(UserRole.EMPLOYEE, UserRole.SUPERVISOR, UserRole.IT_PERSONNEL)
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
   async create(@Body() dto: CreateRequisitionDto, @Req() req: AuthReq) {
     const result = await this.svc.create(
       dto,
@@ -207,7 +354,13 @@ export class RequisitionsController {
    */
   @Post(':id/hold')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
+  // The System Administrator only for a custodian's own requisition (the service
+  // refuses any other).
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.SYSTEM_ADMIN,
+  )
   async putOnHold(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('reason') reason: string,
@@ -230,7 +383,13 @@ export class RequisitionsController {
    */
   @Post(':id/fulfill')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
+  // The System Administrator only for a custodian's own requisition (the service
+  // refuses any other).
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.SYSTEM_ADMIN,
+  )
   async fulfill(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: FulfillRequisitionDto,

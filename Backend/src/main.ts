@@ -1,11 +1,15 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
-import { ResponseInterceptor } from './common/interceptors/response.interceptor';
-import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
+import { applyRequestPipeline } from './common/app-pipeline';
+import { applyDefaultTimeZone } from './common/app-time-zone';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import { trustedClientIp } from './common/trusted-client-ip';
+
+// Before anything reads the clock: a container defaults to UTC, which shifts the
+// daily 7:00 jobs and the dashboards' "today" / "this month" by 8 hours.
+applyDefaultTimeZone();
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -24,6 +28,13 @@ async function bootstrap() {
       'trust proxy',
       /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy,
     );
+  }
+
+  // Behind the UAT password gate the visitor's address arrives in a header the gate signs with a shared
+  // secret (src/common/trusted-client-ip.ts); a request without the secret is left exactly as it was.
+  const clientIpSecret = process.env.CLIENT_IP_SECRET;
+  if (clientIpSecret && clientIpSecret.length >= 24) {
+    app.use(trustedClientIp(clientIpSecret));
   }
 
   // 1. Security headers — must be applied first (SECURITY.md §2)
@@ -54,26 +65,14 @@ async function bootstrap() {
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+    // The browser may only read these on a cross-origin download: the form's
+    // number and file name.
+    exposedHeaders: ['Content-Disposition', 'X-Document-Number'],
   });
 
-  // 4. Global validation pipe — strips unknown fields, enforces DTOs (SECURITY.md §7)
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: { enableImplicitConversion: true },
-    }),
-  );
-
-  // 5. Global response envelope — { statusCode, message, data }
-  app.useGlobalInterceptors(new ResponseInterceptor());
-
-  // 6. Global exception filter — catches ALL errors, never leaks internals (SECURITY.md §8)
-  app.useGlobalFilters(new GlobalExceptionFilter());
-
-  // 7. Global API prefix
-  app.setGlobalPrefix('api');
+  // 4. Request pipeline — validation, response envelope, exception filter,
+  // /api prefix. Shared with the e2e suite (test/create-test-app.ts).
+  applyRequestPipeline(app);
 
   const port = process.env.PORT ?? 3001;
   await app.listen(port);

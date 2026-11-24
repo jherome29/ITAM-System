@@ -10,6 +10,8 @@ import {
   fmtDate,
   PAGE,
   CONTENT_WIDTH,
+  ensureSpace,
+  identityFields,
 } from './base-form.generator';
 
 // SVC: Improve — RSMI aggregates RIS records for a period (Appendix 64 / RSMI)
@@ -19,8 +21,13 @@ interface RisItemLike {
   itemDescription: string;
   assetType: string;
   quantity: number;
-  acquisitionCost?: number;
+  /** Unit cost of the stock the line was issued from; null when not on record. */
+  acquisitionCost: number | null;
+  /** The stock item's own code; null when the line was not drawn from stock. */
+  stockNumber: string | null;
 }
+
+const NO_COST = '—';
 
 export async function generateRSMI(
   items: RisItemLike[],
@@ -41,11 +48,7 @@ export async function generateRSMI(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'Period', value: `${fmtDate(dateFrom)} to ${fmtDate(dateTo)}` },
       { label: 'Date Generated', value: fmtDate(new Date()) },
     ],
@@ -54,14 +57,16 @@ export async function generateRSMI(
 
   y += 4;
 
-  const rows = items.map((item, i) => [
+  const rows = items.map((item) => [
     item.requestNumber,
-    String(i + 1).padStart(3, '0'),
+    item.stockNumber ?? '—',
     item.itemDescription,
     'unit',
     String(item.quantity),
-    phpFormat(item.acquisitionCost ?? 0),
-    phpFormat((item.acquisitionCost ?? 0) * item.quantity),
+    item.acquisitionCost === null ? NO_COST : phpFormat(item.acquisitionCost),
+    item.acquisitionCost === null
+      ? NO_COST
+      : phpFormat(item.acquisitionCost * item.quantity),
   ]);
 
   y = drawTable(
@@ -79,21 +84,37 @@ export async function generateRSMI(
     y,
   );
 
+  // Lines with no cost on record are left out of the total rather than counted
+  // as zero, and the sheet says so.
   const totalAmount = items.reduce(
     (s, i) => s + (i.acquisitionCost ?? 0) * i.quantity,
     0,
   );
+  const hasUncosted = items.some((i) => i.acquisitionCost === null);
+  const totalText = items.every((i) => i.acquisitionCost === null)
+    ? NO_COST
+    : phpFormat(totalAmount);
 
-  y += 4;
+  y = ensureSpace(doc, y + 4, 60);
   doc.font('Helvetica-Bold').fontSize(8).fillColor('#000000');
-  doc.text(
-    `TOTAL AMOUNT: ${phpFormat(totalAmount)}`,
-    PAGE.margin + CONTENT_WIDTH - 130,
-    y,
-    { width: 130, align: 'right' },
-  );
-  y += 16;
+  doc.text(`TOTAL AMOUNT: ${totalText}`, PAGE.margin + CONTENT_WIDTH - 130, y, {
+    width: 130,
+    align: 'right',
+  });
+  y += 12;
+  if (hasUncosted) {
+    doc.font('Helvetica').fontSize(7).fillColor('#000000');
+    doc.text(
+      `${NO_COST} Unit cost is not on record for this line; it is not included in the total.`,
+      PAGE.margin,
+      y,
+      { width: CONTENT_WIDTH },
+    );
+    y += 12;
+  }
+  y += 4;
 
+  y = ensureSpace(doc, y, 60);
   doc
     .font('Helvetica-Bold')
     .fontSize(8)
@@ -112,13 +133,13 @@ export async function generateRSMI(
         '—',
         'Supplies and Materials',
         String(items.reduce((s, i) => s + i.quantity, 0)),
-        phpFormat(totalAmount),
+        totalText,
       ],
     ],
     y,
   );
 
-  y += 10;
+  y = ensureSpace(doc, y + 10, 30 + 64);
   doc.font('Helvetica').fontSize(7.5).text('Posted by:', PAGE.margin, y);
   doc
     .moveTo(PAGE.margin + 50, y + 12)

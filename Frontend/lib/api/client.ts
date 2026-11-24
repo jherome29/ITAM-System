@@ -1,6 +1,7 @@
 'use client';
 
 import axios, { type AxiosRequestConfig } from 'axios';
+import { singleFlight } from './single-flight';
 
 export interface ApiResponse<T> {
   statusCode: number;
@@ -43,8 +44,18 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
-let isRefreshing = false;
-let refreshQueue: Array<(token: string | null) => void> = [];
+// One refresh at a time, app-wide. The refresh cookie is single-use (the server
+// rotates it on every call and treats a second use as replay, wiping the
+// session), so the page-load session restore and any number of overlapping 401s
+// must share a single request instead of each spending the cookie.
+export const refreshAccessToken = singleFlight(async (): Promise<string> => {
+  const { data } = await axios.post<ApiResponse<{ accessToken: string }>>(
+    `${process.env.NEXT_PUBLIC_API_URL ?? '/api'}/v1/auth/refresh`,
+    {},
+    { withCredentials: true }
+  );
+  return data.data.accessToken;
+});
 
 client.interceptors.response.use(
   (res) => res,
@@ -52,43 +63,20 @@ client.interceptors.response.use(
     const original: AxiosRequestConfig & { _retry?: boolean } = error.config;
 
     if (error.response?.status === 401 && !original._retry) {
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          refreshQueue.push((token) => {
-            if (token) {
-              original.headers = { ...original.headers, Authorization: `Bearer ${token}` };
-              resolve(client(original));
-            } else {
-              reject(error);
-            }
-          });
-        });
-      }
-
       original._retry = true;
-      isRefreshing = true;
 
+      let newToken: string;
       try {
-        const { data } = await axios.post<ApiResponse<{ accessToken: string }>>(
-          `${process.env.NEXT_PUBLIC_API_URL ?? '/api'}/v1/auth/refresh`,
-          {},
-          { withCredentials: true }
-        );
-        const newToken = data.data.accessToken;
-        setAccessToken(newToken);
-        refreshQueue.forEach((cb) => cb(newToken));
-        refreshQueue = [];
-        original.headers = { ...original.headers, Authorization: `Bearer ${newToken}` };
-        return client(original);
+        newToken = await refreshAccessToken();
       } catch {
-        refreshQueue.forEach((cb) => cb(null));
-        refreshQueue = [];
         setAccessToken(null);
         onTokenExpired?.();
         return Promise.reject(error);
-      } finally {
-        isRefreshing = false;
       }
+
+      setAccessToken(newToken);
+      original.headers = { ...original.headers, Authorization: `Bearer ${newToken}` };
+      return client(original);
     }
 
     return Promise.reject(error);

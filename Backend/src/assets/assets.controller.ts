@@ -45,7 +45,7 @@ export class AssetsController {
   /**
    * GET /api/v1/assets
    * Full inventory list — paginated.
-   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
+   * Roles: IT Personnel, System Admin, Management, Property Custodian
    */
   @Get()
   @Roles(
@@ -53,7 +53,6 @@ export class AssetsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findAll(
     @Query('page') page = 1,
@@ -89,17 +88,51 @@ export class AssetsController {
    * Roles: Employee, Supervisor, IT Personnel
    */
   @Get('catalogue')
-  @Roles(UserRole.EMPLOYEE, UserRole.SUPERVISOR, UserRole.IT_PERSONNEL)
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
   async findCatalogue(@Query('page') page = 1, @Query('limit') limit = 20) {
     const result = await this.assetsService.findCatalogue(+page, +limit);
     return { message: 'Available assets retrieved', data: result };
   }
 
   /**
+   * GET /api/v1/assets/catalogue/items?search=&assetType=&assetClass=&limit=
+   * Grouped requestable inventory for the requisition item picker — one row
+   * per item with an availability count. No cost / serial / property numbers.
+   * Roles: every role that can submit a requisition (matches POST /requisitions).
+   * SVC: Engage
+   */
+  @Get('catalogue/items')
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
+  async findCatalogueItems(
+    @Query('search') search?: string,
+    @Query('assetType') assetType?: string,
+    @Query('assetClass') assetClass?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const items = await this.assetsService.findCatalogueItems({
+      search,
+      assetType,
+      assetClass,
+      limit: limit ? +limit : undefined,
+    });
+    return { message: 'Catalogue items retrieved', data: items };
+  }
+
+  /**
    * GET /api/v1/assets/stats
    * Grouped asset counts by status, class, and type.
    * Powers the IT Personnel and Management dashboards.
-   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
+   * Roles: IT Personnel, System Admin, Management, Property Custodian
    */
   @Get('stats')
   @Roles(
@@ -107,7 +140,6 @@ export class AssetsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async getStats(@Req() req: AuthenticatedRequest) {
     const assetTypeScope = resolveAssetTypeScope(req.user.role);
@@ -116,7 +148,7 @@ export class AssetsController {
   }
 
   @Get(':id/photo')
-  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT, UserRole.PROPERTY_CUSTODIAN, UserRole.PROPERTY_OFFICER)
+  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT, UserRole.PROPERTY_CUSTODIAN)
   async getPhoto(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
     const photo = await this.assetsService.getPhoto(id, resolveAssetTypeScope(req.user.role));
     res.set({ 'Content-Type': photo.mimeType, 'Content-Length': String(photo.data.length), 'Cache-Control': 'private, max-age=300' });
@@ -139,9 +171,29 @@ export class AssetsController {
   }
 
   /**
+   * GET /api/v1/assets/mine
+   * Assets currently assigned to the caller (custodianId = me) — backs the
+   * employee "My Assigned Assets" view. Any role can hold an asset, and the
+   * filter is the caller's own id, so no asset-type scope applies.
+   */
+  @Get('mine')
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+  )
+  async findMine(@Req() req: AuthenticatedRequest) {
+    const data = await this.assetsService.findMine(req.user.id);
+    return { message: 'Assigned assets retrieved', data };
+  }
+
+  /**
    * GET /api/v1/assets/:id
    * Single asset with full lifecycle history.
-   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
+   * Roles: IT Personnel, System Admin, Management, Property Custodian
    */
   @Get(':id')
   @Roles(
@@ -149,7 +201,6 @@ export class AssetsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,

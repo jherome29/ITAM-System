@@ -7,9 +7,13 @@ import { AssetType, UserRole } from '../../../../packages/shared/src/enums';
 export function resolveAssetTypeScope(role: UserRole): AssetType[] | undefined {
   switch (role) {
     case UserRole.ASSET_CUSTODIAN:
-    case UserRole.IT_PERSONNEL:
-    case UserRole.PROPERTY_CUSTODIAN:
       return [AssetType.ICT, AssetType.FIXED, AssetType.SUPPLIES];
+    case UserRole.IT_PERSONNEL:
+      return [AssetType.ICT];
+    // PROPERTY_OFFICER is the retired role (merged into the custodian). No route
+    // grants it, but an account that somehow kept it must never resolve to
+    // "unscoped" and see every asset.
+    case UserRole.PROPERTY_CUSTODIAN:
     case UserRole.PROPERTY_OFFICER:
       return [AssetType.FIXED, AssetType.SUPPLIES];
     default:

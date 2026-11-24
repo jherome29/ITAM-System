@@ -26,6 +26,12 @@ const ALLOW = {
   'GHSA-qfvm-cv95-jqjf': 'multer DoS via file-descriptor leak on aborted uploads',
   'GHSA-qvfw-j98x-7q72': 'multer file-size-limit bypass (async fileFilter race)',
   'GHSA-535w-7cp7-47q4': 'multer DoS via oversized array index in field names',
+  // braces: every published version is affected (3.0.3 is the latest) and no
+  // fix exists. Reached only through lint tooling (eslint-config-next ->
+  // @next/eslint-plugin-next -> fast-glob -> micromatch), which expands glob
+  // patterns from our own config at lint time — never from user input, never
+  // in the shipped app. Drop this when a patched braces is published.
+  'GHSA-vfj7-8cjw-p6xm': 'braces stack-exhaustion DoS (lint-time globbing only, no fix released)',
 };
 
 const dir = resolve(process.argv[2] ?? '.');

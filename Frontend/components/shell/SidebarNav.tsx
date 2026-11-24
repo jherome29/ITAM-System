@@ -36,15 +36,15 @@ export function SidebarNav({
     <aside
       className={`${
         mobile ? 'h-full' : 'fixed inset-y-0 left-0 z-30 hidden h-screen lg:flex'
-      } ${mobile ? 'w-full' : compact ? 'w-20' : 'w-72'} flex-col bg-[#0b2038] text-white transition-all`}
+      } ${collapsed && !mobile ? 'w-20' : 'w-72'} flex-col bg-navy text-white transition-all`}
     >
       <div className={`flex h-16 shrink-0 items-center border-b border-white/10 ${compact ? 'justify-center px-2' : 'gap-3 px-4'}`}>
         {!compact && (
           <>
-            <Image src="/logo.png" alt="CICC logo" width={40} height={40} className="h-10 w-10 shrink-0 object-contain" />
+            <Image src="/logo.png" alt="CICC logo" width={40} height={40} priority className="h-10 w-10 flex-none object-contain" />
             <div className="min-w-0">
               <p className="text-base font-bold leading-tight">{appConfig.appName}</p>
-              <p className="max-w-[9rem] text-sm leading-tight text-blue-200">CICC Asset Management</p>
+              <p className="text-xs leading-tight text-blue-200">CICC Asset Management</p>
             </div>
           </>
         )}
@@ -76,13 +76,14 @@ export function SidebarNav({
                 href={item.href}
                 onClick={onClose}
                 title={item.label}
-                aria-current={isActive ? 'page' : undefined}
-                className={`flex min-h-11 items-center rounded-md py-2 text-[15px] font-semibold transition ${compact ? 'justify-center px-0' : 'gap-3 px-3'} ${
+                className={`flex min-h-11 items-center rounded-md py-2 text-sm font-semibold transition ${
+                  collapsed && !mobile ? 'justify-center px-0' : 'gap-3 px-3'
+                } ${
                   isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-blue-100 hover:bg-white/10 hover:text-white'
                 }`}
               >
                 <Icon className="h-5 w-5 flex-none" />
-                {!compact && <span className="leading-snug">{item.label}</span>}
+                {(!collapsed || mobile) && <span className="leading-snug">{item.label}</span>}
               </Link>
             </div>
           );
@@ -91,20 +92,20 @@ export function SidebarNav({
 
       <div className="border-t border-white/10 px-4 py-3">
         <div className={`flex min-h-12 items-center ${collapsed && !mobile ? 'justify-center' : 'gap-3'}`}>
-          <span className="grid h-9 w-9 flex-none place-items-center rounded-full border border-blue-300/30 bg-blue-950 text-[11px] font-bold leading-none text-blue-100">
+          <span className="grid h-9 w-9 flex-none place-items-center rounded-full border border-blue-300/30 bg-blue-950 text-xs font-bold leading-none text-blue-100">
             {initials}
           </span>
           {(!collapsed || mobile) && (
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold leading-5 text-white">{displayName}</p>
-              <p className="truncate text-xs leading-4 text-blue-200">{proposedRoleLabels[role]}</p>
+              <p className="text-xs leading-5 text-blue-200">{proposedRoleLabels[role]}</p>
             </div>
           )}
           {(!collapsed || mobile) && (
             <button
               type="button"
               onClick={() => logout()}
-              className="grid h-8 w-8 flex-none place-items-center rounded-md text-blue-200 hover:bg-white/10 hover:text-white"
+              className="grid h-10 w-10 flex-none place-items-center rounded-md text-blue-200 hover:bg-white/10 hover:text-white"
               aria-label="Sign out"
               title="Sign out"
             >

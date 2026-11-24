@@ -4,6 +4,20 @@ These are features and tools that could NOT be added yet because they depend on 
 Each item has a specific trigger point — do not add them before that point or they will be incomplete.
 This file exists so nothing is forgotten when the time comes.
 
+## Status (2026-10-16)
+
+The frontend is built, so the original "wait until the frontend exists" trigger has passed. Where each item stands:
+
+| Item | State |
+|---|---|
+| Idle session timeout | **Not built.** A session lasts until its token expires (8 h access token, rotating refresh cookie) |
+| MFA / TOTP | **Not built** (nothing in the backend) |
+| Husky + lint-staged | **Not added** (no `.husky/`); CI and `CHECKS.md` are the gate |
+| OWASP ZAP | **Not run yet.** Plan it with the rate-limit warning in `docs/phases/PHASE-5-TESTING.md` §5.3 |
+| Playwright end-to-end tests | **No committed suite.** Playwright is used ad hoc to drive the screens against a throwaway database (`RUN-LOCAL.md` §11), which is how the 2026-10-15/16 UI and PDF defects were found; turning those walkthroughs into a committed suite is worth doing before handover |
+| k6 load test | **Added** (`perf/`), a baseline only; JMeter is still the formal run |
+
+
 ---
 
 ## 1. Idle Session Timeout

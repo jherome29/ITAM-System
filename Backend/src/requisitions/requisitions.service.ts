@@ -5,16 +5,23 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, IsNull, Not, Repository } from 'typeorm';
 import { RequisitionEntity } from './entities/requisition.entity';
 import { RequisitionItemEntity } from './entities/requisition-item.entity';
 import { RequisitionApprovalEntity } from './entities/requisition-approval.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
 import { UserEntity } from '../users/entities/user.entity';
-import { AssetsService } from '../assets/assets.service';
+import {
+  AssetsService,
+  OPEN_REQUISITION_STATUSES,
+} from '../assets/assets.service';
+import { ReplacementBasis } from '../assets/replacement-eligibility';
+import { ReportsService } from '../reports/reports.service';
+import { buildRequisitionPrint } from './requisition-print';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
@@ -33,6 +40,8 @@ import {
   AssetClass,
   AssetCondition,
   AssetStatus,
+  AssetType,
+  OfficialFormType,
 } from '../../../packages/shared/src/enums';
 import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 import { SystemConfigService } from '../system-config/system-config.service';
@@ -44,6 +53,131 @@ import { SystemConfigService } from '../system-config/system-config.service';
 //   Asset unavailable → on_hold + notify IT Personnel
 //   IT fulfills → fulfilled + update asset to 'issued'
 //   SLA: >24h pending → SLA breach notification
+
+/** How each fulfilling role is named in requester-facing notifications. */
+const FULFILLER_LABEL: Partial<Record<UserRole, string>> = {
+  [UserRole.ASSET_CUSTODIAN]: 'Asset Custodian',
+  [UserRole.IT_PERSONNEL]: 'IT Asset Custodian',
+  [UserRole.PROPERTY_CUSTODIAN]: 'Property Custodian',
+};
+
+/** Who submitted a requisition — just enough for an approver or custodian to
+ *  identify them (CLAUDE.md §8.4). Never email, role, or credential hashes. */
+export interface RequesterSummary {
+  id: string;
+  name: string;
+  employeeId: string;
+  officeOrSection: string;
+}
+
+/** Item names compare ignoring case and stray spacing ("  usb DRIVES " = "USB drives"). */
+function normalizeItemName(name: string | null | undefined): string {
+  return (name ?? '').trim().replaceAll(/\s+/g, ' ').toLowerCase();
+}
+
+function toRequesterSummary(user?: UserEntity | null): RequesterSummary | null {
+  if (!user) return null;
+  return {
+    id: user.id,
+    name: `${user.firstName} ${user.lastName}`.trim(),
+    employeeId: user.employeeId,
+    officeOrSection: user.officeOrSection,
+  };
+}
+
+/** The assigned approving officer, as shown to the requester. */
+export interface ApproverSummary {
+  id: string;
+  name: string;
+  employeeId: string;
+}
+
+function toApproverSummary(user?: UserEntity | null): ApproverSummary | null {
+  if (!user) return null;
+  return {
+    id: user.id,
+    name: `${user.firstName} ${user.lastName}`.trim(),
+    employeeId: user.employeeId,
+  };
+}
+
+/** The asset a replacement requisition replaces — enough for the approver to
+ *  judge the request and the custodian to know what to collect. */
+export interface ReplacedAssetSummary {
+  id: string;
+  itemDescription: string;
+  propertyNumber: string | null;
+  serialNumber: string | null;
+  assetType: AssetType;
+  assetClass: AssetClass;
+  condition: string;
+  status: string;
+  acquisitionDate: Date | null;
+  components: string | null;
+}
+
+function toReplacedAssetSummary(
+  asset?: AssetEntity | null,
+): ReplacedAssetSummary | null {
+  if (!asset) return null;
+  return {
+    id: asset.id,
+    itemDescription: asset.itemDescription,
+    propertyNumber: asset.propertyNumber ?? null,
+    serialNumber: asset.serialNumber ?? null,
+    assetType: asset.assetType,
+    assetClass: asset.assetClass,
+    condition: asset.condition,
+    status: asset.status,
+    acquisitionDate: asset.acquisitionDate ?? null,
+    components: asset.components ?? null,
+  };
+}
+
+/** Swap the joined entities for minimal summaries before they leave the service. */
+function withRequester<T extends RequisitionEntity>(
+  req: T,
+  requester: UserEntity | null | undefined = req.requestedBy,
+  approver: UserEntity | null | undefined = req.supervisor,
+  replaced: AssetEntity | null | undefined = req.replacedAsset,
+): Omit<T, 'requestedBy' | 'supervisor' | 'replacedAsset'> & {
+  requester: RequesterSummary | null;
+  approver: ApproverSummary | null;
+  replacedAsset: ReplacedAssetSummary | null;
+} {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { requestedBy, supervisor, replacedAsset, ...rest } = req;
+  return {
+    ...rest,
+    requester: toRequesterSummary(requester),
+    approver: toApproverSummary(approver),
+    replacedAsset: toReplacedAssetSummary(replaced),
+  };
+}
+
+/**
+ * Whether a requisition is the custodian's own: filed by the custodian who would
+ * be the one to fulfil it (the IT Asset Custodian asking for ICT items, the
+ * Property Custodian asking for Fixed assets or Supplies). Segregation of duties
+ * bars them from fulfilling it, as it does for their own returns and incidents,
+ * so another custodian of that type - or, failing one, the System Administrator -
+ * handles it. A request for the other custodian's kind of item is not "own": that
+ * custodian fulfils it as usual.
+ */
+export function isCustodianOwnRequisition(
+  requesterRole: UserRole,
+  items: Array<{ assetType: AssetType }>,
+): boolean {
+  if (
+    requesterRole !== UserRole.ASSET_CUSTODIAN &&
+    requesterRole !== UserRole.IT_PERSONNEL &&
+    requesterRole !== UserRole.PROPERTY_CUSTODIAN
+  ) {
+    return false;
+  }
+  const scope = resolveAssetTypeScope(requesterRole) ?? [];
+  return items.length > 0 && items.every((i) => scope.includes(i.assetType));
+}
 
 @Injectable()
 export class RequisitionsService {
@@ -62,6 +196,7 @@ export class RequisitionsService {
     private readonly notificationsService: NotificationsService,
     private readonly usersService: UsersService,
     private readonly systemConfig: SystemConfigService,
+    private readonly reportsService: ReportsService,
   ) {}
 
   // ── Role-filtered list ─────────────────────────────────────────────────────
@@ -78,6 +213,9 @@ export class RequisitionsService {
     const qb = this.reqRepo
       .createQueryBuilder('r')
       .leftJoinAndSelect('r.items', 'items')
+      .leftJoinAndSelect('r.requestedBy', 'requestedBy')
+      .leftJoinAndSelect('r.supervisor', 'supervisor')
+      .leftJoinAndSelect('r.replacedAsset', 'replacedAsset')
       .orderBy('r.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit);
@@ -93,20 +231,44 @@ export class RequisitionsService {
         });
         break;
       case UserRole.ASSET_CUSTODIAN:
+        qb.where('r.status IN (:...statuses)', {
+          statuses: [RequisitionStatus.PENDING_FULFILLMENT, RequisitionStatus.ON_HOLD],
+        }).andWhere('r.requestedById != :me', { me: requestingUserId });
+        break;
       case UserRole.IT_PERSONNEL:
+        qb.where('r.status IN (:...statuses)', {
+          statuses: [
+            RequisitionStatus.PENDING_FULFILLMENT,
+            RequisitionStatus.ON_HOLD,
+          ],
+        })
+          .andWhere(
+            // Filtering the joined `items` alias directly would constrain what
+            // leftJoinAndSelect('r.items', 'items') hydrates (silently hiding
+            // non-matching sibling items) and would skew skip/take pagination,
+            // since a multi-item requisition yields multiple raw rows before
+            // TypeORM re-collapses them. An EXISTS subquery instead filters
+            // which requisitions (the `r` side) match, leaving `items` hydration
+            // and pagination untouched — same shape as the `r.status` filter above.
+            'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type = :itScope)',
+            { itScope: AssetType.ICT },
+          )
+          // What they filed themselves is not theirs to fulfil (see
+          // isCustodianOwnRequisition); they follow it under My Requisitions.
+          .andWhere('r.requestedById != :me', { me: requestingUserId });
+        break;
       case UserRole.PROPERTY_CUSTODIAN:
         qb.where('r.status IN (:...statuses)', {
           statuses: [
             RequisitionStatus.PENDING_FULFILLMENT,
             RequisitionStatus.ON_HOLD,
           ],
-        });
-        break;
-      case UserRole.PROPERTY_OFFICER:
-        qb.andWhere(
-          'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...poScope))',
-          { poScope: resolveAssetTypeScope(UserRole.PROPERTY_OFFICER) },
-        );
+        })
+          .andWhere(
+            'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...pcScope))',
+            { pcScope: resolveAssetTypeScope(UserRole.PROPERTY_CUSTODIAN) },
+          )
+          .andWhere('r.requestedById != :me', { me: requestingUserId });
         break;
       // SYSTEM_ADMIN and MANAGEMENT see all
     }
@@ -116,27 +278,247 @@ export class RequisitionsService {
     }
     if (includeRequester) qb.addOrderBy('r.id', 'DESC');
 
-    const [data, total] = await qb.getManyAndCount();
-    if (includeRequester) {
-      const requesters = await this.usersService.findHolderSummaries(data.map((request) => request.requestedById), true);
-      return {
-        data: data.map((request) => ({ ...request, requester: requesters.get(request.requestedById) ?? null })),
-        total, page, limit, totalPages: Math.ceil(total / limit),
-      };
-    }
+    const [rows, total] = await qb.getManyAndCount();
+    const data = rows.map((r) => withRequester(r));
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   // ── My requisitions (any authenticated role) ───────────────────────────────
   async findMine(userId: string, page = 1, limit = 20) {
-    const [data, total] = await this.reqRepo.findAndCount({
+    const [rows, total] = await this.reqRepo.findAndCount({
       where: { requestedById: userId },
-      relations: { items: true },
+      relations: {
+        items: true,
+        requestedBy: true,
+        supervisor: true,
+        replacedAsset: true,
+      },
       order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
     });
+    const data = rows.map((r) => withRequester(r));
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  // ── What only the System Administrator can fulfil ──────────────────────────
+  /**
+   * Open requisitions (awaiting fulfilment, or on hold) filed by the custodian
+   * who would fulfil them. They are kept out of that custodian's own queue, and
+   * there may be no second custodian of the type, so the System Administrator
+   * is the fallback - for exactly these.
+   * SVC: Design & Transition - controlled asset movement authorization.
+   */
+  async fulfilmentFallback() {
+    const rows = await this.reqRepo.find({
+      where: {
+        status: In([
+          RequisitionStatus.PENDING_FULFILLMENT,
+          RequisitionStatus.ON_HOLD,
+        ]),
+      },
+      relations: {
+        items: true,
+        requestedBy: true,
+        supervisor: true,
+        replacedAsset: true,
+      },
+      order: { createdAt: 'ASC' },
+      take: 200,
+    });
+    const data = rows
+      .filter(
+        (r) =>
+          r.requestedBy &&
+          isCustodianOwnRequisition(r.requestedBy.role, r.items),
+      )
+      .map((r) => withRequester(r));
+    return { data, total: data.length };
+  }
+
+  // ── Decisions I made as an approver ────────────────────────────────────────
+  // findAll() gives a supervisor only the PENDING queue, so a requisition left
+  // every list they could read the moment they decided it. This is their
+  // history. supervisorId is whoever the request was routed to (the alternate
+  // approver when the primary was away), so it is the person who decided it.
+  async findDecidedBy(approverId: string, page = 1, limit = 20) {
+    const [rows, total] = await this.reqRepo.findAndCount({
+      where: { supervisorId: approverId, supervisorDecidedAt: Not(IsNull()) },
+      relations: {
+        items: true,
+        requestedBy: true,
+        supervisor: true,
+        replacedAsset: true,
+      },
+      order: { supervisorDecidedAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    const data = rows.map((r) => withRequester(r));
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  // ── Replacement review (the custodians' watch list) ───────────────────────
+  /**
+   * Replacement requisitions (newest 200) with the criterion they were
+   * justified on at submission — read from the immutable audit entry, since
+   * the old unit's state changes once it is collected — plus held assets that
+   * already qualify but have no open request. Scoped by the caller's asset types.
+   * SVC: Design & Transition — replacement validation (CLAUDE.md §17).
+   */
+  async replacementReview(role: UserRole) {
+    const scope = resolveAssetTypeScope(role);
+    const qb = this.reqRepo
+      .createQueryBuilder('r')
+      .leftJoinAndSelect('r.items', 'items')
+      .leftJoinAndSelect('r.requestedBy', 'requestedBy')
+      .leftJoinAndSelect('r.supervisor', 'supervisor')
+      .innerJoinAndSelect('r.replacedAsset', 'replacedAsset')
+      .orderBy('r.createdAt', 'DESC')
+      .take(200);
+    if (scope && scope.length > 0) {
+      qb.where('replacedAsset.assetType IN (:...scope)', { scope });
+    }
+    const rows = await qb.getMany();
+
+    const [submissions, repairCounts, candidates] = await Promise.all([
+      this.auditService.findByRecordsAndAction(
+        rows.map((r) => r.id),
+        AuditAction.REQUISITION_SUBMITTED,
+      ),
+      this.assetsService.recentRepairCounts(
+        rows.map((r) => r.replacedAssetId!),
+      ),
+      this.assetsService.replacementCandidates(scope),
+    ]);
+    const basisById = new Map(
+      submissions.map((a) => [
+        a.affectedRecordId,
+        (a.metadata?.replacementBasis as ReplacementBasis | undefined) ?? null,
+      ]),
+    );
+
+    return {
+      requests: rows.map((r) => ({
+        ...withRequester(r),
+        replacementBasis: basisById.get(r.id) ?? null,
+        repairsInWindow: repairCounts.get(r.replacedAssetId!) ?? 0,
+      })),
+      candidates,
+    };
+  }
+
+  // ── Detail for display — findOne() plus the requester summary ─────────────
+  // Kept separate from findOne(), which approve/reject/fulfill load and then
+  // save: the view shape (requester, no requestedBy) must never be persisted.
+  async findOneForView(
+    id: string,
+    requestingUserId: string,
+    requestingRole: UserRole,
+  ) {
+    const req = await this.findOne(id, requestingUserId, requestingRole);
+    const lookup = (userId: string | null) =>
+      userId ? this.usersService.findOne(userId).catch(() => null) : null;
+    const [requester, approver, replaced, forms] = await Promise.all([
+      lookup(req.requestedById),
+      lookup(req.supervisorId),
+      req.replacedAssetId
+        ? this.assetsService.findOne(req.replacedAssetId).catch(() => null)
+        : null,
+      this.reportsService.formsForRequisition(req.id),
+    ]);
+    return {
+      ...withRequester(req, requester, approver, replaced),
+      // COA documents generated for this request (e.g. the receipt for the
+      // unit surrendered on a replacement) — the requester's proof.
+      documents: forms.map((f) => ({
+        id: f.id,
+        formType: f.formType,
+        generatedAt: f.generatedAt,
+      })),
+    };
+  }
+
+  /**
+   * A document generated for this requisition. Same read access as the
+   * requisition itself (findOne's IDOR + scope guards), so the requester can
+   * download their own receipt.
+   */
+  async getDocument(
+    id: string,
+    formId: string,
+    requestingUserId: string,
+    requestingRole: UserRole,
+  ) {
+    const req = await this.findOne(id, requestingUserId, requestingRole);
+    const pdf = await this.reportsService.requisitionFormPdf(req.id, formId);
+    return { ...pdf, requestNumber: req.requestNumber };
+  }
+
+  // ── Paper copy of a requisition ─────────────────────────────────────────────
+  // CICC asked for a printout after every step, as proof beyond the digital record. Same read access as
+  // the requisition itself (findOne's IDOR and scope guards): whoever can see it can print it.
+  async printRecord(
+    id: string,
+    requestingUserId: string,
+    requestingRole: UserRole,
+    ipAddress: string,
+  ) {
+    const req = await this.findOne(id, requestingUserId, requestingRole);
+    const lookup = (userId: string | null) =>
+      userId ? this.usersService.findOne(userId).catch(() => null) : null;
+    const [requester, approver, fulfiller, replaced, printer, holdEntries] =
+      await Promise.all([
+        lookup(req.requestedById),
+        lookup(req.supervisorId),
+        lookup(req.itPersonnelId),
+        req.replacedAssetId
+          ? this.assetsService.findOne(req.replacedAssetId).catch(() => null)
+          : null,
+        lookup(requestingUserId),
+        this.auditService.findByRecordsAndAction(
+          [req.id],
+          AuditAction.REQUISITION_ON_HOLD,
+        ),
+      ]);
+    const holders = await Promise.all(
+      holdEntries.map(async (e) => lookup(e.userId)),
+    );
+    const record = buildRequisitionPrint({
+      requisition: req,
+      requester,
+      approver,
+      fulfiller,
+      holds: holdEntries.map((e, i) => ({
+        at: e.timestamp,
+        by: holders[i]
+          ? `${holders[i]?.firstName} ${holders[i]?.lastName}`.trim()
+          : 'Custodian',
+      })),
+      replacedAsset: replaced,
+    });
+    const { form, buffer } = await this.reportsService.createRecordPrint(
+      record,
+      {
+        id: requestingUserId,
+        name: printer
+          ? `${printer.firstName} ${printer.lastName}`.trim()
+          : 'Unknown',
+        role: requestingRole,
+      },
+      ipAddress,
+    );
+    return { buffer, documentNumber: form.documentNumber, id: form.id };
+  }
+
+  /** The prints made of this requisition so far. Same read access as the requisition. */
+  async listPrints(
+    id: string,
+    requestingUserId: string,
+    requestingRole: UserRole,
+  ) {
+    const req = await this.findOne(id, requestingUserId, requestingRole);
+    return this.reportsService.recordPrints('requisition', req.id);
   }
 
   // ── Requisition stats — dashboard counts in flat shape matching frontend ────
@@ -166,7 +548,7 @@ export class RequisitionsService {
 
     // Scope to the caller's asset-type custody, mirroring findAll()'s
     // EXISTS-subquery pattern (same join shape used there for
-    // IT_PERSONNEL/PROPERTY_CUSTODIAN/PROPERTY_OFFICER). SYSTEM_ADMIN and
+    // IT_PERSONNEL/PROPERTY_CUSTODIAN). SYSTEM_ADMIN and
     // MANAGEMENT get undefined back from resolveAssetTypeScope and stay
     // unscoped, matching findAll()'s "see all" behavior for those roles.
     const assetTypeScope = resolveAssetTypeScope(userRole);
@@ -220,6 +602,23 @@ export class RequisitionsService {
       );
     }
 
+    // Custodial scope guard — the same "ANY item in scope" rule findAll() uses,
+    // so a direct GET by id can't reach what the role's queue would never list
+    // (ICT requests for Property roles, supply requests for IT Personnel).
+    // A requester can always read their own requisition, whatever it contains.
+    const scope = requestingRole
+      ? resolveAssetTypeScope(requestingRole)
+      : undefined;
+    if (
+      scope &&
+      req.requestedById !== requestingUserId &&
+      !req.items.some((item) => scope.includes(item.assetType))
+    ) {
+      throw new ForbiddenException(
+        'This requisition is outside your asset-type scope',
+      );
+    }
+
     const approvals = await this.approvalRepo.find({
       where: { requisitionId: id },
       order: { actionedAt: 'ASC' },
@@ -233,21 +632,24 @@ export class RequisitionsService {
   /**
    * Replacement requisitions must be justified before they enter the approval
    * queue (CLAUDE.md §17). The requester must be the current custodian of the
-   * named asset, and the asset must meet at least one criterion: its condition
-   * is no longer serviceable, or it has passed the useful-life age for its
-   * class. Returns which criterion was met, for the audit trail.
+   * named asset and the asset must meet a criterion — no longer serviceable,
+   * past its class's useful life, or reported lost/stolen/damaged (see
+   * replacementEligibility). The request is for exactly one unit of the same
+   * asset type (so it reaches the custodian of the old item), and only one
+   * replacement may be open per asset. Returns the criterion met, for the
+   * audit trail.
    */
   private async validateReplacement(
-    replacedAssetId: string | undefined,
+    dto: CreateRequisitionDto,
     requestedById: string,
-  ): Promise<'condition' | 'useful_life'> {
-    if (!replacedAssetId) {
+  ): Promise<ReplacementBasis> {
+    if (!dto.replacedAssetId) {
       throw new BadRequestException(
         'A replacement requisition must identify the asset being replaced.',
       );
     }
 
-    const asset = await this.assetsService.findOne(replacedAssetId);
+    const asset = await this.assetsService.findOne(dto.replacedAssetId);
 
     if (asset.custodianId !== requestedById) {
       throw new ForbiddenException(
@@ -255,24 +657,106 @@ export class RequisitionsService {
       );
     }
 
-    if (asset.condition !== AssetCondition.SERVICEABLE) {
-      return 'condition';
+    const eligibility = (
+      await this.assetsService.replacementEligibilityFor([asset])
+    ).get(asset.id)!;
+    if (!eligibility.eligible || !eligibility.basis) {
+      throw new BadRequestException(
+        `Replacement not justified for "${asset.itemDescription}": ${eligibility.reason}`,
+      );
     }
 
-    const usefulLife = this.systemConfig.getUsefulLifeYears()[asset.assetClass];
-    const ageYears =
-      (Date.now() - new Date(asset.acquisitionDate).getTime()) /
-      (365.25 * 24 * 60 * 60 * 1_000);
-    if (ageYears >= usefulLife) {
-      return 'useful_life';
+    const [item, ...extra] = dto.items;
+    if (extra.length > 0 || item.quantity !== 1) {
+      throw new BadRequestException(
+        'A replacement requisition is for exactly one unit.',
+      );
+    }
+    if (item.assetType !== asset.assetType) {
+      throw new BadRequestException(
+        `"${asset.itemDescription}" is ${asset.assetType} — its replacement must be an ${asset.assetType} item too.`,
+      );
     }
 
-    const acquired = new Date(asset.acquisitionDate).toISOString().slice(0, 10);
-    throw new BadRequestException(
-      `Replacement not justified: "${asset.itemDescription}" is serviceable and ` +
-        `within its useful life (acquired ${acquired}; ` +
-        `${usefulLife}-year threshold for ${asset.assetClass}).`,
+    const open = await this.reqRepo.findOne({
+      where: {
+        replacedAssetId: asset.id,
+        status: In(OPEN_REQUISITION_STATUSES),
+      },
+    });
+    if (open) {
+      throw new ConflictException(
+        `${open.requestNumber} already requests a replacement for "${asset.itemDescription}".`,
+      );
+    }
+
+    return eligibility.basis;
+  }
+
+  /**
+   * Segregation of duties — nobody decides on their own requisition, whatever
+   * their role (System Admin included). Enforced here, not only in the UI.
+   */
+  private assertNotOwnRequisition(req: RequisitionEntity, deciderId: string) {
+    if (req.requestedById === deciderId) {
+      throw new ForbiddenException(
+        'You cannot approve or reject your own requisition.',
+      );
+    }
+  }
+
+  /** An approver who can take a request: active, a Supervisor, available, and not the requester. */
+  private isUsableApprover(
+    candidate: UserEntity | null | undefined,
+    requesterId: string,
+  ): candidate is UserEntity {
+    return (
+      !!candidate &&
+      candidate.id !== requesterId &&
+      candidate.isActive &&
+      candidate.role === UserRole.SUPERVISOR &&
+      !this.usersService.isUnavailable(candidate)
     );
+  }
+
+  /**
+   * Who approves this requester's requisition — never the requester
+   * (segregation of duties, CLAUDE.md §8.2). Without this, a Supervisor's own
+   * request resolved to themselves and sat unapprovable in their own queue.
+   *
+   *   1. A Supervisor requester's own designated alternate approver, if usable —
+   *      the backup they nominated is the natural next approver.
+   *   2. Another Supervisor in the requester's section, then division.
+   *   3. Otherwise refuse, rather than create a request nobody can approve.
+   */
+  private async resolvePrimaryApprover(
+    requester: UserEntity,
+  ): Promise<UserEntity> {
+    if (
+      requester.role === UserRole.SUPERVISOR &&
+      requester.alternateApproverId
+    ) {
+      const ownAlternate = await this.usersService
+        .findOne(requester.alternateApproverId)
+        .catch(() => null);
+      if (this.isUsableApprover(ownAlternate, requester.id)) {
+        return ownAlternate;
+      }
+    }
+
+    const supervisor = await this.usersService.findSupervisorForSection(
+      requester.officeOrSection,
+      requester.division,
+      requester.id,
+    );
+    if (!supervisor) {
+      throw new BadRequestException(
+        requester.role === UserRole.SUPERVISOR
+          ? 'No other approver is available for your requisition. Ask the System Administrator to designate an alternate approver for you, or to assign another supervisor to your division.'
+          : 'No supervisor is configured for your section — contact your System Administrator.',
+      );
+    }
+    return supervisor;
   }
 
   async create(
@@ -281,11 +765,21 @@ export class RequisitionsService {
     userRole: UserRole,
     ipAddress: string,
   ): Promise<RequisitionEntity> {
+    // Repairs of an asset you hold are not requisitions — they go through
+    // Returns & Incidents (asset-requests), which hands the item to its
+    // custodian and moves it to under_repair. The enum value stays for
+    // historical rows.
+    if (dto.requisitionType === RequisitionType.REPAIR) {
+      throw new BadRequestException(
+        'Repairs are requested from My Assigned Assets → Request repair, not as a requisition.',
+      );
+    }
+
     // A replacement requisition must name an asset the requester holds that has
     // actually met a replacement criterion, before anything else runs (§17).
     const replacementBasis =
       dto.requisitionType === RequisitionType.REPLACEMENT
-        ? await this.validateReplacement(dto.replacedAssetId, requestedById)
+        ? await this.validateReplacement(dto, requestedById)
         : null;
 
     // Resolve the requester's own Supervisor server-side — per CLAUDE.md §6
@@ -294,20 +788,13 @@ export class RequisitionsService {
     // forever and the Supervisor's pending-approvals queue is always empty
     // (findAll() filters on r.supervisorId = :id).
     const requester = await this.usersService.findOne(requestedById);
-    const supervisor = await this.usersService.findSupervisorForSection(
-      requester.officeOrSection,
-      requester.division,
-    );
-    if (!supervisor) {
-      throw new BadRequestException(
-        'No supervisor is configured for your section — contact your System Administrator.',
-      );
-    }
+    const supervisor = await this.resolvePrimaryApprover(requester);
 
     // Alternate Approver (CLAUDE.md §5, §17) — if the resolved primary is
     // currently unavailable and has a usable designated backup, route to them.
     // One hop only: an unusable alternate falls back to the primary (the SLA
-    // watcher is the backstop). "Usable" = active SUPERVISOR, not itself away.
+    // watcher is the backstop). "Usable" = active SUPERVISOR, not itself away,
+    // and never the requester.
     let approverId = supervisor.id;
     let routedToAlternate = false;
     if (
@@ -317,47 +804,72 @@ export class RequisitionsService {
       const alt = await this.usersService
         .findOne(supervisor.alternateApproverId)
         .catch(() => null);
-      if (
-        alt &&
-        alt.isActive &&
-        alt.role === UserRole.SUPERVISOR &&
-        !this.usersService.isUnavailable(alt)
-      ) {
+      if (this.isUsableApprover(alt, requestedById)) {
         approverId = alt.id;
         routedToAlternate = true;
       }
     }
 
-    // Generate request number: REQ-YYYY-NNNN
-    const count = await this.reqRepo.count();
-    const requestNumber = `REQ-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`;
     const submittedAt = new Date();
     const slaHours = this.systemConfig.getSlaApprovalHours();
     const slaDeadline = new Date(
       submittedAt.getTime() + slaHours * 60 * 60 * 1_000,
     );
 
-    const req = this.reqRepo.create({
-      requestNumber,
-      requestedById,
-      requisitionType: dto.requisitionType,
-      justification: dto.justification,
-      requiredDate: new Date(dto.requiredDate),
-      replacedAssetId:
-        dto.requisitionType === RequisitionType.REPLACEMENT
-          ? (dto.replacedAssetId ?? null)
-          : null,
-      supervisorId: approverId,
-      ...(routedToAlternate ? { alternateRoutedAt: new Date() } : {}),
-      status: RequisitionStatus.PENDING_SUPERVISOR,
-      submittedAt,
-      slaDeadline,
-    });
-    const saved = await this.reqRepo.save(req);
+    // Request number REQ-YYYY-NNNN. It was `count()+1` over every year with no
+    // lock, so simultaneous submissions drew the same number, the UNIQUE
+    // constraint rejected the loser and the user got a 500 (6 of 8 simultaneous
+    // submissions failed live) — and a new year never restarted at 0001. The
+    // count and the insert now run under a transaction-scoped advisory lock, so
+    // submissions queue for a few milliseconds instead of colliding (same
+    // pattern as AssetRequestsService).
+    const saved = await this.reqRepo.manager.transaction(async (em) => {
+      await em.query(
+        "SELECT pg_advisory_xact_lock(hashtext('requisition_number'))",
+      );
+      const repo = em.getRepository(RequisitionEntity);
+      const year = submittedAt.getFullYear();
+      const count = await repo
+        .createQueryBuilder('r')
+        .where('r.requestNumber LIKE :p', { p: `REQ-${year}-%` })
+        .getCount();
 
-    // Save line items
-    const items = dto.items.map((item) =>
-      this.itemRepo.create({ ...item, requisitionId: saved.id }),
+      return repo.save(
+        repo.create({
+          requestNumber: `REQ-${year}-${String(count + 1).padStart(4, '0')}`,
+          requestedById,
+          requisitionType: dto.requisitionType,
+          justification: dto.justification,
+          requiredDate: new Date(dto.requiredDate),
+          replacedAssetId:
+            dto.requisitionType === RequisitionType.REPLACEMENT
+              ? (dto.replacedAssetId ?? null)
+              : null,
+          supervisorId: approverId,
+          ...(routedToAlternate ? { alternateRoutedAt: new Date() } : {}),
+          status: RequisitionStatus.PENDING_SUPERVISOR,
+          submittedAt,
+          slaDeadline,
+        }),
+      );
+    });
+    const requestNumber = saved.requestNumber;
+
+    // Save line items. inInventory is decided here against live stock, never
+    // taken from the client, so the custodian's "not in inventory" badge can't
+    // be forged.
+    const items = await Promise.all(
+      dto.items.map(async (item) =>
+        this.itemRepo.create({
+          ...item,
+          requisitionId: saved.id,
+          inInventory: await this.assetsService.isInCatalogue(
+            item.itemDescription,
+            item.assetType,
+            item.assetClass,
+          ),
+        }),
+      ),
     );
     saved.items = await this.itemRepo.save(items);
     // Return shape must match findOne/findMine (both hydrate `items`) — callers
@@ -379,7 +891,7 @@ export class RequisitionsService {
         approverId,
         NotificationAlertType.PENDING_APPROVAL,
         'New Requisition Awaiting Approval',
-        `Requisition ${requestNumber} requires your approval. Required by: ${dto.requiredDate}.`,
+        `${replacementBasis ? 'Replacement requisition' : 'Requisition'} ${requestNumber} requires your approval. Required by: ${dto.requiredDate}.`,
         saved.id,
         'requisition',
       );
@@ -439,6 +951,8 @@ export class RequisitionsService {
       );
     }
 
+    this.assertNotOwnRequisition(req, supervisorId);
+
     // SYSTEM_ADMIN is permitted by the controller's @Roles guard to approve
     // on any supervisor's behalf — skip the ownership check for that role.
     if (
@@ -467,25 +981,45 @@ export class RequisitionsService {
     req.supervisorDecidedAt = new Date();
     const saved = await this.reqRepo.save(req);
 
-    // Notify requester
+    // Whoever can fulfil these items — the same custodial split that
+    // findAll() and assertItemsInScope() use: ICT → IT Personnel,
+    // Fixed/Supplies → Property Custodian.
+    const fulfillerRoles = new Set<UserRole>(
+      req.items.map((item) =>
+        item.assetType === AssetType.ICT
+          ? UserRole.IT_PERSONNEL
+          : UserRole.PROPERTY_CUSTODIAN,
+      ),
+    );
+
+    // Notify requester — naming the custodian who will actually act on it, so a
+    // supply request isn't described as waiting on IT.
+    const fulfillerLabel = [...fulfillerRoles]
+      .map((role) => FULFILLER_LABEL[role])
+      .join(' / ');
     await this.notificationsService.notify(
       req.requestedById,
       NotificationAlertType.REQUISITION_APPROVED,
       'Requisition Approved',
-      `Your requisition ${req.requestNumber} has been approved and is now pending fulfillment by an Asset Custodian.`,
+      `Your requisition ${req.requestNumber} has been approved and is now pending fulfillment by the ${fulfillerLabel}.` +
+        (await this.replacementHandoverNote(req)),
       id,
       'requisition',
     );
-
-    // Notify all Asset Custodians, including legacy property accounts
-    const itUsers = await this.usersService.findByRole(UserRole.IT_PERSONNEL);
+    const fulfillers = (
+      await Promise.all(
+        [...fulfillerRoles].map((role) => this.usersService.findByRole(role)),
+      )
+    ).flat();
     await Promise.all(
-      itUsers.map((u) =>
+      [...new Map(fulfillers.map((u) => [u.id, u])).values()].filter((u) => u.id !== req.requestedById).map((u) =>
         this.notificationsService.notify(
           u.id,
           NotificationAlertType.PENDING_APPROVAL,
           'Requisition Ready for Fulfillment',
-          `Requisition ${req.requestNumber} has been approved and is awaiting fulfillment.`,
+          req.requisitionType === RequisitionType.REPLACEMENT
+            ? `Replacement requisition ${req.requestNumber} has been approved and is awaiting fulfillment. Collect the old unit from the requester when you hand over the replacement.`
+            : `Requisition ${req.requestNumber} has been approved and is awaiting fulfillment.`,
           id,
           'requisition',
         ),
@@ -522,6 +1056,8 @@ export class RequisitionsService {
         `Cannot reject requisition with status "${req.status}".`,
       );
     }
+
+    this.assertNotOwnRequisition(req, supervisorId);
 
     // Same ownership guard as approve() — a Supervisor may only reject the
     // requisitions nominated to them; SYSTEM_ADMIN bypasses per the
@@ -598,6 +1134,35 @@ export class RequisitionsService {
   // fixes: a partial-fulfillment status, per-item fulfillment, or create-time
   // validation that all items on one requisition share a single custodial
   // scope.
+  /**
+   * Who may fulfil or hold this requisition. Never the person who filed it. The
+   * System Administrator only when it is a custodian's own (the fallback);
+   * otherwise the custodian whose asset types the items are.
+   */
+  private async assertMayFulfil(
+    req: RequisitionEntity,
+    actorId: string,
+    actorRole: UserRole,
+  ): Promise<void> {
+    if (req.requestedById === actorId) {
+      throw new ForbiddenException(
+        'You cannot fulfil or hold a requisition you filed yourself. Another custodian, or the System Administrator, handles it.',
+      );
+    }
+    if (actorRole === UserRole.SYSTEM_ADMIN) {
+      const requester = await this.usersService
+        .findOne(req.requestedById)
+        .catch(() => null);
+      if (!requester || !isCustodianOwnRequisition(requester.role, req.items)) {
+        throw new ForbiddenException(
+          "The System Administrator fulfils only a custodian's own requisition; this one is handled by the custodian queue.",
+        );
+      }
+      return;
+    }
+    this.assertItemsInScope(req, actorRole);
+  }
+
   private assertItemsInScope(req: RequisitionEntity, userRole: UserRole): void {
     const scope = resolveAssetTypeScope(userRole);
     if (!scope) return; // unscoped role — nothing to enforce
@@ -623,7 +1188,7 @@ export class RequisitionsService {
     ipAddress: string,
   ): Promise<RequisitionEntity> {
     const req = await this.findOne(id);
-    this.assertItemsInScope(req, userRole);
+    await this.assertMayFulfil(req, itPersonnelId, userRole);
 
     if (req.status !== RequisitionStatus.PENDING_FULFILLMENT) {
       throw new BadRequestException(
@@ -668,7 +1233,7 @@ export class RequisitionsService {
     ipAddress: string,
   ): Promise<RequisitionEntity> {
     const req = await this.findOne(id);
-    this.assertItemsInScope(req, userRole);
+    await this.assertMayFulfil(req, itPersonnelId, userRole);
 
     const fulfillableStatuses = [
       RequisitionStatus.PENDING_FULFILLMENT,
@@ -679,6 +1244,26 @@ export class RequisitionsService {
         `Cannot fulfill requisition with status "${req.status}".`,
       );
     }
+
+    // Replacement: the new unit is checked before anything is written, so a
+    // wrong pick leaves the old unit with its holder and the request open.
+    const newUnit =
+      req.requisitionType === RequisitionType.REPLACEMENT
+        ? await this.replacementUnitFor(req, dto)
+        : null;
+
+    // Replacement: the old unit comes back as the new one goes out. Runs
+    // before the fulfillment write so a refused lifecycle transition leaves
+    // the requisition untouched and the custodian sees why.
+    const surrender =
+      req.requisitionType === RequisitionType.REPLACEMENT
+        ? await this.surrenderReplacedAsset(
+            req,
+            itPersonnelId,
+            userRole,
+            ipAddress,
+          )
+        : null;
 
     // Item-linking + supply decrement + status flip run in one transaction:
     // an insufficient-stock throw on any IES line rolls the whole fulfillment
@@ -691,13 +1276,34 @@ export class RequisitionsService {
       const itemRepo = em.getRepository(RequisitionItemEntity);
       const assetRepo = em.getRepository(AssetEntity);
 
-      if (dto.fulfilledItems?.length) {
-        for (const { requisitionItemId, assetId } of dto.fulfilledItems) {
-          // Reject a fulfilledItems entry naming an id that is not on THIS
-          // requisition before any write — otherwise the itemRepo.update below
-          // would overwrite the fulfilledAssetId link on another requisition's
-          // item. Thrown inside the transaction, so it rolls the whole
-          // fulfillment back (consistent with the insufficient-stock 400).
+      // Reject a fulfilledItems entry naming an id that is not on THIS
+      // requisition before any write — otherwise the itemRepo.update below
+      // would overwrite the fulfilledAssetId link on another requisition's
+      // item. Thrown inside the transaction, so it rolls the whole
+      // fulfillment back (consistent with the insufficient-stock 400).
+      for (const { requisitionItemId } of dto.fulfilledItems ?? []) {
+        if (!req.items.some((i) => i.id === requisitionItemId)) {
+          throw new BadRequestException(
+            `Requisition item "${requisitionItemId}" does not belong to this requisition.`,
+          );
+        }
+      }
+
+      // A supply (IES) line must leave stock. The custodian may pick the stock
+      // record; when none is named — the Fulfil screen sends no pick for an
+      // ordinary supply requisition — the server finds it. Without this the
+      // request closed with nothing deducted, so stock never moved and the
+      // low-stock alerts never fired.
+      const links = [...(dto.fulfilledItems ?? [])];
+      for (const item of req.items) {
+        if (item.assetClass !== AssetClass.IES) continue;
+        if (links.some((l) => l.requisitionItemId === item.id)) continue;
+        const stock = await this.resolveSupplyStock(assetRepo, item);
+        links.push({ requisitionItemId: item.id, assetId: stock.id });
+      }
+
+      if (links.length) {
+        for (const { requisitionItemId, assetId } of links) {
           const reqItem = req.items.find((i) => i.id === requisitionItemId);
           if (!reqItem) {
             throw new BadRequestException(
@@ -761,6 +1367,20 @@ export class RequisitionsService {
       return em.getRepository(RequisitionEntity).save(req);
     });
 
+    // Replacement: hand the new unit to the requester in the same step (PAR /
+    // ICS follow from the asset page as for any issuance). Pre-validated above,
+    // so a failure here is unexpected — logged, and the custodian can still
+    // issue it from Custody & Issuance.
+    const issued = newUnit
+      ? await this.issueReplacementUnit(
+          req,
+          newUnit,
+          itPersonnelId,
+          userRole,
+          ipAddress,
+        )
+      : false;
+
     // After the transaction commits: give each decremented supply an immediate
     // low-stock check rather than waiting for the daily sweep. Runs outside the
     // txn, so a failure here (e.g. notify infra down inside _sendLowStockAlert)
@@ -783,7 +1403,13 @@ export class RequisitionsService {
       req.requestedById,
       NotificationAlertType.REQUISITION_FULFILLED,
       'Requisition Fulfilled',
-      `Your requisition ${req.requestNumber} has been fulfilled by IT Personnel. Please collect your item(s).`,
+      `Your requisition ${req.requestNumber} has been fulfilled by the ${FULFILLER_LABEL[userRole] ?? 'custodian'}. Please collect your item(s).` +
+        (issued && newUnit
+          ? ` "${newUnit.itemDescription}"${newUnit.propertyNumber ? ` (${newUnit.propertyNumber})` : ''} is now issued to you.`
+          : '') +
+        (surrender?.outcome === 'returned'
+          ? ` "${surrender.itemDescription}" has been received back and is no longer assigned to you.`
+          : ''),
       id,
       'requisition',
     );
@@ -801,10 +1427,217 @@ export class RequisitionsService {
         notes: dto.notes,
         fulfilledItems: dto.fulfilledItems,
         stockDecrements,
+        ...(surrender ? { replacedAsset: surrender } : {}),
+        ...(newUnit ? { issuedAssetId: newUnit.id, issued } : {}),
       },
     });
 
     return saved;
+  }
+
+  /**
+   * The stock record a supply line is drawn from when the custodian did not
+   * name one: same item (case and spacing ignored), same asset type, still
+   * available. Oldest delivery first (FIFO), and the first record that holds
+   * the whole quantity — a line is drawn from one record. The caller re-reads
+   * the chosen row under a write lock, so a race cannot overdraw it.
+   */
+  private async resolveSupplyStock(
+    assetRepo: Repository<AssetEntity>,
+    item: RequisitionItemEntity,
+  ): Promise<AssetEntity> {
+    const sameItem = (a: AssetEntity) =>
+      normalizeItemName(a.itemDescription) ===
+      normalizeItemName(item.itemDescription);
+    const received = (a: AssetEntity) =>
+      new Date(a.dateOfDelivery ?? a.createdAt).getTime();
+
+    const matches = (
+      await assetRepo.find({
+        where: {
+          assetClass: AssetClass.IES,
+          assetType: item.assetType,
+          status: AssetStatus.AVAILABLE,
+        },
+      })
+    )
+      .filter(sameItem)
+      .sort((a, b) => received(a) - received(b));
+
+    if (matches.length === 0) {
+      throw new BadRequestException(
+        `No stock on record for "${item.itemDescription}". Register the stock first, or place the requisition on hold.`,
+      );
+    }
+    const enough = matches.find((a) => a.quantity >= item.quantity);
+    if (!enough) {
+      const largest = Math.max(...matches.map((a) => a.quantity));
+      throw new BadRequestException(
+        `Insufficient stock: requested ${item.quantity}, available ${largest}`,
+      );
+    }
+    return enough;
+  }
+
+  /**
+   * The unit a replacement is fulfilled with, when the custodian picked one:
+   * an available unit of the same asset type, not the old unit itself.
+   * Returns null when no unit was linked (it is then issued separately).
+   */
+  private async replacementUnitFor(
+    req: RequisitionEntity,
+    dto: FulfillRequisitionDto,
+  ): Promise<AssetEntity | null> {
+    const [item] = req.items;
+    const link = dto.fulfilledItems?.find(
+      (f) => f.requisitionItemId === item?.id,
+    );
+    if (!item || !link) return null;
+    if (link.assetId === req.replacedAssetId) {
+      throw new BadRequestException(
+        'The replacement must be a different unit from the one being replaced.',
+      );
+    }
+    const unit = await this.assetsService.findOne(link.assetId);
+    if (unit.assetType !== item.assetType) {
+      throw new BadRequestException(
+        `"${unit.itemDescription}" is ${unit.assetType} — this request needs an ${item.assetType} unit.`,
+      );
+    }
+    if (unit.assetClass === AssetClass.IES) {
+      throw new BadRequestException(
+        'A replacement is a unit asset, not a supply item.',
+      );
+    }
+    if (unit.status !== AssetStatus.AVAILABLE) {
+      throw new BadRequestException(
+        `"${unit.itemDescription}" is ${String(unit.status).replaceAll('_', ' ')}, not available.`,
+      );
+    }
+    return unit;
+  }
+
+  private async issueReplacementUnit(
+    req: RequisitionEntity,
+    unit: AssetEntity,
+    userId: string,
+    userRole: UserRole,
+    ipAddress: string,
+  ): Promise<boolean> {
+    try {
+      await this.assetsService.updateLifecycle(
+        unit.id,
+        {
+          status: AssetStatus.ISSUED,
+          custodianId: req.requestedById,
+          notes: `${req.requestNumber}: issued as a replacement`,
+        },
+        userId,
+        userRole,
+        ipAddress,
+        resolveAssetTypeScope(userRole),
+      );
+      return true;
+    } catch (e) {
+      this.logger.error(
+        `${req.requestNumber}: could not issue replacement unit ${unit.id}`,
+        e instanceof Error ? e.stack : String(e),
+      );
+      return false;
+    }
+  }
+
+  /** Requester-facing hand-over instructions for an approved replacement. */
+  private async replacementHandoverNote(req: RequisitionEntity) {
+    if (
+      req.requisitionType !== RequisitionType.REPLACEMENT ||
+      !req.replacedAssetId
+    ) {
+      return '';
+    }
+    const old = await this.assetsService
+      .findOne(req.replacedAssetId)
+      .catch(() => null);
+    if (!old || old.status === AssetStatus.FLAGGED_FOR_DISPOSAL) return '';
+    const parts = old.components
+      ? ` with its components (${old.components})`
+      : '';
+    return ` Bring your current "${old.itemDescription}"${parts} when you collect the replacement — it will be returned to custody.`;
+  }
+
+  /**
+   * On fulfilling a replacement, take the old unit back: an issued asset still
+   * held by the requester becomes `returned` (custodian cleared) and its COA
+   * receipt is generated, linked to this requisition. A lost/stolen or
+   * disposal-flagged unit has nothing to hand back and stays on the holder's
+   * record until COA relief. A receipt failure is logged, never thrown — the
+   * custodian can generate it from Reports & Forms.
+   */
+  private async surrenderReplacedAsset(
+    req: RequisitionEntity,
+    userId: string,
+    userRole: UserRole,
+    ipAddress: string,
+  ): Promise<{
+    assetId: string;
+    itemDescription: string;
+    outcome: 'returned' | 'kept' | 'unchanged';
+  } | null> {
+    if (!req.replacedAssetId) return null;
+    const old = await this.assetsService
+      .findOne(req.replacedAssetId)
+      .catch(() => null);
+    if (!old) return null;
+    const summary = { assetId: old.id, itemDescription: old.itemDescription };
+
+    if (
+      old.custodianId !== req.requestedById ||
+      old.status !== AssetStatus.ISSUED
+    ) {
+      return {
+        ...summary,
+        outcome:
+          old.status === AssetStatus.FLAGGED_FOR_DISPOSAL
+            ? 'kept'
+            : 'unchanged',
+      };
+    }
+
+    await this.assetsService.updateLifecycle(
+      old.id,
+      {
+        status: AssetStatus.RETURNED,
+        notes: `${req.requestNumber}: surrendered on replacement`,
+      },
+      userId,
+      userRole,
+      ipAddress,
+      resolveAssetTypeScope(userRole),
+    );
+
+    await this.reportsService
+      .generateFormRecord(
+        {
+          formType:
+            old.assetClass === AssetClass.PPE
+              ? OfficialFormType.RECEIPT_RETURNED_PROPERTY
+              : OfficialFormType.RECEIPT_RETURNED_SEP,
+          assetId: old.id,
+          requisitionId: req.id,
+          returneeId: req.requestedById,
+        },
+        userId,
+        userRole,
+        ipAddress,
+      )
+      .catch((e: unknown) =>
+        this.logger.error(
+          `${req.requestNumber}: could not generate the return receipt for ${old.id}`,
+          e instanceof Error ? e.stack : String(e),
+        ),
+      );
+
+    return { ...summary, outcome: 'returned' };
   }
 
   // ── SLA breach check — called by a scheduled job (SchedulerService) ───────
@@ -869,12 +1702,9 @@ export class RequisitionsService {
             const candidate = await this.usersService
               .findOne(altId)
               .catch(() => null);
-            if (
-              candidate &&
-              candidate.isActive &&
-              candidate.role === UserRole.SUPERVISOR &&
-              !this.usersService.isUnavailable(candidate)
-            ) {
+            // Never hand a request to its own requester (e.g. supervisor A's
+            // request sits with B, and B's designated alternate is A).
+            if (this.isUsableApprover(candidate, req.requestedById)) {
               alt = candidate;
             }
           }

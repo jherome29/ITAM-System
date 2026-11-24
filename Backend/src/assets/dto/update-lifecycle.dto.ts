@@ -52,9 +52,22 @@ export class UpdateLifecycleDto {
   @IsDateString()
   expectedReturnDate?: string; // set on ISSUED for loaned assets; drives OVERDUE_RETURN
 
+  // Used only when a transferred asset arrives (transferred → available): the
+  // office/section and room it now sits in, so the registry matches reality.
+  // Ignored on every other transition.
   @IsOptional()
-  @IsDateString({ strict: true })
+  @IsString()
+  @IsNotEmpty()
+  officeOrSection?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  officeLocation?: string;
+
+  @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsDateString({ strict: true })
   disposalDate?: string;
 
   @IsOptional()
@@ -64,7 +77,7 @@ export class UpdateLifecycleDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(160)
+  @MaxLength(200)
   disposalReference?: string;
 
   @IsOptional()

@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { formatDate } from '@/lib/dates';
 import {
   Archive, ArrowRight, Bell, Boxes, Building2, CheckCircle2, ClipboardList, Laptop, Package, ScanLine, Wrench,
 } from 'lucide-react';
@@ -14,7 +16,6 @@ const basePath = '/asset-custodian';
 const queuePath = `${basePath}/fulfillment`;
 const queuePreviewSize = 5;
 const numberFormat = new Intl.NumberFormat('en-PH');
-const dateFormat = new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'Asia/Manila' });
 
 const inventoryCategories = [
   { type: 'ICT', label: 'IT Inventory', path: 'it-inventory', icon: Laptop, color: 'bg-blue-600' },
@@ -50,13 +51,9 @@ export function ItAssetCustodianDashboard() {
 
   return (
     <div className="@container mx-auto flex w-full max-w-[1480px] flex-col gap-4 pb-5 sm:gap-5">
-      <header className="relative isolate overflow-hidden rounded-2xl bg-linear-to-r from-[#0b1e35] via-[#122e54] to-[#164680] px-5 py-6 text-white shadow-sm sm:px-7 sm:py-8">
+      <div className="relative isolate overflow-hidden rounded-lg bg-linear-to-r from-navy via-brand to-blue-900 px-5 py-6 text-white shadow-sm sm:px-7 sm:py-8">
         <div aria-hidden="true" className="pointer-events-none absolute -top-48 -right-28 -z-10 size-[30rem] rounded-full border border-white/15 bg-white/5 ring-[54px] ring-white/5" />
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold tracking-[0.18em] text-blue-200 uppercase">Asset Custodian</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Good day, {user?.firstName ?? 'there'}</h1>
-          </div>
+        <PageHeader inverse eyebrow="Asset Custodian" title={`Good day, ${user?.firstName ?? 'there'}`} action={
           <div className="flex flex-wrap gap-2.5 text-sm font-semibold">
             <Link href={`${basePath}/qr-scanner`} className="inline-flex items-center gap-2 rounded-lg border border-white/30 px-3.5 py-2.5 transition hover:bg-white/15">
               <ScanLine aria-hidden="true" className="size-4" />
@@ -67,15 +64,15 @@ export function ItAssetCustodianDashboard() {
               <ArrowRight aria-hidden="true" className="size-4" />
             </Link>
           </div>
-        </div>
-      </header>
+        } />
+      </div>
       <DashboardError message={error} />
 
       {loading && <p role="status" className="sr-only">Loading dashboard data</p>}
       <section aria-label="Dashboard totals" aria-busy={loading} className="grid grid-cols-2 gap-4 sm:gap-5 @xl:grid-cols-12 @[68rem]:grid-cols-5">
         {metrics.map(({ label, value, icon: Icon, tone, href }, index) => (
           <Link key={label} href={href}
-            className={`flex min-h-24 min-w-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-4 shadow-sm transition hover:border-blue-300 sm:gap-3 sm:px-4 @xl:col-span-4 @[68rem]:col-span-1 ${index === 3
+            className={`flex min-h-24 min-w-0 items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-4 shadow-sm transition hover:border-blue-300 sm:gap-3 sm:px-4 @xl:col-span-4 @[68rem]:col-span-1 ${index === 3
               ? '@xl:col-start-3 @[68rem]:col-start-auto'
               : index === 4 ? 'col-span-2' : ''}`}
           >
@@ -93,7 +90,7 @@ export function ItAssetCustodianDashboard() {
       </section>
 
       <div className="grid gap-4 sm:gap-5 @[52rem]:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
-        <section aria-labelledby="fulfillment-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <section aria-labelledby="fulfillment-heading" className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4 sm:px-6">
             <div>
               <h2 id="fulfillment-heading" className="text-lg font-bold tracking-tight text-slate-950">Fulfillment queue</h2>
@@ -127,7 +124,7 @@ export function ItAssetCustodianDashboard() {
                     {Number.isFinite(requiredDate) && (
                       <div className="shrink-0 pl-12 text-xs text-slate-600 sm:pl-0 sm:text-right">
                         <span className="sm:block">Required by </span>
-                        <time dateTime={request.requiredDate} className="font-semibold text-slate-900">{dateFormat.format(requiredDate)}</time>
+                        <time dateTime={request.requiredDate} className="font-semibold text-slate-900">{formatDate(request.requiredDate)}</time>
                       </div>
                     )}
                   </li>
@@ -147,7 +144,7 @@ export function ItAssetCustodianDashboard() {
         </section>
 
         <div className="flex min-w-0 flex-col gap-4 sm:gap-5">
-          <section aria-labelledby="inventory-heading" className="flex flex-1 flex-col rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm sm:px-6">
+          <section aria-labelledby="inventory-heading" className="flex flex-1 flex-col rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm sm:px-6">
             <h2 id="inventory-heading" className="text-lg font-bold tracking-tight text-slate-950">Inventory breakdown</h2>
             <p className="mt-0.5 text-sm text-slate-600">Records by inventory type</p>
             <ul className="mt-3 flex flex-1 flex-col justify-evenly gap-1">
@@ -177,8 +174,8 @@ export function ItAssetCustodianDashboard() {
             </ul>
           </section>
 
-          <Link href={`${basePath}/notifications`} className="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm transition hover:border-blue-300 sm:px-6">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-700">
+          <Link href={`${basePath}/notifications`} className="group flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm transition hover:border-blue-300 sm:px-6">
+            <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-700">
               <Bell aria-hidden="true" className="size-5" />
             </span>
             <span className="min-w-0 flex-1">

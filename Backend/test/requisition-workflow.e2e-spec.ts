@@ -1,11 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
+import { createTestApp } from './create-test-app';
 import { UserEntity } from '../src/users/entities/user.entity';
 import { AssetEntity } from '../src/assets/entities/asset.entity';
 import {
@@ -24,6 +26,7 @@ describe('Requisition workflow (e2e)', () => {
   let app: INestApplication<App>;
   let userRepo: Repository<UserEntity>;
   let assetRepo: Repository<AssetEntity>;
+  let jwtService: JwtService;
 
   let employeeId: string;
   let supervisorId: string;
@@ -36,12 +39,11 @@ describe('Requisition workflow (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api'); // matches main.ts bootstrap() — not implied by AppModule alone
-    await app.init();
+    app = await createTestApp(moduleFixture);
 
     userRepo = moduleFixture.get(getRepositoryToken(UserEntity));
     assetRepo = moduleFixture.get(getRepositoryToken(AssetEntity));
+    jwtService = moduleFixture.get(JwtService);
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
@@ -214,5 +216,59 @@ describe('Requisition workflow (e2e)', () => {
       .set('Authorization', `Bearer ${employeeToken}`)
       .send({})
       .expect(403);
+  });
+
+  // Request numbers were count()+1 over all years with no lock: simultaneous
+  // submissions drew the same number and the UNIQUE constraint turned the losers
+  // into 500s (6 of 8 failed against the dev database). The 362-user load test
+  // submits requisitions concurrently, so this is a real path.
+  it('gives simultaneous submissions distinct request numbers instead of failing the losers', async () => {
+    // Signed directly rather than via /auth/login: the login throttle window
+    // (10/min) is shared by every e2e spec file. tokenVersion is read fresh
+    // because the earlier tests' logins bumped it.
+    const employee = await userRepo.findOneByOrFail({ id: employeeId });
+    const token = jwtService.sign(
+      {
+        sub: employee.id,
+        employeeId: employee.employeeId,
+        role: employee.role,
+        tokenVersion: employee.tokenVersion,
+      },
+      { secret: process.env.JWT_SECRET, expiresIn: '5m' },
+    );
+
+    const submit = (n: number) =>
+      request(app.getHttpServer())
+        .post('/api/v1/requisitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          requisitionType: 'new',
+          justification: `Concurrent submission ${n}`,
+          requiredDate: new Date(
+            Date.now() + 7 * 24 * 60 * 60 * 1000,
+          ).toISOString(),
+          items: [
+            {
+              assetType: AssetType.ICT,
+              assetClass: AssetClass.PPE,
+              itemDescription: `Concurrent laptop ${n}`,
+              quantity: 1,
+            },
+          ],
+        })
+        .then((res) => res);
+
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => submit(i + 1)),
+    );
+
+    expect(results.map((r) => r.status)).toEqual(Array(8).fill(201));
+    const numbers = results.map((r) => r.body.data.requestNumber as string);
+    expect(new Set(numbers).size).toBe(8);
+    const prefix = `REQ-${new Date().getFullYear()}-`;
+    for (const n of numbers) {
+      expect(n.startsWith(prefix)).toBe(true);
+      expect(n.slice(prefix.length)).toMatch(/^\d{4}$/);
+    }
   });
 });

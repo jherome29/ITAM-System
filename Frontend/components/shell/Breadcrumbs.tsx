@@ -3,21 +3,7 @@
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import { usePathname } from 'next/navigation';
-
-// Path segments that should render fully uppercased rather than title-cased
-// (e.g. "it-asset-custodian" -> "IT Asset Custodian", "qr-scan" -> "QR Scan").
-const ACRONYMS = new Set(['it', 'qr', 'ict', 'sla', 'id', 'par', 'ics', 'ris', 'coa', 'kpi']);
-
-function labelize(segment: string) {
-  return segment
-    .split('-')
-    .map((part) =>
-      ACRONYMS.has(part.toLowerCase())
-        ? part.toUpperCase()
-        : part.charAt(0).toUpperCase() + part.slice(1),
-    )
-    .join(' ');
-}
+import { breadcrumbLabel } from '@/lib/roles/breadcrumb-label';
 
 export function Breadcrumbs() {
   const pathname = usePathname();
@@ -35,9 +21,9 @@ export function Breadcrumbs() {
           <span key={href} className="flex items-center gap-2">
             {index > 0 && <ChevronRight className="h-3.5 w-3.5" />}
             {isLast ? (
-              <span className="font-semibold text-slate-950">{labelize(part)}</span>
+              <span className="font-semibold text-slate-950">{breadcrumbLabel(part)}</span>
             ) : (
-              <Link href={href} className="hover:text-blue-700">{labelize(part)}</Link>
+              <Link href={href} className="hover:text-blue-700">{breadcrumbLabel(part)}</Link>
             )}
           </span>
         );

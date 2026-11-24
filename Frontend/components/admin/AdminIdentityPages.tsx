@@ -1,14 +1,31 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Plus, ShieldCheck, UserCheck, Users } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Plus, RefreshCw, ShieldCheck, UserCheck, Users } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { usersApi, type CreateUserDto, type UpdateUserDto, type User } from '@/lib/api/users';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
+import { auditEventLabel, auditRecordText } from '@/lib/audit-label';
 import { alternateApproverOptions, buildAvailabilityPayload } from '@/lib/users/availability';
 import { ActionMenu, AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from './AdminUi';
+import { formatDateTime } from '@/lib/dates';
+import { DateField } from '@/components/ui/DateField';
+import { buttonClass } from '@/components/ui/buttons';
+import { EmptyRow } from '@/components/ui/EmptyRow';
+import { CenteredModal } from '@/components/ui/CenteredModal';
+import { labelClass } from '@/components/ui/controls';
+import { Notice } from '@/components/ui/Notice';
+import { roleLabel } from '@/lib/assets/asset-history';
+import { Pager } from '@/components/ui/Pager';
+import { collectAllPages } from '@/lib/api/collect-pages';
+import { usePaged } from '@/lib/use-paged';
+
+// The directory is paged by the server (search and role filter run there too), so 362 accounts
+// are one click apart instead of the first 50 being all there is.
+const USERS_PAGE_SIZE = 50;
 
 type IdentitySlug = 'users' | 'roles';
 
@@ -26,7 +43,6 @@ const USER_ROLE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'asset_custodian', label: 'Asset Custodian' },
   { value: 'system_admin', label: 'System Administrator' },
   { value: 'management', label: 'Management' },
-  { value: 'property_officer', label: 'Property Officer' },
 ];
 
 const ROLE_FILTER_OPTIONS = [{ value: 'All', label: 'All roles' }, ...USER_ROLE_OPTIONS];
@@ -73,21 +89,20 @@ function UserAuditHistory({ userId }: Readonly<{ userId: string }>) {
   return (
     <Panel title="Recent activity" detail="Last 20 audit entries performed by this account">
       <div className="divide-y divide-slate-100 px-4">
-        {state === 'loading' && <p className="py-6 text-center text-xs text-slate-400">Loading activity…</p>}
+        {state === 'loading' && <p className="py-6 text-center text-xs text-slate-500">Loading activity…</p>}
         {state === 'error' && <p className="py-6 text-center text-xs text-red-600">Could not load this account&apos;s audit history.</p>}
         {state === 'ready' && logs.length === 0 && (
-          <p className="py-6 text-center text-xs text-slate-400">No audit entries recorded for this account.</p>
+          <p className="py-6 text-center text-xs text-slate-500">No audit entries recorded for this account.</p>
         )}
         {state === 'ready' &&
           logs.map((log) => (
             <div key={log.id} className="py-3">
               <div className="flex items-start justify-between gap-3">
-                <p className="text-sm font-semibold text-slate-900">{log.action.replace(/_/g, ' ')}</p>
-                <span className="whitespace-nowrap text-xs text-slate-500">{new Date(log.timestamp).toLocaleString()}</span>
+                <p className="text-sm font-semibold text-slate-900">{auditEventLabel(log)}</p>
+                <span className="whitespace-nowrap text-xs text-slate-500">{formatDateTime(log.timestamp)}</span>
               </div>
               <p className="mt-1 text-xs text-slate-500">
-                {log.affectedRecordType ?? 'record'}
-                {log.affectedRecordId ? ` ${log.affectedRecordId.slice(0, 8)}…` : ''} · {log.ipAddress || 'no-ip'}
+                {auditRecordText(log)} · {log.ipAddress || 'no-ip'}
               </p>
             </div>
           ))}
@@ -98,24 +113,60 @@ function UserAuditHistory({ userId }: Readonly<{ userId: string }>) {
 
 function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [resetTarget, setResetTarget] = useState<User | null>(null);
+  const [signOutTarget, setSignOutTarget] = useState<User | null>(null);
   const [toast, setToast] = useState('');
+  // Only the newest request may write the list: typing in the search box fires
+  // one per keystroke, and a slow early answer must not replace a later one.
+  const latestFetch = useRef(0);
 
-  const fetchUsers = (q?: string, role?: string) => {
-    usersApi.list(1, 50, q, role)
-      .then((res) => setUsers(res.data.data))
-      .catch(() => setToast('Failed to load users.'))
-      .finally(() => setLoading(false));
-  };
+  const fetchUsers = useCallback((q?: string, role?: string, pageNo = 1) => {
+    const ticket = ++latestFetch.current;
+    usersApi.list(pageNo, USERS_PAGE_SIZE, q, role)
+      .then((res) => {
+        if (ticket !== latestFetch.current) return;
+        setUsers(res.data.data);
+        setTotal(res.data.total);
+        setPage(pageNo);
+      })
+      .catch(() => setToast('Could not load users.'))
+      .finally(() => {
+        if (ticket === latestFetch.current) setLoading(false);
+      });
+  }, []);
 
-  useEffect(() => { fetchUsers(); }, []);
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
   const roleParam = roleFilter === 'All' ? undefined : roleFilter;
+
+  // Lock-outs, sign-ins and other administrators change this list while it is
+  // open. It used to be read once on arrival, so a locked account could show as
+  // fine until the page was reloaded: re-read it whenever the tab comes back to
+  // the front, and on demand.
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') fetchUsers(search || undefined, roleParam, page);
+    };
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => document.removeEventListener('visibilitychange', refreshWhenVisible);
+  }, [fetchUsers, search, roleParam, page]);
+
+  const handleRefresh = () => {
+    setLoading(true);
+    fetchUsers(search || undefined, roleParam, page);
+  };
+
+  const handlePage = (next: number) => {
+    setLoading(true);
+    fetchUsers(search || undefined, roleParam, next);
+  };
 
   const handleSearchChange = (value: string) => {
     setSearch(value);
@@ -138,7 +189,7 @@ function UsersPage() {
       setUsers((current) => current.map((user) => user.id === id ? { ...user, isActive: false } : user));
       setToast(`${name} account deactivated.`);
     } catch {
-      setToast(`Failed to deactivate ${name}.`);
+      setToast(`Could not deactivate ${name}.`);
     }
   };
 
@@ -148,7 +199,7 @@ function UsersPage() {
       fetchUsers(search || undefined, roleParam);
       setToast(`${name} reactivated.`);
     } catch {
-      setToast(`Failed to reactivate ${name}.`);
+      setToast(`Could not reactivate ${name}.`);
     }
   };
 
@@ -158,26 +209,25 @@ function UsersPage() {
       fetchUsers(search || undefined, roleParam);
       setToast(`${name} unlocked — they can sign in again.`);
     } catch {
-      setToast(`Failed to unlock ${name}.`);
+      setToast(`Could not unlock ${name}.`);
     }
   };
 
   const handleRevokeSessions = async (id: string, name: string) => {
-    if (!window.confirm(`Sign ${name} out of every device now? Their password is unchanged.`)) return;
     try {
       await usersApi.revokeSessions(id);
       setToast(`${name} signed out of all sessions.`);
     } catch {
-      setToast(`Failed to sign ${name} out.`);
+      setToast(`Could not sign ${name} out.`);
     }
   };
 
-  return <div className="space-y-4">
-    <AdminPageHeader title="Users & Accounts" detail="Manage the identity data required for AIMRS access and account lifecycle." action={<PrimaryButton icon={Plus} onClick={() => setCreating(true)}>Create account</PrimaryButton>} />
+  return <div className="space-y-5">
+    <AdminPageHeader title="Users & Accounts" detail="Manage the identity data required for AIMRS access and account lifecycle." action={<div className="flex flex-wrap gap-2"><SecondaryButton icon={RefreshCw} onClick={handleRefresh}>Refresh</SecondaryButton><PrimaryButton icon={Plus} onClick={() => setCreating(true)}>Create account</PrimaryButton></div>} />
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      <MetricCard label="Total accounts" value={String(users.length)} detail="" tone="blue" icon={Users} />
-      <MetricCard label="Active" value={String(users.filter((user) => user.isActive).length)} detail="" tone="green" icon={UserCheck} />
-      <MetricCard label="Inactive" value={String(users.filter((user) => !user.isActive).length)} detail="" tone="red" icon={ShieldCheck} />
+      <MetricCard label="Total accounts" value={String(total)} detail={roleFilter === 'All' && !search ? '' : 'Matching the filter'} tone="blue" icon={Users} />
+      <MetricCard label="Active" value={String(users.filter((user) => user.isActive).length)} detail={total > USERS_PAGE_SIZE ? 'On this page' : ''} tone="green" icon={UserCheck} />
+      <MetricCard label="Inactive" value={String(users.filter((user) => !user.isActive).length)} detail={total > USERS_PAGE_SIZE ? 'On this page' : ''} tone="red" icon={ShieldCheck} />
     </div>
     <SearchToolbar
       value={search}
@@ -187,11 +237,24 @@ function UsersPage() {
       filterOptions={ROLE_FILTER_OPTIONS}
       onFilterChange={handleRoleFilterChange}
     />
-    <Panel title="Account Directory" detail={`${users.length} accounts shown - deactivation preserves audit history`}>
-      {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>User</th><th className={thClass}>Office</th><th className={thClass}>Role</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{users.length === 0 ? <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-400">No accounts found.</td></tr> : users.map((user) => <tr key={user.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelectedId(user.id)} className="text-left"><span className="block font-bold text-slate-950">{userName(user)}</span><span className="text-xs text-slate-500">{user.employeeId} - {user.email}</span></button></td><td className={tdClass}>{user.division} / {user.officeOrSection}</td><td className={tdClass}>{user.role}</td><td className={tdClass}><AccountStatusChip user={user} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View account', onClick: () => setSelectedId(user.id) }, { label: 'Reset password', onClick: () => setResetTarget(user) }, ...(isLockedNow(user) ? [{ label: 'Unlock account', onClick: () => handleUnlock(user.id, userName(user)) }] : []), ...(user.isActive ? [{ label: 'Force sign-out', onClick: () => handleRevokeSessions(user.id, userName(user)) }] : []), user.isActive ? { label: 'Deactivate account', danger: true, onClick: () => handleDeactivate(user.id, userName(user)) } : { label: 'Reactivate account', onClick: () => handleReactivate(user.id, userName(user)) }]} /></td></tr>)}</tbody></table></TableWrap>}
+    <Panel title="Account Directory" detail={`${users.length} of ${total} accounts shown - deactivation preserves audit history`}>
+      {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>User</th><th className={thClass}>Office</th><th className={thClass}>Role</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead><tbody>{users.length === 0 ? <EmptyRow colSpan={5}>No accounts found.</EmptyRow> : users.map((user) => <tr key={user.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelectedId(user.id)} className="text-left"><span className="block font-bold text-slate-950">{userName(user)}</span><span className="text-xs text-slate-500">{user.employeeId} - {user.email}</span></button></td><td className={tdClass}>{user.division} / {user.officeOrSection}</td><td className={tdClass}>{roleLabel(user.role)}</td><td className={tdClass}><AccountStatusChip user={user} /></td><td className={`${tdClass} text-right`}><ActionMenu actions={[{ label: 'View account', onClick: () => setSelectedId(user.id) }, { label: 'Reset password', onClick: () => setResetTarget(user) }, ...(isLockedNow(user) ? [{ label: 'Unlock account', onClick: () => handleUnlock(user.id, userName(user)) }] : []), ...(user.isActive ? [{ label: 'Force sign-out', onClick: () => setSignOutTarget(user) }] : []), user.isActive ? { label: 'Deactivate account', danger: true, onClick: () => handleDeactivate(user.id, userName(user)) } : { label: 'Reactivate account', onClick: () => handleReactivate(user.id, userName(user)) }]} /></td></tr>)}</tbody></table></TableWrap>}
+      <Pager page={page} total={total} pageSize={USERS_PAGE_SIZE} onPage={handlePage} noun="accounts" />
     </Panel>
-    <DetailDrawer open={Boolean(selected)} title={selected ? userName(selected) : 'Account details'} onClose={() => setSelectedId(null)}>{selected && <div className="space-y-5"><div className="grid grid-cols-2 gap-3">{[['Employee ID', selected.employeeId], ['Account ID', selected.id], ['Email', selected.email], ['Role', selected.role], ['Division', selected.division], ['Office / Section', selected.officeOrSection]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>)}</div><Panel title="Account status"><div className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Status</span><AccountStatusChip user={selected} /></div>{isLockedNow(selected) && <div className="flex items-center justify-between"><span className="text-sm text-slate-600">Locked until</span><span className="text-sm font-semibold text-slate-900">{new Date(selected.lockedUntil as string).toLocaleString()}</span></div>}{selected.failedLoginAttempts > 0 && <div className="flex items-center justify-between"><span className="text-sm text-slate-600">Failed sign-ins</span><span className="text-sm font-semibold text-slate-900">{selected.failedLoginAttempts}</span></div>}</div></Panel>{selected.role === 'supervisor' && <ApprovalRoutingPanel key={selected.id} user={selected} onSaved={(u) => setUsers((prev) => prev.map((x) => (x.id === u.id ? u : x)))} />}<UserAuditHistory key={selected.id} userId={selected.id} /><div className="flex flex-wrap gap-2">{isLockedNow(selected) && <SecondaryButton onClick={() => handleUnlock(selected.id, userName(selected))}>Unlock account</SecondaryButton>}<SecondaryButton onClick={() => setResetTarget(selected)}>Reset password</SecondaryButton>{selected.isActive && <SecondaryButton onClick={() => handleRevokeSessions(selected.id, userName(selected))}>Force sign-out</SecondaryButton>}{selected.isActive ? <SecondaryButton onClick={() => handleDeactivate(selected.id, userName(selected))}>Deactivate account</SecondaryButton> : <SecondaryButton onClick={() => handleReactivate(selected.id, userName(selected))}>Reactivate account</SecondaryButton>}</div><p className="text-xs text-slate-500">Actions call the live users API and create append-only audit events.</p></div>}</DetailDrawer>
-    <DetailDrawer open={creating} title="Create account" onClose={() => setCreating(false)}><AccountForm onSave={(user) => { setUsers((current) => [user, ...current]); setCreating(false); setToast(`${userName(user)} was added to the account directory.`); }} /></DetailDrawer>
+    <DetailDrawer open={Boolean(selected)} title={selected ? userName(selected) : 'Account details'} onClose={() => setSelectedId(null)}>{selected && <div className="space-y-5"><div className="grid grid-cols-2 gap-3">{[['Employee ID', selected.employeeId], ['Account ID', selected.id], ['Email', selected.email], ['Role', selected.role], ['Division', selected.division], ['Office / Section', selected.officeOrSection]].map(([label, value]) => <div key={label} className="border border-slate-200 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>)}</div><Panel title="Account status"><div className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="text-sm text-slate-600">Status</span><AccountStatusChip user={selected} /></div>{isLockedNow(selected) && <div className="flex items-center justify-between"><span className="text-sm text-slate-600">Locked until</span><span className="text-sm font-semibold text-slate-900">{formatDateTime(selected.lockedUntil as string)}</span></div>}{selected.failedLoginAttempts > 0 && <div className="flex items-center justify-between"><span className="text-sm text-slate-600">Failed sign-ins</span><span className="text-sm font-semibold text-slate-900">{selected.failedLoginAttempts}</span></div>}</div></Panel>{selected.role === 'supervisor' && <ApprovalRoutingPanel key={selected.id} user={selected} onSaved={(u) => setUsers((prev) => prev.map((x) => (x.id === u.id ? u : x)))} />}<UserAuditHistory key={selected.id} userId={selected.id} /><div className="flex flex-wrap gap-2">{isLockedNow(selected) && <SecondaryButton onClick={() => handleUnlock(selected.id, userName(selected))}>Unlock account</SecondaryButton>}<SecondaryButton onClick={() => setResetTarget(selected)}>Reset password</SecondaryButton>{selected.isActive && <SecondaryButton onClick={() => setSignOutTarget(selected)}>Force sign-out</SecondaryButton>}{selected.isActive ? <SecondaryButton onClick={() => handleDeactivate(selected.id, userName(selected))}>Deactivate account</SecondaryButton> : <SecondaryButton onClick={() => handleReactivate(selected.id, userName(selected))}>Reactivate account</SecondaryButton>}</div><p className="text-xs text-slate-500">Actions call the live users API and create append-only audit events.</p></div>}</DetailDrawer>
+    <DetailDrawer open={creating} title="Create account" onClose={() => setCreating(false)}><AccountForm onSave={(user) => { setUsers((current) => [user, ...current]); setTotal((count) => count + 1); setCreating(false); setToast(`${userName(user)} was added to the account directory.`); }} /></DetailDrawer>
+    <ConfirmDialog
+      open={Boolean(signOutTarget)}
+      title={signOutTarget ? `Sign ${userName(signOutTarget)} out?` : 'Sign out'}
+      detail="They are signed out of every device now and must sign in again. Their password and account stay as they are."
+      confirmLabel="Force sign-out"
+      onCancel={() => setSignOutTarget(null)}
+      onConfirm={() => {
+        const target = signOutTarget;
+        setSignOutTarget(null);
+        if (target) void handleRevokeSessions(target.id, userName(target));
+      }}
+    />
     <PasswordResetDialog key={resetTarget?.id ?? 'none'} user={resetTarget} onClose={() => setResetTarget(null)} onDone={(name) => setToast(`Password reset for ${name}. They have been signed out of all sessions.`)} />
     <Toast message={toast} />
   </div>;
@@ -230,54 +293,54 @@ function PasswordResetDialog({ user, onClose, onDone }: Readonly<{ user: User | 
       onClose();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
-      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to reset password.'));
+      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Could not reset password.'));
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4">
-      <section className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl">
-        <h2 className="text-lg font-bold text-slate-950">Reset password</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Set a new password for <span className="font-semibold">{name}</span>. They will be signed out of every session and must sign in with the new password.
-        </p>
-        <form className="mt-4 space-y-3" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-          <div>
-            <label htmlFor="reset-password" className="mb-1 block text-xs font-bold text-slate-600">New password</label>
-            <div className="flex gap-2">
-              <input
-                id="reset-password"
-                type={show ? 'text' : 'password'}
-                value={value}
-                onChange={(event) => setValue(event.target.value)}
-                autoComplete="new-password"
-                autoFocus
-                className={inputClass}
-              />
-              <button type="button" onClick={() => setShow((current) => !current)} className="rounded-md border border-slate-200 px-3 text-xs font-bold text-slate-600 hover:bg-slate-50">
-                {show ? 'Hide' : 'Show'}
-              </button>
-            </div>
-          </div>
-          <ul className="space-y-1 text-xs">
-            {checks.map((check) => (
-              <li key={check.label} className={check.ok ? 'text-green-700' : 'text-slate-500'}>
-                <span aria-hidden="true">{check.ok ? '✓' : '○'}</span> {check.label}
-              </li>
-            ))}
-          </ul>
-          {error && <p className="text-sm text-red-700">{error}</p>}
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={onClose} className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Cancel</button>
-            <button type="submit" disabled={!valid || submitting} className="rounded-md bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50">
-              {submitting ? 'Resetting…' : 'Reset password'}
+    <CenteredModal
+      open
+      size="sm"
+      title="Reset password"
+      description={`Set a new password for ${name}. They will be signed out of every session and must sign in with the new password.`}
+      onClose={onClose}
+    >
+      <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+        <div>
+          <label htmlFor="reset-password" className={labelClass}>New password</label>
+          <div className="flex gap-2">
+            <input
+              id="reset-password"
+              type={show ? 'text' : 'password'}
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              autoComplete="new-password"
+              autoFocus
+              className={inputClass}
+            />
+            <button type="button" onClick={() => setShow((current) => !current)} className={buttonClass({ variant: 'secondary' })}>
+              {show ? 'Hide' : 'Show'}
             </button>
           </div>
-        </form>
-      </section>
-    </div>
+        </div>
+        <ul className="space-y-1 text-sm">
+          {checks.map((check) => (
+            <li key={check.label} className={check.ok ? 'text-emerald-700' : 'text-slate-600'}>
+              <span aria-hidden="true">{check.ok ? '✓' : '○'}</span> {check.label}
+            </li>
+          ))}
+        </ul>
+        {error && <Notice tone="red">{error}</Notice>}
+        <div className="flex justify-end gap-2 pt-1">
+          <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
+          <PrimaryButton type="submit" disabled={!valid || submitting}>
+            {submitting ? 'Resetting…' : 'Reset password'}
+          </PrimaryButton>
+        </div>
+      </form>
+    </CenteredModal>
   );
 }
 
@@ -305,7 +368,7 @@ function AccountForm({ onSave }: Readonly<{ onSave: (user: User) => void }>) {
       onSave(res.data);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to create account.'));
+      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Could not create account.'));
     } finally {
       setSubmitting(false);
     }
@@ -401,7 +464,7 @@ function ApprovalRoutingPanel({ user, onSaved }: Readonly<{ user: User; onSaved?
         </label>
         <label className="block text-sm">
           <span className="mb-1 block font-bold text-slate-600">Unavailable until (optional)</span>
-          <input type="date" className={inputClass} value={until} onChange={(e) => setUntil(e.target.value)} />
+          <DateField value={until} onChange={(e) => setUntil(e.target.value)} />
         </label>
         <SecondaryButton onClick={save} disabled={saving}>Save approval routing</SecondaryButton>
         {msg && <p className="text-sm text-green-700">{msg}</p>}
@@ -420,15 +483,17 @@ function RolesPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
 
   useEffect(() => {
-    usersApi.list(1, 100)
-      .then((res) => setUsers(res.data.data))
-      .catch(() => setToast('Failed to load users.'))
+    // Every account: with only the first 100 loaded, anyone after them could not be given a role.
+    collectAllPages<User>((page, limit) => usersApi.list(page, limit).then((res) => ({ data: res.data.data, total: res.data.total })))
+      .then(setUsers)
+      .catch(() => setToast('Could not load users.'))
       .finally(() => setLoading(false));
   }, []);
 
   const rows = users.filter((user) =>
     `${user.firstName} ${user.lastName} ${user.email} ${user.role}`.toLowerCase().includes(search.toLowerCase()),
   );
+  const paged = usePaged(rows, search);
 
   const saveRole = async (user: User) => {
     const newRole = pendingRoleById[user.id];
@@ -437,23 +502,23 @@ function RolesPage() {
     try {
       const res = await usersApi.updateRole(user.id, newRole);
       setUsers((current) => current.map((u) => (u.id === user.id ? res.data : u)));
-      setToast(`${user.firstName} ${user.lastName}'s role updated to ${newRole.replace(/_/g, ' ')}.`);
+      setToast(`${user.firstName} ${user.lastName}'s role updated to ${roleLabel(newRole)}.`);
     } catch {
-      setToast(`Failed to update ${user.firstName} ${user.lastName}'s role.`);
+      setToast(`Could not update ${user.firstName} ${user.lastName}'s role.`);
     } finally {
       setSavingId(null);
     }
   };
 
-  return <div className="space-y-4">
+  return <div className="space-y-5">
     <AdminPageHeader title="Roles & Assignment" detail="Assign one of the system's fixed roles to a user. Roles and their permissions are defined in code, not configurable here." />
-    <SearchToolbar value={search} onChange={setSearch} filterLabel="All users" />
+    <SearchToolbar value={search} onChange={setSearch} placeholder="Search by name, email, or role" filters={[]} />
     <Panel title="User Role Assignment" detail={`${rows.length} accounts shown`}>
       {loading ? <div className="p-6"><LoadingSkeleton rows={5} /></div> : <TableWrap><table className="w-full"><thead><tr>
         <th className={thClass}>User</th><th className={thClass}>Current role</th><th className={thClass}>New role</th><th className={`${thClass} text-right`}>Action</th>
-      </tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={4} className="px-4 py-10 text-center text-sm text-slate-400">No accounts found.</td></tr> : rows.map((user) => <tr key={user.id}>
+      </tr></thead><tbody>{rows.length === 0 ? <EmptyRow colSpan={4}>No accounts found.</EmptyRow> : paged.pageItems.map((user) => <tr key={user.id}>
         <td className={tdClass}>{user.firstName} {user.lastName}<span className="block text-xs text-slate-500">{user.employeeId}</span></td>
-        <td className={tdClass}>{USER_ROLE_OPTIONS.find(({ value }) => value === assignableRole(user.role))?.label ?? user.role}</td>
+        <td className={tdClass}>{roleLabel(user.role)}</td>
         <td className={tdClass}>
           <select
             className={inputClass}
@@ -465,6 +530,7 @@ function RolesPage() {
         </td>
         <td className={`${tdClass} text-right`}><SecondaryButton onClick={() => saveRole(user)}>{savingId === user.id ? 'Saving…' : 'Save'}</SecondaryButton></td>
       </tr>)}</tbody></table></TableWrap>}
+      <Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="accounts" />
     </Panel>
     <Toast message={toast} />
   </div>;

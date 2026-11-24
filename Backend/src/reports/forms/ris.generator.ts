@@ -11,6 +11,7 @@ import {
   fullName,
   PAGE,
   CONTENT_WIDTH,
+  identityFields,
 } from './base-form.generator';
 
 // SVC: Deliver and Support — RIS generated when a requisition is fulfilled by IT Personnel
@@ -58,11 +59,7 @@ export async function generateRIS(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'Division', value: requester.division },
       { label: 'Office/Section', value: requester.officeOrSection },
       { label: 'Date', value: today() },

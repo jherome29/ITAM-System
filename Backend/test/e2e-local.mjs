@@ -16,7 +16,10 @@ import { dirname, join } from 'node:path';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const backendDir = join(repoRoot, 'Backend');
-const compose = ['compose', '-f', join(repoRoot, 'docker-compose.e2e.yml')];
+// Own project name (-p): without it the e2e file shares the repo-root default
+// project ("capstone") with docker-compose.yml, so `down --remove-orphans`
+// below treats the dev `aimrs_postgres` container as an orphan and removes it.
+const compose = ['compose', '-p', 'aimrs-e2e', '-f', join(repoRoot, 'docker-compose.e2e.yml')];
 
 // Built from parts, not a literal `scheme://user:pass@host` string — same reason
 // ci.yml's backend-e2e step does: secretlint's database-connection-string rule

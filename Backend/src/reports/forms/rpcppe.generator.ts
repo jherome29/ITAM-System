@@ -8,6 +8,8 @@ import {
   drawSignatureBlock,
   phpFormat,
   fmtDate,
+  identityFields,
+  conditionLabel,
 } from './base-form.generator';
 
 // SVC: Improve — RPCPPE for annual physical count of PPE (Appendix 73)
@@ -43,11 +45,7 @@ export async function generateRPCPPE(
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'As at', value: fmtDate(asOf) },
       { label: 'Date Generated', value: fmtDate(new Date()) },
     ],
@@ -62,7 +60,7 @@ export async function generateRPCPPE(
     a.serialNumber ?? '—',
     fmtDate(a.acquisitionDate),
     phpFormat(a.acquisitionCost),
-    a.condition,
+    conditionLabel(a.condition),
     a.officeOrSection ?? '—',
     a.accountableOfficer ?? '—',
   ]);

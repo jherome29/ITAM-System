@@ -1,11 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
+import { createTestApp } from './create-test-app';
 import { UserEntity } from '../src/users/entities/user.entity';
 import { UserRole } from '../../packages/shared/src/enums';
 import { BCRYPT_ROUNDS } from '../../packages/shared/src/constants';
@@ -25,17 +26,7 @@ describe('SystemConfig (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api'); // matches main.ts bootstrap() — not implied by AppModule alone
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
-    await app.init();
+    app = await createTestApp(moduleFixture);
 
     userRepo = moduleFixture.get(getRepositoryToken(UserEntity));
 

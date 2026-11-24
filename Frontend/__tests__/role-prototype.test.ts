@@ -1,12 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { appConfig } from '@/lib/config';
-import { mapBackendRoleToProposedRole } from '@/lib/roles/role-mapping';
 import { roleNavigation } from '@/lib/roles/role-navigation';
 import { hasUiPermission } from '@/lib/roles/role-permissions';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
-import { getDashboardMockData } from '@/lib/mock/dashboard.mock';
-import { mockAssetsService } from '@/lib/services/mock-assets.service';
-import { mockApprovalsService } from '@/lib/services/mock-approvals.service';
+import { mapBackendRoleToProposedRole } from '@/lib/roles/role-mapping';
 
 describe('role-based sidebar navigation', () => {
   it('routes both existing custodian account types to the combined role', () => {
@@ -33,7 +29,7 @@ describe('role-based sidebar navigation', () => {
     expect(items.map(item => item.label)).toContain('Maintenance & Repair');
     expect(hasUiPermission(ProposedUserRole.ASSET_CUSTODIAN, 'issue_ict_assets')).toBe(true);
     expect(hasUiPermission(ProposedUserRole.ASSET_CUSTODIAN, 'issue_property')).toBe(true);
-    expect(Object.values(ProposedUserRole)).toHaveLength(6);
+    expect(Object.values(ProposedUserRole)).toHaveLength(5);
   });
 
   it('keeps master administrator out of ordinary approval actions', () => {
@@ -48,49 +44,19 @@ describe('role-based sidebar navigation', () => {
   });
 
   it('marks management and audit viewer controls as read-only', () => {
-    expect(roleNavigation[ProposedUserRole.MANAGEMENT_AUDIT_VIEWER].every((item) => item.readOnly)).toBe(true);
+    // Oversight pages are read-only; the one exception is the viewer's own
+    // accountability — they hold property too and must be able to return it.
+    const nav = roleNavigation[ProposedUserRole.MANAGEMENT_AUDIT_VIEWER];
+    expect(nav.filter((item) => !item.readOnly).map((item) => item.href)).toEqual(['/management-audit/assigned-assets']);
     expect(hasUiPermission(ProposedUserRole.MANAGEMENT_AUDIT_VIEWER, 'read_only')).toBe(true);
     expect(hasUiPermission(ProposedUserRole.MANAGEMENT_AUDIT_VIEWER, 'issue_property')).toBe(false);
   });
 });
 
-describe('prototype states and config', () => {
-  it('uses mock data by default for this phase', () => {
-    expect(appConfig.useMockData).toBe(true);
-  });
-
+describe('navigation coverage', () => {
   it('has enough nav items for responsive sidebar coverage', () => {
     // Dashboard / Users / Roles / System Settings / Audit / Notifications — the
     // six that survived the 2026-09-09 governance cut.
     expect(roleNavigation[ProposedUserRole.MASTER_ADMIN].length).toBeGreaterThanOrEqual(6);
-  });
-
-  it('has role preview enabled in mock development configuration', () => {
-    expect(appConfig.enableRolePreview).toBe(true);
-  });
-});
-
-describe('employee dashboard scope', () => {
-  it('does not expose agency-wide value or disposal KPIs to employee dashboard', () => {
-    const data = getDashboardMockData(ProposedUserRole.EMPLOYEE);
-    const labels = data.kpis.map((item) => item.label).join(' ');
-    const subtitles = data.kpis.map((item) => `${item.detail} ${item.trend}`).join(' ');
-    expect(labels).toContain('Assigned Assets');
-    expect(labels).toContain('Unread Notifications');
-    expect(labels).not.toContain('Total Assets');
-    expect(labels).not.toContain('For Disposal');
-    expect(subtitles).not.toContain('aggregate value');
-  });
-});
-
-describe('mock services', () => {
-  it('keeps ICT and property assets separated for custodians', () => {
-    expect(mockAssetsService.listIct().every((asset) => asset.scope === 'ICT')).toBe(true);
-    expect(mockAssetsService.listProperty().every((asset) => asset.scope !== 'ICT')).toBe(true);
-  });
-
-  it('prevents self requests from appearing in the approval queue service', () => {
-    const queue = mockApprovalsService.queueForApprover('Mila Santos', 'EMP-003');
-    expect(queue.every((request) => request.requesterId !== 'EMP-003')).toBe(true);
   });
 });

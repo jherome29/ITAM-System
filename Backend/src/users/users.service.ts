@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { UserEntity } from './entities/user.entity';
 import {
@@ -19,6 +19,13 @@ import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
 import { BCRYPT_ROUNDS } from '../../../packages/shared/src/constants';
 
 // SVC: Plan — user account management (System Admin only)
+
+/** The minimal view of a person that other lists may show (who holds an asset). */
+export interface HolderSummary {
+  id: string;
+  name: string;
+  employeeId: string;
+}
 
 @Injectable()
 export class UsersService {
@@ -69,45 +76,38 @@ export class UsersService {
     return this.userRepo.findOne({ where: { employeeId } });
   }
 
-  async findHolderSummaries(ids: string[], includeOffice = false) {
-    const summaries = new Map<string, {
-      name: string;
-      employeeId: string;
-      division?: string;
-      officeOrSection?: string;
-    }>();
-    if (!ids.length) return summaries;
-    const users = await this.userRepo.find({
-      where: { id: In([...new Set(ids)]) },
-      select: {
-        id: true, firstName: true, lastName: true, employeeId: true,
-        ...(includeOffice ? { division: true, officeOrSection: true } : {}),
-      },
-    });
-    for (const user of users) {
-      summaries.set(user.id, {
-        name: `${user.firstName} ${user.lastName}`.trim(),
-        employeeId: user.employeeId,
-        ...(includeOffice ? { division: user.division, officeOrSection: user.officeOrSection } : {}),
-      });
-    }
-    return summaries;
-  }
 
   async findByRole(role: UserRole): Promise<UserEntity[]> {
     return this.userRepo.find({
       where:
-        role === UserRole.ASSET_CUSTODIAN ||
-        role === UserRole.IT_PERSONNEL ||
-        role === UserRole.PROPERTY_CUSTODIAN
+        role === UserRole.IT_PERSONNEL || role === UserRole.PROPERTY_CUSTODIAN
           ? [
               { role: UserRole.ASSET_CUSTODIAN, isActive: true },
-              { role: UserRole.IT_PERSONNEL, isActive: true },
-              { role: UserRole.PROPERTY_CUSTODIAN, isActive: true },
+              { role, isActive: true },
             ]
           : { role, isActive: true },
       order: { lastName: 'ASC' },
     });
+  }
+
+  /**
+   * Name + employee ID for a set of users, one query. Used to show who holds an
+   * asset in the custodians' lists — deliberately nothing else about the person
+   * (CLAUDE.md §8.4 data minimisation). Each person is looked up once however
+   * many assets they hold.
+   */
+  async findHolderSummaries(ids: string[]): Promise<HolderSummary[]> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return [];
+    const users = await this.userRepo.find({
+      where: { id: In(unique) },
+      select: { id: true, firstName: true, lastName: true, employeeId: true },
+    });
+    return users.map((u) => ({
+      id: u.id,
+      name: `${u.firstName} ${u.lastName}`.trim(),
+      employeeId: u.employeeId,
+    }));
   }
 
   /**
@@ -130,15 +130,23 @@ export class UsersService {
    * chart determines it. Prefers an exact officeOrSection match; falls back
    * to any active Supervisor in the same division if no section match exists.
    */
+  /**
+   * The approving supervisor for a section (falling back to the division).
+   * `excludeUserId` skips one user — the requester — so a supervisor's own
+   * requisition is never routed back to them (segregation of duties).
+   */
   async findSupervisorForSection(
     officeOrSection: string,
     division: string,
+    excludeUserId?: string,
   ): Promise<UserEntity | null> {
+    const notRequester = excludeUserId ? { id: Not(excludeUserId) } : {};
     const bySection = await this.userRepo.findOne({
       where: {
         role: UserRole.SUPERVISOR,
         officeOrSection,
         isActive: true,
+        ...notRequester,
       },
     });
     if (bySection) return bySection;
@@ -148,6 +156,7 @@ export class UsersService {
         role: UserRole.SUPERVISOR,
         division,
         isActive: true,
+        ...notRequester,
       },
     });
   }

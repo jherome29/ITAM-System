@@ -1,224 +1,95 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { SlidersHorizontal } from 'lucide-react';
-import { ActivityTimeline } from '@/components/ui/ActivityTimeline';
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { CenteredModal } from '@/components/ui/CenteredModal';
-import { FilterBar } from '@/components/ui/FilterBar';
-import { SearchInput } from '@/components/ui/SearchInput';
-import { FormDialog } from '@/components/ui/FormDialog';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { RequisitionForm } from '@/components/requisitions/RequisitionForm';
+import { usePrintPrompt } from '@/components/shared/RecordPrints';
+import { RequisitionDetailView, SlaBadge } from '@/components/requisitions/RequisitionDetailView';
+import { requisitionItemsLabel } from '@/lib/requisitions/catalogue-items';
+import {
+  defaultStockId,
+  fulfilledItemsFor,
+  isSupplyLine,
+  stockOptionsFor,
+  stockProblem,
+  type StockOption,
+} from '@/lib/requisitions/supply-stock';
+import { formatDate, requesterLabel, requisitionStatusLabel } from '@/lib/requisitions/requisition-view';
+import { rowActionMode } from '@/lib/workflow/row-action';
+import { detailActions, rowActionLabel } from '@/lib/workflow/actions';
+import { assetApiToRow, humanize, unitAssets, type AssetRow } from '@/lib/workflow/asset-rows';
+import { DEFAULT_REQUISITION_SORT, REQUISITION_SORT_OPTIONS, compareRequisitionRows } from '@/lib/workflow/requisition-sort';
+import { DetailDrawer } from '@/components/ui/DetailDrawer';
+import { SearchToolbar } from '@/components/ui/SearchToolbar';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
-import { StatusBadge } from '@/components/dashboard/StatusBadge';
-import { InventoryLabelPrinter } from '@/components/inventory/InventoryLabelPrinter';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { assetsApi, type Asset } from '@/lib/api/assets';
-import { ASSET_LIFECYCLE_TRANSITIONS } from '@/lib/assets/lifecycle-transitions';
-import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';
-import { assetMockRows } from '@/lib/mock/assets.mock';
-import type { MockAsset } from '@/lib/mock/assets.mock';
-import { auditMockRows } from '@/lib/mock/audit.mock';
-import { disposalMockRows } from '@/lib/mock/disposal.mock';
-import { inventoryMockRows } from '@/lib/mock/inventory.mock';
-import { maintenanceMockRows } from '@/lib/mock/maintenance.mock';
-import { notificationMockRows } from '@/lib/mock/notifications.mock';
-import { reportMockRows } from '@/lib/mock/reports.mock';
-import { requisitionMockRows } from '@/lib/mock/requisitions.mock';
-import type { MockRequisition } from '@/lib/mock/requisitions.mock';
-import { mockUsers } from '@/lib/mock/users.mock';
+import { normalizeWorkflowSlug } from '@/lib/workflow/live-pages';
 import { ProposedUserRole, proposedRoleLabels } from '@/lib/roles/proposed-roles';
-import type { UiPermission } from '@/lib/roles/role-permissions';
 import { useAuth } from '@/lib/auth/use-auth';
+import { DateField } from '@/components/ui/DateField';
+import { controlClass, textareaClass } from '@/components/ui/controls';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { PrimaryButton, tdClass, thClass } from '@/components/admin/AdminUi';
+import { buttonClass } from '@/components/ui/buttons';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyRow } from '@/components/ui/EmptyRow';
+import { ClampText } from '@/components/ui/ClampText';
+import { Pager } from '@/components/ui/Pager';
+import { DEFAULT_PAGE_SIZE, clampPage, pageSlice } from '@/lib/pagination';
 
-type Row = Record<string, string | number | boolean | string[] | undefined>;
+// The custody pages sort asset rows by one of these keys; the requisition pages have their own list.
+const ASSET_SORT_KEYS = ['item', 'status', 'heldBy', 'location'] as const;
+const SORT_LABEL: Record<string, string> = { item: 'Item', status: 'Status', heldBy: 'Held by', location: 'Location' };
 
-const employeeId = 'EMP-001';
-const approvingOfficerId = 'EMP-003';
+type Row = AssetRow;
 
-const pageCopy: Record<string, { title: string; detail: string; action?: string }> = {
-  catalogue: { title: 'Asset Catalogue', detail: 'Search requestable assets and supplies, inspect availability, and submit a mock requisition.', action: 'Request Asset' },
-  requisitions: { title: 'My Requisitions', detail: 'Track request status, timelines, forms, and available lifecycle actions.', action: 'Create Requisition' },
-  'assigned-assets': { title: 'My Assigned Assets', detail: 'View assigned assets and submit acknowledgement, return, repair, damage, loss, or theft requests.' },
-  'returns-incidents': { title: 'Returns & Incidents', detail: 'Create return requests, damage reports, lost/stolen reports, and repair requests.', action: 'File Report' },
-  notifications: { title: 'Notifications', detail: 'Review and manage local mock alerts by category.' },
-  approvals: { title: 'Approval Queue', detail: 'Review assigned requests, approve, reject, or return them for revision.' },
-  'approval-history': { title: 'Approval History', detail: 'View previous approval decisions, remarks, and turnaround time.' },
-  assets: { title: 'Asset Registry', detail: 'Role-scoped asset registry with mock create, edit, QR, and lifecycle actions.', action: 'Register Asset' },
-  fulfillment: { title: 'Requisition Fulfillment', detail: 'Review approved requisitions, place them on hold, or fulfill them from inventory.', action: 'Fulfill Request' },
-  custody: { title: 'Custody & Issuance', detail: 'See who holds each asset, then issue, transfer, or return it. Changes are saved in the audit trail. Supplies are issued through Requisition Fulfillment.' },
-  'qr-scanner': { title: 'QR Scanner', detail: 'Scan or manually enter a mock QR code and run permitted role-specific actions.', action: 'Scan QR' },
-  maintenance: { title: 'Maintenance & Repair', detail: 'Review assets under repair, mark completed repairs, or recommend assets for disposal.', action: 'Add Maintenance Record' },
-  'physical-inventory': { title: 'Physical Inventory', detail: 'Create scan sessions and track found, missing, wrong-location, duplicate, and unregistered items.', action: 'Start Physical Count' },
-  disposal: { title: 'Disposal Recommendations', detail: 'Review unserviceable assets flagged for disposal. Record completion after the approved disposal takes place.', action: 'Recommend Disposal' },
-  reports: { title: 'Reports & Forms', detail: 'Search, filter, export, and print mock reports and forms.', action: 'Export Report' },
-  'fixed-assets': { title: 'Fixed Asset Registry', detail: 'Manage non-ICT fixed property records in mock mode.', action: 'Add Property' },
-  supplies: { title: 'Supply Inventory', detail: 'Track stock, reorder levels, issuances, receipts, and stock-card previews.', action: 'Record Stock Movement' },
-  corrections: { title: 'Inventory Corrections', detail: 'Review proposed corrections and approve, reject, or return for clarification.', action: 'Approve Correction' },
-  reconciliation: { title: 'Reconciliation', detail: 'Compare system count against physical count and resolve discrepancies.', action: 'Generate Reconciliation Report' },
-  replacements: { title: 'Replacement Validation', detail: 'Validate replacements against useful life, age, condition, and repair history.', action: 'Validate Replacement' },
-  users: { title: 'User Management', detail: 'Create users, edit profiles, activate, deactivate, unlock, and reset mock passwords.', action: 'Create User' },
-  roles: { title: 'Role Assignment', detail: 'Preview role assignments without changing backend RBAC.', action: 'Assign Role' },
-  'organizational-units': { title: 'Organizational Units', detail: 'Manage offices, divisions, sections, regions, and reporting relationships.', action: 'Add Unit' },
-  'approval-configuration': { title: 'Approval Configuration', detail: 'Configure mock approvers, alternates, SLA hours, and escalation settings.', action: 'Add Rule' },
-  'custodian-assignments': { title: 'Custodian Assignments', detail: 'Assign custodians by office, location, and asset family.', action: 'Assign Custodian' },
-  'reference-data': { title: 'Reference Data', detail: 'Maintain frontend-only categories, statuses, and form references.', action: 'Add Reference' },
-  configuration: { title: 'System Configuration', detail: 'Adjust prototype settings and reset demo state.', action: 'Reset Demo Data' },
-  'technical-logs': { title: 'Technical Logs', detail: 'Read mock service health and technical events.' },
-  security: { title: 'Security Settings', detail: 'Preview lockout, session, and security policy settings.', action: 'Save Policy' },
-  'asset-reports': { title: 'Asset Reports', detail: 'Read-only asset reporting with filters and mock exports.', action: 'Export Report' },
-  'requisition-reports': { title: 'Requisition Reports', detail: 'Read-only requisition reporting with turnaround metrics.', action: 'Export Report' },
-  'maintenance-disposal': { title: 'Maintenance & Disposal Reports', detail: 'Read-only maintenance and disposal reporting.', action: 'Export Report' },
-  'physical-count': { title: 'Physical Count Reports', detail: 'Read-only physical count reports and exception lists.', action: 'Export Report' },
-  audit: { title: 'Audit Log', detail: 'Read-only audit event viewer.' },
-  forms: { title: 'Forms Archive', detail: 'Read-only generated-form archive with mock print/export actions.', action: 'Export Archive' },
+type PageCopy = { title: string; detail: string; action?: string };
+
+// The System Administrator's version of Requisition Fulfillment: only what a
+// custodian filed themselves, which segregation of duties keeps out of their queue.
+const ADMIN_FULFILMENT_COPY: PageCopy = {
+  title: 'Requisition Fulfillment (fallback)',
+  detail: 'Requisitions filed by the custodian who would fulfill them. They cannot fulfill their own, so you do - fulfill it, or put it on hold when the item is unavailable. Each action is saved and recorded in the audit trail.',
 };
 
-function normalizeSlug(slug: string) {
-  const aliases: Record<string, string> = {
-    queue: 'approvals',
-    history: 'approval-history',
-    'custody-issuance': 'custody',
-    inventory: 'physical-inventory',
-    'reports-forms': 'reports',
-    'registry-overview': 'assets',
-    'replacement-validation': 'replacements',
-    'disposal-review': 'disposal',
-    'audit-history': 'audit',
-    'audit-log': 'audit',
-    'forms-archive': 'forms',
-    'maintenance-disposal-reports': 'maintenance-disposal',
-    'physical-count-reports': 'physical-count',
-    'org-units': 'organizational-units',
-    'approval-config': 'approval-configuration',
-  };
-  return aliases[slug] ?? slug;
-}
-
-// Slugs whose rows don't depend on `role` — dispatched via lookup instead of
-// an if-chain to keep rowsFor's cognitive complexity low (typescript:S3776).
-// 'forms' is handled by the report branch in rowsFor, not here.
-const SIMPLE_SLUG_HANDLERS: Record<string, () => Row[]> = {
-  notifications: () => notificationMockRows.map((item) => ({ ...item, status: item.unread ? 'Unread' : 'Read' })),
-  audit: () => auditMockRows.map((item) => ({ ...item, status: item.severity })),
-  'technical-logs': () => auditMockRows.map((item) => ({ ...item, status: item.severity })),
-  maintenance: () => maintenanceMockRows.map((item) => ({ ...item, status: item.status })),
-  'physical-inventory': () => inventoryMockRows.map((item) => ({ ...item, status: item.status })),
-  reconciliation: () => inventoryMockRows.map((item) => ({ ...item, status: item.status })),
-  disposal: () => disposalMockRows.map((item) => ({ ...item, status: item.status })),
-  replacements: () => disposalMockRows.map((item) => ({ ...item, status: item.status })),
-  users: () => mockUsers.map((item) => ({ ...item, status: 'Active', role: item.role })),
-  roles: () => mockUsers.map((item) => ({ ...item, status: 'Active', role: item.role })),
-  catalogue: () => assetMockRows.filter((asset) => asset.status === 'Available' || asset.scope === 'SUPPLY').map(assetToRow),
-  'assigned-assets': () => assetMockRows.filter((asset) => asset.assignedEmployeeId === employeeId).map(assetToRow),
-  'fixed-assets': () => assetMockRows.filter((asset) => asset.scope === 'PROPERTY').map(assetToRow),
-  supplies: () => assetMockRows.filter((asset) => asset.scope === 'SUPPLY').map(assetToRow),
-  approvals: () =>
-    requisitionMockRows
-      .filter((request) => request.status === 'Pending Approval' && request.requesterId !== approvingOfficerId)
-      .map(requisitionToRow),
-  'approval-history': () =>
-    requisitionMockRows
-      .filter((request) => ['Approved', 'Rejected', 'Returned for Revision'].includes(request.status))
-      .map(requisitionToRow),
+// The pages this component serves - exactly the ones lib/workflow/live-pages.ts lets
+// the role routers hand it. Every one reads real records and every action saves.
+const pageCopy: Record<string, PageCopy> = {
+  requisitions: {
+    title: 'My Requisitions',
+    detail: 'Track the status, timeline and documents of the requisitions you have submitted.',
+    action: 'Create Requisition',
+  },
+  approvals: {
+    title: 'Approval Queue',
+    detail: 'Review the requests routed to you and approve or reject them. Each decision is saved and recorded in the audit trail.',
+  },
+  fulfillment: {
+    title: 'Requisition Fulfillment',
+    detail: 'Fulfill approved requests, or put them on hold when the item is unavailable. Each action is saved and recorded in the audit trail.',
+  },
+  custody: {
+    title: 'Custody & Issuance',
+    detail: 'See who holds each asset, then issue it, transfer it or take it back. Every change is saved and recorded in the audit trail. Supplies are not listed here — they are issued from stock through Requisition Fulfillment.',
+  },
+  disposal: {
+    title: 'Disposal Recommendations',
+    detail: 'Flag an asset for disposal with a documented justification. It then appears under Disposal Review; the disposal itself is carried out through the manual COA process.',
+  },
 };
-
-function assetsForRole(role: ProposedUserRole): Row[] {
-  if (role === ProposedUserRole.ASSET_CUSTODIAN) return assetMockRows.map(assetToRow);
-  if (role === ProposedUserRole.PROPERTY_OFFICER) return assetMockRows.map(assetToRow);
-  return assetMockRows.filter((asset) => asset.scope !== 'ICT').map(assetToRow);
-}
-
-function fulfillmentForRole(): Row[] {
-  return requisitionMockRows
-    .filter((request) => ['Approved', 'Pending Fulfillment'].includes(request.status))
-    .map(requisitionToRow);
-}
-
-function requisitionsForRole(role: ProposedUserRole): Row[] {
-  const own = role === ProposedUserRole.APPROVING_OFFICER ? 'EMP-003' : employeeId;
-  return requisitionMockRows.filter((request) => request.requesterId === own || role === ProposedUserRole.EMPLOYEE).map(requisitionToRow);
-}
-
-function rowsFor(role: ProposedUserRole, slug: string): Row[] {
-  if (slug.includes('report') || slug === 'forms') return reportMockRows.map((item) => ({ ...item, status: item.status }));
-
-  const handler = SIMPLE_SLUG_HANDLERS[slug];
-  if (handler) return handler();
-
-  if (slug === 'assets') return assetsForRole(role);
-  if (slug === 'fulfillment') return fulfillmentForRole();
-  if (slug === 'requisitions') return requisitionsForRole(role);
-
-  return requisitionMockRows.map(requisitionToRow);
-}
-
-function assetDivision(asset: MockAsset): string {
-  if (asset.assignedTo === 'Ana Reyes') return 'Digital Forensics';
-  if (asset.assignedTo === 'Operations Division') return 'Operations';
-  if (asset.scope === 'ICT') return 'ICT Unit';
-  return 'Property Unit';
-}
-
-function assetAccountabilityForm(asset: MockAsset): string {
-  if (asset.scope === 'ICT') return 'ICS/PAR-Preview';
-  if (asset.scope === 'PROPERTY') return 'PAR-Preview';
-  return 'RIS-Preview';
-}
-
-function assetToRow(asset: MockAsset): Row {
-  return {
-    id: asset.id,
-    name: asset.name,
-    category: asset.category,
-    type: asset.type,
-    serialNumber: asset.serialNumber,
-    location: asset.location,
-    assignedTo: asset.assignedTo ?? 'Unassigned',
-    division: assetDivision(asset),
-    officeOrSection: asset.assignedTo === 'Ana Reyes' ? 'Evidence Processing' : asset.location,
-    dateIssued: asset.issuedDate ?? '-',
-    accountabilityForm: assetAccountabilityForm(asset),
-    expectedReturnDate: asset.returnDate ?? '-',
-    condition: asset.condition,
-    status: asset.status,
-    issuedDate: asset.issuedDate ?? '-',
-    returnDate: asset.returnDate ?? '-',
-    acknowledgmentStatus: asset.acknowledgmentStatus,
-    notes: asset.notes,
-  };
-}
-
-function requisitionToRow(request: MockRequisition): Row {
-  return {
-    id: request.id,
-    requesterId: request.requesterId,
-    requester: request.requester,
-    office: request.office,
-    item: request.item,
-    scope: request.scope,
-    requestType: request.requestType,
-    quantity: request.quantity,
-    priority: request.priority,
-    status: request.status,
-    submittedDate: request.submittedDate,
-    requiredDate: request.requiredDate,
-    approvingOfficer: request.approvingOfficer,
-    lastUpdate: request.lastUpdate,
-    justification: request.justification,
-    remarks: request.remarks,
-    timeline: request.timeline,
-    attachments: request.attachments,
-  };
-}
 
 function requisitionApiToRow(request: Requisition): Row {
   return {
     id: request.id,
+    requestNumber: request.requestNumber,
     requesterId: request.requestedById,
-    item: request.items.map((i) => i.itemDescription).join(', '),
+    requester: requesterLabel(request.requester),
+    item: requisitionItemsLabel(request.items),
     requestType: request.requisitionType,
     quantity: request.items.reduce((sum, i) => sum + i.quantity, 0),
     status: request.status,
@@ -229,165 +100,38 @@ function requisitionApiToRow(request: Requisition): Row {
   };
 }
 
-function fulfillmentRow(request: Requisition): Row {
-  return {
-    ...requisitionApiToRow(request),
-    requestNumber: request.requestNumber,
-    requester: request.requester ? `${request.requester.name} (${request.requester.employeeId})` : 'Requester unavailable',
-    requesterDivision: request.requester?.division ?? '',
-    requesterOffice: request.requester?.officeOrSection ?? '',
-    fulfillmentNotes: request.fulfillmentNotes ?? '',
-    itemLines: request.items.map((item) => `${item.quantity} × ${item.itemDescription}`),
-  };
-}
-
-function assetApiToRow(asset: Asset): Row {
-  return {
-    id: asset.id,
-    item: asset.itemDescription,
-    serialNumber: asset.serialNumber,
-    propertyNumber: asset.propertyNumber,
-    status: asset.status,
-    condition: asset.condition,
-    assetType: asset.assetType,
-    location: [...new Set([asset.officeOrSection, asset.officeLocation].filter(Boolean))].join(' · '),
-    custodianId: asset.custodianId ?? 'Unassigned',
-  };
-}
-
-const assetRecordFields = {
-  propertyNumber: 'Property number',
-  serialNumber: 'Serial number',
-  assetType: 'Asset type',
-  location: 'Location',
-  condition: 'Condition',
-  status: 'Status',
-} as const;
-const custodyFields = {
-  ...assetRecordFields,
-  holder: 'Held by',
-  expectedReturnDate: 'Expected return',
-} as const;
-
-const custodyCalendar = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Manila' });
-const custodyDate = new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' });
-const custodySortOptions = [
-  { value: 'item', label: 'Sort: Item' },
-  { value: 'status', label: 'Sort: Status' },
-  { value: 'holder', label: 'Sort: Held by' },
-  { value: 'location', label: 'Sort: Location' },
-];
-const assetSortOptions = [
-  { value: 'item', label: 'Sort: Item' },
-  { value: 'condition', label: 'Sort: Condition' },
-  { value: 'status', label: 'Sort: Status' },
-  { value: 'location', label: 'Sort: Location' },
-];
-const fulfillmentSortOptions = [
-  { value: 'requiredDate', label: 'Sort: Required date' },
-  { value: 'requestNumber', label: 'Sort: Requisition number' },
-  { value: 'requester', label: 'Sort: Requested by' },
-  { value: 'status', label: 'Sort: Status' },
-];
-const fulfillmentFields = {
-  requester: 'Requested by',
-  requestType: 'Request type',
-  requesterDivision: 'Requester division',
-  requesterOffice: 'Requester office / section',
-  status: 'Status',
-  requiredDate: 'Required by',
-  justification: 'Justification',
-  remarks: 'Approval remarks',
-  fulfillmentNotes: 'Fulfillment notes',
-} as const;
-
-function custodyLabel(value: string) {
-  return value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function WorkspaceSelect({ label, value, onChange, options, className }: Readonly<{
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-  className: string;
-}>) {
-  return (
-    <div className={`relative ${className}`}>
-      <SlidersHorizontal aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-      <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-md border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100">
-        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-      </select>
-    </div>
-  );
-}
-
-function custodyAssetToRow(asset: Asset, today: string): Row {
-  const holder = asset.holder;
-  const returnDate = asset.status === 'issued' ? asset.expectedReturnDate?.slice(0, 10) : undefined;
-  return {
-    ...assetApiToRow(asset),
-    holder: holder ? `${holder.name} (${holder.employeeId})` : asset.custodianId ? 'Holder record unavailable' : 'Not issued',
-    expectedReturnDate: returnDate,
-    overdue: Boolean(returnDate && returnDate < today),
-  };
-}
-
-function auditApiToRow(log: AuditLog): Row {
-  return {
-    id: log.id,
-    action: log.action,
-    actor: log.userId,
-    date: new Date(log.timestamp).toLocaleDateString(),
-    severity: log.userRole,
-  };
-}
-
-function actionPermissionFor(role: ProposedUserRole): UiPermission {
-  if (role === ProposedUserRole.MASTER_ADMIN) return 'manage_users';
-  if (role === ProposedUserRole.APPROVING_OFFICER) return 'approve_requisition';
-  if (role === ProposedUserRole.ASSET_CUSTODIAN) return 'issue_ict_assets';
-  if (role === ProposedUserRole.PROPERTY_OFFICER) return 'reconcile_inventory';
-  return 'create_requisition';
-}
-
-export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; slug: string }>) {
+// `openId` - a requisition to open in the detail drawer on arrival (the page's
+// `?open=` param), used when a notification deep-links into a queue.
+export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUserRole; slug: string; openId?: string }>) {
   const { user: currentUser } = useAuth();
-  const normalizedSlug = normalizeSlug(slug);
-  const content = pageCopy[normalizedSlug] ?? { title: 'Workspace', detail: 'Frontend-only operational prototype.', action: 'Run Action' };
-  const readOnly = role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER;
-  const isInventoryAccountabilityPage = ['assets', 'assigned-assets', 'physical-inventory'].includes(normalizedSlug);
-  // Single source of truth for which role+slug combinations fetch real data instead of
-  // mock rows. Referenced by the rows/loading initializers and the effect guard below —
-  // extending this to another role+slug pair only needs a change here, not three
-  // synchronized edits.
-  const isLiveFetchPage =
-    (role === ProposedUserRole.APPROVING_OFFICER && (normalizedSlug === 'approvals' || normalizedSlug === 'requisitions')) ||
-    (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') ||
-    (role === ProposedUserRole.ASSET_CUSTODIAN && ['fulfillment', 'custody', 'maintenance', 'disposal'].includes(normalizedSlug));
-  // The Approving Officer's own approvals queue is the one confirm-action flow in this
-  // shared component that must persist for real — see submitApprovalDecision below.
-  // Every other role/slug (including this same officer's 'requisitions' tab, which has
-  // no real cancel/submit endpoint) keeps using the generic mock runAction path.
-  const isApprovingOfficerLiveApprovals =
-    isLiveFetchPage && role === ProposedUserRole.APPROVING_OFFICER && normalizedSlug === 'approvals';
-  const isAssetCustodianLiveFulfillment =
-    isLiveFetchPage && role === ProposedUserRole.ASSET_CUSTODIAN && normalizedSlug === 'fulfillment';
-  const isAssetCustodianLiveCustody =
-    isLiveFetchPage && role === ProposedUserRole.ASSET_CUSTODIAN && normalizedSlug === 'custody';
-  const isAssetCustodianLiveMaintenance =
-    isLiveFetchPage && role === ProposedUserRole.ASSET_CUSTODIAN && normalizedSlug === 'maintenance';
-  const isAssetCustodianLiveDisposal =
-    isLiveFetchPage && role === ProposedUserRole.ASSET_CUSTODIAN && normalizedSlug === 'disposal';
-  const isAssetMaintenanceQueue = isAssetCustodianLiveMaintenance || isAssetCustodianLiveDisposal;
-  const isLiveAssetQueue = isAssetCustodianLiveCustody || isAssetMaintenanceQueue;
-  const usesManagementLayout = isLiveAssetQueue || isAssetCustodianLiveFulfillment;
-  const [rows, setRows] = useState<Row[]>(() => (isLiveFetchPage ? [] : rowsFor(role, normalizedSlug)));
-  const [loading, setLoading] = useState(isLiveFetchPage);
+  const normalizedSlug = normalizeWorkflowSlug(slug);
+  const isAdminFulfilment = role === ProposedUserRole.MASTER_ADMIN && normalizedSlug === 'fulfillment';
+  const content = isAdminFulfilment
+    ? ADMIN_FULFILMENT_COPY
+    : (pageCopy[normalizedSlug] ?? { title: 'Workspace', detail: '' });
+  const isCustodian = role === ProposedUserRole.ASSET_CUSTODIAN;
+  const isApprovalsPage = role === ProposedUserRole.APPROVING_OFFICER && normalizedSlug === 'approvals';
+  const isFulfillmentPage = (isCustodian || isAdminFulfilment) && normalizedSlug === 'fulfillment';
+  const isCustodyPage = isCustodian && normalizedSlug === 'custody';
+  const isDisposalPage = isCustodian && normalizedSlug === 'disposal';
+  // "My Requisitions": the header button opens the shared RequisitionForm
+  // (POST /v1/requisitions).
+  const isMyRequisitions = normalizedSlug === 'requisitions';
+  const isRequisitionPage = isApprovalsPage || isFulfillmentPage || isMyRequisitions;
+  const isAssetPage = isCustodyPage || isDisposalPage;
+  // Where an asset's full record (details, lifecycle, QR, history) lives for this role.
+  const assetRecordBase = '/asset-custodian/assets';
+
+  const [creatingRequisition, setCreatingRequisition] = useState(false);
+  // Requisition pages keep the full API objects so the table and drawer can show
+  // REQ numbers, people, SLA and the real timeline - the flat Row shape only
+  // carries what search/sort need.
+  const [requisitionById, setRequisitionById] = useState<Record<string, Requisition>>({});
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // This component does client-side search/sort/filter over `rows`, which requires the
-  // full matching working set in memory — a single server page wouldn't search/sort
+  // full matching working set in memory - a single server page wouldn't search/sort
   // correctly against data it doesn't have. Fetching a large single page (rather than
   // defaulting to the API's page size of 15) is the pragmatic fix here; true server-side
   // pagination would need this component's search/sort to move server-side too.
@@ -395,188 +139,107 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
   const [liveFetchTruncated, setLiveFetchTruncated] = useState(false);
 
   const fetchLiveRows = useCallback((): Promise<void> => {
-    if (role === ProposedUserRole.MANAGEMENT_AUDIT_VIEWER && normalizedSlug === 'audit') {
-      return auditApi.list(1, LIVE_FETCH_LIMIT).then((res) => {
-        setRows(res.data.data.map(auditApiToRow));
+    if (isCustodyPage) {
+      return assetsApi.custody(1, LIVE_FETCH_LIMIT).then((res) => {
+        setRows(unitAssets(res.data.data).map(assetApiToRow));
         setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
       });
     }
-    if (isAssetCustodianLiveCustody) {
-      return assetsApi.custody(1, LIVE_FETCH_LIMIT).then(async ({ data: first }) => {
-        const assets = [...first.data];
-        for (let next = 2; next <= (first.totalPages ?? 1); next++) {
-          assets.push(...(await assetsApi.custody(next, LIVE_FETCH_LIMIT)).data.data);
-        }
-        const today = custodyCalendar.format(new Date());
-        setRows(assets.map((asset) => custodyAssetToRow(asset, today)));
-        setLiveFetchTruncated(false);
+    if (isDisposalPage) {
+      return assetsApi.list(1, LIVE_FETCH_LIMIT, undefined, 'available').then((res) => {
+        setRows(res.data.data.map(assetApiToRow));
+        setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
       });
     }
-    if (isAssetCustodianLiveFulfillment) {
-      return requisitionsApi.fulfillmentQueue(1, LIVE_FETCH_LIMIT).then(async ({ data: first }) => {
-        const requests = [...first.data];
-        for (let next = 2; next <= (first.totalPages ?? 1); next++) {
-          requests.push(...(await requisitionsApi.fulfillmentQueue(next, LIVE_FETCH_LIMIT)).data.data);
-        }
-        setRows(requests.map(fulfillmentRow));
-        setLiveFetchTruncated(false);
-      });
-    }
-    if (isAssetMaintenanceQueue) {
-      const fetchPage = normalizedSlug === 'disposal'
-        ? (page: number) => assetsApi.disposalQueue(page, LIVE_FETCH_LIMIT)
-        : (page: number) => assetsApi.list(page, LIVE_FETCH_LIMIT, undefined, 'under_repair');
-      return fetchPage(1).then(async ({ data: first }) => {
-        const assets = [...first.data];
-        for (let next = 2; next <= (first.totalPages ?? 1); next++) {
-          assets.push(...(await fetchPage(next)).data.data);
-        }
-        setRows(assets.map(assetApiToRow));
-        setLiveFetchTruncated(false);
-      });
-    }
-    const fetcher = normalizedSlug === 'approvals'
-      ? requisitionsApi.list(1, LIVE_FETCH_LIMIT)
-      : requisitionsApi.mine(1, LIVE_FETCH_LIMIT);
+    // Fulfillment is not narrowed to 'pending_fulfillment': the backend already
+    // scopes custodians to pending_fulfillment + on_hold, and filtering further
+    // made on-hold requests vanish from the only page that can fulfil them.
+    const fetcher = isAdminFulfilment
+      ? requisitionsApi.fulfilmentFallback()
+      : isFulfillmentPage || isApprovalsPage
+        ? requisitionsApi.list(1, LIVE_FETCH_LIMIT)
+        : requisitionsApi.mine(1, LIVE_FETCH_LIMIT);
     return fetcher.then((res) => {
+      setRequisitionById(Object.fromEntries(res.data.data.map((r) => [r.id, r])));
       setRows(res.data.data.map(requisitionApiToRow));
       setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
     });
-  }, [isAssetCustodianLiveCustody, isAssetCustodianLiveFulfillment, isAssetMaintenanceQueue, normalizedSlug, role]);
+  }, [isCustodyPage, isDisposalPage, isFulfillmentPage, isApprovalsPage, isAdminFulfilment]);
 
   const [liveFetchError, setLiveFetchError] = useState('');
 
   useEffect(() => {
-    if (!isLiveFetchPage) return;
     fetchLiveRows()
       .then(() => setLiveFetchError(''))
-      .catch(() => setLiveFetchError('Failed to load data. Please refresh the page.'))
+      .catch(() => setLiveFetchError('Could not load data. Please refresh the page.'))
       .finally(() => setLoading(false));
-  }, [isLiveFetchPage, fetchLiveRows]);
+  }, [fetchLiveRows]);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
-  const [sortKey, setSortKey] = useState(isLiveAssetQueue ? 'item' : isAssetCustodianLiveFulfillment ? 'requiredDate' : 'id');
+  const [sortKey, setSortKey] = useState<string>(isRequisitionPage ? DEFAULT_REQUISITION_SORT : 'item');
   const [page, setPage] = useState(1);
-  const [selectedSnapshot, setSelected] = useState<Row | null>(null);
-  const selected = isAssetCustodianLiveFulfillment && selectedSnapshot
-    ? rows.find((row) => row.id === selectedSnapshot.id) ?? selectedSnapshot
-    : selectedSnapshot;
-  const staleRequesterId = isAssetCustodianLiveFulfillment && selected &&
-    (selected.requesterDivision === undefined || selected.requesterOffice === undefined)
-    ? String(selected.id)
-    : null;
-  const [requesterRefreshFailed, setRequesterRefreshFailed] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Row | null>(null);
 
+  // Notification deep-link: once the queue has loaded, fetch the requested
+  // record and open its drawer. Fetching by id (rather than only looking in the
+  // loaded queue) means the click still lands when the request is no longer in
+  // this queue - already decided, or the user's own - and the drawer's actions
+  // are status-gated, so nothing stale is offered.
+  const handledOpenId = useRef<string | null>(null);
   useEffect(() => {
-    if (!staleRequesterId) return;
-    let current = true;
-    fetchLiveRows()
-      .then(() => { if (current) setRequesterRefreshFailed(staleRequesterId); })
-      .catch(() => { if (current) setRequesterRefreshFailed(staleRequesterId); });
-    return () => { current = false; };
-  }, [fetchLiveRows, staleRequesterId]);
-  const [manageRecord, setManageRecord] = useState(false);
+    if (!openId || !isRequisitionPage || loading || handledOpenId.current === openId) return;
+    handledOpenId.current = openId;
+    requisitionsApi
+      .getOne(openId)
+      .then((res) => {
+        setRequisitionById((current) => ({ ...current, [res.data.id]: res.data }));
+        setSelected(requisitionApiToRow(res.data));
+      })
+      .catch(() => setLiveFetchError('That request could not be found, or you no longer have access to it.'));
+  }, [openId, isRequisitionPage, loading]);
   const [confirmAction, setConfirmAction] = useState<string | null>(null);
-  const [disposalRecord, setDisposalRecord] = useState({ date: '', method: '', reference: '', confirmed: false });
-  const disposalAssetId = isAssetCustodianLiveDisposal && selected ? String(selected.id) : null;
-  const [disposalAssessment, setDisposalAssessment] = useState<{ id: string; reason: string }>();
-
-  useEffect(() => {
-    if (!disposalAssetId) return;
-    let current = true;
-    assetsApi.getOne(disposalAssetId).then(({ data }) => {
-      const latest = data.locationHistory
-        ?.filter((entry) => entry.action === 'asset_flagged_disposal')
-        .sort((a, b) => b.timestamp.localeCompare(a.timestamp))[0];
-      if (current) setDisposalAssessment({ id: disposalAssetId, reason: latest?.notes || 'No assessment reason recorded.' });
-    }).catch(() => {
-      if (current) setDisposalAssessment({ id: disposalAssetId, reason: 'Could not load the assessment reason.' });
-    });
-    return () => { current = false; };
-  }, [disposalAssetId]);
-  const [formOpen, setFormOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [remarks, setRemarks] = useState('');
   const [issueEmployeeId, setIssueEmployeeId] = useState('');
   const [issueExpectedReturnDate, setIssueExpectedReturnDate] = useState('');
   const [transferToLocation, setTransferToLocation] = useState('');
+  // Replacement fulfilment: the available unit handed to the requester in the
+  // same step (fulfil returns the old unit and issues this one).
+  // Keyed by requisition so a stale list from another request never shows.
+  const [replacementUnitList, setReplacementUnitList] = useState<{ requisitionId: string; units: Asset[] } | null>(null);
+  const [replacementUnitId, setReplacementUnitId] = useState('');
+  // Supply fulfilment: the stock record each supply line is drawn from. null for
+  // a line means the lookup failed (the server then resolves the record itself).
+  const [supplyStock, setSupplyStock] = useState<{ requisitionId: string; options: Record<string, StockOption[] | null> } | null>(null);
+  const [stockPicks, setStockPicks] = useState<Record<string, string>>({});
   const [actionSubmitting, setActionSubmitting] = useState(false);
-  const [form, setForm] = useState({ item: '', quantity: '1', requiredDate: '', justification: '', reason: '', attachment: '' });
+  // CICC wants a paper copy after each step on a requisition; this asks right after one is saved.
+  const { ask: askToPrint, prompt: printPrompt } = usePrintPrompt();
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [scanValue, setScanValue] = useState('');
   const statuses = ['All', ...Array.from(new Set(rows.map((row) => String(row.status ?? 'Open'))))];
-  const pageSize = usesManagementLayout ? 10 : 6;
+  const pageSize = DEFAULT_PAGE_SIZE;
 
   const filteredRows = useMemo(() => {
     const q = search.toLowerCase();
     return rows
       .filter((row) => statusFilter === 'All' || String(row.status) === statusFilter)
       .filter((row) => Object.values(row).join(' ').toLowerCase().includes(q))
-      .sort((a, b) => String(a[sortKey] ?? '').localeCompare(String(b[sortKey] ?? '')));
-  }, [rows, search, statusFilter, sortKey]);
+      .sort((a, b) => isRequisitionPage
+        ? compareRequisitionRows(sortKey, a, b)
+        : String(a[sortKey] ?? '').localeCompare(String(b[sortKey] ?? '')));
+  }, [rows, search, statusFilter, sortKey, isRequisitionPage]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
-  const activePage = Math.min(page, totalPages);
-  const visibleRows = filteredRows.slice((activePage - 1) * pageSize, activePage * pageSize);
+  // Kept inside the list: finishing the last row of a page must not leave you on an empty one.
+  const pageNo = clampPage(page, filteredRows.length, pageSize);
+  const visibleRows = pageSlice(filteredRows, pageNo, pageSize);
 
   const notify = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(''), 2600);
   };
 
-  const updateSelectedStatus = (status: string) => {
-    if (!selected) return;
-    setRows((current) => current.map((row) => row.id === selected.id ? { ...row, status, lastUpdate: 'Just now' } : row));
-    setSelected((current) => current ? { ...current, status, lastUpdate: 'Just now' } : current);
-  };
 
-  const updateRowStatus = (rowId: string, status: string) => {
-    setRows((current) => current.map((row) => row.id === rowId ? { ...row, status, unread: false, lastUpdate: 'Just now' } : row));
-    setSelected((current) => current?.id === rowId ? { ...current, status, unread: false, lastUpdate: 'Just now' } : current);
-  };
-
-  const runAction = (action: string) => {
-    if (readOnly && !action.startsWith('Export') && !action.startsWith('Print') && action !== 'View') {
-      notify('Read-only viewer: action hidden in production role presentation.');
-      return;
-    }
-    if (action === 'Reject' && !remarks.trim()) {
-      setErrors({ remarks: 'Rejection reason is required.' });
-      return;
-    }
-    if (action === 'Return for Revision' && !remarks.trim()) {
-      setErrors({ remarks: 'Revision instructions are required.' });
-      return;
-    }
-      const nextStatus: Record<string, string> = {
-      Approve: 'Approved',
-      Reject: 'Rejected',
-      'Return for Revision': 'Returned for Revision',
-      Cancel: 'Cancelled',
-      Submit: 'Pending Approval',
-      Delete: 'Cancelled',
-      Reserve: 'Reserved',
-      Fulfill: 'Fulfilled',
-      Issue: 'Issued',
-      Transfer: 'Transferred',
-      Return: 'Returned',
-      'Mark Complete': 'Completed',
-      'Recommend Disposal': 'For Disposal Review',
-      'Approve Correction': 'Approved',
-      'Mark Read': 'Read',
-      'Mark All Read': 'Read',
-    };
-    if (nextStatus[action]) updateSelectedStatus(nextStatus[action]);
-    setConfirmAction(null);
-    setRemarks('');
-    setErrors({});
-    notify(`${action} completed in frontend mock mode.`);
-  };
-
-  // Real, persisted counterpart to runAction — used ONLY for the Approving Officer's
-  // live approvals queue (see isApprovingOfficerLiveApprovals). Calls the actual
-  // requisitions API instead of mutating local mock state.
   const submitApprovalDecision = async (action: 'Approve' | 'Reject') => {
     if (!selected || actionSubmitting) return;
     const trimmedRemarks = remarks.trim();
@@ -597,17 +260,70 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
       setRemarks('');
       setErrors({});
       notify(action === 'Approve' ? 'Requisition approved.' : 'Requisition rejected.');
+      askToPrint('requisition', id, requisitionById[id]?.requestNumber ?? 'The requisition');
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
     } catch {
-      notify(`Failed to ${action.toLowerCase()} the requisition. Please try again.`);
+      notify(`Could not ${action.toLowerCase()} the requisition. Please try again.`);
     } finally {
       setActionSubmitting(false);
     }
   };
 
-  // Real, persisted counterpart to runAction for Asset Custodian's live fulfillment
-  // queue — see isAssetCustodianLiveFulfillment above. Calls the actual requisitions
-  // API instead of mutating local mock state.
+  const selectedRequisition = selected ? requisitionById[String(selected.id)] : undefined;
+  const replacementLine = selectedRequisition?.requisitionType === 'replacement' ? selectedRequisition.items[0] : undefined;
+  const pickingReplacementUnit = confirmAction === 'Fulfill' && isFulfillmentPage && Boolean(replacementLine);
+
+  const pickingForId = pickingReplacementUnit ? selectedRequisition?.id : undefined;
+  const replacementUnits = pickingForId && replacementUnitList?.requisitionId === pickingForId ? replacementUnitList.units : null;
+
+  useEffect(() => {
+    if (!pickingForId || !replacementLine) return;
+    let live = true;
+    const replacedId = selectedRequisition?.replacedAsset?.id;
+    assetsApi
+      .list(1, 100, undefined, 'available', replacementLine.assetType)
+      .then((res) => { if (live) setReplacementUnitList({ requisitionId: pickingForId, units: res.data.data.filter((a) => a.assetClass !== 'IES' && a.id !== replacedId) }); })
+      .catch(() => { if (live) setReplacementUnitList({ requisitionId: pickingForId, units: [] }); });
+    return () => { live = false; };
+  }, [pickingForId, replacementLine, selectedRequisition?.replacedAsset?.id]);
+
+  // Supply lines of the request being fulfilled. A supply leaves stock when the
+  // request is fulfilled, so the custodian sees - and can change - which stock
+  // record it comes out of. (Replacements are units, never supplies.)
+  const supplyLines = useMemo(
+    () => (confirmAction === 'Fulfill' && isFulfillmentPage && !replacementLine ? (selectedRequisition?.items ?? []).filter(isSupplyLine) : []),
+    [confirmAction, isFulfillmentPage, replacementLine, selectedRequisition],
+  );
+  const supplyForId = supplyLines.length > 0 ? selectedRequisition?.id : undefined;
+  const supplyOptions = supplyForId && supplyStock?.requisitionId === supplyForId ? supplyStock.options : null;
+
+  useEffect(() => {
+    if (!supplyForId) return;
+    let live = true;
+    Promise.all(
+      supplyLines.map(async (line) => {
+        try {
+          const res = await assetsApi.list(1, 100, line.itemDescription, 'available', line.assetType, 'IES');
+          return [line.id, stockOptionsFor(line, res.data.data)] as const;
+        } catch {
+          return [line.id, null] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!live) return;
+      setSupplyStock({ requisitionId: supplyForId, options: Object.fromEntries(entries) });
+      setStockPicks(Object.fromEntries(entries.map(([lineId, options]) => [lineId, options ? defaultStockId(options) : ''])));
+    });
+    return () => { live = false; };
+  }, [supplyForId, supplyLines]);
+
+  /** The first reason a supply line cannot be drawn from stock, or null. A failed lookup never blocks: the server decides. */
+  const supplyBlockedReason = supplyOptions
+    ? supplyLines.map((line) => { const options = supplyOptions[line.id]; return options ? stockProblem(line, options, stockPicks[line.id] ?? '') : null; }).find(Boolean) ?? null
+    : null;
+
+  // Custodian fulfilment queue: fulfil (optionally issuing the replacement unit, or
+  // drawing supplies from the chosen stock record) or hold, through the requisitions API.
   const submitFulfillmentDecision = async (action: 'Fulfill' | 'On Hold') => {
     if (!selected || actionSubmitting) return;
     const trimmedRemarks = remarks.trim();
@@ -618,8 +334,13 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
     setActionSubmitting(true);
     try {
       const id = String(selected.id);
+      let drewFromStock = false;
       if (action === 'Fulfill') {
-        await requisitionsApi.fulfill(id);
+        const line = requisitionById[id]?.requisitionType === 'replacement' ? requisitionById[id]?.items[0] : undefined;
+        const drawnFromStock = fulfilledItemsFor(requisitionById[id]?.items ?? [], stockPicks);
+        drewFromStock = drawnFromStock.length > 0;
+        const fulfilledItems = line && replacementUnitId ? [{ requisitionItemId: line.id, assetId: replacementUnitId }] : drawnFromStock;
+        await requisitionsApi.fulfill(id, fulfilledItems.length > 0 ? { fulfilledItems } : {});
       } else {
         await requisitionsApi.hold(id, trimmedRemarks);
       }
@@ -627,18 +348,28 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
       setSelected(null);
       setRemarks('');
       setErrors({});
-      notify(action === 'Fulfill' ? 'Requisition fulfilled.' : 'Requisition placed on hold.');
+      notify(
+        action === 'Fulfill'
+          ? replacementUnitId
+            ? 'Requisition fulfilled — replacement unit issued.'
+            : drewFromStock
+              ? 'Requisition fulfilled — the quantity was drawn from stock.'
+              : 'Requisition fulfilled.'
+          : 'Requisition placed on hold.',
+      );
+      askToPrint('requisition', id, requisitionById[id]?.requestNumber ?? 'The requisition');
+      setReplacementUnitId('');
+      setStockPicks({});
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
-    } catch {
-      notify(`Failed to ${action === 'Fulfill' ? 'fulfill' : 'place on hold'} the requisition. Please try again.`);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
+      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? `Could not ${action === 'Fulfill' ? 'fulfill' : 'place on hold'} the requisition. Please try again.`));
     } finally {
       setActionSubmitting(false);
     }
   };
 
-  // Real, persisted counterpart to runAction for Asset Custodian's live custody
-  // page — see isAssetCustodianLiveCustody above. Calls the actual asset lifecycle
-  // API instead of mutating local mock state. Unlike Fulfillment, two of the three
+  // Custody & Issuance: moves the asset through the lifecycle API. Two of the three
   // actions need a real input value, not just an optional remarks box.
   const submitCustodyDecision = async (action: 'Issue' | 'Transfer' | 'Return') => {
     if (!selected || actionSubmitting) return;
@@ -671,479 +402,187 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
-      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to complete this action. Please try again.'));
+      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Could not complete this action. Please try again.'));
     } finally {
       setActionSubmitting(false);
     }
   };
 
-  // Real, persisted counterpart to runAction for Asset Custodian's live maintenance
-  // page — see isAssetCustodianLiveMaintenance above. Reuses the existing remarks
-  // state/textarea (required only for the disposal path, matching CLAUDE.md's
-  // documented-justification rule for any disposal flag).
-  const submitMaintenanceDecision = async (action: 'Repair Completed' | 'Not Repairable' | 'Record Disposal') => {
+  // Disposal recommendation: flags the asset through the lifecycle API. Reuses the
+  // remarks textarea - a disposal flag needs a documented justification (CLAUDE.md §6
+  // Module 1). Repairs are closed from the
+  // Maintenance & Repair queue (RepairQueue), not here.
+  const submitDisposalRecommendation = async () => {
     if (!selected || actionSubmitting) return;
     const trimmedRemarks = remarks.trim();
-    if (action === 'Not Repairable' && !trimmedRemarks) {
-      setErrors({ remarks: 'Enter the reason the asset cannot be repaired.' });
-      return;
-    }
-    if (action === 'Record Disposal' && (!disposalRecord.date || !disposalRecord.method.trim() || !disposalRecord.reference.trim() || !disposalRecord.confirmed)) {
-      setErrors({ disposal: 'Enter all three details and confirm disposal is complete.' });
+    if (!trimmedRemarks) {
+      setErrors({ remarks: 'A justification is required to recommend disposal.' });
       return;
     }
     setActionSubmitting(true);
     try {
-      const id = String(selected.id);
-      let returnedToHolder = false;
-      if (action === 'Repair Completed') {
-        const { data } = await assetsApi.updateLifecycle(id, { status: 'available' });
-        returnedToHolder = data.status === 'issued';
-      } else if (action === 'Not Repairable') {
-        await assetsApi.markUnserviceable(id, trimmedRemarks);
-      } else {
-        await assetsApi.updateLifecycle(id, {
-          status: 'disposed',
-          disposalDate: disposalRecord.date,
-          disposalMethod: disposalRecord.method.trim(),
-          disposalReference: disposalRecord.reference.trim(),
-          disposalConfirmed: disposalRecord.confirmed,
-        });
-      }
+      await assetsApi.updateLifecycle(String(selected.id), { status: 'flagged_for_disposal', notes: trimmedRemarks });
       setConfirmAction(null);
       setSelected(null);
       setRemarks('');
       setErrors({});
-      setDisposalRecord({ date: '', method: '', reference: '', confirmed: false });
-      const messages = {
-        'Repair Completed': returnedToHolder ? 'Repair recorded. Asset returned to its holder.' : 'Repair recorded. Asset is available.',
-        'Not Repairable': 'Assessment saved. Find the asset in Disposal Recommendations.',
-        'Record Disposal': 'Disposal recorded.',
-      };
-      notify(messages[action]);
+      notify('Disposal recommended.');
       await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
-      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to complete this action. Please try again.'));
+      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Could not complete this action. Please try again.'));
     } finally {
       setActionSubmitting(false);
     }
   };
 
-  const validateForm = () => {
-    const next: Record<string, string> = {};
-    if (!form.item.trim()) next.item = 'Item is required.';
-    if (!form.requiredDate && ['catalogue', 'requisitions', 'returns-incidents'].includes(normalizedSlug)) next.requiredDate = 'Required date is required.';
-    if (!form.justification.trim()) next.justification = 'Justification or remarks are required.';
-    if (Number(form.quantity) < 1) next.quantity = 'Quantity must be at least 1.';
-    setErrors(next);
-    return Object.keys(next).length === 0;
-  };
-
-  const submitForm = () => {
-    if (!validateForm()) return;
-    const id = normalizedSlug === 'returns-incidents' ? `INC-${Date.now().toString().slice(-5)}` : `REQ-${Date.now().toString().slice(-5)}`;
-    const newRow: Row = {
-      id,
-      requester: 'Ana Reyes',
-      office: 'Digital Forensics',
-      item: form.item,
-      requestType: normalizedSlug === 'returns-incidents' ? 'Return' : 'New',
-      quantity: Number(form.quantity),
-      priority: 'Normal',
-      status: normalizedSlug === 'returns-incidents' ? 'Submitted' : 'Pending Approval',
-      submittedDate: new Date().toISOString().slice(0, 10),
-      requiredDate: form.requiredDate,
-      approvingOfficer: 'Mila Santos',
-      lastUpdate: 'Just now',
-      justification: form.justification,
-      timeline: ['Created in frontend mock mode', 'Notification added'],
-      attachments: form.attachment ? [form.attachment] : [],
-    };
-    setRows((current) => [newRow, ...current]);
-    setFormOpen(false);
-    setForm({ item: '', quantity: '1', requiredDate: '', justification: '', reason: '', attachment: '' });
-    setErrors({});
-    notify(`${content.action ?? 'Action'} saved. Dashboard counts and notifications updated in mock state.`);
-  };
-
-  // Fulfillment/custody/maintenance/disposal have no real "create new" backend action —
-  // once live, the header button only ever opened the mock FormDialog and injected a
-  // synthetic row into real data. Hide it on these four pages; the other live pages
-  // (approvals, audit) never had a header action to begin with.
-  const canPrimaryAct = !readOnly && content.action && !usesManagementLayout;
-  const primaryPermission = actionPermissionFor(role);
-  // Live-fetched rows carry a real requester UUID, not the mock 'EMP-003' id — compare
-  // against the actual logged-in user's id on the live approvals page.
-  const selfId = isApprovingOfficerLiveApprovals ? currentUser?.id : approvingOfficerId;
-  const selectedIsSelfApproval = role === ProposedUserRole.APPROVING_OFFICER && selected?.requesterId === selfId;
+  // Nobody approves their own request - the backend refuses it, so don't offer it.
+  const selectedIsSelfApproval = isApprovalsPage && selected?.requesterId === currentUser?.id;
 
   if (loading) return <LoadingSkeleton rows={8} />;
 
-  const RecordDialog = usesManagementLayout ? CenteredModal : DetailDrawer;
-  const sortOptions = isAssetCustodianLiveFulfillment ? fulfillmentSortOptions
-    : isAssetCustodianLiveCustody ? custodySortOptions : assetSortOptions;
-  const recordFields = isAssetCustodianLiveFulfillment ? fulfillmentFields
-    : isAssetCustodianLiveCustody ? custodyFields : assetRecordFields;
+  const selectedRequisitionDetail = isRequisitionPage && selected ? requisitionById[String(selected.id)] : undefined;
 
   return (
     <div className="space-y-5">
       <Toast message={toast} />
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-widest text-blue-700">{proposedRoleLabels[role]}</p>
-          <h1 className={`font-bold text-slate-950 ${usesManagementLayout ? 'mt-1 text-3xl' : 'text-2xl'}`}>{content.title}</h1>
-          <p className={`max-w-3xl text-slate-600 ${usesManagementLayout ? 'mt-2 text-base leading-relaxed' : 'mt-1 text-sm'}`}>{content.detail}</p>
-        </div>
-        {isAssetCustodianLiveMaintenance && (
-          <Link href="/asset-custodian/disposal" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-            View disposal recommendations
-          </Link>
-        )}
-        {canPrimaryAct && (
-          <button
-            type="button"
-            onClick={() => {
-              if (normalizedSlug === 'assets' && role === ProposedUserRole.ASSET_CUSTODIAN) {
-                window.location.href = '/asset-custodian/assets/new';
-                return;
-              }
-              if (content.action?.startsWith('Export') || content.action?.startsWith('Reset')) {
-                notify(`${content.action} completed in mock mode.`);
-                return;
-              }
-              setFormOpen(true);
-            }}
-            className="rounded-md bg-blue-700 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-800"
-            data-permission={primaryPermission}
-          >
-            {content.action}
-          </button>
-        )}
-      </div>
+      <PageHeader
+        eyebrow={proposedRoleLabels[role]}
+        title={content.title}
+        detail={content.detail}
+        action={isMyRequisitions && content.action ? <PrimaryButton onClick={() => setCreatingRequisition(true)}>{content.action}</PrimaryButton> : undefined}
+      />
 
       {liveFetchError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-          {liveFetchError}
-        </div>
+        <Notice tone="red">{liveFetchError}</Notice>
       )}
 
       {liveFetchTruncated && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+        <Notice tone="amber">
           Showing the first {LIVE_FETCH_LIMIT} records. There may be more — narrow your search to find items beyond this list.
-        </div>
+        </Notice>
       )}
 
-      {readOnly && (
-        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
-          Read-only controls are active. Add, edit, approve, issue, transfer, dispose, assign role, and delete actions are hidden.
-        </div>
-      )}
-
-      {normalizedSlug === 'notifications' && (
-        <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          {['All', 'Unread', 'Requisitions', 'Assets', 'Returns', 'Incidents'].map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => {
-                setStatusFilter(tab === 'Unread' ? 'Unread' : 'All');
-                setSearch(tab === 'All' || tab === 'Unread' ? '' : tab);
-                setPage(1);
-              }}
-              className="rounded-md border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
-            >
-              {tab}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => {
-              setRows((current) => current.map((row) => ({ ...row, status: 'Read', unread: false })));
-              notify('All notifications marked as read.');
-            }}
-            className="ml-auto rounded-md bg-blue-700 px-3 py-2 text-sm font-bold text-white hover:bg-blue-800"
-          >
-            Mark all as read
-          </button>
-        </div>
-      )}
-
-      {normalizedSlug === 'roles' && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-          Frontend prototype only. Backend role persistence is not yet implemented.
-        </div>
-      )}
-
-      {normalizedSlug === 'disposal' && role === ProposedUserRole.PROPERTY_OFFICER && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-          Disposal review is frontend-only. Backend authorization and disposal persistence are deferred.
-        </div>
-      )}
-
-      {normalizedSlug === 'qr-scanner' && (
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-bold text-slate-950">Mock QR Scanner</h2>
-          <div className="mt-3 flex flex-wrap gap-3">
-            <input
-              value={scanValue}
-              onChange={(event) => setScanValue(event.target.value)}
-              placeholder="Enter asset ID, e.g. ICT-00091"
-              className="h-10 min-w-72 rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                const asset = assetMockRows.find((item) => item.id.toLowerCase() === scanValue.toLowerCase());
-                if (!asset) {
-                  notify('No mock asset found for that QR code.');
-                  return;
-                }
-                setSelected(assetToRow(asset));
-              }}
-              className="rounded-md bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800"
-            >
-              Resolve QR
-            </button>
-            <button type="button" onClick={() => setScanValue(role === ProposedUserRole.ASSET_CUSTODIAN ? 'ICT-00091' : 'PPE-00120')} className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
-              Use Demo QR
-            </button>
-          </div>
-        </section>
-      )}
-
-      {['physical-inventory', 'assets', 'fixed-assets'].includes(normalizedSlug) && (
-        <InventoryLabelPrinter
-          assets={assetMockRows}
-        />
-      )}
-
-      {isInventoryAccountabilityPage && (
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-base font-bold text-slate-950">Inventory Accountability Tracking</h2>
-              <p className="mt-1 text-sm text-slate-600">
-                Tracks who the laptop or asset is issued to, when it was issued, their division/office, location, and acknowledgment status.
-              </p>
-            </div>
-            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">Frontend mock accountability ledger</span>
-          </div>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-                <tr>
-                  <th className="px-3 py-2">Asset</th>
-                  <th className="px-3 py-2">Issued To</th>
-                  <th className="px-3 py-2">Division / Office</th>
-                  <th className="px-3 py-2">Date Issued</th>
-                  <th className="px-3 py-2">Location</th>
-                  <th className="px-3 py-2">Form</th>
-                  <th className="px-3 py-2">Acknowledgment</th>
-                  <th className="px-3 py-2">Expected Return</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {rows
-                  .filter((row) => String(row.assignedTo ?? 'Unassigned') !== 'Unassigned' || normalizedSlug === 'physical-inventory')
-                  .slice(0, 6)
-                  .map((row) => (
-                    <tr key={`accountability-${String(row.id)}`}>
-                      <td className="px-3 py-2">
-                        <p className="font-bold text-slate-950">{String(row.name ?? row.item ?? row.id)}</p>
-                        <p className="text-xs text-slate-500">{String(row.id)}</p>
-                      </td>
-                      <td className="px-3 py-2 text-slate-700">{String(row.assignedTo ?? 'Unassigned')}</td>
-                      <td className="px-3 py-2 text-slate-700">
-                        <p>{String(row.division ?? '-')}</p>
-                        <p className="text-xs text-slate-500">{String(row.officeOrSection ?? '-')}</p>
-                      </td>
-                      <td className="px-3 py-2 text-slate-700">{String(row.dateIssued ?? row.issuedDate ?? '-')}</td>
-                      <td className="px-3 py-2 text-slate-700">{String(row.location ?? '-')}</td>
-                      <td className="px-3 py-2 text-slate-700">{String(row.accountabilityForm ?? '-')}</td>
-                      <td className="px-3 py-2"><StatusBadge status={String(row.acknowledgmentStatus ?? 'Pending')} /></td>
-                      <td className="px-3 py-2 text-slate-700">{String(row.expectedReturnDate ?? '-')}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      {usesManagementLayout ? (
-        <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center">
-          <SearchInput value={search} onChange={(value) => { setSearch(value); setPage(1); }} className="min-w-0 flex-1" />
-          {!isAssetCustodianLiveDisposal && <WorkspaceSelect label="Filter by status" value={statusFilter} className="sm:w-56"
-            onChange={(value) => { setStatusFilter(value); setPage(1); }}
-            options={statuses.map((value) => ({ value, label: value === 'All' ? 'All statuses' : custodyLabel(value) }))} />}
-          <WorkspaceSelect label="Sort records" value={sortKey} className="sm:w-48"
-            onChange={(value) => { setSortKey(value); setPage(1); }}
-            options={sortOptions} />
-        </div>
-      ) : <FilterBar
-        search={search}
-        onSearch={(value) => { setSearch(value); setPage(1); }}
+      <SearchToolbar
+        value={search}
+        onChange={(value) => { setSearch(value); setPage(1); }}
+        placeholder="Search records"
         filters={[
-          { label: 'Status', value: statusFilter, options: statuses, onChange: (value) => { setStatusFilter(value); setPage(1); } },
-          { label: 'Sort', value: sortKey, options: ['id', 'status', 'item', 'name', 'category', 'date'], onChange: setSortKey },
+          { label: 'All statuses', value: statusFilter, options: statuses, onChange: (value) => { setStatusFilter(value); setPage(1); } },
+          {
+            label: 'Sort by',
+            value: sortKey,
+            options: (isRequisitionPage ? [...REQUISITION_SORT_OPTIONS] : [...ASSET_SORT_KEYS]).map((key) => ({ value: key, label: `Sort: ${SORT_LABEL[key] ?? key}` })),
+            onChange: (value) => { setSortKey(value); setPage(1); },
+          },
         ]}
-      />}
+      />
 
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className={`w-full text-left text-sm ${isAssetCustodianLiveFulfillment ? 'min-w-[860px]' : usesManagementLayout ? 'min-w-[720px]' : ''}`}>
-            <thead className={`bg-slate-50 uppercase text-slate-500 ${usesManagementLayout ? 'text-sm' : 'text-xs tracking-wider'}`}>
+          <table className="w-full text-left text-sm">
+            <thead>
               <tr>
-                <th className="px-4 py-3">{isAssetCustodianLiveFulfillment ? 'Requisition' : isLiveAssetQueue ? 'Asset' : 'Record'}</th>
-                {isAssetCustodianLiveFulfillment && <th scope="col" className="px-4 py-3">Requested item</th>}
-                <th className="px-4 py-3">{isAssetCustodianLiveFulfillment ? 'Requested by' : isAssetCustodianLiveCustody ? 'Held by' : isAssetMaintenanceQueue ? 'Condition' : 'Type / Owner'}</th>
-                <th className="px-4 py-3">{isAssetCustodianLiveFulfillment ? 'Required by' : isLiveAssetQueue ? 'Location' : 'Date / Location'}</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className={thClass}>{isRequisitionPage ? 'Request' : 'Asset'}</th>
+                <th className={thClass}>{isRequisitionPage ? 'Requested by' : 'Held by'}</th>
+                <th className={thClass}>{isRequisitionPage ? 'Required by' : 'Location'}</th>
+                <th className={thClass}>Status</th>
+                <th className={`${thClass} text-right`}>Actions</th>
               </tr>
             </thead>
-            <tbody className={usesManagementLayout ? 'divide-y divide-slate-100' : 'divide-y divide-slate-200'}>
-              {visibleRows.map((row) => (
+            <tbody>
+              {visibleRows.map((row) => {
+                const liveReq = isRequisitionPage ? requisitionById[String(row.id)] : undefined;
+                return (
                 <tr key={String(row.id)} className="hover:bg-blue-50/40">
-                  <td className={isAssetCustodianLiveFulfillment ? 'w-[15%] px-4 py-3.5' : usesManagementLayout ? 'w-[30%] px-4 py-3.5' : 'px-4 py-3'}>
-                    <p className="font-bold text-slate-950">{String(isAssetCustodianLiveFulfillment ? row.requestNumber : row.item ?? row.name ?? row.title ?? row.action ?? row.id)}</p>
-                    {!isAssetCustodianLiveFulfillment && <p className="text-xs text-slate-500">{isLiveAssetQueue
-                      ? [row.propertyNumber, row.serialNumber && `S/N ${String(row.serialNumber)}`].filter(Boolean).join(' · ') || 'No property number or serial number'
-                      : String(row.id)}</p>}
+                  <td className={tdClass}>
+                    <p className="font-bold text-slate-950"><ClampText lines={2}>{String(row.item ?? row.id)}</ClampText></p>
+                    <p className="text-xs text-slate-500">
+                      {isAssetPage
+                        ? [row.propertyNumber, row.serialNumber && `S/N ${String(row.serialNumber)}`].filter(Boolean).join(' · ')
+                        : String(row.requestNumber ?? row.id)}
+                    </p>
                   </td>
-                  {isAssetCustodianLiveFulfillment && (
-                    <td className="w-[24%] break-words px-4 py-3.5 text-slate-800">
-                      {String(row.item || 'No items recorded')}
+                  {isAssetPage && (
+                    <td className={tdClass}>
+                      <p className="font-semibold text-slate-800">{String(row.heldBy)}</p>
+                      {row.dueBack ? (
+                        <p className={`text-xs ${row.overdue ? 'font-bold text-red-600' : 'text-slate-500'}`}>
+                          {String(row.dueBack)}{row.overdue ? ' · overdue' : ''}
+                        </p>
+                      ) : null}
                     </td>
                   )}
-                  <td className={usesManagementLayout ? 'w-[22%] px-4 py-3.5 text-slate-800' : 'px-4 py-3 text-slate-600'}>
-                    {isAssetCustodianLiveCustody ? (
-                      <>
-                        <p className="font-semibold">{String(row.holder)}</p>
-                        {row.expectedReturnDate && <p className={`text-xs ${row.overdue ? 'font-semibold text-red-700' : 'text-slate-500'}`}>
-                          Due back {custodyDate.format(new Date(String(row.expectedReturnDate)))}{row.overdue ? ' · Overdue' : ''}
-                        </p>}
-                      </>
-                    ) : isAssetCustodianLiveFulfillment ? (
-                      <>
-                        <p className="font-semibold">{String(row.requester)}</p>
-                        <p className="text-xs text-slate-500">{custodyLabel(String(row.requestType ?? ''))}</p>
-                      </>
-                    ) : isAssetMaintenanceQueue ? (
-                      <span className="font-semibold">{row.condition ? custodyLabel(String(row.condition)) : 'Not recorded'}</span>
-                    ) : String(row.requestType ?? row.category ?? row.type ?? row.actor ?? row.requester ?? row.office ?? '-')}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{String(row.requiredDate ?? row.submittedDate ?? row.date ?? row.location ?? row.period ?? '-') || 'Not recorded'}</td>
-                  <td className="px-4 py-3"><StatusBadge status={String(row.status ?? 'Open')} label={usesManagementLayout ? custodyLabel(String(row.status ?? 'Open')) : undefined} /></td>
-                  <td className="px-4 py-3">
+                  {isAssetPage && <td className={tdClass}>{String(row.location ?? '-')}</td>}
+                  {liveReq && (
+                    <>
+                      <td className={tdClass}>
+                        <p className="font-semibold text-slate-800">{liveReq.requester?.name ?? 'Unknown requester'}</p>
+                        <p className="text-xs text-slate-500">{[liveReq.requester?.employeeId, liveReq.requester?.officeOrSection, liveReq.requisitionType].filter(Boolean).join(' · ')}</p>
+                      </td>
+                      <td className={tdClass}>
+                        <p>{formatDate(liveReq.requiredDate)}</p>
+                        <SlaBadge request={liveReq} />
+                      </td>
+                    </>
+                  )}
+                  <td className={tdClass}><StatusBadge status={String(row.status ?? 'Open')} label={liveReq ? requisitionStatusLabel(liveReq.status) : undefined} /></td>
+                  <td className={tdClass}>
                     <div className="flex justify-end gap-2">
-                      <button type="button" onClick={() => { setRequesterRefreshFailed(null); setManageRecord(false); setSelected(row); }} className={`rounded-md border border-slate-300 px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50 ${usesManagementLayout ? 'text-sm' : 'text-xs'}`}>View</button>
-                      {usesManagementLayout && (
-                        <button type="button" onClick={() => { setRequesterRefreshFailed(null); setManageRecord(true); setSelected(row); }} className="rounded-md bg-blue-700 px-3 py-1.5 text-sm font-bold text-white shadow-sm hover:bg-blue-800">
-                          Manage
-                        </button>
-                      )}
-                      {!usesManagementLayout && !readOnly && normalizedSlug !== 'notifications' && (
-                        <button type="button" onClick={() => { setSelected(row); setConfirmAction(actionLabel(normalizedSlug, role)); }} className="rounded-md bg-blue-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-800">
-                          {actionLabel(normalizedSlug, role)}
-                        </button>
-                      )}
-                      {normalizedSlug === 'notifications' && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            updateRowStatus(String(row.id), 'Read');
-                            notify('Notification marked as read.');
-                          }}
-                          className="rounded-md bg-blue-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-800"
-                        >
-                          Mark Read
-                        </button>
-                      )}
+                      <button type="button" onClick={() => setSelected(row)} className={buttonClass({ variant: 'secondary', size: 'sm' })}>View</button>
+                      <button type="button" onClick={() => { setSelected(row); if (rowActionMode(normalizedSlug) === 'confirm') setConfirmAction(rowActionLabel(normalizedSlug)); }} className={buttonClass({ size: 'sm' })}>
+                        {rowActionLabel(normalizedSlug)}
+                      </button>
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {visibleRows.length === 0 && (
-                <tr>
-                  <td colSpan={isAssetCustodianLiveFulfillment ? 6 : 5} className="px-4 py-10 text-center text-sm text-slate-500">
-                    {liveFetchError ? 'Records could not be loaded.' : 'No records match the current filters.'}
-                  </td>
-                </tr>
+                <EmptyRow colSpan={5}>{search || statusFilter !== 'All' ? 'No records match the current filters.' : 'Nothing here yet.'}</EmptyRow>
               )}
             </tbody>
           </table>
         </div>
-        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-600">
-          <span>Page {activePage} of {totalPages} • {filteredRows.length} records</span>
-          <div className="flex gap-2">
-            <button type="button" disabled={activePage === 1} onClick={() => setPage(activePage - 1)} className="rounded-md border border-slate-200 px-3 py-1.5 font-bold disabled:opacity-40">Previous</button>
-            <button type="button" disabled={activePage === totalPages} onClick={() => setPage(activePage + 1)} className="rounded-md border border-slate-200 px-3 py-1.5 font-bold disabled:opacity-40">Next</button>
-          </div>
-        </div>
+        <Pager page={pageNo} total={filteredRows.length} pageSize={pageSize} onPage={setPage} noun="records" />
       </section>
 
-      <RecordDialog
-        open={Boolean(selected) && !(usesManagementLayout && confirmAction)}
-        title={String(selected?.requestNumber ?? selected?.item ?? selected?.name ?? selected?.title ?? selected?.id ?? 'Record')}
-        onClose={() => setSelected(null)}
-      >
+      <DetailDrawer open={Boolean(selected)} title={String(selectedRequisitionDetail?.requestNumber ?? selected?.item ?? 'Record')} onClose={() => setSelected(null)}>
         {selected && (
           <div className="space-y-4">
-            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {(usesManagementLayout
-                ? Object.entries(recordFields).map(([key, label]) => [label, selected[key]] as const)
-                : Object.entries(selected).filter(([, value]) => !Array.isArray(value))
-              ).map(([key, value]) => (
-                <div key={key} className="rounded-lg bg-slate-50 p-3">
-                  <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">{key}</dt>
-                  <dd className="mt-1 text-sm text-slate-900">
-                    {staleRequesterId && (key === 'Requester division' || key === 'Requester office / section')
-                      ? requesterRefreshFailed === staleRequesterId ? 'Could not refresh profile' : 'Loading…'
-                      : usesManagementLayout && value && (key === 'Status' || key === 'Condition' || key === 'Request type')
-                      ? custodyLabel(String(value)) : String(value ?? '') || 'Not recorded'}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            {disposalAssetId && (
-              <section className="rounded-md border border-slate-200 p-3">
-                <h3 className="text-sm font-semibold text-slate-950">Assessment reason</h3>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">
-                  {disposalAssessment?.id === disposalAssetId ? disposalAssessment.reason : 'Loading assessment…'}
-                </p>
-              </section>
-            )}
-            {isLiveAssetQueue ? (
-              <Link href={`/asset-custodian/assets/${encodeURIComponent(String(selected.id))}`} className="text-sm font-semibold text-blue-700 hover:underline">
-                Open asset record and transaction history
-              </Link>
-            ) : isAssetCustodianLiveFulfillment ? (
-              <div>
-                <h3 className="mb-2 text-sm font-bold text-slate-950">Requested items</h3>
-                <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
-                  {Array.isArray(selected.itemLines) && selected.itemLines.map((line, index) => (
-                    <li key={index} className="px-3 py-2 text-sm text-slate-700">{line}</li>
+            {selectedRequisitionDetail && <RequisitionDetailView request={selectedRequisitionDetail} />}
+            {isAssetPage && (
+              <>
+                <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {([
+                    ['Property no.', selected.propertyNumber],
+                    ['Serial no.', selected.serialNumber],
+                    ['Status', humanize(String(selected.status))],
+                    ['Condition', humanize(String(selected.condition))],
+                    ['Held by', selected.heldBy],
+                    ['Due back', selected.returnDate ? `${String(selected.returnDate)}${selected.overdue ? ' — overdue' : ''}` : '—'],
+                    ['Location', selected.location],
+                  ] as const).map(([label, value]) => (
+                    <div key={label} className="rounded-lg bg-slate-50 p-3">
+                      <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</dt>
+                      <dd className="mt-1 text-sm text-slate-900">{String(value ?? '-')}</dd>
+                    </div>
                   ))}
-                </ul>
-              </div>
-            ) : <div>
-              <h3 className="mb-2 text-sm font-bold text-slate-950">Timeline</h3>
-              <ActivityTimeline items={Array.isArray(selected.timeline) ? selected.timeline : ['Opened in frontend prototype', 'No backend persistence performed']} />
-            </div>}
+                </dl>
+                <Link href={`${assetRecordBase}/${String(selected.id)}`} className="inline-block text-sm font-bold text-blue-700 hover:underline">
+                  Open the full asset record — history, QR code and lifecycle
+                </Link>
+              </>
+            )}
             {selectedIsSelfApproval && (
               <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
-                Self-approval is disabled in this frontend prototype.
+                This is your own request, so you can&apos;t approve or reject it. It is routed to another approver.
               </p>
             )}
-            {usesManagementLayout && manageRecord && !detailActions(normalizedSlug, role, true, String(selected.status ?? ''), String(selected.condition ?? '')).length && (
-              <p className="text-sm text-slate-600">No actions are available for this status.</p>
-            )}
-            {!readOnly && !selectedIsSelfApproval && (!usesManagementLayout || manageRecord) && (
+            {!selectedIsSelfApproval && (
               <div className="flex flex-wrap gap-2">
-                {detailActions(normalizedSlug, role, isLiveFetchPage, String(selected.status ?? ''), String(selected.condition ?? '')).map((action) => (
-                  <button key={action} type="button" onClick={() => setConfirmAction(action)} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-bold text-white hover:bg-blue-800">
+                {detailActions(normalizedSlug, String(selected.status ?? '')).map((action) => (
+                  <button key={action} type="button" onClick={() => setConfirmAction(action)} className={buttonClass()}>
                     {action}
                   </button>
                 ))}
@@ -1151,190 +590,115 @@ export function WorkflowPage({ role, slug }: Readonly<{ role: ProposedUserRole; 
             )}
           </div>
         )}
-      </RecordDialog>
+      </DetailDrawer>
 
       <ConfirmDialog
         open={Boolean(confirmAction)}
-        title={confirmAction === 'Not Repairable' ? 'Mark as Not Repairable' : confirmAction === 'Record Disposal' ? 'Record Disposal' : `${confirmAction} record`}
-        busy={actionSubmitting}
-        detail={
-          confirmAction === 'Not Repairable' ? 'The asset will be marked Unserviceable and sent to Disposal Recommendations.' :
-          confirmAction === 'Record Disposal' ? 'Enter the details of the completed, authorized disposal.' :
-          (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) ||
-          (isAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) ||
-          (isAssetCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) ||
-          (isAssetCustodianLiveMaintenance && confirmAction === 'Repair Completed') ||
-          (isAssetCustodianLiveMaintenance && confirmAction === 'Not Repairable') ||
-          (isAssetCustodianLiveDisposal && confirmAction === 'Record Disposal')
-            ? 'This calls the live backend API and updates the real record.'
-            : 'This updates frontend mock state only. Backend authorization and persistence will be implemented later.'
-        }
+        title={`${confirmAction} record`}
+        detail="The change is saved immediately and written to the audit trail."
         confirmLabel={actionSubmitting ? 'Processing…' : (confirmAction ?? 'Confirm')}
+        confirmDisabled={actionSubmitting || (supplyLines.length > 0 && (supplyOptions === null || Boolean(supplyBlockedReason)))}
         onConfirm={() => {
           if (!confirmAction) return;
-          if (isApprovingOfficerLiveApprovals && (confirmAction === 'Approve' || confirmAction === 'Reject')) {
+          if (isApprovalsPage && (confirmAction === 'Approve' || confirmAction === 'Reject')) {
             void submitApprovalDecision(confirmAction);
-            return;
-          }
-          if (isAssetCustodianLiveFulfillment && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) {
+          } else if (isFulfillmentPage && (confirmAction === 'Fulfill' || confirmAction === 'On Hold')) {
             void submitFulfillmentDecision(confirmAction);
-            return;
-          }
-          if (isAssetCustodianLiveCustody && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) {
+          } else if (isCustodyPage && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) {
             void submitCustodyDecision(confirmAction);
-            return;
+          } else if (isDisposalPage && confirmAction === 'Recommend Disposal') {
+            void submitDisposalRecommendation();
           }
-          if (isAssetCustodianLiveMaintenance && (confirmAction === 'Repair Completed' || confirmAction === 'Not Repairable')) {
-            void submitMaintenanceDecision(confirmAction);
-            return;
-          }
-          if (isAssetCustodianLiveDisposal && confirmAction === 'Record Disposal') {
-            void submitMaintenanceDecision(confirmAction);
-            return;
-          }
-          if (!usesManagementLayout) runAction(confirmAction);
         }}
-        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setIssueExpectedReturnDate(''); setTransferToLocation(''); setDisposalRecord({ date: '', method: '', reference: '', confirmed: false }); }}
+        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setIssueExpectedReturnDate(''); setTransferToLocation(''); setReplacementUnitId(''); setStockPicks({}); }}
       >
-        {(['Reject', 'Return for Revision'].includes(confirmAction ?? '') ||
-          (isAssetCustodianLiveFulfillment && confirmAction === 'On Hold') ||
-          (isAssetCustodianLiveMaintenance && confirmAction === 'Not Repairable')) && (
+        {supplyLines.map((line) => {
+          const options = supplyOptions?.[line.id];
+          const chosen = options?.find((option) => option.id === stockPicks[line.id]);
+          const problem = options ? stockProblem(line, options, stockPicks[line.id] ?? '') : null;
+          return (
+            <label key={line.id} className="block text-sm font-semibold text-slate-700">
+              <span>Draw {line.quantity} × {line.itemDescription} from stock</span>
+              <select
+                value={stockPicks[line.id] ?? ''}
+                onChange={(event) => setStockPicks((current) => ({ ...current, [line.id]: event.target.value }))}
+                disabled={options === undefined || options === null || options.length === 0}
+                className={`${controlClass} mt-2`}
+              >
+                {options === undefined && <option value="">Loading stock…</option>}
+                {options === null && <option value="">Stock could not be loaded — the system will pick the oldest record</option>}
+                {options && options.length === 0 && <option value="">No stock on record</option>}
+                {options && options.length > 0 && !stockPicks[line.id] && <option value="">Choose a stock record…</option>}
+                {(options ?? []).map((option) => (
+                  <option key={option.id} value={option.id} disabled={!option.enough}>{option.label}{option.enough ? '' : ' — not enough'}</option>
+                ))}
+              </select>
+              <span className={`mt-1 block text-xs font-normal ${problem ? 'text-red-600' : 'text-slate-500'}`}>
+                {problem ?? (chosen ? `${chosen.onHand} on hand → ${chosen.remaining} left after this fulfillment.` : 'The quantity leaves stock when you fulfill.')}
+              </span>
+            </label>
+          );
+        })}
+        {pickingReplacementUnit && (
           <label className="block text-sm font-semibold text-slate-700">
-            <span>{confirmAction === 'Not Repairable' ? 'Assessment reason (required)' : 'Remarks'}</span>
-            <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            <span>Replacement unit to issue</span>
+            <select value={replacementUnitId} onChange={(event) => setReplacementUnitId(event.target.value)} disabled={replacementUnits === null} className={`${controlClass} mt-2`}>
+              <option value="">{replacementUnits === null ? 'Loading available units…' : 'Issue later from Custody & Issuance'}</option>
+              {(replacementUnits ?? []).map((unit) => (
+                <option key={unit.id} value={unit.id}>{[unit.itemDescription, unit.propertyNumber, unit.serialNumber && `S/N ${unit.serialNumber}`].filter(Boolean).join(' · ')}</option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs font-normal text-slate-500">
+              {replacementUnits && replacementUnits.length === 0
+                ? `No available ${replacementLine?.assetType ?? ''} unit — fulfill now and issue one later, or put the request on hold.`
+                : 'The old unit is taken back and this one is issued to the requester in the same step.'}
+            </span>
+          </label>
+        )}
+        {((isApprovalsPage && confirmAction === 'Reject') ||
+          (isFulfillmentPage && confirmAction === 'On Hold') ||
+          (isDisposalPage && confirmAction === 'Recommend Disposal')) && (
+          <label className="block text-sm font-semibold text-slate-700">
+            <span>Remarks</span>
+            <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} className={`${textareaClass} mt-2`} />
             {errors.remarks && <span className="mt-1 block text-xs text-red-600">{errors.remarks}</span>}
           </label>
         )}
-        {isAssetCustodianLiveDisposal && confirmAction === 'Record Disposal' && (
-          <div className="space-y-3">
-            <Field label="Disposal date" type="date" value={disposalRecord.date} onChange={(date) => setDisposalRecord((record) => ({ ...record, date }))} />
-            <Field label="Disposal method" value={disposalRecord.method} onChange={(method) => setDisposalRecord((record) => ({ ...record, method }))} />
-            <Field label="Document reference" value={disposalRecord.reference} onChange={(reference) => setDisposalRecord((record) => ({ ...record, reference }))} />
-            <label className="flex items-start gap-2 text-sm text-slate-700">
-              <input type="checkbox" className="mt-1" checked={disposalRecord.confirmed} onChange={(event) => setDisposalRecord((record) => ({ ...record, confirmed: event.target.checked }))} />
-              The disposal was authorized and has been completed.
-            </label>
-            {errors.disposal && <p role="alert" className="text-sm text-red-700">{errors.disposal}</p>}
-          </div>
-        )}
-        {(isAssetCustodianLiveCustody) && confirmAction === 'Issue' && (
+        {isCustodyPage && confirmAction === 'Issue' && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Recipient Employee ID</span>
-            <input type="text" value={issueEmployeeId} onChange={(event) => setIssueEmployeeId(event.target.value)} placeholder="e.g. CICC-0042" className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            <input type="text" value={issueEmployeeId} onChange={(event) => setIssueEmployeeId(event.target.value)} placeholder="e.g. CICC-0042" className={`${controlClass} mt-2`} />
             {errors.employeeId && <span className="mt-1 block text-xs text-red-600">{errors.employeeId}</span>}
           </label>
         )}
-        {(isAssetCustodianLiveCustody) && confirmAction === 'Issue' && (
+        {isCustodyPage && confirmAction === 'Issue' && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Expected return date (optional)</span>
-            <input type="date" value={issueExpectedReturnDate} onChange={(event) => setIssueExpectedReturnDate(event.target.value)} className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            <DateField value={issueExpectedReturnDate} onChange={(event) => setIssueExpectedReturnDate(event.target.value)} className="mt-2 w-full" />
           </label>
         )}
-        {(isAssetCustodianLiveCustody) && confirmAction === 'Transfer' && (
+        {isCustodyPage && confirmAction === 'Transfer' && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Receiving Office / Section</span>
-            <input type="text" value={transferToLocation} onChange={(event) => setTransferToLocation(event.target.value)} placeholder="e.g. Cybercrime Operations Division" className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            <input type="text" value={transferToLocation} onChange={(event) => setTransferToLocation(event.target.value)} placeholder="e.g. Cybercrime Operations Division" className={`${controlClass} mt-2`} />
             {errors.toLocation && <span className="mt-1 block text-xs text-red-600">{errors.toLocation}</span>}
           </label>
         )}
       </ConfirmDialog>
 
-      {!usesManagementLayout && <FormDialog open={formOpen} title={content.action ?? 'Mock Action'} submitLabel="Submit" onSubmit={submitForm} onClose={() => setFormOpen(false)}>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Item" value={form.item} error={errors.item} onChange={(value) => setForm((current) => ({ ...current, item: value }))} />
-          <Field label="Quantity" value={form.quantity} error={errors.quantity} type="number" onChange={(value) => setForm((current) => ({ ...current, quantity: value }))} />
-          <Field label="Required date" value={form.requiredDate} error={errors.requiredDate} type="date" onChange={(value) => setForm((current) => ({ ...current, requiredDate: value }))} />
-          <Field label="Mock attachment" value={form.attachment} onChange={(value) => setForm((current) => ({ ...current, attachment: value }))} placeholder="filename.pdf" />
-          <label className="sm:col-span-2 text-sm font-semibold text-slate-700">
-            <span>Justification / remarks</span>
-            <textarea value={form.justification} onChange={(event) => setForm((current) => ({ ...current, justification: event.target.value }))} className="mt-2 h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
-            {errors.justification && <span className="mt-1 block text-xs text-red-600">{errors.justification}</span>}
-          </label>
-          <label className="sm:col-span-2 flex items-start gap-2 text-sm text-slate-700">
-            <input type="checkbox" className="mt-1" />
-            <span>I certify that this frontend mock submission is accurate for demonstration purposes.</span>
-          </label>
-        </div>
-      </FormDialog>}
+      <CenteredModal open={creatingRequisition} title="New requisition" description="Choose an item from inventory and provide the justification for approval." onClose={() => setCreatingRequisition(false)}>
+        {creatingRequisition && (
+          <RequisitionForm
+            onSubmit={(created) => {
+              setCreatingRequisition(false);
+              notify(`${created.requestNumber} was submitted for approval.`);
+              askToPrint('requisition', created.id, created.requestNumber);
+              void fetchLiveRows().catch(() => notify('Submitted, but the list failed to refresh — reload the page to see it.'));
+            }}
+          />
+        )}
+      </CenteredModal>
+      {printPrompt}
     </div>
   );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  error,
-  type = 'text',
-  placeholder,
-}: Readonly<{
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  error?: string;
-  type?: string;
-  placeholder?: string;
-}>) {
-  return (
-    <label className="text-sm font-semibold text-slate-700">
-      {label}
-      <input
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-      />
-      {error && <span className="mt-1 block text-xs text-red-600">{error}</span>}
-    </label>
-  );
-}
-
-function actionLabel(slug: string, role: ProposedUserRole) {
-  if (slug === 'approvals') return 'Review';
-  if (slug === 'fulfillment') return 'Fulfill';
-  if (slug === 'custody') return 'Issue';
-  if (slug === 'maintenance') return 'Mark Complete';
-  if (slug === 'physical-inventory') return 'Verify';
-  if (slug === 'disposal') return role === ProposedUserRole.PROPERTY_OFFICER ? 'Approve' : 'Recommend Disposal';
-  if (slug === 'corrections') return 'Approve Correction';
-  if (slug === 'reports' || slug.includes('report') || slug === 'forms') return 'Export';
-  return 'Open';
-}
-
-function detailActions(slug: string, role: ProposedUserRole, isLive: boolean, selectedStatus?: string, condition?: string) {
-  if (slug === 'approvals') return ['Approve', 'Reject', 'Return for Revision'];
-  if (slug === 'requisitions') return ['Cancel', 'Submit'];
-  if (slug === 'assigned-assets') return ['Acknowledge', 'Return', 'Report Damage', 'Request Repair'];
-  // Live fulfillment only supports the two real backend actions — 'Reserve' has no
-  // requisitionsApi equivalent, so it stays mock-only and is dropped once this is real.
-  if (slug === 'fulfillment') {
-    if (!isLive) return ['Reserve', 'Fulfill', 'On Hold'];
-    if (selectedStatus === 'on_hold') return ['Fulfill'];
-    return selectedStatus === 'pending_fulfillment' ? ['Fulfill', 'On Hold'] : [];
-  }
-  if (slug === 'custody') {
-    // Live custody gates by the asset's actual status via the same transition map the
-    // asset detail page's lifecycle dropdown uses — offering 'Issue' on an already-issued
-    // asset used to succeed in the UI and fail with a 400 from the backend state machine.
-    if (isLive) {
-      const custodyActionForNextStatus: Record<string, string> = { issued: 'Issue', transferred: 'Transfer', returned: 'Return' };
-      const allowed = ASSET_LIFECYCLE_TRANSITIONS[selectedStatus ?? ''] ?? [];
-      return allowed
-        .filter((next) => next !== 'issued' || (condition !== 'unserviceable' && condition !== 'for_disposal'))
-        .map((next) => custodyActionForNextStatus[next]).filter((action): action is string => Boolean(action));
-    }
-    return ['Issue', 'Transfer', 'Return'];
-  }
-  if (slug === 'maintenance') return !isLive ? ['Mark Complete', 'Recommend Disposal']
-    : selectedStatus === 'under_repair' ? ['Repair Completed', 'Not Repairable'] : [];
-  if (slug === 'physical-inventory') return ['Verify', 'Mark Reconciled'];
-  if (slug === 'disposal') {
-    if (role === ProposedUserRole.PROPERTY_OFFICER) return ['Approve', 'Reject', 'Return for Revision'];
-    return !isLive ? ['Recommend Disposal']
-      : selectedStatus === 'flagged_for_disposal' && condition === 'unserviceable' ? ['Record Disposal'] : [];
-  }
-  if (slug === 'users') return ['Unlock', 'Reset Password', 'Deactivate'];
-  if (slug === 'roles') return ['Assign Role'];
-  return ['Open'];
 }
