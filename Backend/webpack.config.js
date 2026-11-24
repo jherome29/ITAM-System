@@ -14,6 +14,8 @@ module.exports = function (options) {
     // Exclude native-binding packages from the bundle — they must load from node_modules at runtime
     externals: {
       bcrypt: 'commonjs bcrypt',
+      // TypeORM loads the selected database driver dynamically at runtime.
+      pg: 'commonjs pg',
       // pdfkit reads font .afm files from __dirname at runtime; bundling it moves
       // __dirname to dist/ where those files don't exist, causing ENOENT errors.
       pdfkit: 'commonjs pdfkit',

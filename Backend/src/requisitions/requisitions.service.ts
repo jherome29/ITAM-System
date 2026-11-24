@@ -30,9 +30,9 @@ import {
   AuditAction,
   UserRole,
   NotificationAlertType,
-  AssetType,
   AssetClass,
   AssetCondition,
+  AssetStatus,
 } from '../../../packages/shared/src/enums';
 import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
 import { SystemConfigService } from '../system-config/system-config.service';
@@ -73,6 +73,7 @@ export class RequisitionsService {
     page = 1,
     limit = 20,
     statusFilter?: string,
+    includeRequester = false,
   ) {
     const qb = this.reqRepo
       .createQueryBuilder('r')
@@ -91,34 +92,15 @@ export class RequisitionsService {
           status: RequisitionStatus.PENDING_SUPERVISOR,
         });
         break;
+      case UserRole.ASSET_CUSTODIAN:
       case UserRole.IT_PERSONNEL:
-        qb.where('r.status IN (:...statuses)', {
-          statuses: [
-            RequisitionStatus.PENDING_FULFILLMENT,
-            RequisitionStatus.ON_HOLD,
-          ],
-        }).andWhere(
-          // Filtering the joined `items` alias directly would constrain what
-          // leftJoinAndSelect('r.items', 'items') hydrates (silently hiding
-          // non-matching sibling items) and would skew skip/take pagination,
-          // since a multi-item requisition yields multiple raw rows before
-          // TypeORM re-collapses them. An EXISTS subquery instead filters
-          // which requisitions (the `r` side) match, leaving `items` hydration
-          // and pagination untouched — same shape as the `r.status` filter above.
-          'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type = :itScope)',
-          { itScope: AssetType.ICT },
-        );
-        break;
       case UserRole.PROPERTY_CUSTODIAN:
         qb.where('r.status IN (:...statuses)', {
           statuses: [
             RequisitionStatus.PENDING_FULFILLMENT,
             RequisitionStatus.ON_HOLD,
           ],
-        }).andWhere(
-          'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...pcScope))',
-          { pcScope: resolveAssetTypeScope(UserRole.PROPERTY_CUSTODIAN) },
-        );
+        });
         break;
       case UserRole.PROPERTY_OFFICER:
         qb.andWhere(
@@ -132,8 +114,16 @@ export class RequisitionsService {
     if (statusFilter) {
       qb.andWhere('r.status = :sf', { sf: statusFilter.toLowerCase() });
     }
+    if (includeRequester) qb.addOrderBy('r.id', 'DESC');
 
     const [data, total] = await qb.getManyAndCount();
+    if (includeRequester) {
+      const requesters = await this.usersService.findHolderSummaries(data.map((request) => request.requestedById), true);
+      return {
+        data: data.map((request) => ({ ...request, requester: requesters.get(request.requestedById) ?? null })),
+        total, page, limit, totalPages: Math.ceil(total / limit),
+      };
+    }
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
@@ -482,12 +472,12 @@ export class RequisitionsService {
       req.requestedById,
       NotificationAlertType.REQUISITION_APPROVED,
       'Requisition Approved',
-      `Your requisition ${req.requestNumber} has been approved and is now pending fulfillment by IT Personnel.`,
+      `Your requisition ${req.requestNumber} has been approved and is now pending fulfillment by an Asset Custodian.`,
       id,
       'requisition',
     );
 
-    // Notify all IT Personnel
+    // Notify all Asset Custodians, including legacy property accounts
     const itUsers = await this.usersService.findByRole(UserRole.IT_PERSONNEL);
     await Promise.all(
       itUsers.map((u) =>
@@ -715,6 +705,17 @@ export class RequisitionsService {
             );
           }
 
+          const linkedAsset = await assetRepo.findOne({
+            where: { id: assetId },
+            lock: { mode: 'pessimistic_write' },
+          });
+          if (linkedAsset && (
+            [AssetStatus.FLAGGED_FOR_DISPOSAL, AssetStatus.DISPOSED].includes(linkedAsset.status) ||
+            [AssetCondition.UNSERVICEABLE, AssetCondition.FOR_DISPOSAL].includes(linkedAsset.condition)
+          )) {
+            throw new BadRequestException('Unserviceable assets and assets for disposal cannot fulfill a requisition.');
+          }
+
           await itemRepo.update(requisitionItemId, {
             fulfilledAssetId: assetId,
           });
@@ -734,10 +735,7 @@ export class RequisitionsService {
             // insufficient-stock guard below cannot be bypassed by a
             // read-then-write race (two txns both reading the pre-decrement
             // quantity, both subtracting, last write wins).
-            const supply = await assetRepo.findOne({
-              where: { id: assetId },
-              lock: { mode: 'pessimistic_write' },
-            });
+            const supply = linkedAsset;
             if (!supply) {
               throw new BadRequestException(
                 `Supply asset "${assetId}" not found.`,

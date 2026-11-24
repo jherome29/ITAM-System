@@ -2,14 +2,17 @@ import { resolveAssetTypeScope } from './asset-type-scope.util';
 import { UserRole, AssetType } from '../../../../packages/shared/src/enums';
 
 describe('resolveAssetTypeScope', () => {
-  it('scopes IT_PERSONNEL to ICT only', () => {
+  it('gives existing IT accounts all inventory categories', () => {
     expect(resolveAssetTypeScope(UserRole.IT_PERSONNEL)).toEqual([
       AssetType.ICT,
+      AssetType.FIXED,
+      AssetType.SUPPLIES,
     ]);
   });
 
-  it('scopes PROPERTY_CUSTODIAN to Fixed and Supplies', () => {
+  it('gives existing property custodian accounts all inventory categories', () => {
     expect(resolveAssetTypeScope(UserRole.PROPERTY_CUSTODIAN)).toEqual([
+      AssetType.ICT,
       AssetType.FIXED,
       AssetType.SUPPLIES,
     ]);

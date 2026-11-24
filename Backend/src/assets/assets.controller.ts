@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -11,8 +12,13 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  UploadedFile,
+  UseInterceptors,
+  Res,
 } from '@nestjs/common';
-import { AssetsService } from './assets.service';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import { AssetsService, type UploadedAssetPhoto } from './assets.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import { UpdateLifecycleDto } from './dto/update-lifecycle.dto';
@@ -56,6 +62,7 @@ export class AssetsController {
     @Query('status') status?: string,
     @Query('assetType') assetType?: string,
     @Query('assetClass') assetClass?: string,
+    @Query('view') view?: string,
     @Req() req?: AuthenticatedRequest,
   ) {
     const assetTypeScope = req
@@ -69,6 +76,9 @@ export class AssetsController {
       assetTypeScope,
       assetType,
       assetClass,
+      view === 'custody',
+      view === 'disposal',
+      view === 'inventory',
     );
     return { message: 'Assets retrieved successfully', data: result };
   }
@@ -103,6 +113,29 @@ export class AssetsController {
     const assetTypeScope = resolveAssetTypeScope(req.user.role);
     const result = await this.assetsService.getStats(assetTypeScope);
     return { message: 'Asset statistics retrieved', data: result };
+  }
+
+  @Get(':id/photo')
+  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT, UserRole.PROPERTY_CUSTODIAN, UserRole.PROPERTY_OFFICER)
+  async getPhoto(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
+    const photo = await this.assetsService.getPhoto(id, resolveAssetTypeScope(req.user.role));
+    res.set({ 'Content-Type': photo.mimeType, 'Content-Length': String(photo.data.length), 'Cache-Control': 'private, max-age=300' });
+    res.send(photo.data);
+  }
+
+  @Post(':id/photo')
+  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
+  @UseInterceptors(FileInterceptor('photo', { limits: { files: 1, fileSize: 5 * 1024 * 1024 } }))
+  async uploadPhoto(@Param('id', ParseUUIDPipe) id: string, @UploadedFile() file: UploadedAssetPhoto, @Req() req: AuthenticatedRequest) {
+    const asset = await this.assetsService.savePhoto(id, file, req.user.id, req.user.role, req.ip, resolveAssetTypeScope(req.user.role));
+    return { message: 'Device photo saved successfully', data: asset };
+  }
+
+  @Delete(':id/photo')
+  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
+  async deletePhoto(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
+    const asset = await this.assetsService.deletePhoto(id, req.user.id, req.user.role, req.ip, resolveAssetTypeScope(req.user.role));
+    return { message: 'Device photo removed', data: asset };
   }
 
   /**
@@ -206,7 +239,7 @@ export class AssetsController {
       assetTypeScope,
     );
     return {
-      message: `Asset status updated to "${dto.status}"`,
+      message: `Asset status updated to "${asset.status}"`,
       data: asset,
     };
   }

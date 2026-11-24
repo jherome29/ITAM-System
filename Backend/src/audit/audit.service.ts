@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { AuditLogEntity } from './entities/audit-log.entity';
 import { AuditAction, UserRole } from '../../../packages/shared/src/enums';
 
@@ -52,9 +52,9 @@ export class AuditService {
    * Creates a new audit log entry. This is the ONLY write operation allowed.
    * Called by every service after any state-changing action.
    */
-  async log(dto: CreateAuditLogDto): Promise<AuditLogEntity> {
-    const entry = this.auditRepo.create(dto);
-    return this.auditRepo.save(entry);
+  async log(dto: CreateAuditLogDto, manager?: EntityManager): Promise<AuditLogEntity> {
+    const repository = manager?.getRepository(AuditLogEntity) ?? this.auditRepo;
+    return repository.save(repository.create(dto));
   }
 
   async findAll(

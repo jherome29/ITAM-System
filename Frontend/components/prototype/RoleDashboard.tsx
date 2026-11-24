@@ -14,8 +14,7 @@ import Link from 'next/link';
 const recentRequisitionsHref: Record<ProposedUserRole, string> = {
   [ProposedUserRole.EMPLOYEE]: '/employee/requisitions',
   [ProposedUserRole.APPROVING_OFFICER]: '/approving-officer/requisitions',
-  [ProposedUserRole.IT_ASSET_CUSTODIAN]: '/it-asset-custodian/fulfillment',
-  [ProposedUserRole.PROPERTY_CUSTODIAN]: '/property-custodian/fulfillment',
+  [ProposedUserRole.ASSET_CUSTODIAN]: '/asset-custodian/fulfillment',
   [ProposedUserRole.PROPERTY_OFFICER]: '/property-officer/reports',
   [ProposedUserRole.MASTER_ADMIN]: '/master-admin/audit',
   [ProposedUserRole.MANAGEMENT_AUDIT_VIEWER]: '/management-audit/requisition-reports',

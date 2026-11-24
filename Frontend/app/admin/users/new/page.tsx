@@ -10,7 +10,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 const ROLES = [
   { value: 'employee', label: 'Employee' },
   { value: 'supervisor', label: 'Supervisor' },
-  { value: 'it_personnel', label: 'IT Personnel' },
+  { value: 'it_personnel', label: 'Asset Custodian' },
   { value: 'system_admin', label: 'System Administrator' },
   { value: 'management', label: 'Management' },
 ];

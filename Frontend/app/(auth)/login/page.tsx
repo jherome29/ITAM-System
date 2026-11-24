@@ -8,10 +8,11 @@ import { useAuth } from '@/lib/auth/use-auth';
 const ROLE_REDIRECTS: Record<string, string> = {
   employee: '/employee/dashboard',
   supervisor: '/approving-officer/dashboard',
-  it_personnel: '/it-asset-custodian/dashboard',
+  asset_custodian: '/asset-custodian/dashboard',
+  it_personnel: '/asset-custodian/dashboard',
   system_admin: '/master-admin/dashboard',
   management: '/management-audit/dashboard',
-  property_custodian: '/property-custodian/dashboard',
+  property_custodian: '/asset-custodian/dashboard',
   property_officer: '/property-officer/dashboard',
 };
 

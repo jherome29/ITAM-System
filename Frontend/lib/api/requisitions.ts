@@ -4,6 +4,7 @@ export interface Requisition {
   id: string;
   requestNumber: string;
   requestedById: string;
+  requester?: { name: string; employeeId: string; division?: string; officeOrSection?: string } | null;
   requisitionType: string;
   status: string;
   items: RequisitionItem[];
@@ -57,6 +58,11 @@ export const requisitionsApi = {
     if (status) params.status = status;
     return client.get<ApiResponse<PaginatedResponse<Requisition>>>('/v1/requisitions', { params }).then((r) => r.data);
   },
+
+  fulfillmentQueue: (page: number, limit: number) =>
+    client.get<ApiResponse<PaginatedResponse<Requisition>>>('/v1/requisitions', {
+      params: { page, limit, view: 'fulfillment' },
+    }).then((r) => r.data),
 
   mine: (page = 1, limit = 15) =>
     client.get<ApiResponse<PaginatedResponse<Requisition>>>('/v1/requisitions/mine', { params: { page, limit } }).then((r) => r.data),

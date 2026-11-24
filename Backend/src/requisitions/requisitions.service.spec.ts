@@ -23,6 +23,7 @@ import {
   AssetType,
   AssetClass,
   AssetCondition,
+  AssetStatus,
 } from '../../../packages/shared/src/enums';
 import { SLA_APPROVAL_HOURS } from '../../../packages/shared/src/constants';
 import { SystemConfigService } from '../system-config/system-config.service';
@@ -1028,7 +1029,7 @@ describe('RequisitionsService', () => {
       ).resolves.toMatchObject({ status: RequisitionStatus.FULFILLED });
     });
 
-    it('throws ForbiddenException when IT_PERSONNEL tries to fulfill a requisition containing a Fixed item', async () => {
+    it('allows an existing IT custodian to fulfill fixed assets', async () => {
       const req = makeReq({
         status: RequisitionStatus.PENDING_FULFILLMENT,
         items: [
@@ -1036,15 +1037,19 @@ describe('RequisitionsService', () => {
         ] as unknown as RequisitionItemEntity[],
       });
       mockReqRepo.findOne.mockResolvedValue(req);
+      mockReqRepo.save.mockResolvedValue({
+        ...req,
+        status: RequisitionStatus.FULFILLED,
+      });
       mockApprovalRepo.find.mockResolvedValue([]);
 
       await expect(
         service.fulfill(req.id, 'it-1', UserRole.IT_PERSONNEL, {}, '127.0.0.1'),
-      ).rejects.toThrow(ForbiddenException);
-      expect(mockReqRepo.save).not.toHaveBeenCalled();
+      ).resolves.toMatchObject({ status: RequisitionStatus.FULFILLED });
+      expect(mockReqRepo.save).toHaveBeenCalled();
     });
 
-    it('throws ForbiddenException when PROPERTY_CUSTODIAN tries to fulfill a requisition with a mixed ICT + Fixed item set', async () => {
+    it('allows an existing property custodian to fulfill mixed asset categories', async () => {
       const req = makeReq({
         status: RequisitionStatus.PENDING_FULFILLMENT,
         items: [
@@ -1053,6 +1058,10 @@ describe('RequisitionsService', () => {
         ] as unknown as RequisitionItemEntity[],
       });
       mockReqRepo.findOne.mockResolvedValue(req);
+      mockReqRepo.save.mockResolvedValue({
+        ...req,
+        status: RequisitionStatus.FULFILLED,
+      });
       mockApprovalRepo.find.mockResolvedValue([]);
 
       await expect(
@@ -1063,7 +1072,7 @@ describe('RequisitionsService', () => {
           {},
           '127.0.0.1',
         ),
-      ).rejects.toThrow(ForbiddenException);
+      ).resolves.toMatchObject({ status: RequisitionStatus.FULFILLED });
     });
   });
 
@@ -1176,7 +1185,7 @@ describe('RequisitionsService', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('leaves a PPE line untouched — no supply lookup, no decrement, empty stockDecrements', async () => {
+    it('checks PPE eligibility without decrementing stock', async () => {
       armFulfillable([
         mkItem({
           id: 'ri-ppe-1',
@@ -1196,7 +1205,9 @@ describe('RequisitionsService', () => {
         '127.0.0.1',
       );
 
-      expect(mockAssetRepo.findOne).not.toHaveBeenCalled();
+      expect(mockAssetRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'ppe-1' }, lock: { mode: 'pessimistic_write' },
+      });
       expect(mockAssetRepo.save).not.toHaveBeenCalled();
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1204,6 +1215,15 @@ describe('RequisitionsService', () => {
           metadata: expect.objectContaining({ stockDecrements: [] }),
         }),
       );
+    });
+
+    it('rejects a flagged asset before linking it to a requisition', async () => {
+      armFulfillable([mkItem({ id: 'ri-ppe-1', assetClass: AssetClass.PPE })]);
+      mockAssetRepo.findOne.mockResolvedValueOnce({ id: 'ppe-1', status: AssetStatus.FLAGGED_FOR_DISPOSAL });
+      await expect(service.fulfill('req-supply-1', 'it-1', UserRole.IT_PERSONNEL, {
+        fulfilledItems: [{ requisitionItemId: 'ri-ppe-1', assetId: 'ppe-1' }],
+      }, '127.0.0.1')).rejects.toThrow('cannot fulfill a requisition');
+      expect(mockReqRepo.save).not.toHaveBeenCalled();
     });
 
     it('still fulfills via the legacy path when no fulfilledItems are supplied', async () => {
@@ -1276,7 +1296,7 @@ describe('RequisitionsService', () => {
       expect(result.status).toBe(RequisitionStatus.ON_HOLD);
     });
 
-    it('throws ForbiddenException when PROPERTY_CUSTODIAN tries to hold a requisition with an ICT item outside their scope', async () => {
+    it('allows an existing property custodian to hold an ICT request', async () => {
       const req = makeReq({
         status: RequisitionStatus.PENDING_FULFILLMENT,
         items: [
@@ -1284,6 +1304,10 @@ describe('RequisitionsService', () => {
         ] as unknown as RequisitionItemEntity[],
       });
       mockReqRepo.findOne.mockResolvedValue(req);
+      mockReqRepo.save.mockResolvedValue({
+        ...req,
+        status: RequisitionStatus.ON_HOLD,
+      });
       mockApprovalRepo.find.mockResolvedValue([]);
 
       await expect(
@@ -1294,8 +1318,8 @@ describe('RequisitionsService', () => {
           'Unavailable',
           '127.0.0.1',
         ),
-      ).rejects.toThrow(ForbiddenException);
-      expect(mockReqRepo.save).not.toHaveBeenCalled();
+      ).resolves.toMatchObject({ status: RequisitionStatus.ON_HOLD });
+      expect(mockReqRepo.save).toHaveBeenCalled();
     });
   });
 
@@ -1387,7 +1411,7 @@ describe('RequisitionsService', () => {
       expect(result.rejected).toBe(1);
     });
 
-    it('returns asset-type-scoped stats for IT Personnel (ICT only, no requestedById filter)', async () => {
+    it('returns all inventory category stats for existing IT custodians', async () => {
       const qb = makeStatsQb([
         { status: RequisitionStatus.PENDING_FULFILLMENT, count: '4' },
         { status: RequisitionStatus.ON_HOLD, count: '2' },
@@ -1400,7 +1424,7 @@ describe('RequisitionsService', () => {
       expect(qb.where).not.toHaveBeenCalled();
       expect(qb.andWhere).toHaveBeenCalledWith(
         expect.stringContaining('ri.asset_type IN (:...statsScope)'),
-        { statsScope: [AssetType.ICT] },
+        { statsScope: [AssetType.ICT, AssetType.FIXED, AssetType.SUPPLIES] },
       );
       expect(result.total).toBe(7);
       expect(result.approved).toBe(4);
@@ -1408,7 +1432,7 @@ describe('RequisitionsService', () => {
       expect(result.rejected).toBe(1);
     });
 
-    it('scopes PROPERTY_CUSTODIAN stats to Fixed/Supplies asset types', async () => {
+    it('returns all inventory category stats for existing property custodians', async () => {
       const qb = makeStatsQb([
         { status: RequisitionStatus.PENDING_FULFILLMENT, count: '1' },
       ]);
@@ -1418,7 +1442,7 @@ describe('RequisitionsService', () => {
 
       expect(qb.andWhere).toHaveBeenCalledWith(
         expect.stringContaining('ri.asset_type IN (:...statsScope)'),
-        { statsScope: [AssetType.FIXED, AssetType.SUPPLIES] },
+        { statsScope: [AssetType.ICT, AssetType.FIXED, AssetType.SUPPLIES] },
       );
     });
 
@@ -1475,7 +1499,7 @@ describe('RequisitionsService', () => {
       );
     });
 
-    it('scopes to fulfillment queue with ICT-only items for IT_PERSONNEL role', async () => {
+    it('includes all categories in the existing IT custodian fulfillment queue', async () => {
       const qb = makeListQb();
       mockReqRepo.createQueryBuilder.mockReturnValue(qb);
 
@@ -1487,13 +1511,10 @@ describe('RequisitionsService', () => {
           RequisitionStatus.ON_HOLD,
         ],
       });
-      expect(qb.andWhere).toHaveBeenCalledWith(
-        'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type = :itScope)',
-        { itScope: AssetType.ICT },
-      );
+      expect(qb.andWhere).not.toHaveBeenCalled();
     });
 
-    it('scopes to fulfillment queue with Fixed/Supplies items for PROPERTY_CUSTODIAN role', async () => {
+    it('includes all categories in the existing property custodian fulfillment queue', async () => {
       const qb = makeListQb();
       mockReqRepo.createQueryBuilder.mockReturnValue(qb);
 
@@ -1505,10 +1526,7 @@ describe('RequisitionsService', () => {
           RequisitionStatus.ON_HOLD,
         ],
       });
-      expect(qb.andWhere).toHaveBeenCalledWith(
-        'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...pcScope))',
-        { pcScope: [AssetType.FIXED, AssetType.SUPPLIES] },
-      );
+      expect(qb.andWhere).not.toHaveBeenCalled();
     });
 
     it('scopes PROPERTY_OFFICER to Fixed/Supplies items across all statuses', async () => {

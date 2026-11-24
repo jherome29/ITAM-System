@@ -18,6 +18,7 @@ import {
   Wifi,
 } from "lucide-react";
 import { assetsApi, type Asset } from "@/lib/api/assets";
+import { AssetPhoto } from "@/components/assets/AssetPhoto";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { LoadingSkeleton } from "@/components/ui/LoadingSkeleton";
 import { CenteredModal } from "@/components/ui/CenteredModal";
@@ -32,7 +33,13 @@ const STATUS_OPTIONS = [
   "transferred",
   "under_repair",
   "flagged_for_disposal",
-  "disposed",
+];
+
+const disposedPath = "/asset-custodian/disposed-assets";
+const disposedCategories = [
+  ["IT", `${disposedPath}/it`],
+  ["Fixed Assets", `${disposedPath}/fixed`],
+  ["Supplies", `${disposedPath}/supplies`],
 ];
 
 const ASSET_CLASS_OPTIONS = [
@@ -105,6 +112,7 @@ function AssetIcon({
 }
 
 function scanPath(basePath: string): string {
+  if (basePath.startsWith("/asset-custodian")) return "/asset-custodian/qr-scanner";
   if (basePath.startsWith("/it-personnel")) return "/it-personnel/qr-scan";
   if (basePath.startsWith("/property")) return "/property-custodian/qr-scanner";
   return "/it-asset-custodian/qr-scanner";
@@ -121,8 +129,16 @@ function registryDescription(assetType?: string): string {
 function RegistryTabs({
   basePath,
   assetType,
-}: Readonly<{ basePath: string; assetType?: string }>) {
-  const tabs = basePath.startsWith("/it-asset-custodian")
+  archived,
+}: Readonly<{ basePath: string; assetType?: string; archived: boolean }>) {
+  const tabs = basePath.startsWith("/asset-custodian")
+    ? [
+        ["IT Inventory", "/asset-custodian/it-inventory"],
+        ["Fixed Asset Inventory", "/asset-custodian/fixed-assets"],
+        ["Supplies Inventory", "/asset-custodian/supplies"],
+        ["Disposed Assets", disposedPath],
+      ]
+    : basePath.startsWith("/it-asset-custodian")
     ? [
         ["Asset registry", "/it-asset-custodian/assets"],
         ["Physical inventory", "/it-asset-custodian/physical-inventory"],
@@ -139,7 +155,7 @@ function RegistryTabs({
   if (tabs.length === 0) return null;
 
   const activePath =
-    assetType === "Supplies" ? "/property-custodian/supplies" : basePath;
+    archived ? disposedPath : basePath.startsWith("/asset-custodian") ? basePath : assetType === "Supplies" ? "/property-custodian/supplies" : basePath;
   return (
     <nav
       aria-label="Inventory sections"
@@ -149,6 +165,7 @@ function RegistryTabs({
         <Link
           key={href}
           href={href}
+          aria-current={href === activePath ? "page" : undefined}
           className={`relative flex h-11 flex-none items-center text-sm font-semibold ${
             href === activePath
               ? "text-blue-700"
@@ -169,7 +186,8 @@ export function AssetRegistryList({
   basePath,
   assetType,
   title = "ICT Asset Registry",
-}: Readonly<{ basePath: string; assetType?: string; title?: string }>) {
+  archived = false,
+}: Readonly<{ basePath: string; assetType?: string; title?: string; archived?: boolean }>) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -185,28 +203,33 @@ export function AssetRegistryList({
   const [toast, setToast] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
     assetsApi
       .list(
         page,
         PAGE_SIZE,
         search || undefined,
-        filterStatus || undefined,
+        archived ? "disposed" : filterStatus || undefined,
         assetType,
         filterClass || undefined,
+        archived ? undefined : "inventory",
       )
       .then((res) => {
+        if (cancelled) return;
         setError("");
         setAssets(res.data.data ?? []);
         setTotal(res.data.total ?? 0);
         setTotalPages(Math.max(1, res.data.totalPages ?? 1));
       })
       .catch(() => {
+        if (cancelled) return;
         setAssets([]);
         setTotal(0);
         setError("The asset registry could not be loaded. Please try again.");
       })
-      .finally(() => setLoading(false));
-  }, [page, search, filterStatus, filterClass, assetType, refreshKey]);
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [page, search, filterStatus, filterClass, assetType, archived, refreshKey]);
 
   const startRecord = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const endRecord = Math.min(page * PAGE_SIZE, total);
@@ -228,7 +251,7 @@ export function AssetRegistryList({
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-blue-700">
-            {assetType === "Fixed" || assetType === "Supplies"
+            {archived ? "Asset Custodian" : assetType === "Fixed" || assetType === "Supplies"
               ? "Property Custodian"
               : "IT Asset Custodian"}
           </p>
@@ -236,10 +259,10 @@ export function AssetRegistryList({
             {title}
           </h1>
           <p className="mt-1 max-w-3xl text-sm text-slate-600">
-            {registryDescription(assetType)}
+            {archived ? "Browse records with a completed disposal." : registryDescription(assetType)}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {!archived && <div className="flex flex-wrap gap-2">
           <Link
             href={scanPath(basePath)}
             className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
@@ -254,10 +277,22 @@ export function AssetRegistryList({
             <Plus className="h-4 w-4" />{" "}
             {assetType === "Supplies" ? "Record stock" : "Add asset"}
           </button>
-        </div>
+        </div>}
       </header>
 
-      <RegistryTabs basePath={basePath} assetType={assetType} />
+      <RegistryTabs basePath={basePath} assetType={assetType} archived={archived} />
+      {archived && (
+        <nav aria-label="Disposed asset types" className="flex flex-wrap gap-2">
+          {disposedCategories.map(([label, href]) => (
+            <Link key={href} href={href} aria-current={href === basePath ? "page" : undefined}
+              className={`rounded-lg border px-4 py-2 text-sm font-semibold ${href === basePath
+                ? "border-blue-200 bg-blue-50 text-blue-700"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
+              {label}
+            </Link>
+          ))}
+        </nav>
+      )}
 
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -289,7 +324,7 @@ export function AssetRegistryList({
                 </option>
               ))}
             </select>
-            <select
+            {!archived && <select
               aria-label="Filter by status"
               value={filterStatus}
               onChange={(event) =>
@@ -303,7 +338,7 @@ export function AssetRegistryList({
                   {formatLabel(status)}
                 </option>
               ))}
-            </select>
+            </select>}
             <div
               className="flex h-12 overflow-hidden rounded-lg border border-slate-200"
               aria-label="Registry view"
@@ -360,8 +395,10 @@ export function AssetRegistryList({
                 <button
                   type="button"
                   onClick={() => {
-                    setLoading(true);
-                    setPage(item);
+                    if (page !== item) {
+                      setLoading(true);
+                      setPage(item);
+                    }
                   }}
                   className={`h-9 min-w-9 rounded-md px-2 font-semibold ${page === item ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-100"}`}
                 >
@@ -396,10 +433,12 @@ export function AssetRegistryList({
         <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
           <Search className="mx-auto h-6 w-6 text-slate-400" />
           <p className="mt-3 text-sm font-bold text-slate-900">
-            No matching assets
+            {archived && !search && !filterClass ? "No disposed records in this category" : "No matching assets"}
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            Adjust the search or filters to see more inventory.
+            {archived && !search && !filterClass
+              ? "Records appear here after disposal is completed."
+              : "Adjust the search or filters to see more records."}
           </p>
         </div>
       ) : view === "grid" ? (
@@ -423,15 +462,19 @@ export function AssetRegistryList({
       <CenteredModal
         open={createOpen}
         title={
-          assetType === "Supplies" ? "Record New Stock" : "Register New Asset"
+          assetType === "Supplies" ? "Record New Stock"
+            : assetType === "Fixed" ? "Register Fixed Asset"
+              : assetType === "ICT" ? "Register IT Asset" : "Register New Asset"
         }
-        description="All fields marked * are required. Complete per CICC asset tagging procedure."
+        description={assetType === "Supplies"
+          ? "Enter the supply details and opening stock quantity."
+          : "All fields marked * are required. Complete per CICC asset tagging procedure."}
         onClose={() => setCreateOpen(false)}
       >
         <RegisterAssetForm
           basePath={basePath}
           embedded
-          defaultAssetType={assetType ?? "ICT"}
+          defaultAssetType={assetType ?? ""}
           onCancel={() => setCreateOpen(false)}
           onCreated={(asset) => {
             setCreateOpen(false);
@@ -465,9 +508,9 @@ function AssetCard({ asset, href }: Readonly<{ asset: Asset; href: string }>) {
       className="group min-h-48 overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
     >
       <div className="flex h-full">
-        <span className="grid w-32 flex-none place-items-center bg-slate-50 text-slate-500 transition group-hover:bg-blue-50 group-hover:text-blue-700">
-          <AssetIcon asset={asset} className="h-11 w-11" />
-        </span>
+        <AssetPhoto assetId={asset.id} hasPhoto={Boolean(asset.photoFileName)} alt={asset.itemDescription}
+          className="grid w-32 flex-none place-items-center bg-slate-50 text-slate-500 transition group-hover:bg-blue-50 group-hover:text-blue-700"
+          fallback={<AssetIcon asset={asset} className="h-11 w-11" />} />
         <span className="flex min-w-0 flex-1 flex-col p-5">
           <span className="line-clamp-2 text-base font-bold leading-5 text-slate-950">
             {asset.itemDescription}
@@ -530,9 +573,9 @@ function AssetTable({
             <tr key={asset.id} className="hover:bg-blue-50/60">
               <td className="px-5 py-3">
                 <div className="flex items-center gap-3">
-                  <span className="grid h-10 w-10 place-items-center rounded-lg bg-slate-100 text-slate-600">
-                    <AssetIcon asset={asset} className="h-4 w-4" />
-                  </span>
+                  <AssetPhoto assetId={asset.id} hasPhoto={Boolean(asset.photoFileName)} alt={asset.itemDescription}
+                    className="grid h-10 w-10 place-items-center rounded-lg bg-slate-100 text-slate-600"
+                    fallback={<AssetIcon asset={asset} className="h-4 w-4" />} />
                   <span>
                     <span className="block text-sm font-bold text-slate-950">
                       {asset.itemDescription}

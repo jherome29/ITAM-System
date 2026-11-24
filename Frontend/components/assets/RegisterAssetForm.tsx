@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { assetsApi, type Asset, type CreateAssetDto } from "@/lib/api/assets";
 
+import { classifyRegisteredAsset } from "../../../packages/shared/src/utils/asset-classification";
+
 export interface RegisterAssetFormState {
   sapClassification: string;
   itemCode: string;
@@ -33,17 +35,31 @@ export interface RegisterAssetFormState {
 // the `...form` spread would send them as strings and 400 the backend @IsInt guard.
 export function buildCreateAssetPayload(
   form: RegisterAssetFormState,
+  inventoryAssetType?: string,
 ): CreateAssetDto {
-  const { quantity, reorderLevel, ...base } = form;
+  const { quantity, reorderLevel, propertyNumber, serialNumber, brand, components, ...base } = form;
+  const assetType = inventoryAssetType || form.assetType;
+  const acquisitionCost = form.acquisitionCost.trim()
+    ? Number(form.acquisitionCost)
+    : undefined;
+  const assetClass = classifyRegisteredAsset(assetType, acquisitionCost);
+  if (!assetClass)
+    throw new Error(
+      "Enter a positive acquisition cost per item to determine PPE or SEP.",
+    );
   const payload: CreateAssetDto = {
     ...base,
-    acquisitionCost: form.acquisitionCost
-      ? parseFloat(form.acquisitionCost)
-      : undefined,
+    assetType,
+    assetClass,
+    propertyNumber: propertyNumber.trim() || undefined,
+    serialNumber,
+    brand,
+    ...(assetType === "Fixed" ? {} : { components }),
+    acquisitionCost,
     acquisitionDate: form.acquisitionDate || undefined,
     dateOfDelivery: form.dateOfDelivery || undefined,
   };
-  if (form.assetClass === "IES") {
+  if (assetClass === "IES") {
     payload.quantity = quantity ? parseInt(quantity, 10) : 1;
     payload.reorderLevel = reorderLevel
       ? parseInt(reorderLevel, 10)
@@ -52,7 +68,11 @@ export function buildCreateAssetPayload(
   return payload;
 }
 
-const ASSET_CLASSES = ["PPE", "SEP", "IES"] as const;
+const ASSET_CLASS_LABELS = {
+  PPE: "PPE — Property, Plant & Equipment",
+  SEP: "SEP — Semi-Expendable Property",
+  IES: "IES — Inventory / Expendable Supplies",
+} as const;
 // Must match packages/shared/src/enums AssetType exactly — CreateAssetDto validates
 // with @IsEnum(AssetType), so any other value (e.g. legacy 'FURNITURE'/'VEHICLE') 400s.
 const ASSET_TYPES = ["ICT", "Fixed", "Supplies"] as const;
@@ -60,9 +80,7 @@ const ASSET_TYPES = ["ICT", "Fixed", "Supplies"] as const;
 // CreateAssetDto validates with @IsEnum(AssetCondition).
 const CONDITIONS = [
   "serviceable",
-  "unserviceable",
   "for_repair",
-  "for_disposal",
 ] as const;
 
 const inputClass =
@@ -116,6 +134,7 @@ export function RegisterAssetForm({
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
 
   const [form, setForm] = useState<RegisterAssetFormState>({
     sapClassification: "",
@@ -143,6 +162,22 @@ export function RegisterAssetForm({
   const set = (field: string, val: string) =>
     setForm((prev) => ({ ...prev, [field]: val }));
 
+  const assetType = defaultAssetType || form.assetType;
+  const isSupplies = assetType === "Supplies";
+  const isFixed = assetType === "Fixed";
+  const isIT = assetType === "ICT";
+  const itemPlaceholder = isSupplies
+    ? "e.g. A4 bond paper, 80 gsm, 500 sheets per ream"
+    : isFixed ? "e.g. Steel filing cabinet, four drawers" : "e.g. Laptop Computer, Dell Latitude 5420";
+  const itemCodePlaceholder = isSupplies
+    ? "e.g. SUP-PAPER-A4"
+    : isFixed ? "e.g. FIX-CABINET-001" : "e.g. ICT-LAPTOP-001";
+  const photoLabel = isSupplies ? "Item Photo" : isFixed ? "Asset Photo" : "Device Photo";
+  const assetClass = classifyRegisteredAsset(
+    assetType,
+    form.acquisitionCost.trim() ? Number(form.acquisitionCost) : undefined,
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -150,17 +185,22 @@ export function RegisterAssetForm({
       setError("Item description is required.");
       return;
     }
-    if (!form.assetClass) {
-      setError("Asset class is required.");
+    if (!assetType) {
+      setError("Asset type is required.");
       return;
     }
-    if (!form.assetType) {
-      setError("Asset type is required.");
+    if (!assetClass) {
+      setError(
+        "Enter a positive acquisition cost per item to determine PPE or SEP.",
+      );
       return;
     }
     setSaving(true);
     try {
-      const res = await assetsApi.create(buildCreateAssetPayload(form));
+      const res = await assetsApi.create(
+        buildCreateAssetPayload(form, defaultAssetType),
+      );
+      if (photo) await assetsApi.uploadPhoto(res.data.id, photo);
       if (onCreated) onCreated(res.data);
       else router.push(`${basePath}/${res.data.id}`);
     } catch (err: unknown) {
@@ -195,11 +235,10 @@ export function RegisterAssetForm({
           </button>
           <div>
             <h1 className="text-2xl font-semibold text-[#1a4d7a]">
-              Register New Asset
+              {isSupplies ? "Record New Stock" : isFixed ? "Register Fixed Asset" : isIT ? "Register IT Asset" : "Register New Asset"}
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              All fields marked * are required. Complete per CICC asset tagging
-              procedure.
+              {isSupplies ? "Enter the supply details and opening stock quantity." : "All fields marked * are required. Complete per CICC asset tagging procedure."}
             </p>
           </div>
         </>
@@ -212,43 +251,51 @@ export function RegisterAssetForm({
       )}
 
       <form onSubmit={handleSubmit}>
-        <Section title="Classification & Identification">
-          <Field label="Item Description" required>
+        <Section title={isSupplies ? "Supply Identification" : isFixed ? "Fixed Asset Identification" : isIT ? "IT Asset Identification" : "Classification & Identification"}>
+          <div className={isSupplies ? "md:col-span-2" : undefined}>
+            <Field label="Item Description" required>
+              <input
+                aria-label="Item description"
+                className={inputClass}
+                value={form.itemDescription}
+                onChange={(e) => set("itemDescription", e.target.value)}
+                placeholder={itemPlaceholder}
+              />
+            </Field>
+          </div>
+          {!isSupplies && <Field label="Asset Class (Automatic)">
             <input
-              className={inputClass}
-              value={form.itemDescription}
-              onChange={(e) => set("itemDescription", e.target.value)}
-              placeholder="e.g. Laptop Computer, Dell Latitude 5420"
+              aria-label="Asset class"
+              className={inputClass + " bg-gray-50"}
+              readOnly
+              value={
+                assetClass
+                  ? ASSET_CLASS_LABELS[assetClass]
+                  : "Enter acquisition cost per item"
+              }
             />
-          </Field>
-          <Field label="Asset Class" required>
-            <select
-              className={inputClass}
-              value={form.assetClass}
-              onChange={(e) => set("assetClass", e.target.value)}
-            >
-              <option value="">Select class...</option>
-              {ASSET_CLASSES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Asset Type" required>
-            <select
-              className={inputClass}
-              value={form.assetType}
-              onChange={(e) => set("assetType", e.target.value)}
-            >
-              <option value="">Select type...</option>
-              {ASSET_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </Field>
+            <p className="mt-1 text-xs text-gray-500">
+              Reusable property with useful life over one year: below ₱50,000 per item = SEP; ₱50,000 or more = PPE.
+            </p>
+          </Field>}
+          {!defaultAssetType && (
+            <Field label="Asset Type" required>
+              <select
+                aria-label="Asset type"
+                className={inputClass}
+                value={form.assetType}
+                onChange={(e) => set("assetType", e.target.value)}
+                required
+              >
+                <option value="">Select type...</option>
+                {ASSET_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="SAP Classification">
             <input
               className={inputClass}
@@ -257,31 +304,57 @@ export function RegisterAssetForm({
               placeholder="SAP code"
             />
           </Field>
-          <Field label="Item Code">
+          <Field label={isSupplies ? "Stock Item Code" : "Item Code"}>
             <input
               className={inputClass}
               value={form.itemCode}
               onChange={(e) => set("itemCode", e.target.value)}
-              placeholder="e.g. ICT-LAPTOP-001"
+              placeholder={itemCodePlaceholder}
             />
           </Field>
-          <Field label="Property Number">
+          {isSupplies && (
+            <Field label="Property Supplies Code">
+              <input
+                aria-label="Property Supplies Code"
+                aria-describedby="property-supplies-code-help"
+                className={inputClass}
+                value={form.propertyNumber}
+                onChange={(e) => set("propertyNumber", e.target.value)}
+                placeholder="e.g. PSC-000123"
+                maxLength={100}
+              />
+              <p id="property-supplies-code-help" className="mt-1 text-xs text-slate-600">
+                Optional. Enter the unique tag code for this stock record.
+              </p>
+            </Field>
+          )}
+          {isSupplies && (
+            <Field label="Asset Class (Automatic)">
+              <input
+                aria-label="Asset class"
+                className={inputClass + " bg-gray-50"}
+                value={ASSET_CLASS_LABELS.IES}
+                readOnly
+              />
+            </Field>
+          )}
+          {!isSupplies && <Field label="Property Number">
             <input
               className={inputClass}
               value={form.propertyNumber}
               onChange={(e) => set("propertyNumber", e.target.value)}
               placeholder="Official CICC property #"
             />
-          </Field>
-          <Field label="Brand / Make">
+          </Field>}
+          <Field label={isIT ? "Device Brand" : "Brand / Make"}>
             <input
               className={inputClass}
               value={form.brand}
               onChange={(e) => set("brand", e.target.value)}
-              placeholder="e.g. Dell, HP, Canon"
+              placeholder={isFixed ? "Manufacturer, if applicable" : "e.g. Dell, HP, Canon"}
             />
           </Field>
-          <Field label="Serial Number">
+          <Field label={isFixed ? "Serial Number (if applicable)" : "Serial Number"}>
             <input
               className={inputClass}
               value={form.serialNumber}
@@ -289,24 +362,40 @@ export function RegisterAssetForm({
               placeholder="Manufacturer serial #"
             />
           </Field>
-          <div className="md:col-span-2">
-            <Field label="Components / Accessories">
+          {!isFixed && <div className="md:col-span-2">
+            <Field label={isSupplies ? "Components" : "Included Accessories"}>
               <input
                 className={inputClass}
                 value={form.components}
                 onChange={(e) => set("components", e.target.value)}
-                placeholder="e.g. charger, mouse, carrying bag"
+                placeholder={isSupplies ? "Contents or parts, if applicable" : "e.g. charger, mouse, carrying bag"}
               />
             </Field>
+          </div>}
+        </Section>
+
+        <Section title={`${photoLabel} (Optional)`}>
+          <div className="md:col-span-2">
+            <input aria-label={photoLabel} className={inputClass} type="file" accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                if (file && file.size > 5 * 1024 * 1024) { setError("Photo must be 5 MB or smaller."); e.target.value = ""; setPhoto(null); return; }
+                setError(""); setPhoto(file);
+              }} />
+            <p className="mt-1 text-xs text-gray-500">JPEG, PNG, or WebP, up to 5 MB. You can also add or replace it later.</p>
           </div>
         </Section>
 
         <Section title="Acquisition Details">
-          <Field label="Acquisition Cost (PHP)">
+          <Field
+            label="Acquisition Cost per Item (PHP)"
+            required={assetType !== "Supplies"}
+          >
             <input
               className={inputClass}
               type="number"
-              min="0"
+              min="0.01"
+              required={assetType !== "Supplies"}
               step="0.01"
               value={form.acquisitionCost}
               onChange={(e) => set("acquisitionCost", e.target.value)}
@@ -374,7 +463,7 @@ export function RegisterAssetForm({
           </Field>
         </Section>
 
-        {form.assetClass === "IES" && (
+        {assetClass === "IES" && (
           <Section title="Supply Stock">
             <Field label="Quantity on Hand">
               <input

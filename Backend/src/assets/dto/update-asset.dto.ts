@@ -17,7 +17,7 @@ export class UpdateAssetDto {
   @IsOptional() @IsString() itemDescription?: string;
   @IsOptional() @IsString() brand?: string;
   @IsOptional() @IsString() serialNumber?: string;
-  @IsOptional() @IsString() propertyNumber?: string;
+  @IsOptional() @IsString() propertyNumber?: string | null;
   @IsOptional() @IsString() components?: string;
 
   @IsOptional()

@@ -9,7 +9,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 
 // Real (lowercase) UserRole values — user.role from the API is always lowercase.
-const ROLES = ['employee', 'supervisor', 'it_personnel', 'system_admin', 'management'];
+const ROLES = ['employee', 'supervisor', 'it_personnel', 'system_admin', 'management', 'property_officer'];
 
 const RoleBadge = ({ role }: Readonly<{ role: string }>) => {
   const colors: Record<string, string> = {
@@ -23,7 +23,7 @@ const RoleBadge = ({ role }: Readonly<{ role: string }>) => {
   };
   return (
     <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[role] ?? 'bg-gray-100 text-gray-700'}`}>
-      {role.replace(/_/g, ' ')}
+      {['it_personnel', 'property_custodian'].includes(role) ? 'Asset Custodian' : role.replace(/_/g, ' ')}
     </span>
   );
 };

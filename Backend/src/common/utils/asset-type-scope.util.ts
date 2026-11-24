@@ -6,9 +6,10 @@ import { AssetType, UserRole } from '../../../../packages/shared/src/enums';
  */
 export function resolveAssetTypeScope(role: UserRole): AssetType[] | undefined {
   switch (role) {
+    case UserRole.ASSET_CUSTODIAN:
     case UserRole.IT_PERSONNEL:
-      return [AssetType.ICT];
     case UserRole.PROPERTY_CUSTODIAN:
+      return [AssetType.ICT, AssetType.FIXED, AssetType.SUPPLIES];
     case UserRole.PROPERTY_OFFICER:
       return [AssetType.FIXED, AssetType.SUPPLIES];
     default:

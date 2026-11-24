@@ -32,6 +32,13 @@ describe('RolesGuard', () => {
   });
 
   // ── No roles required (e.g. public endpoint) — allow ────────────────────
+  it('allows legacy property custodians on combined custodian endpoints', () => {
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockReturnValue([UserRole.IT_PERSONNEL]);
+    expect(guard.canActivate(makeCtx(UserRole.PROPERTY_CUSTODIAN))).toBe(true);
+  });
+
   it('allows all requests when no roles are decorated', () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(null);
     expect(guard.canActivate(makeCtx(UserRole.EMPLOYEE))).toBe(true);
@@ -75,7 +82,10 @@ describe('RolesGuard', () => {
 
   // ── All non-IT roles denied on IT-only endpoint ──────────────────────────
   const nonItRoles = Object.values(UserRole).filter(
-    (r) => r !== UserRole.IT_PERSONNEL,
+    (r) =>
+      r !== UserRole.ASSET_CUSTODIAN &&
+      r !== UserRole.IT_PERSONNEL &&
+      r !== UserRole.PROPERTY_CUSTODIAN,
   );
 
   test.each(nonItRoles)(

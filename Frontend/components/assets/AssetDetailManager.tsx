@@ -2,12 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, QrCode, Pencil, Save, X, Clock } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowLeft, QrCode, Pencil, Save, X, Clock, ImagePlus, Printer, Trash2 } from 'lucide-react';
 import { assetsApi, type Asset, type UpdateAssetDto } from '@/lib/api/assets';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { ASSET_LIFECYCLE_TRANSITIONS as NEXT_TRANSITIONS } from '@/lib/assets/lifecycle-transitions';
+import { AssetPhoto } from '@/components/assets/AssetPhoto';
+import { showAssetBarcode } from '@/lib/assets/print-asset-barcode';
 
 function optionLabel(value: string): string {
   return value.split('_').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ');
@@ -15,19 +18,19 @@ function optionLabel(value: string): string {
 
 function Detail({ label, value }: Readonly<{ label: string; value?: string | number | null }>) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</dt>
-      <dd className={`text-sm ${value ? 'text-gray-800' : 'text-gray-300 italic'}`}>{value ?? 'Not specified'}</dd>
+      <dd className={`text-sm wrap-anywhere ${value ? 'text-gray-800' : 'text-gray-300 italic'}`}>{value ?? 'Not specified'}</dd>
     </div>
   );
 }
 
 function DetailSection({ title, children }: Readonly<{ title: string; children: React.ReactNode }>) {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-5">
-      <h3 className="text-xs font-bold text-[#1a4d7a] uppercase tracking-wider mb-4">{title}</h3>
-      <dl className="grid grid-cols-2 gap-4">{children}</dl>
-    </div>
+    <section className="min-w-0 rounded-xl border border-gray-200 bg-white p-4 sm:p-5">
+      <h2 className="mb-4 border-b border-slate-100 pb-3 text-sm font-semibold text-[#1a4d7a]">{title}</h2>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-4">{children}</dl>
+    </section>
   );
 }
 
@@ -52,7 +55,7 @@ function EditableDetail({
 }>) {
   const cls = 'w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a]';
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</dt>
       {edit ? (
         options ? (
@@ -69,7 +72,7 @@ function EditableDetail({
           />
         )
       ) : (
-        <dd className={`text-sm ${value ? 'text-gray-800' : 'text-gray-300 italic'}`}>{value ?? 'Not specified'}</dd>
+        <dd className={`text-sm wrap-anywhere ${value ? 'text-gray-800' : 'text-gray-300 italic'}`}>{value ?? 'Not specified'}</dd>
       )}
     </div>
   );
@@ -98,7 +101,6 @@ function buildEditForm(a: Asset): UpdateAssetDto {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- basePath is part of the shared component's public interface (parity with AssetRegistryList/RegisterAssetForm); this component doesn't build any internal links off it today.
 export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ assetId: string; basePath: string; formsPath: string }>) {
   const router = useRouter();
 
@@ -120,6 +122,9 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
   const [transactions, setTransactions] = useState<AuditLog[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [formSuggestion, setFormSuggestion] = useState<string | null>(null);
+  const [photoVersion, setPhotoVersion] = useState(0);
+  const [photoSaving, setPhotoSaving] = useState(false);
+  const [tagAction, setTagAction] = useState<'qr' | 'barcode' | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -133,13 +138,51 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
       .finally(() => { setLoading(false); setHistoryLoading(false); });
   }, [assetId]);
 
+  const generateTags = async (id: string) => {
+    const { data: { qrCode, barcodeValue } } = await assetsApi.generateQr(id);
+    setAsset((prev) => prev?.id === id ? { ...prev, qrCode, barcodeValue } : prev);
+    return barcodeValue;
+  };
+
   const handleGenerateQr = async () => {
     if (!asset) return;
+    setTagAction('qr');
+    setSaveError('');
     try {
-      const res = await assetsApi.generateQr(asset.id);
-      setAsset((prev) => prev ? { ...prev, qrCode: res.data.qrCode } : prev);
+      await generateTags(asset.id);
     } catch {
       setSaveError('Failed to generate QR code. Please try again.');
+    } finally {
+      setTagAction(null);
+    }
+  };
+
+  const handlePrintBarcode = async () => {
+    if (!asset) return;
+    const propertyCode = asset.propertyNumber?.trim();
+    if (asset.assetType === 'Supplies' && !propertyCode) {
+      setSaveError('Add and save a Property Supplies Code before printing a barcode.');
+      return;
+    }
+
+    const preview = window.open('', '_blank', 'popup,width=680,height=420');
+    if (!preview) {
+      setSaveError('Allow pop-ups for AIMRS to open the barcode print preview.');
+      return;
+    }
+
+    preview.opener = null;
+    preview.document.body.textContent = 'Preparing barcode…';
+    setTagAction('barcode');
+    setSaveError('');
+    try {
+      const barcodeValue = asset.barcodeValue || await generateTags(asset.id);
+      await showAssetBarcode(preview, asset.itemDescription, propertyCode || barcodeValue, barcodeValue);
+    } catch {
+      preview.close();
+      setSaveError('Could not prepare the barcode. Please try again.');
+    } finally {
+      setTagAction(null);
     }
   };
 
@@ -149,7 +192,9 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
     setUpdating(true);
     setLifecycleError('');
     try {
-      const res = await assetsApi.updateLifecycle(asset.id, {
+      const res = statusSnapshot === 'flagged_for_disposal'
+        ? await assetsApi.markUnserviceable(asset.id, lifecycleNotes)
+        : await assetsApi.updateLifecycle(asset.id, {
         status: statusSnapshot,
         notes: lifecycleNotes || undefined,
         employeeId: lifecycleEmployeeId || undefined,
@@ -187,7 +232,10 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
     setSaving(true);
     setSaveError('');
     try {
-      const res = await assetsApi.update(asset.id, editForm);
+      const payload = asset.assetType === 'Supplies'
+        ? { ...editForm, propertyNumber: editForm.propertyNumber?.trim() || null }
+        : editForm;
+      const res = await assetsApi.update(asset.id, payload);
       setAsset(res.data);
       setEdit(false);
       auditApi.byRecord(assetId).then((r) => setTransactions(r.data?.data ?? [])).catch(() => {});
@@ -206,73 +254,135 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
     setEditForm(buildEditForm(asset));
   };
 
+  const handlePhoto = async (file?: File) => {
+    if (!asset || !file) return;
+    if (file.size > 5 * 1024 * 1024) { setSaveError('Device photo must be 5 MB or smaller.'); return; }
+    setPhotoSaving(true); setSaveError('');
+    try { const res = await assetsApi.uploadPhoto(asset.id, file); setAsset(res.data); setPhotoVersion((v) => v + 1); }
+    catch { setSaveError('Could not save the device photo. Use a JPEG, PNG, or WebP up to 5 MB.'); }
+    finally { setPhotoSaving(false); }
+  };
+
+  const handleDeletePhoto = async () => {
+    if (!asset) return;
+    setPhotoSaving(true);
+    try { const res = await assetsApi.deletePhoto(asset.id); setAsset(res.data); setPhotoVersion((v) => v + 1); }
+    catch { setSaveError('Could not remove the device photo.'); }
+    finally { setPhotoSaving(false); }
+  };
+
   if (loading) return <div className="p-6"><LoadingSkeleton rows={10} /></div>;
   if (!asset) return <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">Asset not found.</div>;
 
-  const nextStates = NEXT_TRANSITIONS[asset.status] ?? [];
+  const needsDisposalAssessment = asset.status === 'flagged_for_disposal' && asset.condition !== 'unserviceable';
+  const nextStates = needsDisposalAssessment ? ['flagged_for_disposal'] : (NEXT_TRANSITIONS[asset.status] ?? []).filter((status) =>
+    status !== 'disposed' &&
+    !(status === 'issued' && ['unserviceable', 'for_disposal'].includes(asset.condition)),
+  );
 
   return (
-    <div className="space-y-5 max-w-4xl">
-      <button type="button" onClick={() => router.back()} className="flex items-center gap-2 text-sm text-[#1a4d7a] hover:underline">
-        <ArrowLeft className="w-4 h-4" /> Back to Inventory
-      </button>
+    <div className="@container mx-auto w-full max-w-[1480px] space-y-5">
+      {basePath.startsWith('/asset-custodian/disposed-assets/') ? (
+        <Link href={basePath} className="inline-flex items-center gap-2 text-sm text-[#1a4d7a] hover:underline">
+          <ArrowLeft className="size-4" /> Back to Disposed Assets
+        </Link>
+      ) : (
+        <button type="button" onClick={() => router.back()} className="flex items-center gap-2 text-sm text-[#1a4d7a] hover:underline">
+          <ArrowLeft className="w-4 h-4" /> Back to Inventory
+        </button>
+      )}
 
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-semibold text-[#1a4d7a]">{asset.itemDescription}</h1>
-            <StatusBadge status={asset.status} />
+      <header className="grid gap-4 rounded-xl border border-gray-200 bg-white p-4 @lg:grid-cols-[9rem_minmax(0,1fr)] @lg:items-center @lg:gap-x-5 @lg:p-5">
+        <AssetPhoto assetId={asset.id} hasPhoto={Boolean(asset.photoFileName)} version={photoVersion} alt={asset.itemDescription}
+          className="grid aspect-[4/3] w-full max-w-44 place-items-center rounded-lg bg-slate-100 text-slate-400"
+          fallback={<ImagePlus aria-hidden="true" className="size-9" />} />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
+            <div className="min-w-0 flex-1 basis-52">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-2xl font-semibold tracking-tight text-[#1a4d7a] wrap-anywhere">{asset.itemDescription}</h1>
+                <StatusBadge status={asset.status} />
+              </div>
+              {asset.propertyNumber && (
+                <p className="mt-1 font-mono text-sm text-gray-500 wrap-anywhere">
+                  {asset.assetType === 'Supplies' ? 'Property Supplies Code' : 'Property #'}: {asset.propertyNumber}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {edit ? (
+                <>
+                  <button type="button"
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-60 transition-colors"
+                  >
+                    <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Changes'}
+                  </button>
+                  <button type="button"
+                    onClick={handleCancelEdit}
+                    className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <X className="w-4 h-4" /> Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button"
+                    onClick={() => setEdit(true)}
+                    className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <Pencil className="w-4 h-4" /> Edit
+                  </button>
+                {!asset.qrCode && (
+                    <button type="button"
+                      onClick={handleGenerateQr}
+                    disabled={tagAction !== null}
+                    className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 transition-colors"
+                    >
+                    <QrCode className="w-4 h-4" /> {tagAction === 'qr' ? 'Generating…' : 'Generate QR'}
+                    </button>
+                  )}
+                <button type="button"
+                  onClick={handlePrintBarcode}
+                  disabled={tagAction !== null}
+                  className="flex items-center gap-2 rounded-md border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-60"
+                >
+                  <Printer aria-hidden="true" className="size-4" />
+                  {tagAction === 'barcode' ? 'Preparing…' : 'Print Barcode'}
+                </button>
+                  {nextStates.length > 0 && (
+                    <button type="button"
+                      onClick={() => setShowLifecycle(true)}
+                      className="px-4 py-2 bg-[#1a4d7a] text-white rounded-md text-sm font-medium hover:bg-[#143d61] transition-colors"
+                    >
+                      Update Lifecycle
+                    </button>
+                  )}
+                  {asset.status === 'flagged_for_disposal' && !needsDisposalAssessment && (
+                    <Link href="/asset-custodian/disposal" className="rounded-md border border-gray-200 px-4 py-2 text-sm font-medium text-[#1a4d7a] hover:bg-gray-50">
+                      Open Disposal Recommendations
+                    </Link>
+                  )}
+                </>
+              )}
+            </div>
           </div>
-          {asset.propertyNumber && (
-            <p className="text-sm text-gray-500 font-mono mt-1">Property #: {asset.propertyNumber}</p>
-          )}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <label className="cursor-pointer rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-[#1a4d7a] focus-within:ring-2 focus-within:ring-blue-500 hover:bg-slate-50">
+              {photoSaving ? 'Saving...' : asset.photoFileName ? 'Replace photo' : 'Add photo'}
+              <input className="sr-only" type="file" disabled={photoSaving} accept="image/jpeg,image/png,image/webp" onChange={(e) => void handlePhoto(e.target.files?.[0])} />
+            </label>
+            {asset.photoFileName && <button type="button" disabled={photoSaving} onClick={() => void handleDeletePhoto()} className="flex items-center gap-1 rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" /> Remove photo</button>}
+          </div>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          {edit ? (
-            <>
-              <button type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-60 transition-colors"
-              >
-                <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Changes'}
-              </button>
-              <button type="button"
-                onClick={handleCancelEdit}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <X className="w-4 h-4" /> Cancel
-              </button>
-            </>
-          ) : (
-            <>
-              <button type="button"
-                onClick={() => setEdit(true)}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <Pencil className="w-4 h-4" /> Edit
-              </button>
-              {!asset.qrCode && (
-                <button type="button"
-                  onClick={handleGenerateQr}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  <QrCode className="w-4 h-4" /> Generate QR
-                </button>
-              )}
-              {nextStates.length > 0 && (
-                <button type="button"
-                  onClick={() => setShowLifecycle(true)}
-                  className="px-4 py-2 bg-[#1a4d7a] text-white rounded-md text-sm font-medium hover:bg-[#143d61] transition-colors"
-                >
-                  Update Lifecycle
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      </div>
+      </header>
 
+      {needsDisposalAssessment && (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          This asset was flagged earlier. It enters Disposal Recommendations only after an assessment confirms it is unserviceable.
+        </p>
+      )}
       {asset.qrCode && (
         <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
           <QrCode className="w-5 h-5 text-green-600" />
@@ -288,7 +398,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
       )}
 
       {formSuggestion && (
-        <div className="flex items-center justify-between gap-4 bg-blue-50 border border-blue-200 text-blue-800 text-sm rounded-md px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-4 bg-blue-50 border border-blue-200 text-blue-800 text-sm rounded-md px-4 py-3">
           <span>
             Lifecycle updated. Consider generating a <strong>{formSuggestion}</strong> form for this transaction.
           </span>
@@ -309,10 +419,15 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid gap-4 @xl:grid-cols-2 @[72rem]:grid-cols-4">
         <DetailSection title="Classification">
           <EditableDetail label="SAP Classification" field="sapClassification" value={asset.sapClassification} editValue={editForm.sapClassification} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
-          <EditableDetail label="Item Code" field="itemCode" value={asset.itemCode} editValue={editForm.itemCode} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
+          <EditableDetail label={asset.assetType === 'Supplies' ? 'Stock Item Code' : 'Item Code'} field="itemCode" value={asset.itemCode} editValue={editForm.itemCode} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
+          {asset.assetType === 'Supplies' && (
+            <EditableDetail label="Property Supplies Code" field="propertyNumber" value={asset.propertyNumber}
+              editValue={editForm.propertyNumber ?? ''} edit={edit}
+              onChange={(_, propertyNumber) => setEditForm((prev) => ({ ...prev, propertyNumber }))} />
+          )}
           <EditableDetail label="Item Description" field="itemDescription" value={asset.itemDescription} editValue={editForm.itemDescription} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
           <EditableDetail label="Brand" field="brand" value={asset.brand} editValue={editForm.brand} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
           <EditableDetail label="Serial Number" field="serialNumber" value={asset.serialNumber} editValue={editForm.serialNumber} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
@@ -325,7 +440,9 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
           <EditableDetail label="Division" field="division" value={asset.division} editValue={editForm.division} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
           <EditableDetail label="Office / Section" field="officeOrSection" value={asset.officeOrSection} editValue={editForm.officeOrSection} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
           <EditableDetail label="Location" field="officeLocation" value={asset.officeLocation} editValue={editForm.officeLocation} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
-          <EditableDetail label="Condition" field="condition" value={asset.condition ? optionLabel(asset.condition) : asset.condition} editValue={editForm.condition} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} options={['serviceable', 'unserviceable', 'for_repair', 'for_disposal']} />
+          <EditableDetail label="Condition" field="condition" value={asset.condition ? optionLabel(asset.condition) : asset.condition} editValue={editForm.condition}
+            edit={edit && !['unserviceable', 'for_disposal'].includes(asset.condition) && !['flagged_for_disposal', 'disposed'].includes(asset.status)}
+            onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} options={['serviceable', 'for_repair']} />
           <EditableDetail label="Components" field="components" value={asset.components} editValue={editForm.components} edit={edit} onChange={(f, v) => setEditForm((p) => ({ ...p, [f]: v }))} />
           {asset.status === 'issued' && asset.expectedReturnDate && (
             <Detail label="Expected Return" value={new Date(asset.expectedReturnDate).toLocaleDateString()} />
@@ -355,7 +472,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
       </div>
 
       {/* Transaction History */}
-      <div className="bg-white rounded-lg shadow-sm border border-blue-200">
+      <div className="overflow-hidden rounded-xl border border-blue-200 bg-white shadow-sm">
         <div className="p-5 border-b border-blue-200 bg-blue-50 flex items-center gap-2">
           <Clock className="w-5 h-5 text-[#1a4d7a]" />
           <h2 className="text-base font-semibold text-[#1a4d7a]">Transaction History</h2>
@@ -417,7 +534,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                 >
                   <option value="">— select status —</option>
                   {nextStates.map((s) => (
-                    <option key={s} value={s}>{optionLabel(s)}</option>
+                    <option key={s} value={s}>{s === 'flagged_for_disposal' ? 'Mark Unserviceable' : optionLabel(s)}</option>
                   ))}
                 </select>
               </div>
@@ -473,7 +590,7 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
               {/* Notes field — required for FLAGGED_FOR_DISPOSAL, optional for others */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                  Notes {targetStatus === 'flagged_for_disposal' && <span className="text-red-500">* (required — justify disposal)</span>}
+                  {targetStatus === 'flagged_for_disposal' ? 'Assessment reason (required)' : 'Notes'}
                 </label>
                 <textarea
                   rows={3}
@@ -481,13 +598,16 @@ export function AssetDetailManager({ assetId, basePath, formsPath }: Readonly<{ 
                   onChange={(e) => setLifecycleNotes(e.target.value)}
                   placeholder={
                     targetStatus === 'flagged_for_disposal'
-                      ? 'Required: describe condition, reason for disposal, and recommended action'
+                      ? 'Describe why the asset is unserviceable.'
                       : targetStatus === 'under_repair'
                       ? 'Optional: describe the issue or defect'
                       : 'Optional notes'
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] resize-none"
                 />
+                {targetStatus === 'flagged_for_disposal' && (
+                  <p className="mt-1 text-xs text-gray-500">This sets the condition to Unserviceable and sends the asset to Disposal Recommendations.</p>
+                )}
               </div>
 
               {lifecycleError && (

@@ -8,6 +8,7 @@ import {
 import { AssetsService } from './assets.service';
 import { AssetEntity } from './entities/asset.entity';
 import { AssetTransactionEntity } from './entities/asset-transaction.entity';
+import type { UpdateLifecycleDto } from './dto/update-lifecycle.dto';
 import { AuditService } from '../audit/audit.service';
 import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -51,11 +52,16 @@ describe('AssetsService', () => {
     update: jest.fn(),
     count: jest.fn(),
     createQueryBuilder: jest.fn(),
+    manager: { transaction: jest.fn() },
   };
 
   const mockTxRepo = {
     create: jest.fn(),
     save: jest.fn(),
+  };
+  const lifecycleManager = {
+    getRepository: (entity: typeof AssetEntity | typeof AssetTransactionEntity) =>
+      entity === AssetEntity ? mockAssetRepo : mockTxRepo,
   };
 
   const mockAuditService = {
@@ -65,6 +71,7 @@ describe('AssetsService', () => {
   const mockUsersService = {
     findByEmployeeId: jest.fn(),
     findByRole: jest.fn(),
+    findHolderSummaries: jest.fn(),
   };
 
   const mockNotifService = {
@@ -95,6 +102,9 @@ describe('AssetsService', () => {
 
     service = module.get<AssetsService>(AssetsService);
     jest.clearAllMocks();
+    mockAssetRepo.manager.transaction.mockImplementation(
+      (callback: (manager: typeof lifecycleManager) => unknown) => callback(lifecycleManager),
+    );
 
     // clearAllMocks() clears call history but not implementations; re-assert
     // the default so a per-test mockReturnValue override never leaks.
@@ -103,9 +113,59 @@ describe('AssetsService', () => {
 
   // ── Section 12.1 — Asset registration ────────────────────────────────────
   describe('create()', () => {
+    it.each([
+      [AssetType.ICT, 49999.99, AssetClass.SEP],
+      [AssetType.ICT, 50000, AssetClass.PPE],
+      [AssetType.FIXED, 1200, AssetClass.SEP],
+      [AssetType.FIXED, 50000.01, AssetClass.PPE],
+      [AssetType.SUPPLIES, 100000, AssetClass.IES],
+      [AssetType.SUPPLIES, undefined, AssetClass.IES],
+    ])(
+      'classifies %s costing %s as %s regardless of the submitted class',
+      async (assetType, acquisitionCost, expectedClass) => {
+        const created = makeAsset();
+        mockAssetRepo.create.mockReturnValue(created);
+        mockAssetRepo.save.mockResolvedValue(created);
+        await service.create(
+          {
+            itemDescription: 'Classification test',
+            assetType,
+            acquisitionCost,
+            assetClass: AssetClass.PPE,
+          },
+          'user-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        );
+        expect(mockAssetRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ assetType, assetClass: expectedClass }),
+        );
+      },
+    );
+
+    it.each([undefined, 0, -1, NaN, Infinity])(
+      'rejects invalid equipment unit cost %s before saving',
+      async (acquisitionCost) => {
+        await expect(
+          service.create(
+            {
+              itemDescription: 'Equipment',
+              assetType: AssetType.ICT,
+              acquisitionCost,
+            },
+            'user-1',
+            UserRole.IT_PERSONNEL,
+            '127.0.0.1',
+          ),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockAssetRepo.create).not.toHaveBeenCalled();
+      },
+    );
+
     it('creates asset with REGISTERED status and logs audit entry', async () => {
       const dto = {
         itemDescription: 'Laptop',
+        acquisitionCost: 50000,
         assetClass: AssetClass.PPE,
         assetType: AssetType.ICT,
         condition: AssetCondition.SERVICEABLE,
@@ -139,6 +199,7 @@ describe('AssetsService', () => {
     it('throws ForbiddenException when dto.assetType is outside the caller scope', async () => {
       const dto = {
         itemDescription: 'Laptop',
+        acquisitionCost: 50000,
         assetClass: AssetClass.PPE,
         assetType: AssetType.ICT,
         condition: AssetCondition.SERVICEABLE,
@@ -156,6 +217,7 @@ describe('AssetsService', () => {
     it('allows creation when dto.assetType is within the caller scope', async () => {
       const dto = {
         itemDescription: 'Office Chair',
+        acquisitionCost: 1200,
         assetClass: AssetClass.SEP,
         assetType: AssetType.FIXED,
         condition: AssetCondition.SERVICEABLE,
@@ -184,13 +246,11 @@ describe('AssetsService', () => {
       [AssetStatus.AVAILABLE, AssetStatus.ISSUED],
       [AssetStatus.AVAILABLE, AssetStatus.TRANSFERRED],
       [AssetStatus.AVAILABLE, AssetStatus.UNDER_REPAIR],
-      [AssetStatus.AVAILABLE, AssetStatus.FLAGGED_FOR_DISPOSAL],
       [AssetStatus.ISSUED, AssetStatus.RETURNED],
       [AssetStatus.ISSUED, AssetStatus.UNDER_REPAIR],
       [AssetStatus.RETURNED, AssetStatus.AVAILABLE],
       [AssetStatus.TRANSFERRED, AssetStatus.AVAILABLE],
       [AssetStatus.UNDER_REPAIR, AssetStatus.AVAILABLE],
-      [AssetStatus.FLAGGED_FOR_DISPOSAL, AssetStatus.DISPOSED],
     ];
 
     test.each(validPairs)('%s → %s should succeed', async (from, to) => {
@@ -212,6 +272,68 @@ describe('AssetsService', () => {
       expect(result.status).toBe(to);
       // Section 12.3 — audit log generated on every transition
       expect(mockAuditService.log).toHaveBeenCalledTimes(1);
+    });
+
+    it('records one assessment and queues the asset as unserviceable', async () => {
+      const asset = makeAsset({ status: AssetStatus.UNDER_REPAIR });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      await expect(service.updateLifecycle(
+        asset.id, { status: AssetStatus.FLAGGED_FOR_DISPOSAL, notes: '   ' },
+        'user-1', UserRole.ASSET_CUSTODIAN, '127.0.0.1',
+      )).rejects.toThrow('reason this asset is unserviceable');
+      mockAssetRepo.save.mockImplementationOnce(async (record) => record);
+      const result = await service.updateLifecycle(
+        asset.id, { status: AssetStatus.FLAGGED_FOR_DISPOSAL, notes: '  Beyond repair  ' },
+        'user-1', UserRole.ASSET_CUSTODIAN, '127.0.0.1',
+      );
+      expect(result).toMatchObject({ status: AssetStatus.FLAGGED_FOR_DISPOSAL, condition: AssetCondition.UNSERVICEABLE });
+      expect(mockTxRepo.create).toHaveBeenCalledWith(expect.objectContaining({ notes: 'Beyond repair' }));
+      expect(mockAuditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: AuditAction.ASSET_FLAGGED_DISPOSAL }), lifecycleManager);
+    });
+
+    it('returns a repaired asset to its existing holder without issuing it again', async () => {
+      const asset = makeAsset({
+        status: AssetStatus.UNDER_REPAIR, condition: AssetCondition.FOR_REPAIR, custodianId: 'holder',
+      });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      mockAssetRepo.save.mockImplementationOnce(async (record) => record);
+      await expect(service.updateLifecycle(
+        asset.id, { status: AssetStatus.AVAILABLE },
+        'user-1', UserRole.ASSET_CUSTODIAN, '127.0.0.1',
+      )).resolves.toMatchObject({ status: AssetStatus.ISSUED, condition: AssetCondition.SERVICEABLE, custodianId: 'holder' });
+      expect(mockAuditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: AuditAction.ASSET_UPDATED }), lifecycleManager);
+    });
+
+    it('requires completed disposal details and stores them in history', async () => {
+      const asset = makeAsset({ status: AssetStatus.FLAGGED_FOR_DISPOSAL, condition: AssetCondition.UNSERVICEABLE });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      const record = (dto: UpdateLifecycleDto) =>
+        service.updateLifecycle(asset.id, dto, 'user-1', UserRole.ASSET_CUSTODIAN, '127.0.0.1');
+      await expect(record({ status: AssetStatus.DISPOSED })).rejects.toThrow('confirm disposal is complete');
+      expect(mockAssetRepo.save).not.toHaveBeenCalled();
+      mockAssetRepo.save.mockImplementationOnce(async (saved) => saved);
+      await expect(record({
+        status: AssetStatus.DISPOSED, disposalDate: '2026-01-01', disposalMethod: 'Authorized recycling',
+        disposalReference: 'DOC-01', disposalConfirmed: true,
+      })).resolves.toMatchObject({ status: AssetStatus.DISPOSED });
+      expect(mockTxRepo.create).toHaveBeenCalledWith(expect.objectContaining({ notes: expect.stringContaining('DOC-01') }));
+    });
+
+    it('blocks disposal of a legacy serviceable asset and allows a new documented assessment', async () => {
+      const asset = makeAsset({ status: AssetStatus.FLAGGED_FOR_DISPOSAL, condition: AssetCondition.SERVICEABLE });
+      mockAssetRepo.findOne.mockResolvedValue(asset);
+      await expect(service.updateLifecycle(asset.id, {
+        status: AssetStatus.DISPOSED, disposalDate: '2026-01-01', disposalMethod: 'Recycling',
+        disposalReference: 'DOC-01', disposalConfirmed: true,
+      }, 'user-1', UserRole.ASSET_CUSTODIAN, '127.0.0.1')).rejects.toThrow('confirmed as Unserviceable');
+      expect(mockAssetRepo.save).not.toHaveBeenCalled();
+
+      mockAssetRepo.save.mockImplementationOnce(async (record) => record);
+      await expect(service.updateLifecycle(asset.id, {
+        status: AssetStatus.FLAGGED_FOR_DISPOSAL, notes: 'Inspection confirmed it cannot be repaired.',
+      }, 'user-1', UserRole.ASSET_CUSTODIAN, '127.0.0.1')).resolves.toMatchObject({
+        status: AssetStatus.FLAGGED_FOR_DISPOSAL, condition: AssetCondition.UNSERVICEABLE,
+      });
     });
 
     it('resolves employeeId to UUID when status is ISSUED', async () => {
@@ -440,6 +562,7 @@ describe('AssetsService', () => {
           toStatus: AssetStatus.ISSUED,
         }),
       }),
+      lifecycleManager,
     );
   });
 
@@ -592,10 +715,39 @@ describe('AssetsService', () => {
   describe('findAll()', () => {
     const makeQb = () => ({
       orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+    });
+
+    it('returns custody units with real holder summaries and excludes supplies before pagination', async () => {
+      const qb = makeQb();
+      const asset = makeAsset({ custodianId: 'holder-1' });
+      qb.getManyAndCount.mockResolvedValue([ [asset], 1 ]);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      mockUsersService.findHolderSummaries.mockResolvedValue(new Map([
+        ['holder-1', { name: 'Ana Cruz', employeeId: 'EMP-001' }],
+      ]));
+
+      const result = await service.findAll(1, 20, undefined, undefined, [AssetType.ICT], undefined, undefined, true);
+
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'a.assetClass != :suppliesClass AND a.assetType != :suppliesType',
+        { suppliesClass: AssetClass.IES, suppliesType: AssetType.SUPPLIES },
+      );
+      expect(result.data[0]).toMatchObject({ holder: { name: 'Ana Cruz', employeeId: 'EMP-001' } });
+    });
+
+    it('limits the disposal queue to unserviceable assets flagged for disposal', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(1, 20, undefined, undefined, [AssetType.ICT], undefined, undefined, false, true);
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'a.status = :disposalStatus AND a.condition = :disposalCondition',
+        { disposalStatus: AssetStatus.FLAGGED_FOR_DISPOSAL, disposalCondition: AssetCondition.UNSERVICEABLE },
+      );
     });
 
     it('returns paginated list with no filters applied', async () => {
@@ -604,6 +756,19 @@ describe('AssetsService', () => {
       const result = await service.findAll();
       expect(qb.getManyAndCount).toHaveBeenCalled();
       expect(result).toMatchObject({ data: [], total: 0, page: 1, limit: 20 });
+    });
+
+    it('excludes completed disposals from inventory queries before pagination', async () => {
+      const qb = makeQb();
+      mockAssetRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.findAll(2, 6, 'monitor', undefined, undefined, AssetType.ICT, undefined, false, false, true);
+
+      expect(qb.andWhere).toHaveBeenCalledWith('a.status != :disposedStatus', {
+        disposedStatus: AssetStatus.DISPOSED,
+      });
+      expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('LIKE'), { q: '%monitor%' });
+      expect(qb.skip).toHaveBeenCalledWith(6);
+      expect(qb.getManyAndCount).toHaveBeenCalled();
     });
 
     it('applies status filter when status param is provided', async () => {
@@ -765,25 +930,37 @@ describe('AssetsService', () => {
     const makeStatsQb = (rawRows: Record<string, string>[]) => ({
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
+      setParameter: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       groupBy: jest.fn().mockReturnThis(),
       getRawMany: jest.fn().mockResolvedValue(rawRows),
     });
 
     it('returns counts broken down by status, class, and type', async () => {
+      const typeQb = makeStatsQb([{ assetType: 'ICT', count: '12', inventoryCount: '10' }]);
       mockAssetRepo.createQueryBuilder
         .mockReturnValueOnce(
-          makeStatsQb([{ status: AssetStatus.AVAILABLE, count: '10' }]),
+          makeStatsQb([
+            { status: AssetStatus.AVAILABLE, count: '10' },
+            { status: AssetStatus.DISPOSED, count: '2' },
+          ]),
         )
         .mockReturnValueOnce(makeStatsQb([{ assetClass: 'PPE', count: '7' }]))
-        .mockReturnValueOnce(makeStatsQb([{ assetType: 'ICT', count: '10' }]));
+        .mockReturnValueOnce(typeQb);
 
       const result = await service.getStats();
-      expect(result.total).toBe(10);
+      expect(result.total).toBe(12);
       expect(result.available).toBe(10);
+      expect(result.disposed).toBe(2);
       expect(result.issued).toBe(0); // ?? 0 fallback for missing keys
       expect(result.byClass).toEqual({ PPE: 7 });
-      expect(result.byType).toEqual({ ICT: 10 });
+      expect(result.byType).toEqual({ ICT: 12 });
+      expect(result.inventoryByType).toEqual({ ICT: 10 });
+      expect(typeQb.addSelect).toHaveBeenCalledWith(
+        'COUNT(*) FILTER (WHERE a.status != :disposedStatus)',
+        'inventoryCount',
+      );
+      expect(typeQb.setParameter).toHaveBeenCalledWith('disposedStatus', AssetStatus.DISPOSED);
     });
 
     it('returns all zeros and empty maps when no assets exist', async () => {
@@ -803,7 +980,7 @@ describe('AssetsService', () => {
         { status: AssetStatus.AVAILABLE, count: '3' },
       ]);
       const classQb = makeStatsQb([{ assetClass: 'SEP', count: '3' }]);
-      const typeQb = makeStatsQb([{ assetType: 'Fixed', count: '3' }]);
+      const typeQb = makeStatsQb([{ assetType: 'Fixed', count: '3', inventoryCount: '3' }]);
       mockAssetRepo.createQueryBuilder
         .mockReturnValueOnce(statusQb)
         .mockReturnValueOnce(classQb)

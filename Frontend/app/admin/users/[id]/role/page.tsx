@@ -11,7 +11,7 @@ import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 const ROLES = [
   { value: 'employee', label: 'Employee', desc: 'Submit requisitions, browse catalogue, track own requests.' },
   { value: 'supervisor', label: 'Supervisor', desc: 'First-level approver. Reviews and approves/rejects requests.' },
-  { value: 'it_personnel', label: 'IT Personnel', desc: 'Asset custodian. Manages registry, lifecycle, forms, and issuance.' },
+  { value: 'it_personnel', label: 'Asset Custodian', desc: 'Asset custodian. Manages registry, lifecycle, forms, and issuance.' },
   { value: 'system_admin', label: 'System Administrator', desc: 'Full system access. User management, audit trail, config.' },
   { value: 'management', label: 'Management', desc: 'Read-only oversight. Dashboards, reports, and audit access.' },
 ];

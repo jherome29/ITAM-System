@@ -59,6 +59,7 @@ export class RequisitionsController {
     @Query('page') page = 1,
     @Query('limit') limit = 20,
     @Query('status') status?: string,
+    @Query('view') view?: string,
   ) {
     const result = await this.svc.findAll(
       req.user.id,
@@ -66,6 +67,7 @@ export class RequisitionsController {
       +page,
       +limit,
       status,
+      view === 'fulfillment',
     );
     return { message: 'Requisitions retrieved', data: result };
   }

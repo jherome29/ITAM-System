@@ -92,8 +92,10 @@ export class CreateAssetDto {
   @IsDateString()
   dateOfDelivery?: string;
 
+  // Optional for compatibility: the service derives the saved class from type and unit cost.
+  @IsOptional()
   @IsEnum(AssetClass, { message: 'assetClass must be PPE, SEP, or IES' })
-  assetClass!: AssetClass;
+  assetClass?: AssetClass;
 
   @IsEnum(AssetType, { message: 'assetType must be ICT, Fixed, or Supplies' })
   assetType!: AssetType;

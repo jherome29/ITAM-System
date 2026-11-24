@@ -90,6 +90,7 @@ describe('Requisition workflow (e2e)', () => {
       assetRepo.create({
         itemDescription: 'E2E Test Laptop',
         assetClass: AssetClass.PPE,
+        acquisitionCost: 50000,
         assetType: AssetType.ICT,
         condition: AssetCondition.SERVICEABLE,
         status: AssetStatus.AVAILABLE,

@@ -7,6 +7,7 @@ export function ConfirmDialog({
   title,
   detail,
   confirmLabel = 'Confirm',
+  busy = false,
   children,
   onConfirm,
   onCancel,
@@ -15,6 +16,7 @@ export function ConfirmDialog({
   title: string;
   detail: string;
   confirmLabel?: string;
+  busy?: boolean;
   children?: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
@@ -28,10 +30,10 @@ export function ConfirmDialog({
         <p className="mt-2 text-sm text-slate-600">{detail}</p>
         {children && <div className="mt-4">{children}</div>}
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={onCancel} className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
+          <button type="button" onClick={onCancel} disabled={busy} className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
             Cancel
           </button>
-          <button type="button" onClick={onConfirm} className="rounded-md bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800">
+          <button type="button" onClick={onConfirm} disabled={busy} className="rounded-md bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50">
             {confirmLabel}
           </button>
         </div>

@@ -23,14 +23,17 @@ export function AdminIdentityPages({ slug }: Readonly<{ slug: IdentitySlug }>) {
 const USER_ROLE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'employee', label: 'Employee' },
   { value: 'supervisor', label: 'Supervisor' },
-  { value: 'it_personnel', label: 'IT Personnel' },
+  { value: 'asset_custodian', label: 'Asset Custodian' },
   { value: 'system_admin', label: 'System Administrator' },
   { value: 'management', label: 'Management' },
-  { value: 'property_custodian', label: 'Property Custodian' },
   { value: 'property_officer', label: 'Property Officer' },
 ];
 
 const ROLE_FILTER_OPTIONS = [{ value: 'All', label: 'All roles' }, ...USER_ROLE_OPTIONS];
+
+function assignableRole(role: string): string {
+  return role === 'it_personnel' || role === 'property_custodian' ? 'asset_custodian' : role;
+}
 
 // A lockout is in force only while lockedUntil is set AND still in the future —
 // the auth service leaves the stale timestamp in place after it expires.
@@ -450,11 +453,11 @@ function RolesPage() {
         <th className={thClass}>User</th><th className={thClass}>Current role</th><th className={thClass}>New role</th><th className={`${thClass} text-right`}>Action</th>
       </tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={4} className="px-4 py-10 text-center text-sm text-slate-400">No accounts found.</td></tr> : rows.map((user) => <tr key={user.id}>
         <td className={tdClass}>{user.firstName} {user.lastName}<span className="block text-xs text-slate-500">{user.employeeId}</span></td>
-        <td className={tdClass}>{user.role.replace(/_/g, ' ')}</td>
+        <td className={tdClass}>{USER_ROLE_OPTIONS.find(({ value }) => value === assignableRole(user.role))?.label ?? user.role}</td>
         <td className={tdClass}>
           <select
             className={inputClass}
-            defaultValue={user.role}
+            defaultValue={assignableRole(user.role)}
             onChange={(e) => setPendingRoleById((current) => ({ ...current, [user.id]: e.target.value }))}
           >
             {USER_ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}

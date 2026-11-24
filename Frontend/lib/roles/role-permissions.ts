@@ -17,17 +17,12 @@ export type UiPermission =
 export const rolePermissions: Record<ProposedUserRole, UiPermission[]> = {
   [ProposedUserRole.EMPLOYEE]: ['create_requisition'],
   [ProposedUserRole.APPROVING_OFFICER]: ['approve_requisition'],
-  [ProposedUserRole.IT_ASSET_CUSTODIAN]: [
+  [ProposedUserRole.ASSET_CUSTODIAN]: [
+    'create_requisition',
     'issue_ict_assets',
-    'scan_qr',
-    'record_maintenance',
-    'recommend_disposal',
-    'reconcile_inventory',
-    'view_reports',
-  ],
-  [ProposedUserRole.PROPERTY_CUSTODIAN]: [
     'issue_property',
     'scan_qr',
+    'record_maintenance',
     'recommend_disposal',
     'reconcile_inventory',
     'view_reports',

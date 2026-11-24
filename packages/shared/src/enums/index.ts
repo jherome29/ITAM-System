@@ -3,10 +3,11 @@
 export enum UserRole {
   EMPLOYEE = 'employee',
   SUPERVISOR = 'supervisor',
-  IT_PERSONNEL = 'it_personnel',
+  ASSET_CUSTODIAN = 'asset_custodian',
+  IT_PERSONNEL = 'it_personnel', // Asset Custodian; persisted value retained for compatibility.
   SYSTEM_ADMIN = 'system_admin',
   MANAGEMENT = 'management',
-  PROPERTY_CUSTODIAN = 'property_custodian',
+  PROPERTY_CUSTODIAN = 'property_custodian', // Legacy alias with the same Asset Custodian permissions.
   PROPERTY_OFFICER = 'property_officer',
 }
 
