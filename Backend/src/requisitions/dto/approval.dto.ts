@@ -1,5 +1,6 @@
 import {
   IsString,
+  IsBoolean,
   IsNotEmpty,
   IsOptional,
   IsArray,
@@ -36,6 +37,10 @@ export class FulfilledItemDto {
 
 /** Body for POST /requisitions/:id/fulfill */
 export class FulfillRequisitionDto {
+  @IsOptional()
+  @IsBoolean()
+  recordHandover?: boolean;
+
   @IsOptional()
   @IsString()
   notes?: string;

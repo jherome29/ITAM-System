@@ -77,6 +77,24 @@ export class RequisitionsController {
    * GET /api/v1/requisitions/mine
    * All of the authenticated user's own requisitions (any role).
    */
+  @Get('issued-supplies')
+  @Roles(UserRole.ASSET_CUSTODIAN)
+  async issuedSupplies(
+    @Query('page') page = '1',
+    @Query('search') search = '',
+    @Query('sort') sort = 'newest',
+  ) {
+    const pageNumber = Math.max(1, Number.parseInt(page, 10) || 1);
+    return {
+      message: 'Issued supplies retrieved',
+      data: await this.svc.findIssuedSupplies(
+        pageNumber,
+        search.trim(),
+        sort === 'oldest' ? 'ASC' : 'DESC',
+      ),
+    };
+  }
+
   @Get('mine')
   @Roles(
     UserRole.EMPLOYEE,

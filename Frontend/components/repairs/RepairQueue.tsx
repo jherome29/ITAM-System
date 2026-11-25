@@ -3,9 +3,11 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock, Wrench } from 'lucide-react';
-import { AdminPageHeader, Field, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, inputClass, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
+import { AdminPageHeader, Field, MetricCard, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, inputClass, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
+import { CenteredModal } from '@/components/ui/CenteredModal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
+import { surfaceClass } from '@/components/ui/controls';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { assetsApi, type Asset } from '@/lib/api/assets';
@@ -181,7 +183,8 @@ export function RepairQueue({
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
   const [toast, setToast] = useState('');
-  const { ask: askToPrint, prompt: printPrompt } = usePrintPrompt();
+  const { ask: askToPrint, prompt: printPrompt, isOpen: printPromptOpen } = usePrintPrompt();
+  const RepairDialog = adminFallback ? DetailDrawer : CenteredModal;
 
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2600); };
   const load = useCallback(() => repairsApi.list().then((res) => setRows(res.data)), []);
@@ -301,10 +304,16 @@ export function RepairQueue({
         <MetricCard label="Completed" value={String(rows.length - openRows.length)} detail="Repaired or written off" tone="green" icon={CheckCircle2} />
       </div>
       <SearchToolbar value={search} onChange={setSearch} filterValue={filter} filterOptions={FILTERS} onFilterChange={setFilter} />
-      <Panel title="Repairs" detail={`${visible.length} shown · ${rows.length} total`}>
+      <section aria-label="Repair records" className={`min-w-0 overflow-hidden ${surfaceClass}`}>
+        {adminFallback && (
+          <div className="border-b border-slate-200 px-4 py-4">
+            <h2 className="text-base font-bold text-slate-950">Repairs</h2>
+            <p className="mt-1 text-xs text-slate-500">{visible.length} shown · {rows.length} total</p>
+          </div>
+        )}
         <TableWrap>
-          <table className="w-full min-w-[900px]">
-            <thead><tr><th className={thClass}>Asset</th><th className={thClass}>Holder</th><th className={thClass}>Service</th><th className={thClass}>Opened</th><th className={thClass}>Due back</th><th className={thClass}>Status</th><th className={thClass} /></tr></thead>
+          <table className="w-full text-left text-sm">
+            <thead><tr><th className={thClass}>Asset</th><th className={thClass}>Held by</th><th className={thClass}>Service</th><th className={thClass}>Opened</th><th className={thClass}>Due back</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead>
             <tbody>
               {paged.pageItems.map((r) => {
                 const status = statusOf(r);
@@ -318,14 +327,14 @@ export function RepairQueue({
                   <td className={`${tdClass} text-right`}><SecondaryButton onClick={() => open(r)}>{!r.completedAt && r.canAct ? 'Update' : 'View'}</SecondaryButton></td>
                 </tr>;
               })}
-              {visible.length === 0 && <EmptyRow colSpan={7}>No repairs match the current filter.</EmptyRow>}
+              {visible.length === 0 && <EmptyRow colSpan={7}>{search || filter !== 'All' ? 'No repairs match the current filters.' : 'No repairs recorded yet.'}</EmptyRow>}
             </tbody>
           </table>
         </TableWrap>
         <Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="repairs" />
-      </Panel>
+      </section>
 
-      <DetailDrawer open={Boolean(selected)} title={selected?.asset?.itemDescription ?? 'Repair'} onClose={() => open(null)}>
+      <RepairDialog open={Boolean(selected)} title={selected?.asset?.itemDescription ?? 'Repair'} onClose={() => open(null)} inactive={confirming || printPromptOpen}>
         {selected && draft && (
           <div className="space-y-5">
             <dl className="grid grid-cols-2 gap-3 text-sm">
@@ -408,7 +417,7 @@ export function RepairQueue({
             {actionError && <Notice tone="red">{actionError}</Notice>}
           </div>
         )}
-      </DetailDrawer>
+      </RepairDialog>
       {printPrompt}
       <ConfirmDialog
         open={confirming}

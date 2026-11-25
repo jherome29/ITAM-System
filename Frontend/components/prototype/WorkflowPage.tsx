@@ -5,7 +5,10 @@ import Link from 'next/link';
 import { CenteredModal } from '@/components/ui/CenteredModal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { RequisitionForm } from '@/components/requisitions/RequisitionForm';
-import { usePrintPrompt } from '@/components/shared/RecordPrints';
+import { RecordPrints, usePrintPrompt } from '@/components/shared/RecordPrints';
+import { CustodyPaperCopy } from '@/components/assets/CustodyPaperCopy';
+import { FulfillmentHandover } from '@/components/requisitions/FulfillmentHandover';
+import { IssuedSupplies } from '@/components/requisitions/IssuedSupplies';
 import { RequisitionDetailView, SlaBadge } from '@/components/requisitions/RequisitionDetailView';
 import { requisitionItemsLabel } from '@/lib/requisitions/catalogue-items';
 import {
@@ -44,9 +47,18 @@ import { DEFAULT_PAGE_SIZE, clampPage, pageSlice } from '@/lib/pagination';
 
 // The custody pages sort asset rows by one of these keys; the requisition pages have their own list.
 const ASSET_SORT_KEYS = ['item', 'status', 'heldBy', 'location'] as const;
-const SORT_LABEL: Record<string, string> = { item: 'Item', status: 'Status', heldBy: 'Held by', location: 'Location' };
+const SORT_LABEL: Record<string, string> = { issuedNewest: 'Issued date: Newest first', issuedOldest: 'Issued date: Oldest first', item: 'Item', status: 'Status', heldBy: 'Held by', location: 'Location' };
 
 type Row = AssetRow;
+
+function compareIssuedDates(a: Row, b: Row, sort: string) {
+  const aDate = Date.parse(String(a.lastIssuedAt ?? ''));
+  const bDate = Date.parse(String(b.lastIssuedAt ?? ''));
+  if (Number.isNaN(aDate) || Number.isNaN(bDate)) {
+    return Number(Number.isNaN(aDate)) - Number(Number.isNaN(bDate));
+  }
+  return sort === 'issuedNewest' ? bDate - aDate : aDate - bDate;
+}
 
 type PageCopy = { title: string; detail: string; action?: string };
 
@@ -113,12 +125,16 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   const isApprovalsPage = role === ProposedUserRole.APPROVING_OFFICER && normalizedSlug === 'approvals';
   const isFulfillmentPage = (isCustodian || isAdminFulfilment) && normalizedSlug === 'fulfillment';
   const isCustodyPage = isCustodian && normalizedSlug === 'custody';
+  const [custodyTab, setCustodyTab] = useState<'ICT' | 'Fixed' | 'Supplies'>('ICT');
   const isDisposalPage = isCustodian && normalizedSlug === 'disposal';
   // "My Requisitions": the header button opens the shared RequisitionForm
   // (POST /v1/requisitions).
   const isMyRequisitions = normalizedSlug === 'requisitions';
   const isRequisitionPage = isApprovalsPage || isFulfillmentPage || isMyRequisitions;
   const isAssetPage = isCustodyPage || isDisposalPage;
+  const isCustodianFulfillment = isCustodian && isFulfillmentPage;
+  const usesCenteredRecord = isAssetPage || isCustodianFulfillment;
+  const RecordDialog = usesCenteredRecord ? CenteredModal : DetailDrawer;
   // Where an asset's full record (details, lifecycle, QR, history) lives for this role.
   const assetRecordBase = '/asset-custodian/assets';
 
@@ -140,9 +156,13 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
 
   const fetchLiveRows = useCallback((): Promise<void> => {
     if (isCustodyPage) {
-      return assetsApi.custody(1, LIVE_FETCH_LIMIT).then((res) => {
-        setRows(unitAssets(res.data.data).map(assetApiToRow));
-        setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
+      return assetsApi.custody(1, LIVE_FETCH_LIMIT).then(async ({ data: first }) => {
+        const assets = [...first.data];
+        for (let page = 2; page <= (first.totalPages ?? 1); page++) {
+          assets.push(...(await assetsApi.custody(page, LIVE_FETCH_LIMIT)).data.data);
+        }
+        setRows(unitAssets(assets).map(assetApiToRow));
+        setLiveFetchTruncated(false);
       });
     }
     if (isDisposalPage) {
@@ -199,6 +219,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       .catch(() => setLiveFetchError('That request could not be found, or you no longer have access to it.'));
   }, [openId, isRequisitionPage, loading]);
   const [confirmAction, setConfirmAction] = useState<string | null>(null);
+  const [manageCustody, setManageCustody] = useState(false);
   const [toast, setToast] = useState('');
   const [remarks, setRemarks] = useState('');
   const [issueEmployeeId, setIssueEmployeeId] = useState('');
@@ -223,12 +244,15 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   const filteredRows = useMemo(() => {
     const q = search.toLowerCase();
     return rows
+      .filter((row) => !isCustodyPage || row.assetType === custodyTab)
       .filter((row) => statusFilter === 'All' || String(row.status) === statusFilter)
       .filter((row) => Object.values(row).join(' ').toLowerCase().includes(q))
       .sort((a, b) => isRequisitionPage
         ? compareRequisitionRows(sortKey, a, b)
-        : String(a[sortKey] ?? '').localeCompare(String(b[sortKey] ?? '')));
-  }, [rows, search, statusFilter, sortKey, isRequisitionPage]);
+        : sortKey === 'issuedNewest' || sortKey === 'issuedOldest'
+          ? compareIssuedDates(a, b, sortKey)
+          : String(a[sortKey] ?? '').localeCompare(String(b[sortKey] ?? '')));
+  }, [rows, search, statusFilter, sortKey, isRequisitionPage, isCustodyPage, custodyTab]);
 
   // Kept inside the list: finishing the last row of a page must not leave you on an empty one.
   const pageNo = clampPage(page, filteredRows.length, pageSize);
@@ -443,6 +467,21 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
 
   const selectedRequisitionDetail = isRequisitionPage && selected ? requisitionById[String(selected.id)] : undefined;
 
+  const handover = isCustodianFulfillment && confirmAction === 'Fulfill' && selectedRequisitionDetail &&
+    !['replacement', 'repair'].includes(selectedRequisitionDetail.requisitionType) ? selectedRequisitionDetail : null;
+  const custodyFacts = selected ? [
+    ['Property number', String(selected.propertyNumber || 'Not recorded')],
+    ['Serial number', String(selected.serialNumber || 'Not recorded')],
+    ['Asset type', String(selected.assetType || 'Not recorded')],
+    ['Location', String(selected.location || 'Not recorded')],
+    ['Condition', humanize(String(selected.condition ?? ''))],
+    ['Status', humanize(String(selected.status ?? ''))],
+    ['Held by', String(selected.heldBy || 'Not issued')],
+    ['Last issued', String(selected.issuedDateLabel || 'Not recorded')],
+    ['Requisition no.', String(selected.lastIssuedFor || 'Not recorded')],
+    ['Expected return', String(selected.returnDate || 'Not recorded')],
+  ] as const : [];
+
   return (
     <div className="space-y-5">
       <Toast message={toast} />
@@ -463,6 +502,18 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
         </Notice>
       )}
 
+      {isCustodyPage && (
+        <div aria-label="Custody and issuance categories" className="flex flex-wrap gap-5 border-b border-slate-200">
+          {([['ICT', 'ICT'], ['Fixed', 'Fixed Assets'], ['Supplies', 'Issued Supplies']] as const).map(([value, label]) => (
+            <button key={value} type="button" aria-pressed={custodyTab === value}
+              onClick={() => { setCustodyTab(value); setPage(1); setStatusFilter('All'); setSelected(null); }}
+              className={'border-b-2 px-1 py-2.5 text-sm font-semibold ' + (custodyTab === value ? 'border-blue-700 text-blue-700' : 'border-transparent text-slate-600 hover:text-blue-700')}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {isCustodyPage && custodyTab === 'Supplies' ? <IssuedSupplies /> : <>
       <SearchToolbar
         value={search}
         onChange={(value) => { setSearch(value); setPage(1); }}
@@ -472,7 +523,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
           {
             label: 'Sort by',
             value: sortKey,
-            options: (isRequisitionPage ? [...REQUISITION_SORT_OPTIONS] : [...ASSET_SORT_KEYS]).map((key) => ({ value: key, label: `Sort: ${SORT_LABEL[key] ?? key}` })),
+            options: (isRequisitionPage ? [...REQUISITION_SORT_OPTIONS] : isCustodyPage ? [...ASSET_SORT_KEYS, 'issuedNewest', 'issuedOldest'] : [...ASSET_SORT_KEYS]).map((key) => ({ value: key, label: `Sort: ${SORT_LABEL[key] ?? key}` })),
             onChange: (value) => { setSortKey(value); setPage(1); },
           },
         ]}
@@ -483,8 +534,11 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
           <table className="w-full text-left text-sm">
             <thead>
               <tr>
+                {isCustodyPage && <th className={thClass}>Requisition no.</th>}
                 <th className={thClass}>{isRequisitionPage ? 'Request' : 'Asset'}</th>
-                <th className={thClass}>{isRequisitionPage ? 'Requested by' : 'Held by'}</th>
+                {isCustodianFulfillment && <th className={thClass}>Requested item</th>}
+                <th className={thClass}>{isRequisitionPage ? 'Requested by' : isDisposalPage ? 'Condition' : 'Held by'}</th>
+                {isCustodyPage && <th className={thClass}>Issued date</th>}
                 <th className={thClass}>{isRequisitionPage ? 'Required by' : 'Location'}</th>
                 <th className={thClass}>Status</th>
                 <th className={`${thClass} text-right`}>Actions</th>
@@ -495,15 +549,18 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                 const liveReq = isRequisitionPage ? requisitionById[String(row.id)] : undefined;
                 return (
                 <tr key={String(row.id)} className="hover:bg-blue-50/40">
+                  {isCustodyPage && <td className={tdClass}>{String(row.lastIssuedFor ?? '—')}</td>}
                   <td className={tdClass}>
-                    <p className="font-bold text-slate-950"><ClampText lines={2}>{String(row.item ?? row.id)}</ClampText></p>
-                    <p className="text-xs text-slate-500">
+                    <p className="font-bold text-slate-950"><ClampText lines={2}>{String(isCustodianFulfillment ? row.requestNumber ?? row.id : row.item ?? row.id)}</ClampText></p>
+                    {!isCustodianFulfillment && <p className="text-xs text-slate-500">
                       {isAssetPage
                         ? [row.propertyNumber, row.serialNumber && `S/N ${String(row.serialNumber)}`].filter(Boolean).join(' · ')
                         : String(row.requestNumber ?? row.id)}
-                    </p>
+                    </p>}
                   </td>
-                  {isAssetPage && (
+                  {isCustodianFulfillment && <td className={tdClass}><ClampText lines={2}>{String(row.item ?? '—')}</ClampText></td>}
+                  {isDisposalPage && <td className={tdClass}>{row.condition ? humanize(String(row.condition)) : '—'}</td>}
+                  {isCustodyPage && (
                     <td className={tdClass}>
                       <p className="font-semibold text-slate-800">{String(row.heldBy)}</p>
                       {row.dueBack ? (
@@ -513,6 +570,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                       ) : null}
                     </td>
                   )}
+                  {isCustodyPage && <td className={tdClass}>{String(row.issuedDateLabel ?? 'Not recorded')}</td>}
                   {isAssetPage && <td className={tdClass}>{String(row.location ?? '-')}</td>}
                   {liveReq && (
                     <>
@@ -529,9 +587,9 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                   <td className={tdClass}><StatusBadge status={String(row.status ?? 'Open')} label={liveReq ? requisitionStatusLabel(liveReq.status) : undefined} /></td>
                   <td className={tdClass}>
                     <div className="flex justify-end gap-2">
-                      <button type="button" onClick={() => setSelected(row)} className={buttonClass({ variant: 'secondary', size: 'sm' })}>View</button>
-                      <button type="button" onClick={() => { setSelected(row); if (rowActionMode(normalizedSlug) === 'confirm') setConfirmAction(rowActionLabel(normalizedSlug)); }} className={buttonClass({ size: 'sm' })}>
-                        {rowActionLabel(normalizedSlug)}
+                      <button type="button" onClick={() => { setManageCustody(false); setSelected(row); }} className={buttonClass({ variant: 'secondary', size: 'sm' })}>View</button>
+                      <button type="button" onClick={() => { setManageCustody(isCustodyPage); setSelected(row); if (!isCustodianFulfillment && rowActionMode(normalizedSlug) === 'confirm') setConfirmAction(rowActionLabel(normalizedSlug)); }} className={buttonClass({ size: 'sm' })}>
+                        {isCustodianFulfillment ? 'Manage' : rowActionLabel(normalizedSlug)}
                       </button>
                     </div>
                   </td>
@@ -539,22 +597,23 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                 );
               })}
               {visibleRows.length === 0 && (
-                <EmptyRow colSpan={5}>{search || statusFilter !== 'All' ? 'No records match the current filters.' : 'Nothing here yet.'}</EmptyRow>
+                <EmptyRow colSpan={isCustodyPage ? 7 : isCustodianFulfillment ? 6 : 5}>{search || statusFilter !== 'All' ? 'No records match the current filters.' : 'Nothing here yet.'}</EmptyRow>
               )}
             </tbody>
           </table>
         </div>
         <Pager page={pageNo} total={filteredRows.length} pageSize={pageSize} onPage={setPage} noun="records" />
       </section>
+      </>}
 
-      <DetailDrawer open={Boolean(selected)} title={String(selectedRequisitionDetail?.requestNumber ?? selected?.item ?? 'Record')} onClose={() => setSelected(null)}>
+      <RecordDialog open={Boolean(selected) && !handover} title={String(selectedRequisitionDetail?.requestNumber ?? selected?.item ?? 'Record')} onClose={() => setSelected(null)} inactive={Boolean(confirmAction)}>
         {selected && (
           <div className="space-y-4">
-            {selectedRequisitionDetail && <RequisitionDetailView request={selectedRequisitionDetail} />}
+            {selectedRequisitionDetail && <RequisitionDetailView request={selectedRequisitionDetail} fulfillment={isCustodianFulfillment} />}
             {isAssetPage && (
               <>
                 <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {([
+                  {(isCustodyPage ? custodyFacts : [
                     ['Property no.', selected.propertyNumber],
                     ['Serial no.', selected.serialNumber],
                     ['Status', humanize(String(selected.status))],
@@ -574,6 +633,9 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                 </Link>
               </>
             )}
+            {isCustodyPage && manageCustody && (selected.lastIssuedRequisitionId
+              ? <RecordPrints key={String(selected.lastIssuedRequisitionId)} kind="requisition" recordId={String(selected.lastIssuedRequisitionId)} stacked />
+              : <CustodyPaperCopy key={String(selected.id)} item={String(selected.item)} fields={custodyFacts} />)}
             {selectedIsSelfApproval && (
               <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
                 This is your own request, so you can&apos;t approve or reject it. It is routed to another approver.
@@ -590,10 +652,23 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
             )}
           </div>
         )}
-      </DetailDrawer>
+      </RecordDialog>
+
+      {handover && (
+        <FulfillmentHandover key={handover.id} id={handover.id} requestNumber={handover.requestNumber}
+          onClose={() => setConfirmAction(null)}
+          onFulfilled={() => {
+            setConfirmAction(null);
+            setSelected(null);
+            notify('Handover recorded. See Custody & Issuance for the updated records.');
+            askToPrint('requisition', handover.id, handover.requestNumber);
+            void fetchLiveRows().catch(() => notify('Handover recorded. Refresh to see the latest queue.'));
+          }}
+        />
+      )}
 
       <ConfirmDialog
-        open={Boolean(confirmAction)}
+        open={Boolean(confirmAction) && !handover}
         title={`${confirmAction} record`}
         detail="The change is saved immediately and written to the audit trail."
         confirmLabel={actionSubmitting ? 'Processing…' : (confirmAction ?? 'Confirm')}

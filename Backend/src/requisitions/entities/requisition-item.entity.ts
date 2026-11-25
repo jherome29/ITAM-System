@@ -25,8 +25,8 @@ export class RequisitionItemEntity {
   @Column({ type: 'enum', enum: AssetType })
   assetType!: AssetType;
 
-  @Column({ type: 'enum', enum: AssetClass })
-  assetClass!: AssetClass;
+  @Column({ type: 'enum', enum: AssetClass, nullable: true })
+  assetClass!: AssetClass | null;
 
   @Column({ type: 'text' })
   itemDescription!: string;

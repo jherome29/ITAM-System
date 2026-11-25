@@ -6,7 +6,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import { AssetEntity } from './entities/asset.entity';
 import { AssetTransactionEntity } from './entities/asset-transaction.entity';
 import { AuditService } from '../audit/audit.service';
@@ -336,7 +336,75 @@ export class AssetsService {
     const data = await this.withTransferDestinations(
       await this.withHolders(rows),
     );
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+    const issuances = new Map(
+      (custody && data.length
+        ? await this.findLatestIssuances(data.map((asset) => asset.id))
+        : []
+      ).map((issue) => [issue.assetId, issue]),
+    );
+    return {
+      data: custody
+        ? data.map((asset) => ({
+            ...asset,
+            lastIssuedAt: issuances.get(asset.id)?.issuedAt ?? null,
+            lastIssuedFor: issuances.get(asset.id)?.requestNumber ?? null,
+            lastIssuedRequisitionId:
+              issuances.get(asset.id)?.requisitionId ?? null,
+          }))
+        : data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  private findLatestIssuances(assetIds: string[]) {
+    // Earlier handovers recorded their asset IDs on the fulfillment audit in
+    // the same transaction. Newer handovers also record the exact issue ID.
+    return this.assetRepo.manager.query<
+      {
+        assetId: string;
+        issuedAt: Date;
+        requestNumber: string | null;
+        requisitionId: string | null;
+      }[]
+    >(
+      `SELECT issue.asset_id AS "assetId", issue.timestamp AS "issuedAt",
+              COALESCE(source.request_number, previous.request_number) AS "requestNumber",
+              COALESCE(source.id, previous.id) AS "requisitionId"
+       FROM (
+         SELECT DISTINCT ON (asset_id) id, asset_id, performed_by_id, timestamp
+         FROM asset_transactions
+         WHERE asset_id = ANY($1::uuid[]) AND action = $2
+         ORDER BY asset_id, timestamp DESC, id DESC
+       ) issue
+       LEFT JOIN LATERAL (
+         SELECT req.id, req.request_number
+         FROM audit_logs log
+         JOIN requisitions req ON req.id::text = log.metadata->>'requisitionId'
+         WHERE log.action = $4 AND log.affected_record_id = issue.asset_id
+           AND log.metadata->>'assetTransactionId' = issue.id::text
+         LIMIT 1
+       ) source ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT req.id, req.request_number
+         FROM audit_logs log
+         JOIN requisitions req ON req.id = log.affected_record_id
+         WHERE log.action = $3 AND log.affected_record_type = 'requisition'
+           AND log.timestamp = issue.timestamp AND log.user_id = issue.performed_by_id
+           AND log.metadata->'fulfilledItems'
+             @> jsonb_build_array(jsonb_build_object('assetId', issue.asset_id::text))
+         ORDER BY log.id
+         LIMIT 1
+       ) previous ON source.request_number IS NULL`,
+      [
+        assetIds,
+        AuditAction.ASSET_ISSUED,
+        AuditAction.REQUISITION_FULFILLED,
+        AuditAction.ASSET_ISSUED,
+      ],
+    );
   }
 
   // A transferred asset still shows the place it left until it arrives, so the
@@ -500,21 +568,21 @@ export class AssetsService {
   async isInCatalogue(
     itemDescription: string,
     assetType: AssetType,
-    assetClass: AssetClass,
+    assetClass?: AssetClass,
   ): Promise<boolean> {
-    const count = await this.assetRepo
+    const query = this.assetRepo
       .createQueryBuilder('a')
       .where('a.status = :status', { status: AssetStatus.AVAILABLE })
       .andWhere('LOWER(TRIM(a.itemDescription)) = :desc', {
         desc: itemDescription.trim().toLowerCase(),
       })
       .andWhere('a.assetType = :assetType', { assetType })
-      .andWhere('a.assetClass = :assetClass', { assetClass })
       .andWhere('(a.assetClass <> :ies OR a.quantity > 0)', {
         ies: AssetClass.IES,
-      })
-      .getCount();
-    return count > 0;
+      });
+    if (assetClass)
+      query.andWhere('a.assetClass = :assetClass', { assetClass });
+    return (await query.getCount()) > 0;
   }
 
   // ── Asset stats — IT Personnel & Management dashboard counts ──────────────
@@ -1063,7 +1131,10 @@ export class AssetsService {
     assetTypeScope?: AssetType[],
     // Internal callers only (never from the HTTP DTO): who/what sent it to
     // repair, the repair's findings on the way out, and a condition override.
-    context: RepairContext & { condition?: AssetCondition } = {},
+    context: RepairContext & {
+      condition?: AssetCondition;
+      issuance?: { manager: EntityManager; requisitionId: string };
+    } = {},
   ): Promise<AssetEntity> {
     const asset = await this.findOne(id, assetTypeScope);
     const targetStatus = dto.status;
@@ -1152,7 +1223,10 @@ export class AssetsService {
     this.applyCustody(asset, dto, targetStatus, backToHolder);
     const arrival = this.applyArrival(asset, previousStatus, dto);
 
-    const saved = await this.assetRepo.save(asset);
+    const manager = context.issuance?.manager;
+    const saved = await (
+      manager?.getRepository(AssetEntity) ?? this.assetRepo
+    ).save(asset);
 
     // Repair record: one per stay in under_repair, whichever screen moved it.
     if (targetStatus === AssetStatus.UNDER_REPAIR) {
@@ -1175,7 +1249,9 @@ export class AssetsService {
     }
 
     // ── Record transaction in asset history ────────────────────────────────
-    const tx = this.txRepo.create({
+    const txRepo =
+      manager?.getRepository(AssetTransactionEntity) ?? this.txRepo;
+    const tx = txRepo.create({
       assetId: id,
       action:
         TRANSITION_AUDIT_ACTION[targetStatus] ?? AuditAction.ASSET_UPDATED,
@@ -1184,30 +1260,39 @@ export class AssetsService {
       toLocation: dto.toLocation,
       notes,
     });
-    await this.txRepo.save(tx);
+    const savedTx = await txRepo.save(tx);
 
     // ── Audit log entry (CLAUDE.md section 8.3 — every state change logged)
-    await this.auditService.log({
-      userId: performedById,
-      userRole,
-      action:
-        TRANSITION_AUDIT_ACTION[targetStatus] ?? AuditAction.ASSET_UPDATED,
-      affectedRecordId: id,
-      affectedRecordType: 'asset',
-      ipAddress,
-      metadata: {
-        fromStatus: previousStatus,
-        toStatus: targetStatus,
-        custodianId: dto.custodianId,
-        notes,
-        // Where a transfer went (and came from) — the history screen reads this,
-        // not the transactions table — and where an arrival now sits.
-        ...(dto.toLocation ? { toLocation: dto.toLocation } : {}),
-        ...(dto.fromLocation ? { fromLocation: dto.fromLocation } : {}),
-        ...arrival,
-        ...(disposal ? { disposal } : {}),
+    await this.auditService.log(
+      {
+        userId: performedById,
+        userRole,
+        action:
+          TRANSITION_AUDIT_ACTION[targetStatus] ?? AuditAction.ASSET_UPDATED,
+        affectedRecordId: id,
+        affectedRecordType: 'asset',
+        ipAddress,
+        metadata: {
+          fromStatus: previousStatus,
+          toStatus: targetStatus,
+          custodianId: dto.custodianId,
+          notes,
+          // Where a transfer went (and came from) — the history screen reads this,
+          // not the transactions table — and where an arrival now sits.
+          ...(dto.toLocation ? { toLocation: dto.toLocation } : {}),
+          ...(dto.fromLocation ? { fromLocation: dto.fromLocation } : {}),
+          ...arrival,
+          ...(disposal ? { disposal } : {}),
+          ...(context.issuance
+            ? {
+                requisitionId: context.issuance.requisitionId,
+                assetTransactionId: savedTx.id,
+              }
+            : {}),
+        },
       },
-    });
+      ...(manager ? [manager] : []),
+    );
 
     return saved;
   }

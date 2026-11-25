@@ -29,9 +29,15 @@ describe('CenteredModal', () => {
     const html = render();
 
     expect(html).toContain('aria-modal="true"');
-    expect(html).toContain('aria-labelledby="centered-modal-title"');
+    const titleId = html.match(/aria-labelledby="([^"]+)"/)?.[1];
+    expect(titleId).toBeTruthy();
+    expect(html).toContain(`<h2 id="${titleId}"`);
     expect(html).toContain('>Reset password</h2>');
     expect(html).toContain('<p>body</p>');
+  });
+
+  it('makes the record unavailable while another dialog is active', () => {
+    expect(render({ inactive: true })).toContain('inert=""');
   });
 
   it('shows a line of description under the title', () => {

@@ -28,6 +28,9 @@ export interface Asset {
   custodianId: string | null;
   /** Who holds it — name and employee ID only. Present on the custodians' asset list. */
   custodian?: { id: string; name: string; employeeId: string } | null;
+  lastIssuedAt?: string | null;
+  lastIssuedFor?: string | null;
+  lastIssuedRequisitionId?: string | null;
   quantity: number;
   reorderLevel: number | null;
   expectedReturnDate: string | null;

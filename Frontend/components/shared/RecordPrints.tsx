@@ -16,13 +16,16 @@ import { openStoredPrint, printRecord } from '@/lib/print-record';
 
 const MAX_LISTED = 5;
 
-export function RecordPrints({ kind, recordId }: Readonly<{ kind: PrintKind; recordId: string }>) {
-  const [prints, setPrints] = useState<RecordPrint[]>([]);
+export function RecordPrints({ kind, recordId, stacked = false }: Readonly<{ kind: PrintKind; recordId: string; stacked?: boolean }>) {
+  const [prints, setPrints] = useState<RecordPrint[] | null>(null);
+  const [historyError, setHistoryError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(
-    () => recordPrintsApi.list(kind, recordId).then(setPrints).catch(() => undefined),
+    () => recordPrintsApi.list(kind, recordId)
+      .then((copies) => { setPrints(copies); setHistoryError(false); })
+      .catch(() => setHistoryError(true)),
     [kind, recordId],
   );
   useEffect(() => {
@@ -47,7 +50,7 @@ export function RecordPrints({ kind, recordId }: Readonly<{ kind: PrintKind; rec
 
   return (
     <section aria-label="Paper copy" className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className={stacked ? 'space-y-3' : 'flex flex-wrap items-center justify-between gap-3'}>
         <div>
           <h3 className="text-base font-bold text-slate-950">Paper copy</h3>
           <p className="text-sm text-slate-600">
@@ -60,7 +63,8 @@ export function RecordPrints({ kind, recordId }: Readonly<{ kind: PrintKind; rec
         </button>
       </div>
       {error && <Notice tone="red">{error}</Notice>}
-      <PrintList prints={prints} onOpen={again} />
+      {historyError && <p role="status" className="text-sm text-slate-600">Could not load print history.</p>}
+      {prints && <PrintList prints={prints} onOpen={again} />}
     </section>
   );
 }
@@ -138,8 +142,8 @@ export function PrintPromptDialog({ target, onClose }: Readonly<{ target: PrintT
 }
 
 /** `ask(kind, id, "REQ-2026-0054")` after an action succeeds; render `prompt` once in the screen. */
-export function usePrintPrompt(): { ask: (kind: PrintKind, id: string, label: string) => void; prompt: ReactNode } {
+export function usePrintPrompt(): { ask: (kind: PrintKind, id: string, label: string) => void; prompt: ReactNode; isOpen: boolean } {
   const [target, setTarget] = useState<PrintTarget | null>(null);
   const ask = useCallback((kind: PrintKind, id: string, label: string) => setTarget({ kind, id, label }), []);
-  return { ask, prompt: <PrintPromptDialog target={target} onClose={() => setTarget(null)} /> };
+  return { ask, prompt: <PrintPromptDialog target={target} onClose={() => setTarget(null)} />, isOpen: Boolean(target) };
 }

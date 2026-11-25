@@ -65,7 +65,7 @@ export function buildCreateRequisitionDto(v: RequisitionFormValues): CreateRequi
       itemDescription: v.itemDescription,
       quantity: Number(v.quantity),
       assetType: v.assetType,
-      assetClass: v.assetClass,
+      ...(v.assetClass ? { assetClass: v.assetClass } : {}),
       justification: v.justification,
     }],
   };
@@ -89,12 +89,12 @@ export function RequisitionForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [manual, setManual] = useState(false);
-  const [manualClass, setManualClass] = useState(replacing?.assetClass ?? 'SEP');
+  const [manualType, setManualType] = useState(replacing?.assetType ?? 'ICT');
   const [picked, setPicked] = useState<CatalogueItem | null>(defaultItem);
 
   const requisitionType = deriveRequisitionType(
     Boolean(replacing),
-    manual ? { isSupply: false, assetClass: manualClass } : picked,
+    manual ? { isSupply: manualType === 'Supplies', assetClass: '' } : picked,
   );
 
   const pick = (item: CatalogueItem | null) => {
@@ -116,8 +116,8 @@ export function RequisitionForm({
       requiredDate: String(data.get('requiredDate')),
       itemDescription: manual ? String(data.get('itemDescription')) : picked!.itemDescription,
       quantity: replacing ? '1' : String(data.get('quantity')),
-      assetType: manual ? (replacing?.assetType ?? String(data.get('assetType'))) : picked!.assetType,
-      assetClass: manual ? manualClass : picked!.assetClass,
+      assetType: manual ? manualType : picked!.assetType,
+      assetClass: manual ? (replacing?.assetClass ?? '') : picked!.assetClass,
       replacedAssetId: replacing?.id ?? '',
     });
     setSubmitting(true);
@@ -155,10 +155,7 @@ export function RequisitionForm({
           <p>This item will be marked <b>not in inventory</b>. The custodian may need to put it on hold until it can be sourced.</p>
         </div>
         <Field label="Describe the item"><input name="itemDescription" required className={inputClass} placeholder="e.g. 27-inch monitor, USB-C docking station" /></Field>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {!replacing && <Field label="Asset type"><select name="assetType" defaultValue="ICT" className={inputClass}><option value="ICT">ICT</option><option value="Fixed">Fixed</option><option value="Supplies">Supplies</option></select></Field>}
-          <Field label="Asset class"><select name="assetClass" value={manualClass} onChange={(e) => setManualClass(e.target.value)} className={inputClass}><option value="PPE">PPE</option><option value="SEP">SEP</option>{!replacing && <option value="IES">IES</option>}</select></Field>
-        </div>
+        {!replacing && <Field label="Asset type"><select name="assetType" value={manualType} onChange={(event) => setManualType(event.target.value)} className={inputClass}><option value="ICT">ICT</option><option value="Fixed">Fixed</option><option value="Supplies">Supplies</option></select></Field>}
         <button type="button" onClick={() => setManual(false)} className="text-xs font-bold text-blue-700 hover:underline">← Back to inventory search</button>
       </div>
     ) : (

@@ -32,7 +32,7 @@ export interface RequisitionPrintInput {
     items: {
       quantity: number;
       assetType: string;
-      assetClass: string;
+      assetClass: string | null;
       itemDescription: string;
     }[];
   };
