@@ -53,14 +53,11 @@ describe('detailActions — custody follows the asset lifecycle', () => {
 });
 
 describe('detailActions — disposal', () => {
-  it('lets an asset that can be flagged be recommended for disposal', () => {
-    expect(detailActions('disposal', 'available')).toEqual(['Recommend Disposal']);
-    expect(detailActions('disposal', 'issued')).toEqual(['Recommend Disposal']);
-  });
-  it('does not offer it where the lifecycle would refuse', () => {
-    expect(detailActions('disposal', 'flagged_for_disposal')).toEqual([]);
-    expect(detailActions('disposal', 'disposed')).toEqual([]);
-    expect(detailActions('disposal', 'registered')).toEqual([]);
+  it('records completed disposal only for flagged unserviceable assets', () => {
+    expect(detailActions('disposal', 'flagged_for_disposal', 'unserviceable')).toEqual(['Record Disposal']);
+    expect(detailActions('disposal', 'flagged_for_disposal', 'serviceable')).toEqual([]);
+    expect(detailActions('disposal', 'available', 'unserviceable')).toEqual([]);
+    expect(detailActions('disposal', 'disposed', 'unserviceable')).toEqual([]);
   });
 });
 
@@ -69,11 +66,11 @@ describe('row buttons never skip the checks above', () => {
     expect(rowActionMode('custody')).toBe('drawer');
     expect(rowActionLabel('custody')).toBe('Manage');
   });
-  it('Fulfilment and disposal rows are always actionable, so they confirm directly', () => {
+  it('Fulfilment confirms directly and disposal opens the record first', () => {
     expect(rowActionMode('fulfillment')).toBe('confirm');
     expect(rowActionLabel('fulfillment')).toBe('Fulfill');
-    expect(rowActionMode('disposal')).toBe('confirm');
-    expect(rowActionLabel('disposal')).toBe('Recommend Disposal');
+    expect(rowActionMode('disposal')).toBe('drawer');
+    expect(rowActionLabel('disposal')).toBe('Manage');
   });
   it('approvals and requisitions open the drawer', () => {
     expect(rowActionMode('approvals')).toBe('drawer');

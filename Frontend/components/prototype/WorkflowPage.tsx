@@ -91,7 +91,7 @@ const pageCopy: Record<string, PageCopy> = {
   },
   disposal: {
     title: 'Disposal Recommendations',
-    detail: 'Flag an asset for disposal with a documented justification. Open the flagged asset from inventory to record the outcome; the disposal itself is carried out through the manual COA process.',
+    detail: 'Review unserviceable assets flagged for disposal. Record completion after the approved disposal takes place.',
   },
 };
 
@@ -166,9 +166,13 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       });
     }
     if (isDisposalPage) {
-      return assetsApi.list(1, LIVE_FETCH_LIMIT, undefined, 'available').then((res) => {
-        setRows(res.data.data.map(assetApiToRow));
-        setLiveFetchTruncated(res.data.data.length >= LIVE_FETCH_LIMIT);
+      return assetsApi.disposalQueue(1, LIVE_FETCH_LIMIT).then(async ({ data: first }) => {
+        const assets = [...first.data];
+        for (let page = 2; page <= (first.totalPages ?? 1); page++) {
+          assets.push(...(await assetsApi.disposalQueue(page, LIVE_FETCH_LIMIT)).data.data);
+        }
+        setRows(assets.map(assetApiToRow));
+        setLiveFetchTruncated(false);
       });
     }
     // Fulfillment is not narrowed to 'pending_fulfillment': the backend already
@@ -219,7 +223,23 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
       .catch(() => setLiveFetchError('That request could not be found, or you no longer have access to it.'));
   }, [openId, isRequisitionPage, loading]);
   const [confirmAction, setConfirmAction] = useState<string | null>(null);
-  const [manageCustody, setManageCustody] = useState(false);
+  const [manageAsset, setManageAsset] = useState(false);
+  const [disposal, setDisposal] = useState({ date: '', method: '', reference: '', confirmed: false });
+  const disposalAssetId = isDisposalPage && selected ? String(selected.id) : null;
+  const [assessment, setAssessment] = useState<{ id: string; reason: string }>();
+
+  useEffect(() => {
+    if (!disposalAssetId) return;
+    let current = true;
+    assetsApi.getOne(disposalAssetId).then(({ data }) => {
+      const latest = data.locationHistory?.filter((entry) => entry.action === 'asset_flagged_disposal')
+        .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))[0];
+      if (current) setAssessment({ id: disposalAssetId, reason: latest?.notes || 'No assessment reason recorded.' });
+    }).catch(() => {
+      if (current) setAssessment({ id: disposalAssetId, reason: 'Could not load the assessment reason.' });
+    });
+    return () => { current = false; };
+  }, [disposalAssetId]);
   const [toast, setToast] = useState('');
   const [remarks, setRemarks] = useState('');
   const [issueEmployeeId, setIssueEmployeeId] = useState('');
@@ -432,32 +452,39 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
     }
   };
 
-  // Disposal recommendation: flags the asset through the lifecycle API. Reuses the
-  // remarks textarea - a disposal flag needs a documented justification (CLAUDE.md §6
-  // Module 1). Repairs are closed from the
-  // Maintenance & Repair queue (RepairQueue), not here.
-  const submitDisposalRecommendation = async () => {
-    if (!selected || actionSubmitting) return;
-    const trimmedRemarks = remarks.trim();
-    if (!trimmedRemarks) {
-      setErrors({ remarks: 'A justification is required to recommend disposal.' });
+  const submitDisposal = async () => {
+    if (!disposalAssetId || actionSubmitting) return;
+    const method = disposal.method.trim();
+    const reference = disposal.reference.trim();
+    if (!disposal.date || !method || !reference || !disposal.confirmed) {
+      setErrors({ disposal: 'Enter all three details and confirm disposal is complete.' });
       return;
     }
     setActionSubmitting(true);
     try {
-      await assetsApi.updateLifecycle(String(selected.id), { status: 'flagged_for_disposal', notes: trimmedRemarks });
-      setConfirmAction(null);
+      await assetsApi.updateLifecycle(disposalAssetId, {
+        status: 'disposed',
+        disposalDate: disposal.date,
+        disposalMethod: method,
+        disposalReference: reference,
+        disposalConfirmed: disposal.confirmed,
+      });
+      closeDisposalConfirmation();
       setSelected(null);
-      setRemarks('');
-      setErrors({});
-      notify('Disposal recommended.');
-      await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh — reload the page to see the latest queue.'));
+      notify('Disposal recorded.');
+      await fetchLiveRows().catch(() => notify('Saved, but the list failed to refresh. Reload the page to see the latest queue.'));
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
-      notify(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Could not complete this action. Please try again.'));
+      setErrors({ disposal: Array.isArray(msg) ? msg.join(' · ') : msg ?? 'Could not record disposal. Please try again.' });
     } finally {
       setActionSubmitting(false);
     }
+  };
+
+  const closeDisposalConfirmation = () => {
+    setConfirmAction(null);
+    setErrors({});
+    setDisposal({ date: '', method: '', reference: '', confirmed: false });
   };
 
   // Nobody approves their own request - the backend refuses it, so don't offer it.
@@ -519,7 +546,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
         onChange={(value) => { setSearch(value); setPage(1); }}
         placeholder="Search records"
         filters={[
-          { label: 'All statuses', value: statusFilter, options: statuses, onChange: (value) => { setStatusFilter(value); setPage(1); } },
+          ...(!isDisposalPage ? [{ label: 'All statuses', value: statusFilter, options: statuses, onChange: (value: string) => { setStatusFilter(value); setPage(1); } }] : []),
           {
             label: 'Sort by',
             value: sortKey,
@@ -587,8 +614,8 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                   <td className={tdClass}><StatusBadge status={String(row.status ?? 'Open')} label={liveReq ? requisitionStatusLabel(liveReq.status) : undefined} /></td>
                   <td className={tdClass}>
                     <div className="flex justify-end gap-2">
-                      <button type="button" onClick={() => { setManageCustody(false); setSelected(row); }} className={buttonClass({ variant: 'secondary', size: 'sm' })}>View</button>
-                      <button type="button" onClick={() => { setManageCustody(isCustodyPage); setSelected(row); if (!isCustodianFulfillment && rowActionMode(normalizedSlug) === 'confirm') setConfirmAction(rowActionLabel(normalizedSlug)); }} className={buttonClass({ size: 'sm' })}>
+                      <button type="button" onClick={() => { setManageAsset(false); setSelected(row); }} className={buttonClass({ variant: 'secondary', size: 'sm' })}>View</button>
+                      <button type="button" onClick={() => { setManageAsset(isAssetPage); setSelected(row); if (!isCustodianFulfillment && rowActionMode(normalizedSlug) === 'confirm') setConfirmAction(rowActionLabel(normalizedSlug)); }} className={buttonClass({ size: 'sm' })}>
                         {isCustodianFulfillment ? 'Manage' : rowActionLabel(normalizedSlug)}
                       </button>
                     </div>
@@ -633,17 +660,25 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
                 </Link>
               </>
             )}
-            {isCustodyPage && manageCustody && (selected.lastIssuedRequisitionId
+            {isCustodyPage && manageAsset && (selected.lastIssuedRequisitionId
               ? <RecordPrints key={String(selected.lastIssuedRequisitionId)} kind="requisition" recordId={String(selected.lastIssuedRequisitionId)} stacked />
               : <CustodyPaperCopy key={String(selected.id)} item={String(selected.item)} fields={custodyFacts} />)}
+            {disposalAssetId && (
+              <section className="rounded-lg border border-slate-200 p-3">
+                <h3 className="text-sm font-semibold text-slate-950">Assessment reason</h3>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">
+                  {assessment?.id === disposalAssetId ? assessment.reason : 'Loading assessment…'}
+                </p>
+              </section>
+            )}
             {selectedIsSelfApproval && (
               <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
                 This is your own request, so you can&apos;t approve or reject it. It is routed to another approver.
               </p>
             )}
-            {!selectedIsSelfApproval && (
+            {!selectedIsSelfApproval && (!isDisposalPage || manageAsset) && (
               <div className="flex flex-wrap gap-2">
-                {detailActions(normalizedSlug, String(selected.status ?? '')).map((action) => (
+                {detailActions(normalizedSlug, String(selected.status ?? ''), String(selected.condition ?? '')).map((action) => (
                   <button key={action} type="button" onClick={() => setConfirmAction(action)} className={buttonClass()}>
                     {action}
                   </button>
@@ -669,8 +704,8 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
 
       <ConfirmDialog
         open={Boolean(confirmAction) && !handover}
-        title={`${confirmAction} record`}
-        detail="The change is saved immediately and written to the audit trail."
+        title={isDisposalPage ? 'Record Disposal' : `${confirmAction} record`}
+        detail={isDisposalPage ? 'Enter the details of the completed, authorized disposal.' : 'The change is saved immediately and written to the audit trail.'}
         confirmLabel={actionSubmitting ? 'Processing…' : (confirmAction ?? 'Confirm')}
         confirmDisabled={actionSubmitting || (supplyLines.length > 0 && (supplyOptions === null || Boolean(supplyBlockedReason)))}
         onConfirm={() => {
@@ -681,11 +716,11 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
             void submitFulfillmentDecision(confirmAction);
           } else if (isCustodyPage && (confirmAction === 'Issue' || confirmAction === 'Transfer' || confirmAction === 'Return')) {
             void submitCustodyDecision(confirmAction);
-          } else if (isDisposalPage && confirmAction === 'Recommend Disposal') {
-            void submitDisposalRecommendation();
+          } else if (isDisposalPage && confirmAction === 'Record Disposal') {
+            void submitDisposal();
           }
         }}
-        onCancel={() => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setIssueExpectedReturnDate(''); setTransferToLocation(''); setReplacementUnitId(''); setStockPicks({}); }}
+        onCancel={isDisposalPage ? () => { if (!actionSubmitting) closeDisposalConfirmation(); } : () => { setConfirmAction(null); setRemarks(''); setErrors({}); setIssueEmployeeId(''); setIssueExpectedReturnDate(''); setTransferToLocation(''); setReplacementUnitId(''); setStockPicks({}); }}
       >
         {supplyLines.map((line) => {
           const options = supplyOptions?.[line.id];
@@ -731,13 +766,33 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
           </label>
         )}
         {((isApprovalsPage && confirmAction === 'Reject') ||
-          (isFulfillmentPage && confirmAction === 'On Hold') ||
-          (isDisposalPage && confirmAction === 'Recommend Disposal')) && (
+          (isFulfillmentPage && confirmAction === 'On Hold')) && (
           <label className="block text-sm font-semibold text-slate-700">
             <span>Remarks</span>
             <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} className={`${textareaClass} mt-2`} />
             {errors.remarks && <span className="mt-1 block text-xs text-red-600">{errors.remarks}</span>}
           </label>
+        )}
+        {isDisposalPage && confirmAction === 'Record Disposal' && (
+          <div className="space-y-3">
+            <label className="block text-sm font-semibold text-slate-700">
+              Disposal date
+              <DateField value={disposal.date} onChange={(event) => setDisposal({ ...disposal, date: event.target.value })} className="mt-2 w-full" />
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              Disposal method
+              <input value={disposal.method} onChange={(event) => setDisposal({ ...disposal, method: event.target.value })} maxLength={100} className={controlClass} />
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              Document reference
+              <input value={disposal.reference} onChange={(event) => setDisposal({ ...disposal, reference: event.target.value })} maxLength={200} className={controlClass} />
+            </label>
+            <label className="flex items-start gap-2 text-sm text-slate-700">
+              <input type="checkbox" className="mt-1" checked={disposal.confirmed} onChange={(event) => setDisposal({ ...disposal, confirmed: event.target.checked })} />
+              The disposal was authorized and has been completed.
+            </label>
+            {errors.disposal && <p role="alert" className="text-sm text-red-700">{errors.disposal}</p>}
+          </div>
         )}
         {isCustodyPage && confirmAction === 'Issue' && (
           <label className="block text-sm font-semibold text-slate-700">
