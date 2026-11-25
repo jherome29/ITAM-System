@@ -15,13 +15,13 @@ describe('Property Custodian menu', () => {
     expect(hrefs).not.toContain('/asset-custodian/audit');
   });
 
-  // The Property Officer was merged into the custodian: its two screens that read
-  // real records (replacement validation, disposal review) moved here.
-  it('has the two review screens the Property Officer used to have', () => {
-    expect(hrefsOf(ProposedUserRole.ASSET_CUSTODIAN)).toEqual(
+  it('keeps active custodian tools in the sidebar without the retired entries', () => {
+    const hrefs = hrefsOf(ProposedUserRole.ASSET_CUSTODIAN);
+    expect(hrefs).not.toContain('/asset-custodian/returns-incidents');
+    expect(hrefs).not.toContain('/asset-custodian/disposal-review');
+    expect(hrefs).not.toContain('/asset-custodian/replacements');
+    expect(hrefs).toEqual(
       expect.arrayContaining([
-        '/asset-custodian/replacements',
-        '/asset-custodian/disposal-review',
         '/asset-custodian/disposal', // the recommend-for-disposal screen stays
         '/asset-custodian/reports',
         '/asset-custodian/assigned-assets',

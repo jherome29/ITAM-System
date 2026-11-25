@@ -91,7 +91,7 @@ const pageCopy: Record<string, PageCopy> = {
   },
   disposal: {
     title: 'Disposal Recommendations',
-    detail: 'Flag an asset for disposal with a documented justification. It then appears under Disposal Review; the disposal itself is carried out through the manual COA process.',
+    detail: 'Flag an asset for disposal with a documented justification. Open the flagged asset from inventory to record the outcome; the disposal itself is carried out through the manual COA process.',
   },
 };
 

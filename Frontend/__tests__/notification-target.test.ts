@@ -29,6 +29,7 @@ describe('notificationTarget', () => {
 
   it('routes Returns & Incidents alerts to the holder list or the custodian queue', () => {
     const ar = (alertType: string) => ({ alertType, relatedRecordId: REQ, relatedRecordType: 'asset_request' });
+    expect(notificationTarget('/asset-custodian', ar('asset_request'))).toBe(`/asset-custodian/returns-incidents?open=${REQ}`);
     expect(notificationTarget('/employee', ar('asset_request_update'))).toBe(`/employee/returns-incidents?open=${REQ}`);
     expect(notificationTarget('/it-asset-custodian', ar('asset_request'))).toBe(`/it-asset-custodian/returns-incidents?open=${REQ}`);
     expect(notificationTarget('/property-custodian', ar('asset_request'))).toBe(`/property-custodian/returns-incidents?open=${REQ}`);

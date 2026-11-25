@@ -15,7 +15,7 @@ type RouterPage = (props: {
 const render = (page: RouterPage, slug: string[]) =>
   page({ params: Promise.resolve({ slug }), searchParams: Promise.resolve({}) });
 
-const notFoundDigest = async (page: RouterPage, slug: string[]) => {
+const routeDigest = async (page: RouterPage, slug: string[]) => {
   try {
     await render(page, slug);
   } catch (error) {
@@ -26,7 +26,7 @@ const notFoundDigest = async (page: RouterPage, slug: string[]) => {
 
 describe('IT Asset Custodian workspace', () => {
   it('serves the management reports the old /it-personnel/reports page generated', async () => {
-    expect(await notFoundDigest(ItAssetCustodianPage as RouterPage, ['management-reports'])).toBe('');
+    expect(await routeDigest(ItAssetCustodianPage as RouterPage, ['management-reports'])).toBe('');
   });
 
   it('lists them in its menu', () => {
@@ -35,7 +35,7 @@ describe('IT Asset Custodian workspace', () => {
   });
 
   it('still answers an address with no screen with not-found', async () => {
-    expect(await notFoundDigest(ItAssetCustodianPage as RouterPage, ['no-such-page'])).toContain('404');
+    expect(await routeDigest(ItAssetCustodianPage as RouterPage, ['no-such-page'])).toContain('404');
   });
 });
 
@@ -47,24 +47,24 @@ describe('Property Custodian workspace', () => {
     expect(element.props.formsPath).toBe('/asset-custodian/reports');
   });
 
-  // The Property Officer's two screens that read real records moved here when the
-  // role was merged into the custodian.
   it.each([
-    ['replacements', 'ReplacementReview'],
-    ['replacement-validation', 'ReplacementReview'],
-    ['disposal-review', 'DisposalReview'],
-  ])('serves /%s with the %s screen, linking assets into its own registry', async (slug, component) => {
-    const element = (await render(ItAssetCustodianPage as RouterPage, [slug])) as {
-      type: { name: string };
-      props: { assetBasePath: string; eyebrow: string };
-    };
-    expect(element.type.name).toBe(component);
-    expect(element.props.assetBasePath).toBe('/asset-custodian/assets');
-    expect(element.props.eyebrow).toBe('Asset Custodian');
+    ['replacements', '/asset-custodian/fulfillment'],
+    ['replacement-validation', '/asset-custodian/fulfillment'],
+    ['disposal-review', '/asset-custodian/disposal'],
+  ])('redirects the retired /%s route to %s', async (slug, destination) => {
+    expect(await routeDigest(ItAssetCustodianPage, [slug])).toContain(destination);
+  });
+
+  it('opens an incident from a custodian notification', async () => {
+    const element = await ItAssetCustodianPage({
+      params: Promise.resolve({ slug: ['returns-incidents'] }),
+      searchParams: Promise.resolve({ open: 'incident-id' }),
+    });
+    expect(element.props).toMatchObject({ openId: 'incident-id' });
   });
 
   it('still answers an address with no screen with not-found', async () => {
-    expect(await notFoundDigest(PropertyCustodianPage as RouterPage, ['no-such-page'])).toContain('/asset-custodian/no-such-page');
+    expect(await routeDigest(PropertyCustodianPage as RouterPage, ['no-such-page'])).toContain('/asset-custodian/no-such-page');
   });
 });
 
