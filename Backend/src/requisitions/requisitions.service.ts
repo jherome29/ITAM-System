@@ -232,7 +232,10 @@ export class RequisitionsService {
         break;
       case UserRole.ASSET_CUSTODIAN:
         qb.where('r.status IN (:...statuses)', {
-          statuses: [RequisitionStatus.PENDING_FULFILLMENT, RequisitionStatus.ON_HOLD],
+          statuses: [
+            RequisitionStatus.PENDING_FULFILLMENT,
+            RequisitionStatus.ON_HOLD,
+          ],
         }).andWhere('r.requestedById != :me', { me: requestingUserId });
         break;
       case UserRole.IT_PERSONNEL:
@@ -1012,18 +1015,20 @@ export class RequisitionsService {
       )
     ).flat();
     await Promise.all(
-      [...new Map(fulfillers.map((u) => [u.id, u])).values()].filter((u) => u.id !== req.requestedById).map((u) =>
-        this.notificationsService.notify(
-          u.id,
-          NotificationAlertType.PENDING_APPROVAL,
-          'Requisition Ready for Fulfillment',
-          req.requisitionType === RequisitionType.REPLACEMENT
-            ? `Replacement requisition ${req.requestNumber} has been approved and is awaiting fulfillment. Collect the old unit from the requester when you hand over the replacement.`
-            : `Requisition ${req.requestNumber} has been approved and is awaiting fulfillment.`,
-          id,
-          'requisition',
+      [...new Map(fulfillers.map((u) => [u.id, u])).values()]
+        .filter((u) => u.id !== req.requestedById)
+        .map((u) =>
+          this.notificationsService.notify(
+            u.id,
+            NotificationAlertType.PENDING_APPROVAL,
+            'Requisition Ready for Fulfillment',
+            req.requisitionType === RequisitionType.REPLACEMENT
+              ? `Replacement requisition ${req.requestNumber} has been approved and is awaiting fulfillment. Collect the old unit from the requester when you hand over the replacement.`
+              : `Requisition ${req.requestNumber} has been approved and is awaiting fulfillment.`,
+            id,
+            'requisition',
+          ),
         ),
-      ),
     );
 
     // Audit log
@@ -1315,11 +1320,19 @@ export class RequisitionsService {
             where: { id: assetId },
             lock: { mode: 'pessimistic_write' },
           });
-          if (linkedAsset && (
-            [AssetStatus.FLAGGED_FOR_DISPOSAL, AssetStatus.DISPOSED].includes(linkedAsset.status) ||
-            [AssetCondition.UNSERVICEABLE, AssetCondition.FOR_DISPOSAL].includes(linkedAsset.condition)
-          )) {
-            throw new BadRequestException('Unserviceable assets and assets for disposal cannot fulfill a requisition.');
+          if (
+            linkedAsset &&
+            ([AssetStatus.FLAGGED_FOR_DISPOSAL, AssetStatus.DISPOSED].includes(
+              linkedAsset.status,
+            ) ||
+              [
+                AssetCondition.UNSERVICEABLE,
+                AssetCondition.FOR_DISPOSAL,
+              ].includes(linkedAsset.condition))
+          ) {
+            throw new BadRequestException(
+              'Unserviceable assets and assets for disposal cannot fulfill a requisition.',
+            );
           }
 
           await itemRepo.update(requisitionItemId, {

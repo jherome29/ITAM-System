@@ -56,7 +56,11 @@ export class UsersService {
     // CICC's ~362 personnel to find them.
     if (role === UserRole.ASSET_CUSTODIAN) {
       qb.andWhere('u.role IN (:...roles)', {
-        roles: [UserRole.ASSET_CUSTODIAN, UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN],
+        roles: [
+          UserRole.ASSET_CUSTODIAN,
+          UserRole.IT_PERSONNEL,
+          UserRole.PROPERTY_CUSTODIAN,
+        ],
       });
     } else if (role) {
       qb.andWhere('u.role = :role', { role });
@@ -75,7 +79,6 @@ export class UsersService {
   async findByEmployeeId(employeeId: string): Promise<UserEntity | null> {
     return this.userRepo.findOne({ where: { employeeId } });
   }
-
 
   async findByRole(role: UserRole): Promise<UserEntity[]> {
     return this.userRepo.find({

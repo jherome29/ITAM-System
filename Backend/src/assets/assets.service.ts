@@ -127,7 +127,10 @@ function sameFieldValue(stored: unknown, submitted: unknown): boolean {
 }
 
 const VALID_TRANSITIONS: Record<string, AssetStatus[]> = {
-  [AssetStatus.REGISTERED]: [AssetStatus.AVAILABLE, AssetStatus.FLAGGED_FOR_DISPOSAL],
+  [AssetStatus.REGISTERED]: [
+    AssetStatus.AVAILABLE,
+    AssetStatus.FLAGGED_FOR_DISPOSAL,
+  ],
   [AssetStatus.AVAILABLE]: [
     AssetStatus.ISSUED,
     AssetStatus.TRANSFERRED,
@@ -197,14 +200,18 @@ const TRANSITION_AUDIT_ACTION: Record<string, AuditAction> = {
   [AssetStatus.DISPOSED]: AuditAction.ASSET_DISPOSED,
 };
 
-const disposalCalendar = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Manila' });
+const disposalCalendar = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'Asia/Manila',
+});
 
 function disposalCompletion(dto: UpdateLifecycleDto) {
   const date = dto.disposalDate;
   const method = dto.disposalMethod?.trim();
   const reference = dto.disposalReference?.trim();
   if (!date || !method || !reference || dto.disposalConfirmed !== true) {
-    throw new BadRequestException('Enter the disposal date, method and document reference, and confirm disposal is complete.');
+    throw new BadRequestException(
+      'Enter the disposal date, method and document reference, and confirm disposal is complete.',
+    );
   }
   if (date > disposalCalendar.format(new Date())) {
     throw new BadRequestException('The disposal date cannot be in the future.');
@@ -280,21 +287,29 @@ export class AssetsService {
       qb.andWhere('a.status = :status', { status: status.toLowerCase() });
     }
     if (excludeDisposed) {
-      qb.andWhere('a.status != :disposedStatus', { disposedStatus: AssetStatus.DISPOSED });
+      qb.andWhere('a.status != :disposedStatus', {
+        disposedStatus: AssetStatus.DISPOSED,
+      });
     }
 
     if (custody) {
-      qb.andWhere('a.assetClass != :suppliesClass AND a.assetType != :suppliesType', {
-        suppliesClass: AssetClass.IES,
-        suppliesType: AssetType.SUPPLIES,
-      });
+      qb.andWhere(
+        'a.assetClass != :suppliesClass AND a.assetType != :suppliesType',
+        {
+          suppliesClass: AssetClass.IES,
+          suppliesType: AssetType.SUPPLIES,
+        },
+      );
       qb.addOrderBy('a.id', 'DESC');
     }
     if (disposalQueue) {
-      qb.andWhere('a.status = :disposalStatus AND a.condition = :disposalCondition', {
-        disposalStatus: AssetStatus.FLAGGED_FOR_DISPOSAL,
-        disposalCondition: AssetCondition.UNSERVICEABLE,
-      });
+      qb.andWhere(
+        'a.status = :disposalStatus AND a.condition = :disposalCondition',
+        {
+          disposalStatus: AssetStatus.FLAGGED_FOR_DISPOSAL,
+          disposalCondition: AssetCondition.UNSERVICEABLE,
+        },
+      );
       qb.addOrderBy('a.id', 'DESC');
     }
 
@@ -556,7 +571,10 @@ export class AssetsService {
       .createQueryBuilder('a')
       .select('a.assetType', 'assetType')
       .addSelect('COUNT(*)', 'count')
-      .addSelect('COUNT(*) FILTER (WHERE a.status != :disposedStatus)', 'inventoryCount')
+      .addSelect(
+        'COUNT(*) FILTER (WHERE a.status != :disposedStatus)',
+        'inventoryCount',
+      )
       .setParameter('disposedStatus', AssetStatus.DISPOSED)
       .groupBy('a.assetType');
     if (hasScope) {
@@ -827,8 +845,13 @@ export class AssetsService {
       dto.assetType,
       dto.acquisitionCost,
     );
-    if (dto.condition === AssetCondition.UNSERVICEABLE || dto.condition === AssetCondition.FOR_DISPOSAL) {
-      throw new BadRequestException('Register the asset first, then record its assessment with Mark Unserviceable.');
+    if (
+      dto.condition === AssetCondition.UNSERVICEABLE ||
+      dto.condition === AssetCondition.FOR_DISPOSAL
+    ) {
+      throw new BadRequestException(
+        'Register the asset first, then record its assessment with Mark Unserviceable.',
+      );
     }
     if (!assetClass) {
       throw new BadRequestException(
@@ -872,11 +895,23 @@ export class AssetsService {
   ): Promise<AssetEntity> {
     const existing = await this.findOne(id, assetTypeScope); // throws Not Found / Forbidden
     if (dto.condition !== undefined && dto.condition !== existing.condition) {
-      if ([AssetStatus.FLAGGED_FOR_DISPOSAL, AssetStatus.DISPOSED].includes(existing.status)) {
-        throw new BadRequestException('The condition is recorded in the disposal history.');
+      if (
+        [AssetStatus.FLAGGED_FOR_DISPOSAL, AssetStatus.DISPOSED].includes(
+          existing.status,
+        )
+      ) {
+        throw new BadRequestException(
+          'The condition is recorded in the disposal history.',
+        );
       }
-      if ([AssetCondition.UNSERVICEABLE, AssetCondition.FOR_DISPOSAL].includes(dto.condition)) {
-        throw new BadRequestException('Use Mark Unserviceable in Update Lifecycle so the assessment is recorded with its reason.');
+      if (
+        [AssetCondition.UNSERVICEABLE, AssetCondition.FOR_DISPOSAL].includes(
+          dto.condition,
+        )
+      ) {
+        throw new BadRequestException(
+          'Use Mark Unserviceable in Update Lifecycle so the assessment is recorded with its reason.',
+        );
       }
     }
 
@@ -934,27 +969,43 @@ export class AssetsService {
     assetTypeScope?: AssetType[],
   ): Promise<AssetEntity> {
     await this.findOne(id, assetTypeScope);
-    if (!file) throw new BadRequestException('Select a device photo to upload.');
+    if (!file)
+      throw new BadRequestException('Select a device photo to upload.');
     const b = file.buffer;
     const detected =
       b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff
         ? 'image/jpeg'
-        : b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+        : b.length >= 8 &&
+            b
+              .subarray(0, 8)
+              .equals(
+                Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+              )
           ? 'image/png'
-          : b.length >= 12 && b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WEBP'
+          : b.length >= 12 &&
+              b.subarray(0, 4).toString() === 'RIFF' &&
+              b.subarray(8, 12).toString() === 'WEBP'
             ? 'image/webp'
             : null;
     if (!detected || detected !== file.mimetype) {
-      throw new BadRequestException('Photo must be a valid JPEG, PNG, or WebP image.');
+      throw new BadRequestException(
+        'Photo must be a valid JPEG, PNG, or WebP image.',
+      );
     }
     await this.assetRepo.update(id, {
       photoData: b,
       photoMimeType: detected,
-      photoFileName: file.originalname.replace(/[^a-zA-Z0-9._ -]/g, '_').slice(0, 255),
+      photoFileName: file.originalname
+        .replace(/[^a-zA-Z0-9._ -]/g, '_')
+        .slice(0, 255),
     });
     await this.auditService.log({
-      userId: performedById, userRole, action: AuditAction.ASSET_UPDATED,
-      affectedRecordId: id, affectedRecordType: 'asset', ipAddress,
+      userId: performedById,
+      userRole,
+      action: AuditAction.ASSET_UPDATED,
+      affectedRecordId: id,
+      affectedRecordType: 'asset',
+      ipAddress,
       metadata: { updatedFields: ['photo'] },
     });
     return this.findOne(id, assetTypeScope);
@@ -962,18 +1013,42 @@ export class AssetsService {
 
   async getPhoto(id: string, assetTypeScope?: AssetType[]) {
     await this.findOne(id, assetTypeScope);
-    const asset = await this.assetRepo.createQueryBuilder('asset')
+    const asset = await this.assetRepo
+      .createQueryBuilder('asset')
       .addSelect('asset.photoData')
       .where('asset.id = :id', { id })
       .getOne();
-    if (!asset?.photoData || !asset.photoMimeType) throw new NotFoundException('Asset photo not found');
-    return { data: asset.photoData, mimeType: asset.photoMimeType, fileName: asset.photoFileName };
+    if (!asset?.photoData || !asset.photoMimeType)
+      throw new NotFoundException('Asset photo not found');
+    return {
+      data: asset.photoData,
+      mimeType: asset.photoMimeType,
+      fileName: asset.photoFileName,
+    };
   }
 
-  async deletePhoto(id: string, performedById: string, userRole: UserRole, ipAddress: string, assetTypeScope?: AssetType[]) {
+  async deletePhoto(
+    id: string,
+    performedById: string,
+    userRole: UserRole,
+    ipAddress: string,
+    assetTypeScope?: AssetType[],
+  ) {
     await this.findOne(id, assetTypeScope);
-    await this.assetRepo.update(id, { photoData: null, photoMimeType: null, photoFileName: null });
-    await this.auditService.log({ userId: performedById, userRole, action: AuditAction.ASSET_UPDATED, affectedRecordId: id, affectedRecordType: 'asset', ipAddress, metadata: { updatedFields: ['photo'], removed: true } });
+    await this.assetRepo.update(id, {
+      photoData: null,
+      photoMimeType: null,
+      photoFileName: null,
+    });
+    await this.auditService.log({
+      userId: performedById,
+      userRole,
+      action: AuditAction.ASSET_UPDATED,
+      affectedRecordId: id,
+      affectedRecordType: 'asset',
+      ipAddress,
+      metadata: { updatedFields: ['photo'], removed: true },
+    });
     return this.findOne(id, assetTypeScope);
   }
 
@@ -995,7 +1070,11 @@ export class AssetsService {
 
     // ── Business rule: validate state machine transition ──────────────────
     const allowedTargets = VALID_TRANSITIONS[asset.status];
-    const reclassify = asset.status === AssetStatus.FLAGGED_FOR_DISPOSAL && targetStatus === AssetStatus.FLAGGED_FOR_DISPOSAL && !context.condition && asset.condition !== AssetCondition.UNSERVICEABLE;
+    const reclassify =
+      asset.status === AssetStatus.FLAGGED_FOR_DISPOSAL &&
+      targetStatus === AssetStatus.FLAGGED_FOR_DISPOSAL &&
+      !context.condition &&
+      asset.condition !== AssetCondition.UNSERVICEABLE;
     if (!allowedTargets.includes(targetStatus) && !reclassify) {
       throw new BadRequestException(
         `Invalid lifecycle transition: "${asset.status}" → "${targetStatus}". ` +
@@ -1043,9 +1122,14 @@ export class AssetsService {
       );
     }
 
-    const disposal = targetStatus === AssetStatus.DISPOSED ? disposalCompletion(dto) : undefined;
+    const disposal =
+      targetStatus === AssetStatus.DISPOSED
+        ? disposalCompletion(dto)
+        : undefined;
     if (disposal && asset.condition !== AssetCondition.UNSERVICEABLE) {
-      throw new BadRequestException('Confirm the asset is Unserviceable before recording disposal.');
+      throw new BadRequestException(
+        'Confirm the asset is Unserviceable before recording disposal.',
+      );
     }
     const notes = disposal
       ? `Disposal date: ${disposal.date}. Method: ${disposal.method}. Document reference: ${disposal.reference}.`
@@ -1059,7 +1143,10 @@ export class AssetsService {
       previousStatus,
       targetStatus,
       asset.condition,
-      context.condition ?? (targetStatus === AssetStatus.FLAGGED_FOR_DISPOSAL ? AssetCondition.UNSERVICEABLE : undefined),
+      context.condition ??
+        (targetStatus === AssetStatus.FLAGGED_FOR_DISPOSAL
+          ? AssetCondition.UNSERVICEABLE
+          : undefined),
     );
 
     this.applyCustody(asset, dto, targetStatus, backToHolder);

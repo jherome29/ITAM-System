@@ -17,7 +17,9 @@ describe('resolveAssetTypeScope', () => {
 
   it('gives the Asset Custodian all three inventory categories', () => {
     expect(resolveAssetTypeScope(UserRole.ASSET_CUSTODIAN)).toEqual([
-      AssetType.ICT, AssetType.FIXED, AssetType.SUPPLIES,
+      AssetType.ICT,
+      AssetType.FIXED,
+      AssetType.SUPPLIES,
     ]);
   });
 

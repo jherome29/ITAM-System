@@ -148,25 +148,65 @@ export class AssetsController {
   }
 
   @Get(':id/photo')
-  @Roles(UserRole.IT_PERSONNEL, UserRole.SYSTEM_ADMIN, UserRole.MANAGEMENT, UserRole.PROPERTY_CUSTODIAN)
-  async getPhoto(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
-    const photo = await this.assetsService.getPhoto(id, resolveAssetTypeScope(req.user.role));
-    res.set({ 'Content-Type': photo.mimeType, 'Content-Length': String(photo.data.length), 'Cache-Control': 'private, max-age=300' });
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
+  async getPhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const photo = await this.assetsService.getPhoto(
+      id,
+      resolveAssetTypeScope(req.user.role),
+    );
+    res.set({
+      'Content-Type': photo.mimeType,
+      'Content-Length': String(photo.data.length),
+      'Cache-Control': 'private, max-age=300',
+    });
     res.send(photo.data);
   }
 
   @Post(':id/photo')
   @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
-  @UseInterceptors(FileInterceptor('photo', { limits: { files: 1, fileSize: 5 * 1024 * 1024 } }))
-  async uploadPhoto(@Param('id', ParseUUIDPipe) id: string, @UploadedFile() file: UploadedAssetPhoto, @Req() req: AuthenticatedRequest) {
-    const asset = await this.assetsService.savePhoto(id, file, req.user.id, req.user.role, req.ip, resolveAssetTypeScope(req.user.role));
+  @UseInterceptors(
+    FileInterceptor('photo', {
+      limits: { files: 1, fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  async uploadPhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: UploadedAssetPhoto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const asset = await this.assetsService.savePhoto(
+      id,
+      file,
+      req.user.id,
+      req.user.role,
+      req.ip,
+      resolveAssetTypeScope(req.user.role),
+    );
     return { message: 'Device photo saved successfully', data: asset };
   }
 
   @Delete(':id/photo')
   @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
-  async deletePhoto(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthenticatedRequest) {
-    const asset = await this.assetsService.deletePhoto(id, req.user.id, req.user.role, req.ip, resolveAssetTypeScope(req.user.role));
+  async deletePhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const asset = await this.assetsService.deletePhoto(
+      id,
+      req.user.id,
+      req.user.role,
+      req.ip,
+      resolveAssetTypeScope(req.user.role),
+    );
     return { message: 'Device photo removed', data: asset };
   }
 

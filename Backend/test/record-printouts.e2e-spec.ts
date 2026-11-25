@@ -227,6 +227,7 @@ describe('Record printouts (e2e)', () => {
           itemDescription: `Printout monitor ${tag}`,
           propertyNumber: `PRT-${tag}`,
           assetClass: AssetClass.SEP,
+          acquisitionCost: 12_000,
           assetType: AssetType.ICT,
         })
         .expect(201);

@@ -70,6 +70,7 @@ describe('Administration Overview: needs your decision (e2e)', () => {
         itemDescription: `Dash ${label} ${tag}`,
         propertyNumber: `DASH-${label}-${tag}`,
         assetClass: AssetClass.SEP,
+        acquisitionCost: 12_000,
         assetType: AssetType.ICT,
       })
       .expect(201);

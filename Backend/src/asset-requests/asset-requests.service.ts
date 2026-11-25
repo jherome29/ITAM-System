@@ -457,7 +457,10 @@ export class AssetRequestsService {
    */
   private isCustodianOwnRequest(req: AssetRequestEntity): boolean {
     const role = req.requestedBy?.role;
-    return role === UserRole.ASSET_CUSTODIAN || role === custodianRoleFor(req.asset.assetType);
+    return (
+      role === UserRole.ASSET_CUSTODIAN ||
+      role === custodianRoleFor(req.asset.assetType)
+    );
   }
 
   /** Never the requester. Otherwise the custodian role for this asset type,

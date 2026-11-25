@@ -226,7 +226,10 @@ export class AssetRepairsService {
     if (r.completedAt || !r.asset) return false;
     if (r.holderId === user.id) return false;
     if (user.role === UserRole.SYSTEM_ADMIN) {
-      return r.holder?.role === UserRole.ASSET_CUSTODIAN || r.holder?.role === custodianRoleFor(r.asset.assetType);
+      return (
+        r.holder?.role === UserRole.ASSET_CUSTODIAN ||
+        r.holder?.role === custodianRoleFor(r.asset.assetType)
+      );
     }
     const scope = resolveAssetTypeScope(user.role);
     return (

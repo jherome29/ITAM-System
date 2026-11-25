@@ -23,7 +23,9 @@ export class UpdateAssetDto {
   @IsOptional() @IsString() itemDescription?: string;
   @IsOptional() @IsString() @MaxLength(FIELD_MAX.code) brand?: string;
   @IsOptional() @IsString() @MaxLength(FIELD_MAX.code) serialNumber?: string;
-  @IsOptional() @IsString() @MaxLength(FIELD_MAX.code) propertyNumber?: string | null;
+  @IsOptional() @IsString() @MaxLength(FIELD_MAX.code) propertyNumber?:
+    | string
+    | null;
   @IsOptional() @IsString() components?: string;
 
   @IsOptional()
