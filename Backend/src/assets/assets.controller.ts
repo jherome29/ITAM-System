@@ -241,7 +241,6 @@ export class AssetsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findByInventoryTag(
     @Query('value') value: string | undefined,
