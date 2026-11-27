@@ -14,6 +14,7 @@ users.md
 
 # ─── Demo-seed credentials (real logins — never commit) ──────
 Backend/test/demo-seed/accounts.local.json
+Backend/scripts/cicc-import/accounts.local.json
 
 # ─── MCP server config (contains API tokens) ─────────────────
 .mcp.json
