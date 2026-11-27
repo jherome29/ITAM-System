@@ -95,13 +95,25 @@ function isRichText(v: unknown): v is RichTextValue {
   );
 }
 
-// ExcelJS hands back a plain value for most cells, but a cell with mixed
-// formatting (part bold, part not) comes back as { richText: [...] } instead
-// of a string — read a few real rows with String(v) and you get the useless
-// "[object Object]" instead of the text inside.
+interface FormulaValue {
+  result?: unknown;
+}
+function isFormula(v: unknown): v is FormulaValue {
+  return typeof v === 'object' && v !== null && 'result' in v;
+}
+
+// ExcelJS hands back a plain value for most cells, but not for every one:
+// mixed formatting (part bold, part not) comes back as { richText: [...] },
+// and a formula cell — CICC used these to repeat an identical description via
+// a cell reference instead of retyping it — comes back as
+// { result, sharedFormula }. Read either with String(v) and you get the
+// useless "[object Object]" instead of the text inside (confirmed: this
+// silently wrote "[object Object]" as the item description for 70 real rows
+// before this fix).
 function trimmed(v: unknown): string {
   if (v == null) return '';
   if (isRichText(v)) return v.richText.map((part) => part.text).join('').trim();
+  if (isFormula(v)) return trimmed(v.result);
   return String(v).trim();
 }
 
