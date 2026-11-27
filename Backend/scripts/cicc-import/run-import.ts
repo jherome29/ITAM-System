@@ -9,10 +9,13 @@ import { AssetStatus } from '../../../packages/shared/src/enums';
 // hand — so every row gets a real QR code, barcode and audit trail. Never
 // writes to the database directly.
 //
-//   npx ts-node scripts/cicc-import/run-import.ts --file <path to .xlsx>                # dry run — prints the plan
-//   npx ts-node scripts/cicc-import/run-import.ts --file <path> --apply --limit 20       # pilot batch
-//   npx ts-node scripts/cicc-import/run-import.ts --file <path> --apply                  # the rest
+//   npx ts-node scripts/cicc-import/run-import.ts --file <path to .xlsx>                        # dry run — prints the plan
+//   npx ts-node scripts/cicc-import/run-import.ts --file <path> --apply --limit 20               # pilot batch
+//   npx ts-node scripts/cicc-import/run-import.ts --file <path> --apply --offset 20               # the rest, skipping the pilot rows
 //
+// Rows are processed in the order parseWorkbook returns them, so --offset N
+// always skips exactly the same first N rows a previous --limit N run used —
+// safe to resume without re-registering (and re-numbering) anything.
 // Credentials come from an untracked JSON file (never the repo, CLAUDE.md §8.5):
 //   --accounts <path>   defaults to ./scripts/cicc-import/accounts.local.json
 //   { "login": "property.custodian@cicc.gov.ph", "password": "..." }
@@ -27,6 +30,7 @@ interface Options {
   apiUrl: string;
   accountsPath: string;
   limit?: number;
+  offset: number;
 }
 
 function parseArgs(argv: string[]): Options {
@@ -42,6 +46,11 @@ function parseArgs(argv: string[]): Options {
   if (limitRaw && (!Number.isFinite(limit) || (limit as number) <= 0)) {
     throw new Error(`--limit must be a positive integer, got "${limitRaw}".`);
   }
+  const offsetRaw = value('offset');
+  const offset = offsetRaw ? Number.parseInt(offsetRaw, 10) : 0;
+  if (offsetRaw && (!Number.isFinite(offset) || offset < 0)) {
+    throw new Error(`--offset must be a non-negative integer, got "${offsetRaw}".`);
+  }
   return {
     file: resolve(file),
     apply: flag('apply'),
@@ -51,6 +60,7 @@ function parseArgs(argv: string[]): Options {
       value('accounts') ?? './scripts/cicc-import/accounts.local.json',
     ),
     limit,
+    offset,
   };
 }
 
@@ -93,7 +103,8 @@ async function main() {
 
   console.log(`Reading ${opts.file} …`);
   const { assets, needsReview } = await parseWorkbook(opts.file);
-  const toRun = opts.limit ? assets.slice(0, opts.limit) : assets;
+  const afterOffset = opts.offset ? assets.slice(opts.offset) : assets;
+  const toRun = opts.limit ? afterOffset.slice(0, opts.limit) : afterOffset;
 
   const byType = new Map<string, number>();
   const byClass = new Map<string, number>();
@@ -111,8 +122,8 @@ async function main() {
       console.log(`  [${r.sheet} row ${r.row}] ${r.reason}${r.itemDescription ? ` — ${r.itemDescription}` : ''}`);
     }
   }
-  if (opts.limit) {
-    console.log(`\n--limit ${opts.limit}: running the first ${toRun.length} of ${assets.length} rows.`);
+  if (opts.offset || opts.limit) {
+    console.log(`\nRunning ${toRun.length} of ${assets.length} rows (offset ${opts.offset}${opts.limit ? `, limit ${opts.limit}` : ''}).`);
   }
 
   if (!opts.apply) {
@@ -146,6 +157,12 @@ async function main() {
           status: AssetStatus.AVAILABLE,
           notes: 'CICC partial equipment list import.',
         },
+      );
+      await api.call(
+        `generate QR/barcode for ${sheet} row ${row}`,
+        session,
+        'POST',
+        `/v1/assets/${created.id}/qr`,
       );
       ok += 1;
       console.log(`  ✓ [${sheet} ${row}] ${dto.propertyNumber ?? '(no property number)'} — ${dto.itemDescription}`);
