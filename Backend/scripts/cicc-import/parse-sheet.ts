@@ -143,6 +143,15 @@ function classifyCondition(raw: string): AssetCondition {
   return AssetCondition.SERVICEABLE;
 }
 
+// CICC uses a bare "x" to mean "not assigned yet" in several columns
+// (confirmed for serial number; a live import run found it in property
+// number too — two assets both named "x" collided on the DB's unique
+// constraint until this was added).
+function cleanCode(raw: string): string {
+  const s = raw.trim();
+  return !s || /^x+$/i.test(s) ? '' : s;
+}
+
 // A monitor/CPU/UPS set shares one property number in the sheet with a
 // sub-code in "COMPONETS" (e.g. 0122ICT0008-DT-001-A). The DB's property
 // number column is unique, so the sub-code becomes the real property number
@@ -151,16 +160,15 @@ function propertyAndComponents(
   sheetPropertyNumber: string,
   componets: string,
 ): Pick<CreateAssetDto, 'propertyNumber' | 'components'> {
-  if (componets) {
+  const prop = cleanCode(sheetPropertyNumber);
+  const comp = cleanCode(componets);
+  if (comp) {
     return {
-      propertyNumber: componets,
-      components:
-        sheetPropertyNumber && sheetPropertyNumber !== componets
-          ? `Set: ${sheetPropertyNumber}`
-          : undefined,
+      propertyNumber: comp,
+      components: prop && prop !== comp ? `Set: ${prop}` : undefined,
     };
   }
-  return { propertyNumber: sheetPropertyNumber || undefined };
+  return { propertyNumber: prop || undefined };
 }
 
 function combineOfficer(officer: string, sub: string): string | undefined {
@@ -266,18 +274,47 @@ export async function parseWorkbook(filePath: string): Promise<ParseResult> {
         continue;
       }
 
+      // The server always recomputes assetClass itself from assetType + cost
+      // (classifyRegisteredAsset) and rejects the row outright if it can't —
+      // it does not fall back to whatever assetClass the client sends. So for
+      // ICT/Fixed (Supplies is always IES regardless of cost) a missing cost
+      // isn't a value we can paper over with the sheet's PPE/SEP label; the
+      // row genuinely cannot be registered until CICC supplies a real cost.
       const cost = parseCost(cell(COL.acquisitionCost));
-      const sheetAssetClassLabel = trimmed(cell(COL.assetClassLabel)).toUpperCase();
+      if (cost === undefined && assetType !== AssetType.SUPPLIES) {
+        needsReview.push({
+          sheet: sheetName,
+          row: rowNumber,
+          reason: 'No acquisition cost — the app requires one to classify an ICT/Fixed item as PPE or SEP, and will not accept a guess',
+          itemDescription,
+        });
+        continue;
+      }
       const assetClass =
-        cost !== undefined
-          ? cost >= 50_000
+        assetType === AssetType.SUPPLIES
+          ? AssetClass.IES
+          : (cost as number) >= 50_000
             ? AssetClass.PPE
-            : AssetClass.SEP
-          : sheetAssetClassLabel === 'SEP'
-            ? AssetClass.SEP
-            : sheetName === 'SEP'
-              ? AssetClass.SEP
-              : AssetClass.PPE;
+            : AssetClass.SEP;
+
+      // Likewise, the server refuses to *create* an asset already unserviceable
+      // (or for_disposal) — that assessment has to be recorded through Mark
+      // Unserviceable in Update Lifecycle, with its own disposal justification,
+      // which is a real decision for a custodian to make, not something an
+      // import should trigger on CICC's behalf.
+      const condition = classifyCondition(trimmed(cell(COL.condition)));
+      if (
+        condition === AssetCondition.UNSERVICEABLE ||
+        condition === AssetCondition.FOR_DISPOSAL
+      ) {
+        needsReview.push({
+          sheet: sheetName,
+          row: rowNumber,
+          reason: `Sheet says this item is ${condition} — register it, then use Mark Unserviceable in Update Lifecycle (needs a disposal justification the sheet doesn't provide)`,
+          itemDescription,
+        });
+        continue;
+      }
 
       const acqDate = parseDate(cell(COL.acquisitionDate));
       const deliveryDate = parseDate(cell(COL.dateOfDelivery));
@@ -313,7 +350,7 @@ export async function parseWorkbook(filePath: string): Promise<ParseResult> {
         division: trimmed(cell(COL.division)) || undefined,
         officeOrSection: trimmed(cell(COL.officeOrSection)) || undefined,
         officeLocation: trimmed(cell(COL.officeLocation)) || undefined,
-        condition: classifyCondition(trimmed(cell(COL.condition))),
+        condition,
         supplier: trimmed(cell(COL.supplier)) || undefined,
         dateOfDelivery: deliveryDate.iso,
         assetClass,
@@ -324,5 +361,36 @@ export async function parseWorkbook(filePath: string): Promise<ParseResult> {
     }
   }
 
-  return { assets, needsReview };
+  // property_number is unique in the database. Two rows landing on the same
+  // value is either a genuine duplicate in CICC's own records, or — seen in
+  // a live run — the property-number column holding a model/spec note
+  // ("DDR5 5600 32GB Unbuffered") that's identical across several otherwise-
+  // unrelated identical parts, not an actual identifier. Either way it's not
+  // something to resolve by guessing which row "wins"; both/all go to review.
+  const byPropertyNumber = new Map<string, ParsedAsset[]>();
+  for (const a of assets) {
+    if (!a.dto.propertyNumber) continue;
+    const list = byPropertyNumber.get(a.dto.propertyNumber) ?? [];
+    list.push(a);
+    byPropertyNumber.set(a.dto.propertyNumber, list);
+  }
+  const duplicateRowKeys = new Set<string>();
+  for (const [propertyNumber, group] of byPropertyNumber) {
+    if (group.length <= 1) continue;
+    const rows = group.map((g) => `${g.sheet} ${g.row}`);
+    for (const g of group) {
+      duplicateRowKeys.add(`${g.sheet}:${g.row}`);
+      needsReview.push({
+        sheet: g.sheet,
+        row: g.row,
+        reason: `Property number "${propertyNumber}" also used by: ${rows.filter((r) => r !== `${g.sheet} ${g.row}`).join(', ')}`,
+        itemDescription: g.dto.itemDescription,
+      });
+    }
+  }
+  const deduped = assets.filter(
+    (a) => !duplicateRowKeys.has(`${a.sheet}:${a.row}`),
+  );
+
+  return { assets: deduped, needsReview };
 }

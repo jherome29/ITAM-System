@@ -138,6 +138,7 @@ async function main() {
 
   console.log(`\nRegistering ${toRun.length} assets…`);
   let ok = 0;
+  let skipped = 0;
   const failures: { row: number; sheet: string; error: string }[] = [];
   for (const { sheet, row, dto } of toRun) {
     try {
@@ -167,13 +168,22 @@ async function main() {
       ok += 1;
       console.log(`  ✓ [${sheet} ${row}] ${dto.propertyNumber ?? '(no property number)'} — ${dto.itemDescription}`);
     } catch (err) {
+      // 409 = property_number already exists — the only client-supplied
+      // field the DB enforces as unique (QR/barcode are server-generated).
+      // Treat it as "already imported" so a re-run is safe to repeat
+      // wholesale without tracking which rows previously succeeded.
+      if (err instanceof ApiError && err.status === 409) {
+        skipped += 1;
+        console.log(`  · [${sheet} ${row}] already registered, skipping — ${dto.propertyNumber}`);
+        continue;
+      }
       const message = err instanceof ApiError ? err.message : String(err);
       failures.push({ row, sheet, error: message });
       console.log(`  ✗ [${sheet} ${row}] ${message}`);
     }
   }
 
-  console.log(`\nDone: ${ok} registered, ${failures.length} failed, ${needsReview.length} held out for review.`);
+  console.log(`\nDone: ${ok} registered, ${skipped} already registered (skipped), ${failures.length} failed, ${needsReview.length} held out for review.`);
   if (failures.length) {
     console.log('\nFailures:');
     for (const f of failures) console.log(`  [${f.sheet} row ${f.row}] ${f.error}`);
