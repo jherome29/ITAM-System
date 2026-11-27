@@ -11,7 +11,7 @@ describe('breadcrumbLabel', () => {
 
   it('upper-cases acronyms', () => {
     expect(breadcrumbLabel('it-asset-custodian')).toBe('IT Asset Custodian');
-    expect(breadcrumbLabel('qr-scanner')).toBe('QR Scanner');
+    expect(breadcrumbLabel('qr-scanner')).toBe('Barcode Scanner');
   });
 
   // An asset's or a requisition's own page has its record id in the address. The crumb

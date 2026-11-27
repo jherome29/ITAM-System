@@ -235,6 +235,25 @@ export class AssetsController {
    * Single asset with full lifecycle history.
    * Roles: IT Personnel, System Admin, Management, Property Custodian
    */
+  @Get('tag-lookup')
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+    UserRole.PROPERTY_OFFICER,
+  )
+  async findByInventoryTag(
+    @Query('value') value: string | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const data = await this.assetsService.findByInventoryTag(
+      value,
+      resolveAssetTypeScope(req.user.role),
+    );
+    return { message: 'Asset retrieved successfully', data };
+  }
+
   @Get(':id')
   @Roles(
     UserRole.IT_PERSONNEL,

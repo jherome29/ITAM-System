@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { IScannerControls } from '@zxing/browser';
 import { useRouter } from 'next/navigation';
-import { QrCode, Search } from 'lucide-react';
+import { ScanBarcode, Search } from 'lucide-react';
 import { assetsApi, type Asset } from '@/lib/api/assets';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { PrimaryButton } from '@/components/admin/AdminUi';
@@ -17,54 +18,127 @@ export function QrLookup({ detailBasePath, eyebrow }: Readonly<{ detailBasePath:
   const [result, setResult] = useState<Asset | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [cameraOn, setCameraOn] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const video = useRef<HTMLVideoElement>(null);
+  const pendingLookup = useRef<AbortController | null>(null);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!query.trim()) return;
+  const lookup = useCallback(async (value: string) => {
+    const tag = value.trim();
+    if (!tag) return;
+    pendingLookup.current?.abort();
+    const request = new AbortController();
+    pendingLookup.current = request;
+    setCameraOn(false);
+    setQuery(tag);
     setError('');
     setResult(null);
     setLoading(true);
     try {
-      const res = await assetsApi.list(1, 5, query.trim());
-      const items = Array.isArray(res.data)
-        ? (res.data as Asset[])
-        : ((res.data as unknown as { data: Asset[] }).data ?? []);
-      if (items.length === 0) {
-        setError('No asset found matching that QR code or property number.');
-      } else {
-        setResult(items[0]);
-      }
-    } catch {
-      setError('Search failed. Please try again.');
+      const { data } = await assetsApi.findByInventoryTag(tag, request.signal);
+      if (!request.signal.aborted) setResult(data);
+    } catch (err) {
+      if (request.signal.aborted) return;
+      const response = (err as { response?: { status?: number; data?: { message?: string } } }).response;
+      setError([400, 404, 409].includes(response?.status ?? 0) && response?.data?.message
+        ? response.data.message
+        : 'Could not look up the inventory tag. Please try again.');
     } finally {
-      setLoading(false);
+      if (!request.signal.aborted) setLoading(false);
     }
+  }, []);
+
+  useEffect(() => () => pendingLookup.current?.abort(), []);
+
+  useEffect(() => {
+    const preview = video.current;
+    if (!cameraOn || !preview) return;
+    let active = true;
+    let stream: MediaStream | undefined;
+    let controls: IScannerControls | undefined;
+    const stop = () => {
+      active = false;
+      controls?.stop();
+      stream?.getTracks().forEach((track) => track.stop());
+      preview.srcObject = null;
+    };
+
+    const start = async () => {
+      try {
+        const { BrowserMultiFormatReader } = await import('@zxing/browser');
+        if (!active) return;
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+        if (!active) { stop(); return; }
+        const reader = new BrowserMultiFormatReader();
+        controls = await reader.decodeFromStream(stream, preview, (decoded) => {
+          if (!active || !decoded) return;
+          stop();
+          void lookup(decoded.getText());
+        });
+        if (active) setCameraReady(true);
+        else controls.stop();
+      } catch (err) {
+        if (!active) return;
+        stop();
+        setCameraOn(false);
+        setCameraError(err instanceof Error && err.name === 'NotAllowedError'
+          ? 'Camera permission was denied. Allow access or enter the tag below.'
+          : 'Could not start a camera. Check that it is connected and available.');
+      }
+    };
+    void start();
+    return stop;
+  }, [cameraOn, lookup]);
+
+  const startCamera = () => {
+    setCameraError('');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError('Camera access needs a supported browser on localhost or HTTPS. Enter the tag below instead.');
+      return;
+    }
+    setCameraReady(false);
+    setCameraOn(true);
   };
 
   return (
     <div className="max-w-xl space-y-6">
-      <PageHeader eyebrow={eyebrow} title="QR / Barcode Lookup" detail="Scan a tag or type its number to open the asset record." />
+      <PageHeader eyebrow={eyebrow} title="Barcode Scanner" detail="Scan a tag or type its number to open the asset record." />
 
       <div className={`${surfaceClass} space-y-5 p-6`}>
         <div className="flex flex-col items-center gap-3 py-4">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50">
-            <QrCode className="h-8 w-8 text-brand" />
+            <ScanBarcode className="h-8 w-8 text-brand" aria-hidden="true" />
           </div>
           <p className="text-center text-sm text-slate-600">
-            Scan a QR code using your device camera, or enter a QR code value / property number below.
+            Point your camera at a printed inventory barcode or QR tag.
           </p>
+          <button type="button" disabled={loading} className={buttonClass()}
+            onClick={cameraOn ? () => setCameraOn(false) : startCamera}>
+            {cameraOn ? 'Stop camera' : 'Start camera'}
+          </button>
         </div>
+        {cameraOn && (
+          <div className="space-y-2">
+            <video ref={video} autoPlay muted playsInline aria-label="Inventory tag camera preview" className="aspect-video w-full rounded-lg bg-slate-950 object-contain" />
+            <p role="status" className="text-center text-sm text-slate-600">{cameraReady ? 'Center the tag in the camera view.' : 'Starting camera…'}</p>
+          </div>
+        )}
+        {cameraError && <Notice tone="red">{cameraError}</Notice>}
 
-        <form onSubmit={handleSearch} className="flex gap-2">
+        <form onSubmit={(event) => { event.preventDefault(); void lookup(query); }} className="flex flex-wrap gap-2">
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="QR code value or property number…"
-            aria-label="QR code value or property number"
+            placeholder="Barcode, QR value, or property number"
+            aria-label="Barcode, QR value, or property number"
             className={`${controlClass} flex-1`}
           />
-          <PrimaryButton type="submit" icon={Search} disabled={loading}>
+          <PrimaryButton type="submit" icon={Search} disabled={loading || !query.trim()}>
             {loading ? 'Searching…' : 'Search'}
           </PrimaryButton>
         </form>

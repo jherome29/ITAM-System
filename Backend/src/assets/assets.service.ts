@@ -865,6 +865,37 @@ export class AssetsService {
     });
   }
 
+  async findByInventoryTag(
+    value: string | undefined,
+    assetTypeScope?: AssetType[],
+  ) {
+    const tag = typeof value === 'string' ? value.trim() : '';
+    if (!tag || tag.length > 255) {
+      throw new BadRequestException(
+        'Enter a valid barcode, QR value, or property number.',
+      );
+    }
+    const query = this.assetRepo
+      .createQueryBuilder('asset')
+      .where(
+        '(LOWER(asset.barcodeValue) = LOWER(:tag) OR LOWER(asset.qrCode) = LOWER(:tag) OR LOWER(asset.propertyNumber) = LOWER(:tag))',
+        { tag },
+      );
+    if (assetTypeScope?.length) {
+      query.andWhere('asset.assetType IN (:...assetTypes)', {
+        assetTypes: assetTypeScope,
+      });
+    }
+    const matches = await query.take(2).getMany();
+    if (!matches.length)
+      throw new NotFoundException('No asset found with that inventory tag.');
+    if (matches.length > 1)
+      throw new ConflictException(
+        'This inventory tag matches multiple assets. Use the property number on the label.',
+      );
+    return matches[0];
+  }
+
   async findOne(
     id: string,
     assetTypeScope?: AssetType[],
@@ -1134,9 +1165,33 @@ export class AssetsService {
     context: RepairContext & {
       condition?: AssetCondition;
       issuance?: { manager: EntityManager; requisitionId: string };
+      returnReceipt?: { manager: EntityManager; holderId: string };
     } = {},
   ): Promise<AssetEntity> {
-    const asset = await this.findOne(id, assetTypeScope);
+    const receipt = context.returnReceipt;
+    const asset = receipt
+      ? await receipt.manager.getRepository(AssetEntity).findOne({
+          where: {
+            id,
+            status: AssetStatus.ISSUED,
+            custodianId: receipt.holderId,
+          },
+          lock: { mode: 'pessimistic_write' },
+        })
+      : await this.findOne(id, assetTypeScope);
+    if (!asset)
+      throw new ConflictException(
+        'The asset is no longer issued to the requester.',
+      );
+    if (
+      receipt &&
+      assetTypeScope &&
+      !assetTypeScope.includes(asset.assetType)
+    ) {
+      throw new ForbiddenException(
+        'This asset is outside your inventory scope.',
+      );
+    }
     const targetStatus = dto.status;
 
     // ── Business rule: validate state machine transition ──────────────────
@@ -1223,7 +1278,7 @@ export class AssetsService {
     this.applyCustody(asset, dto, targetStatus, backToHolder);
     const arrival = this.applyArrival(asset, previousStatus, dto);
 
-    const manager = context.issuance?.manager;
+    const manager = context.issuance?.manager ?? receipt?.manager;
     const saved = await (
       manager?.getRepository(AssetEntity) ?? this.assetRepo
     ).save(asset);

@@ -901,7 +901,12 @@ export class AssetRequestsService {
   ) {
     const req = await this.load(id);
     this.assertCanAct(req, user);
-    if (req.status !== AssetRequestStatus.APPROVED) {
+    const directReceipt =
+      req.type === AssetRequestType.RETURN && dto.returnReceived === 'true';
+    if (
+      req.status !== AssetRequestStatus.APPROVED &&
+      !(directReceipt && req.status === AssetRequestStatus.SUBMITTED)
+    ) {
       throw new BadRequestException(
         req.status === AssetRequestStatus.SUBMITTED
           ? 'Approve the request before marking it received.'
@@ -932,60 +937,102 @@ export class AssetRequestsService {
 
     // Lifecycle first: if the state machine refuses (the asset moved on in the
     // meantime) the request stays approved and the custodian sees why.
-    await this.assetsService.updateLifecycle(
-      req.assetId,
-      {
-        status: target,
-        notes: `${req.requestNumber} (${TYPE_LABEL[req.type]}): ${notes ?? req.details}`,
-      },
-      user.id,
-      user.role,
-      ipAddress,
-      resolveAssetTypeScope(user.role),
-      {
-        // Opens the repair record with the holder's description. Every route
-        // into a write-off (damaged beyond repair, lost, stolen) leaves the
-        // item unserviceable — otherwise a lost unit keeps reading
-        // "serviceable" on the holder's screen and on the RLSDDP.
-        assetRequestId: req.id,
-        problem: req.details,
-        ...(target === AssetStatus.FLAGGED_FOR_DISPOSAL
-          ? { condition: AssetCondition.UNSERVICEABLE }
-          : {}),
-      },
-    );
-
-    if (receiptPhotos.length) {
-      await this.attachmentRepo.save(
-        receiptPhotos.map((a) =>
-          this.attachmentRepo.create({
-            ...a,
-            requestId: req.id,
-            stage: 'receipt',
-            uploadedById: user.id,
-          }),
-        ),
-      );
-    }
-
-    // A damaged item surrendered for disposal leaves the holder's hands for
-    // good, so their accountability ends here (a return clears it inside
-    // updateLifecycle). Lost/stolen items deliberately stay on the holder's
-    // record until COA grants relief; repaired items come back to them.
-    const cleared = clearsAccountability(req.type, target);
-    if (cleared && target !== AssetStatus.RETURNED) {
-      await this.repo.manager
-        .getRepository(AssetEntity)
-        .update(req.assetId, { custodianId: null });
-    }
-
-    await this.patch(req, {
+    const completion = {
       status: AssetRequestStatus.COMPLETED,
       completedById: user.id,
       completedAt: new Date(),
       completionNotes: notes,
       resultingStatus: target,
-    });
+    };
+    const cleared = clearsAccountability(req.type, target);
+    if (directReceipt) {
+      await this.repo.manager.transaction(async (manager) => {
+        const requests = manager.getRepository(AssetRequestEntity);
+        const open = await requests.findOne({
+          where: { id: req.id, status: In(OPEN_STATUSES) },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!open)
+          throw new ConflictException('This return is no longer pending.');
+        await this.assetsService.updateLifecycle(
+          req.assetId,
+          {
+            status: AssetStatus.RETURNED,
+            notes: req.requestNumber + ' (Return): ' + (notes ?? req.details),
+          },
+          user.id,
+          user.role,
+          ipAddress,
+          resolveAssetTypeScope(user.role),
+          { returnReceipt: { manager, holderId: req.requestedById } },
+        );
+        if (receiptPhotos.length) {
+          const attachments = manager.getRepository(
+            AssetRequestAttachmentEntity,
+          );
+          await attachments.save(
+            receiptPhotos.map((photo) =>
+              attachments.create({
+                ...photo,
+                requestId: req.id,
+                stage: 'receipt',
+                uploadedById: user.id,
+              }),
+            ),
+          );
+        }
+        await requests.update(req.id, completion);
+      });
+      Object.assign(req, completion);
+    } else {
+      await this.assetsService.updateLifecycle(
+        req.assetId,
+        {
+          status: target,
+          notes: `${req.requestNumber} (${TYPE_LABEL[req.type]}): ${notes ?? req.details}`,
+        },
+        user.id,
+        user.role,
+        ipAddress,
+        resolveAssetTypeScope(user.role),
+        {
+          // Opens the repair record with the holder's description. Every route
+          // into a write-off (damaged beyond repair, lost, stolen) leaves the
+          // item unserviceable — otherwise a lost unit keeps reading
+          // "serviceable" on the holder's screen and on the RLSDDP.
+          assetRequestId: req.id,
+          problem: req.details,
+          ...(target === AssetStatus.FLAGGED_FOR_DISPOSAL
+            ? { condition: AssetCondition.UNSERVICEABLE }
+            : {}),
+        },
+      );
+
+      if (receiptPhotos.length) {
+        await this.attachmentRepo.save(
+          receiptPhotos.map((a) =>
+            this.attachmentRepo.create({
+              ...a,
+              requestId: req.id,
+              stage: 'receipt',
+              uploadedById: user.id,
+            }),
+          ),
+        );
+      }
+
+      // A damaged item surrendered for disposal leaves the holder's hands for
+      // good, so their accountability ends here (a return clears it inside
+      // updateLifecycle). Lost/stolen items deliberately stay on the holder's
+      // record until COA grants relief; repaired items come back to them.
+      if (cleared && target !== AssetStatus.RETURNED) {
+        await this.repo.manager
+          .getRepository(AssetEntity)
+          .update(req.assetId, { custodianId: null });
+      }
+
+      await this.patch(req, completion);
+    }
     if (superseded.length) {
       await this.repo.update(
         superseded.map((r) => r.id),

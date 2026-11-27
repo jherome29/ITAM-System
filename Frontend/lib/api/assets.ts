@@ -209,6 +209,9 @@ export const assetsApi = {
   mine: () =>
     client.get<ApiResponse<MyAsset[]>>('/v1/assets/mine').then((r) => r.data),
 
+  findByInventoryTag: (value: string, signal?: AbortSignal) =>
+    client.get<ApiResponse<Asset>>('/v1/assets/tag-lookup', { params: { value }, signal }).then((r) => r.data),
+
   getOne: (id: string) =>
     client.get<ApiResponse<Asset>>(`/v1/assets/${id}`).then((r) => r.data),
 

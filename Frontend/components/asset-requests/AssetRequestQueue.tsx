@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+import { CenteredModal } from '@/components/ui/CenteredModal';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
@@ -60,7 +62,10 @@ function attachmentCount(n: number): string {
  * listed, and only custodians' own requests (which no custodian may decide)
  * are actionable.
  */
-export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Readonly<{ eyebrow: string; openId?: string; adminFallback?: boolean }>) {
+export function AssetRequestQueue({ eyebrow, openId, adminFallback = false, pendingReturns = false, onReceived }: Readonly<{
+  eyebrow: string; openId?: string; adminFallback?: boolean; pendingReturns?: boolean; onReceived?: () => void;
+}>) {
+  const [receiptConfirmed, setReceiptConfirmed] = useState(false);
   const [rows, setRows] = useState<AssetRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -76,7 +81,8 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
   const [confirmingReject, setConfirmingReject] = useState(false);
   const [outcome, setOutcome] = useState<'' | 'repair' | 'disposal'>('');
   const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
-  const { ask: askToPrint, prompt: printPrompt } = usePrintPrompt();
+  const { ask: askToPrint, prompt: printPrompt, isOpen: printPromptOpen } = usePrintPrompt();
+  const RequestDialog = pendingReturns ? CenteredModal : DetailDrawer;
 
   const notify = (message: string) => {
     setToast(message);
@@ -84,8 +90,10 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
   };
 
   const load = useCallback(
-    () => assetRequestsApi.queue().then((res) => setRows(res.data)),
-    [],
+    () => assetRequestsApi.queue(pendingReturns ? 'open' : undefined).then((res) => {
+      setRows(pendingReturns ? res.data.filter((item) => item.type === 'return' && isOpen(item)) : res.data);
+    }),
+    [pendingReturns],
   );
 
   useEffect(() => {
@@ -107,6 +115,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
 
   const open = (r: AssetRequest | null) => {
     setSelected(r);
+    setReceiptConfirmed(false);
     setActionError('');
     setHandoverDate('');
     setNotes('');
@@ -123,6 +132,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
     try {
       const res = await action();
       setSelected(res.data);
+      if (pendingReturns && res.data.status === 'completed') onReceived?.();
       setNotes('');
       setReason('');
       setReceiptFiles([]);
@@ -145,7 +155,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
       return r.status === filter;
     })
     .filter((r) =>
-      [r.requestNumber, r.asset?.itemDescription, r.requester?.name, r.requester?.employeeId, REQUEST_TYPE_LABEL[r.type]]
+      [r.requestNumber, r.asset?.itemDescription, r.asset?.propertyNumber, r.requester?.name, r.requester?.employeeId, REQUEST_TYPE_LABEL[r.type]]
         .join(' ')
         .toLowerCase()
         .includes(q),
@@ -155,21 +165,21 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
 
   if (loading) return <LoadingSkeleton rows={8} />;
 
-  const actions = selected?.canAct ? custodianActions(selected.status) : [];
+  const actions = selected?.canAct ? (pendingReturns && isOpen(selected) ? ['complete'] : custodianActions(selected.status)) : [];
   const awaitingCount = rows.filter((r) => isOpen(r) && r.canAct).length;
 
   return (
     <div className="space-y-5">
       <AdminPageHeader
         eyebrow={eyebrow}
-        title="Returns & Incidents"
-        detail={adminFallback
+        title={pendingReturns ? 'Pending Returns' : 'Returns & Incidents'}
+        detail={pendingReturns ? 'Confirm receipt after the holder brings the asset back.' : adminFallback
           ? `Custodians cannot decide their own return, repair or incident requests, so those escalate here. ${awaitingCount} awaiting your decision; the rest are read-only.`
           : 'Return, repair, damage, loss and theft requests from asset holders. Approve to schedule the hand-over, then mark the item received.'}
       />
       {loadError && <Notice tone="red">{loadError}</Notice>}
-      <SearchToolbar value={search} onChange={setSearch} filterValue={filter} filterOptions={FILTERS} onFilterChange={setFilter} />
-      <Panel title="Requests" detail={`${openCount} open · ${rows.length} total`}>
+      <SearchToolbar value={search} onChange={setSearch} filters={pendingReturns ? [] : undefined} filterValue={filter} filterOptions={FILTERS} onFilterChange={setFilter} />
+      <Panel title={pendingReturns ? "Return requests" : "Requests"} detail={`${openCount} open · ${rows.length} total`}>
         <TableWrap>
           <table className="w-full min-w-[820px]">
             <thead>
@@ -177,7 +187,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
                 <th className={thClass}>Request</th>
                 <th className={thClass}>Asset</th>
                 <th className={thClass}>Requested by</th>
-                <th className={thClass}>Filed</th>
+                <th className={thClass}>{pendingReturns ? "Requested return" : "Filed"}</th>
                 <th className={thClass}>Status</th>
                 <th className={thClass} />
               </tr>
@@ -189,15 +199,15 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
                     <p className="font-bold text-slate-950">{REQUEST_TYPE_LABEL[r.type]}</p>
                     <p className="whitespace-nowrap text-xs text-slate-500">{r.requestNumber}{attachmentCount(r.attachments.length)}</p>
                   </td>
-                  <td className={tdClass}><ClampText>{r.asset?.itemDescription}</ClampText></td>
+                  <td className={tdClass}><ClampText>{r.asset?.itemDescription}</ClampText>{pendingReturns && <p className="text-xs text-slate-500">{r.asset?.propertyNumber}</p>}</td>
                   <td className={tdClass}>
                     <p>{r.requester?.name ?? '—'}</p>
                     <p className="text-xs text-slate-500">{r.requester?.employeeId}</p>
                   </td>
-                  <td className={tdNoWrapClass}>{formatDateTime(r.createdAt)}</td>
+                  <td className={tdNoWrapClass}>{pendingReturns ? formatDate(r.preferredDate) : formatDateTime(r.createdAt)}</td>
                   <td className={tdClass}><StatusChip status={REQUEST_STATUS_LABEL[r.status]} tone={REQUEST_STATUS_TONE[r.status]} /></td>
                   <td className={`${tdClass} text-right`}>
-                    <SecondaryButton onClick={() => open(r)}>{isOpen(r) && r.canAct ? 'Review' : 'View'}</SecondaryButton>
+                    <SecondaryButton onClick={() => open(r)}>{isOpen(r) && r.canAct ? pendingReturns ? 'Record return' : 'Review' : 'View'}</SecondaryButton>
                   </td>
                 </tr>
               ))}
@@ -210,13 +220,19 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
         <Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="requests" />
       </Panel>
 
-      <DetailDrawer open={Boolean(selected)} title={selected?.requestNumber ?? 'Request'} onClose={() => open(null)}>
+      <RequestDialog open={Boolean(selected)} title={selected?.requestNumber ?? 'Request'} onClose={() => { if (!busy) open(null); }} inactive={printPromptOpen}>
         {selected && (
           <div className="space-y-5">
             <AssetRequestDetail
               request={selected}
               onRegenerate={() => void run('documents generated', () => assetRequestsApi.regenerateDocuments(selected.id), false)}
             />
+
+            {pendingReturns && selected.status === 'completed' && selected.asset && (
+              <Link href={'/asset-custodian/' + (selected.asset.assetType === 'ICT' ? 'it-inventory' : 'fixed-assets') + '/' + selected.asset.id} className="text-sm font-semibold text-blue-700 hover:underline">
+                Open returned asset in inventory
+              </Link>
+            )}
 
             {actions.includes('approve') && (
               <section className="space-y-3 rounded-lg border border-slate-200 p-4">
@@ -260,11 +276,15 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
                   <span className="mb-1.5 block text-xs font-bold text-slate-600">Condition photos (optional)</span>
                   <AttachmentPicker files={receiptFiles} onChange={setReceiptFiles} />
                 </div>
+                {pendingReturns && <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" className="mt-1" checked={receiptConfirmed} onChange={(event) => setReceiptConfirmed(event.target.checked)} />
+                  I received this asset from the holder.
+                </label>}
                 <PrimaryButton
-                  disabled={busy || (selected.type === 'damage' && !outcome) || Boolean(fileProblem(receiptFiles))}
-                  onClick={() => run('completed', () => assetRequestsApi.complete(selected.id, { outcome: outcome || undefined, notes: notes.trim() || undefined, files: receiptFiles }))}
+                  disabled={busy || (pendingReturns && !receiptConfirmed) || (selected.type === 'damage' && !outcome) || Boolean(fileProblem(receiptFiles))}
+                  onClick={() => run('completed', () => assetRequestsApi.complete(selected.id, { outcome: outcome || undefined, notes: notes.trim() || undefined, files: receiptFiles, returnReceived: pendingReturns && receiptConfirmed }))}
                 >
-                  {completeActionLabel(selected.type)}
+                  {pendingReturns ? "Confirm receipt" : completeActionLabel(selected.type)}
                 </PrimaryButton>
               </section>
             )}
@@ -295,7 +315,7 @@ export function AssetRequestQueue({ eyebrow, openId, adminFallback = false }: Re
             {actionError && <Notice tone="red">{actionError}</Notice>}
           </div>
         )}
-      </DetailDrawer>
+      </RequestDialog>
       <ConfirmDialog
         open={confirmingReject}
         title={`Reject ${selected?.requestNumber ?? 'request'}?`}

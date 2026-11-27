@@ -5,6 +5,7 @@ const ACRONYMS = new Set(['it', 'qr', 'ict', 'sla', 'id', 'par', 'ics', 'ris', '
 // Pages whose title has an ampersand, which an address cannot carry.
 const NAMED = new Map([
   ['returns-incidents', 'Returns & Incidents'],
+  ['qr-scanner', 'Barcode Scanner'],
   ['maintenance-disposal', 'Maintenance & Disposal'],
 ]);
 

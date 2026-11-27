@@ -9,6 +9,7 @@ import { RecordPrints, usePrintPrompt } from '@/components/shared/RecordPrints';
 import { CustodyPaperCopy } from '@/components/assets/CustodyPaperCopy';
 import { FulfillmentHandover } from '@/components/requisitions/FulfillmentHandover';
 import { IssuedSupplies } from '@/components/requisitions/IssuedSupplies';
+import { AssetRequestQueue } from '@/components/asset-requests/AssetRequestQueue';
 import { RequisitionDetailView, SlaBadge } from '@/components/requisitions/RequisitionDetailView';
 import { requisitionItemsLabel } from '@/lib/requisitions/catalogue-items';
 import {
@@ -125,7 +126,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
   const isApprovalsPage = role === ProposedUserRole.APPROVING_OFFICER && normalizedSlug === 'approvals';
   const isFulfillmentPage = (isCustodian || isAdminFulfilment) && normalizedSlug === 'fulfillment';
   const isCustodyPage = isCustodian && normalizedSlug === 'custody';
-  const [custodyTab, setCustodyTab] = useState<'ICT' | 'Fixed' | 'Supplies'>('ICT');
+  const [custodyTab, setCustodyTab] = useState<'ICT' | 'Fixed' | 'Supplies' | 'returns'>('ICT');
   const isDisposalPage = isCustodian && normalizedSlug === 'disposal';
   // "My Requisitions": the header button opens the shared RequisitionForm
   // (POST /v1/requisitions).
@@ -161,7 +162,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
         for (let page = 2; page <= (first.totalPages ?? 1); page++) {
           assets.push(...(await assetsApi.custody(page, LIVE_FETCH_LIMIT)).data.data);
         }
-        setRows(unitAssets(assets).map(assetApiToRow));
+        setRows(unitAssets(assets).filter((asset) => asset.status !== 'returned').map(assetApiToRow));
         setLiveFetchTruncated(false);
       });
     }
@@ -531,7 +532,7 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
 
       {isCustodyPage && (
         <div aria-label="Custody and issuance categories" className="flex flex-wrap gap-5 border-b border-slate-200">
-          {([['ICT', 'ICT'], ['Fixed', 'Fixed Assets'], ['Supplies', 'Issued Supplies']] as const).map(([value, label]) => (
+          {([['ICT', 'ICT'], ['Fixed', 'Fixed Assets'], ['Supplies', 'Issued Supplies'], ['returns', 'Pending Returns']] as const).map(([value, label]) => (
             <button key={value} type="button" aria-pressed={custodyTab === value}
               onClick={() => { setCustodyTab(value); setPage(1); setStatusFilter('All'); setSelected(null); }}
               className={'border-b-2 px-1 py-2.5 text-sm font-semibold ' + (custodyTab === value ? 'border-blue-700 text-blue-700' : 'border-transparent text-slate-600 hover:text-blue-700')}>
@@ -540,7 +541,11 @@ export function WorkflowPage({ role, slug, openId }: Readonly<{ role: ProposedUs
           ))}
         </div>
       )}
-      {isCustodyPage && custodyTab === 'Supplies' ? <IssuedSupplies /> : <>
+      {isCustodyPage && custodyTab === 'returns' ? (
+        <AssetRequestQueue eyebrow="Asset Custodian" pendingReturns onReceived={() => {
+          void fetchLiveRows().catch(() => notify('Return saved. Refresh to see the latest custody records.'));
+        }} />
+      ) : isCustodyPage && custodyTab === 'Supplies' ? <IssuedSupplies /> : <>
       <SearchToolbar
         value={search}
         onChange={(value) => { setSearch(value); setPage(1); }}
