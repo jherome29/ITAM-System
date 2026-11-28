@@ -3,8 +3,9 @@
 Run every check in this file **before starting a new feature and after finishing one.**
 All checks must pass with zero errors before the task is considered done.
 
-> Last reviewed 2026-10-16. The numbers below (tests, coverage) are the state of the
-> PR #108 branch; refresh them when they move.
+> Last reviewed 2026-11-28. The numbers below (tests, coverage) are the state of
+> `develop` (after PR #116's Asset Custodian merge + CICC import + dependency fixes,
+> and PRs #113–115's three bug fixes); refresh them when they move.
 
 ---
 
@@ -77,12 +78,12 @@ cd Backend && npm run test
 **What it checks:** Jest unit tests for all service files. Every test must pass — no exceptions.
 **If it fails:** Read the failing test output. Fix the underlying service logic or test, do not skip or comment out tests.
 
-**Current state (2026-10-18):** 981 tests in 48 suites, all passing.
+**Current state (2026-11-28):** 985 tests in 48 suites, all passing.
 
 > **If the change touches a controller, a guard, a DTO, request routing, or the DB
 > layer**, also run the e2e suite: `cd Backend && npm run test:e2e:local` (needs
-> Docker — it spins a throwaway `postgres:16` like CI's `backend-e2e` job; 94 tests
-> in 12 suites, with a 30 s test timeout: the hooks do real bcrypt hashing and logins, and Jest's 5 s default made them flaky on a busy machine). The unit tests mock the database, so routing and guard rules are only
+> Docker — it spins a throwaway `postgres:16` like CI's `backend-e2e` job; 121 tests
+> in 15 suites, with a 30 s test timeout: the hooks do real bcrypt hashing and logins, and Jest's 5 s default made them flaky on a busy machine). The unit tests mock the database, so routing and guard rules are only
 > proven there. Plain `npm run test:e2e` targets Supabase and will not connect from jest.
 > A single suite: `npm run test:e2e:local -- property-requisitions`.
 >
@@ -105,7 +106,7 @@ cd Backend && npm run test:cov
 - Functions: ≥ 55%
 - Lines: ≥ 65%
 
-**Current state (2026-10-18):** 981 tests passing · 95.19% statements · 88.61% branches · 93.23% functions · 95.19% lines.
+**Current state (2026-11-28):** 985 tests passing · 90.24% statements · 86.74% branches · 90.94% functions · 90.24% lines. Down from the 2026-10-18 figures (95%→90%) — the Asset Custodian merge, the CICC asset-import script and the dependency-advisory fixes added more code than tests in the same PR — but still comfortably above gate.
 
 Target to work toward: **70% across all metrics** (CLAUDE.md §12): met.
 
@@ -133,7 +134,7 @@ cd Backend && npm run audit:check
 ```
 **Pass condition:** Exit code 0.
 **What it checks:** `node ../scripts/audit-allowlist.mjs .` — runs `npm audit` and fails on any **high/critical** advisory that is **not** in `scripts/audit-allowlist.mjs`.
-**Note:** As of 2026-10-16 the Backend needs nothing allowlisted (`multer` is 2.4.0, past the DoS advisories), and the Frontend allowlists one `braces` advisory (stack exhaustion in lint-time globbing, no fix released). `scripts/audit-allowlist.mjs` still lists the four old `multer` GHSA ids; they are obsolete and can be dropped. Each remaining entry has a written reason. Everything else high/critical still fails the gate.
+**Note:** A targeted dependency bump on 2026-11-27 (`fix/high-severity-dependency-advisories`) cleared 13 high-severity advisories with no breaking changes, on top of the 2026-10-16 state (Backend needed nothing allowlisted; Frontend allowlists one `braces` advisory — stack exhaustion in lint-time globbing, no fix released). `scripts/audit-allowlist.mjs` still lists four old `multer` GHSA ids that no longer apply (`multer` is 2.4.0); they are obsolete and can be dropped. Each remaining entry has a written reason. Everything else high/critical still fails the gate.
 **If it fails:** Prefer a targeted in-range bump — `npm update <pkg>` (or edit the pin) then `npm install` — and re-verify tests/build. Only add a GHSA to the allowlist when there is genuinely no non-breaking fix, with a reason. Never `npm audit fix` (it reshuffles the whole tree) and never `--force`.
 
 ---
@@ -193,7 +194,7 @@ cd Frontend && npm run build
 ```bash
 cd Frontend && npm run test
 ```
-**Pass condition:** All test files pass (456 tests in 53 files as of 2026-10-16).
+**Pass condition:** All test files pass (538 tests as of 2026-11-28).
 **What it checks:** vitest unit tests for the pure logic the screens depend on: role navigation and the live-page allow-list, requisition and asset-request rules, date and status formatting, API clients, server-rendered component specs. CI's `frontend-ci` job runs this.
 **If it fails:** Fix the code or the test; never skip one. A menu or allow-list change (`lib/roles/role-navigation.ts`, `lib/workflow/live-pages.ts`) needs its spec updated in the same commit.
 

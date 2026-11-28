@@ -58,7 +58,7 @@ form actually requires.
   Date / Reference / Receipt Qty / Issue Qty / Balance Qty / Days-to-Consume
   for a single stock item over time. The generator instead produces a
   physical adhesive asset tag (property no., description, QR code, 4-per-page
-  layout) — a real, useful thing for IT Personnel to print and stick on
+  layout) — a real, useful thing for the Asset Custodian to print and stick on
   equipment, but not the same document as Appendix 58 at all. Either the
   generator should be renamed/reclassified as something else entirely, or a
   real Stock Card generator needs to be built separately.

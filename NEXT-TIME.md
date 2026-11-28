@@ -1,65 +1,87 @@
 # Next Time — pick up here
 
-Where the work stands after the **2026-10-16 and 2026-10-17** sessions, and what to do next, in
+Where the work stands after the **2026-11-25 → 2026-11-28** session, and what to do next, in
 order. To get the stack running, see `RUN-LOCAL.md` §1. To verify a screen or a PDF
 properly, see `RUN-LOCAL.md` §11. Update this file at the end of every session.
 
 ---
 
+## 0. This session, in order
+
+1. Continued functional testing across modules (asset lifecycle, requisitions, returns,
+   repairs, disposal) as the Employee/Supervisor/custodian roles via Playwright + the shared
+   Supabase dev database.
+2. Found and fixed three real bugs, each with a test: approver's name showing "Not yet
+   assigned" right after submit (`requisitions.service.ts` `create()` wasn't hydrating the
+   relation); PAR/ICS never auto-generated on requisition fulfilment (nothing called
+   `reportsService.generateFormRecord()` from `fulfill()`/`recordHandover()`/
+   `issueReplacementUnit()`); a React key-collision console warning (two sibling components
+   sharing a literal key in `RequisitionDetailView.tsx` and `RepairQueue.tsx`).
+3. Consolidated the `UPDATED-ROLE-ASSET-CUSTODIAN` branch (the IT Personnel + Property
+   Custodian → **Asset Custodian** role merge, already deployed to Railway, plus the CICC
+   real-equipment import) into `develop`, via PR #116 and three small fix PRs (#113–115),
+   fixing CI failures along the way: a retired-role regression, 13 high-severity dependency
+   advisories, and a CodeQL duplicate-webpack-key warning.
+4. Fully re-verified `develop` after the merge: every `CHECKS.md` step, a browser functional
+   pass, a k6 re-run (p95 now 1.04 s, up from 758 ms in September — `perf/README.md`).
+5. Updated every markdown file in the repo to match the above, found and fixed two more small
+   issues along the way (`docker-compose.yml` was missing schema `021` from its init list; this
+   file and others still described the pre-merge 6-role model), and found one real product
+   regression while doing so (next section).
+
 ## 1. Where it stands
 
-- **`develop` has everything built so far.** #105, #106, #107 and #109 were merged on
-  2026-10-16. (#108 had been merged into the already-merged `feat/pilot-demo-data`
-  branch by mistake, because its base was not retargeted after #106 merged, so #109
-  delivered the same work into `develop`. When you stack PRs, check the base reads
-  `develop` before you click merge.)
-- **`main` is still behind `develop`.** Promoting it needs 2 reviews and every check green
-  (`secret-scan`, `codeql`, `dependency-audit`, `owasp-dc` included).
-- **The Property Officer role was merged into the Property Custodian** on branch
-  `refactor/merge-property-officer-into-custodian` (this PR): the Officer was a read-only
-  subset of the custodian. Schema `017` migrates its accounts; the `property_officer`
-  value stays in the Postgres and shared enums (deprecated: old audit rows carry it); no
-  route grants it and the API refuses to assign it; Replacement Validation and Disposal
-  Review are now in the Property Custodian's menu.
-- **UI consistency and bigger text** is on branch `refactor/ui-consistency` (pushed, **no PR yet**). It is stacked on #110 (the Property Officer merge) and the two shell-branding commits, so it must wait for #110 and its PR base must read `develop`. Why: the client asked for bigger text after the last demo, and the screens were built one at a time (eight ways to print a date, six page titles, four input styles, three status badges, five filter rows). Now: the type scale lives in `Frontend/app/globals.css` (nothing below 14px, body 16px, controls 44px, sidebar 288px), the shared kit is `Frontend/components/ui/` (CLAUDE.md §16 has the "you need X, use Y" table), and `Frontend/lib/ui-consistency.spec.ts` fails the build when a screen goes around it. Five commits: dates and money helpers, type scale, form kit and filter row, chips / cards / panels / notices / dialogs and wording, then spacing and docs. Then a page-by-page audit: every menu page of all six roles (61) plus the add-new forms, record pages and the drawers and dialogs behind the queues, on a throwaway database filled by `npm run seed:demo` (both rounds), at 1440 and 1366 wide. It found what the first pass could not: 16 tables wider than their panel (the Actions column and its buttons hidden behind a sideways scroll), button labels wrapping out of their buttons, raw codes in cells (`system_admin`, `serviceable`, `pending supervisor`), a role name cut off in the sidebar footer and request numbers breaking across lines. All fixed, and re-measured: no scroll container overflows at either width. Not covered: the PDFs (unchanged by this work), and a real phone or tablet (only emulated at 390 and 820 wide).
-- **A second pass on the same branch (2026-10-17): lots of data and very long names.** Run against a throwaway database with about 350 users, 800 assets, hundreds of requests and 2,700 audit rows, and with names and descriptions of 90 to 690 characters, then every page of all six roles, the drawers of the nastiest records, every form and report, and the API over a database built from `Database/schemas/*.sql` (recipe: `RUN-LOCAL.md` §11). It found and fixed, each with a test first: (1) lists that **silently showed only the first 15 / 50 / 100 / 200 records**: My Requisitions (15), the user directory (50, now paged by the server), Roles & Assignment (100, so nobody after them could be given a role), Approval History (200, with wrong totals) and Disposal Review (500); (2) long lists rendered every row and stalled the browser 1-2 s, now 25 a page (`Pager`, `usePaged`), about 150 ms; (3) a long description made a column collapse to one letter wide, because `overflow-wrap: anywhere` lets a column shrink without limit (headers now keep their words, `ClampText` has a ceiling width) and `ClampText` itself did not clamp (`block` switched `line-clamp` off); (4) **management-report PDFs printed wrapped cells over the next row and added stray pages** (Audit Trail: 171 pages, 84 stray; Asset Master List was garbled even with ordinary data), now the same `drawTable` as the COA forms on a landscape page, with cost as `PHP` not `±`; (5) form header lines (`drawMetaFields`, PTR's From / To) that wrapped over the next line; (6) **the API returned a bare 500** for a value one character over its column, a body over the size limit and a duplicate property number / employee ID, because the sandbox's entity-built columns are unbounded and hid it: now field-limit DTOs (`common/field-limits.ts`) plus 400 / 409 / 413 in the exception filter; (7) the audit CSV now defuses formula cells and carries a byte-order mark. Not tested, by decision: phone widths (the system is used on the web).
-- **Record printouts (2026-10-18)** on branch `feat/record-printouts` (CLAUDE.md Module 8, schema `018`). CICC's client asked for a printable hard copy after every action on a requisition, a return / incident request and a repair, as proof. Each record has a **Paper copy** box (Print copy, and the earlier copies to reopen) and a **"Keep a paper copy?"** prompt right after a step is saved. A copy is a numbered A4 PDF (`PR-YYYY-NNNN`) with the facts, items, notes, a step-by-step timeline, the next step, signature lines and a verification code; a later print says REPRINT: copy N. Whoever can see the record can print it (a repair's holder too). Built backend first with a test before each piece (unit, then 16 e2e on a real Postgres), then the screens. Two things found on the way and fixed with tests: a printout sits in `generated_forms`, so it showed up under "Official documents" and in the Forms archive, whose download route only checks the role (an IT custodian could have read a Property Custodian's printout): it is now kept out of both and served only through its own record; and the repair routes had granted the retired Property Officer role (`Object.values(UserRole)`), which `retired-roles.spec.ts` caught. **Not covered, on purpose:** direct asset moves in Custody & Issuance (they already make COA forms), requisition cancel (the UI has none), a public page to check the verification code. It is stacked on `refactor/ui-consistency` (the branch the Railway UAT site builds), so it needs the same PR path to `develop`. **Live on the Railway UAT site since 2026-10-18**: `refactor/ui-consistency` was fast-forwarded to it, the pre-deploy runner applied schema 018, `Backend/test/uat-smoke.mjs` (now with paper-copy checks) passed 46 of 46 against the live site, and a paper copy was printed through the real screens (the PDF, the prompt after filing, the code in the list). Left on UAT by those checks: requisition REQ-2026-0057 (`[UAT-SMOKE]`, Employee 3's, waiting for the Approving Officer), a smoke-test requisition, and printouts PR-2026-0001 to 0004. Testers' guide and flow PDFs were rebuilt (`Desktop\AIMRS-UAT-Guide`).
-- **Administration Overview** (2026-10-18, branch `feat/admin-dashboard`): the admin's own to-do is now on
-  the dashboard ("Needs your decision": what a custodian filed for themselves, counted by the same services the
-  three escalation screens use, each linking to its screen), the hardcoded "Admin console: Loaded" row is gone,
-  the watcher rows say "N new alerts sent" beside the live figure, recent audit names who did it ("System
-  (automatic)" for the watchers), and record completeness no longer counts a blank serial as complete (100% to
-  99% on dev). Review found, but did **not** change (decisions for CICC, in the order I would take them): users
-  cannot change their own password (the admin sets every password and knows it); the admin can demote or
-  deactivate themselves or the last admin (no guard); the admin can approve any requisition. See CLAUDE.md
-  Module 4.
-- Health (2026-10-18): backend 981 unit + 120 e2e tests, frontend 521, every `CHECKS.md` item clean (the production `next build` was not re-run on this branch because `next dev` holds `.next`; CI builds it).
-- **The shared Supabase dev DB is at schema 017** (applied 2026-10-16: it moved the one Property Officer account to Property Custodian; that account was renamed `property.custodian2@cicc.gov.ph` the same day).
+- **`develop` has everything built so far, including the Asset Custodian merge** (see §0
+  above and CLAUDE.md §4 / `docs/guides/ROLES.md` for the full detail). Everything from the
+  2026-10-16/17 sessions (returns & incidents, maintenance & repair, UI consistency + bigger
+  text, record printouts, the Administration Overview) is also in `develop` — full history in
+  `SYSTEM-STATUS.md`'s dated log, not repeated here.
+- **`main` is still behind `develop`.** `develop` is fully re-verified (CHECKS.md, browser pass,
+  k6) and green on every required CI check — opening the PR is the very next step, not blocked
+  on anything. Promoting needs 2 reviews and every check green (`secret-scan`, `codeql`,
+  `dependency-audit`, `owasp-dc` included; `SonarCloud`'s Action-step check passes — the
+  separate `SonarCloud Code Analysis` quality-gate status still fails but is confirmed **not**
+  a required check for `main`, see the ruleset).
+- **The shared Supabase dev DB is at schema `019`, not `021`** — confirmed directly
+  (`requisition_items.asset_class` is still `NOT NULL` there). Apply `021` before testing a
+  manually-entered requisition line against it.
+- Health (2026-11-28, full re-run on merged `develop`): backend 985 unit + 121 e2e tests,
+  frontend 538, every `CHECKS.md` item clean including both production builds, Docker build
+  for both images, and smoke tests. k6 p95 is now 1.04 s (was 758 ms in September) —
+  `perf/README.md` has the detail; not confirmed yet whether that's real regression or just
+  this run's contention.
 
 ## 2. Do first
 
-- [ ] **Do the CD plan** in `docs/guides/CD-PLAN.md` (start with item 1, the migration runner: `Backend/scripts/db-migrate.mjs` and `Backend/test/db-migrate.e2e-spec.ts` exist as untested, untracked drafts). UAT is already deployed on Railway behind a Cloudflare Worker password gate (`docs/guides/DEPLOY-UAT.md`); the officers can test now. Redeploy the Worker with the updated `docs/guides/uat-gate-worker.js` so the audit log records real IPs.
-
-- [ ] **Look at `refactor/ui-consistency` yourself** (the dev server on `:3000` already serves it if you are on the branch): the registry and Custody & Issuance filter rows, the Register Asset form, the employee dashboard, Audit Log date range, a lifecycle update (it is now a dialog that closes on Escape), and the screens at a narrow width. Tell us what still reads wrong; the rules are cheap to change in one place.
-- [ ] Open its PR into `develop` once #110 is merged (check the base before you click merge).
-- [x] Schema 018 applied to the shared Supabase dev database (2026-10-18, plain file, one transaction). Railway applied it by itself (pre-deploy runner). Restart your `:3001` backend onto the new build to use paper copies locally.
-- [ ] **Restart your `:3001` backend.** `Backend/dist` was rebuilt on disk for the 2026-10-17 fixes (report PDFs, form header lines, field limits, 400 / 409 / 413) but the process on `:3001` was left running on the old bundle. Restart it the usual way (`DB_POOL_MAX=8`, RUN-LOCAL §1). Until then Supabase-backed screens still show the old behaviour for those.
-
-- [x] Schema 017 applied to the shared Supabase dev database (2026-10-16) and the local backend
-      (`:3001`, `DB_POOL_MAX=8`) restarted on the new build. Check it yourself: sign in as
-      `property.custodian2@cicc.gov.ph` and you should land on the Property Custodian dashboard.
-      Any other database still needs 017 before it runs this backend.
-- [ ] **Look at SonarCloud's failing quality gate** ("C Reliability Rating on New Code",
-      required ≥ A; it failed on #106, #107 and #108, passed on #105). The issue is not
-      identified: SonarCloud's API refuses non-main branches for this organisation, so open
-      `https://sonarcloud.io/dashboard?id=jherome29_ITAM-System` and read the issue, then fix it.
+- [ ] **Open the `develop` → `main` PR.** `develop` is already re-verified and green; nothing
+      is blocking this. After it merges, repoint Railway's deploy branch from
+      `UPDATED-ROLE-ASSET-CUSTODIAN` to `main`.
+- [ ] **Apply schema `021`** to the shared Supabase dev database (it's at `019`) before testing
+      a manually-entered requisition line with no asset class against it.
+- [ ] **Decide the Replacement Validation / Disposal Review regression**, found while updating
+      these docs: both screens now redirect into Fulfillment / Disposal (2026-11-26, "retire
+      redundant navigation"), which don't show held items that qualify for replacement with no
+      open request yet. The backend endpoint and `ReplacementReview.tsx` both still exist, just
+      unreachable. Restore a screen (maybe on Master Admin or Management, who never had one
+      either), or confirm the loss is acceptable.
+- [ ] **Tighten `ASSIGNABLE_USER_ROLES`**: `it_personnel` and `property_custodian` are still
+      technically assignable via a direct API call (only the frontend dropdown hides them,
+      unlike the hard-blocked `property_officer`). Decide whether to close that, the same way
+      `property_officer` was closed.
+- [ ] Branch cleanup (joint decision, not unilateral): ~30 stale branches beyond the merged
+      ones, plus local-only `.worktrees/` and `.superpowers/` directories (gitignored, tied to
+      old branches `fix/approving-officer-real-actions`, `fix/auth-all-roles-missing-property-roles`,
+      `fix/supervisor-approval-workflow`, `fix/users-audit-logging`, `docs/update-team-handoff-post-merge`
+      — check whether they hold anything worth keeping before removing them).
 - [ ] **Fix the end-date bug in the period reports** (`getDateRange` in
       `Backend/src/reports/reports.service.ts`): an end date is midnight, so an item created
       later that day is left out of a period ending today. Small, real, needs a test first.
 - [ ] **Compare the generated PDFs with `FORMS/`**: layout and content were checked on
       2026-10-16, not the paper templates. Then the form-fidelity pass
       (`docs/guides/COA-FORMS-AUDIT.md`).
-- [ ] Promote `develop` → `main` when you are happy.
+- [ ] Do the CD plan in `docs/guides/CD-PLAN.md` — item 1 (the migration runner) is done; items
+      2–7 (security gates that actually block, a promotion branch, a dependable smoke test,
+      rollback drills, secrets hygiene, production handover) are still open.
 
 ## 3. Decisions waiting on you or CICC
 
@@ -83,9 +105,14 @@ properly, see `RUN-LOCAL.md` §11. Update this file at the end of every session.
 
 - [ ] `scripts/audit-allowlist.mjs` still lists four `multer` advisories that no longer apply
       (`multer` is 2.4.0, the Backend audit has 0 allowlisted). Drop them.
-- [ ] `PROGRESS-REPORT-DRAFT.md` and `docs/superpowers/` are untracked local files. The first is
-      content for the capstone progress report (it holds the dev test accounts: do not commit it
-      as is); the second is old plan/spec drafts that the status docs say were already deleted.
+- [x] `docs/superpowers/` (untracked local plan/spec drafts for property-roles, system-config and
+      alternate-approver — all three features long since merged) deleted 2026-11-28, the same way
+      the 2026-08-22 one already had been. `PROGRESS-REPORT-DRAFT.md` stays — it's content for the
+      capstone progress report and holds the dev test accounts, so never commit it as is.
+- [ ] `.worktrees/` and `.superpowers/` (both gitignored, local-only) hold old checkouts of
+      branches `fix/approving-officer-real-actions`, `fix/auth-all-roles-missing-property-roles`,
+      `fix/supervisor-approval-workflow`, `fix/users-audit-logging` and
+      `docs/update-team-handoff-post-merge` — check what's in them before removing (§2 above).
 - [x] The `[VERIFY-2026-10-14]` test data was removed from the shared Supabase DB on 2026-10-18 (5 assets,
       23 requisitions, 8 requests, 4 repairs, 4 forms, 75 notifications; a full backup is in
       `Desktop\AIMRS-VERIFY-data-backup`; the 49 audit entries about them cannot be deleted, the audit log

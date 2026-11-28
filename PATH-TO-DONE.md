@@ -6,17 +6,35 @@ Each line links the doc that has the detail.
 
 Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 
-> **As of 2026-10-16.** The build is functionally complete for all six roles on real
-> data. What remains is: `develop` → `main`, the rest of the COA form fidelity, a handful
-> of product decisions, Phase 5 testing, and the production / handover work that is
-> blocked on CICC. Health on the Property-Officer-merge branch: backend 800 unit + 94 e2e
-> tests, frontend 456 tests, every `CHECKS.md` item clean.
+> **As of 2026-11-28.** The build is functionally complete for all five roles (IT
+> Personnel + Property Custodian merged into one **Asset Custodian** on 2026-11-25) on
+> real data. What remains is: opening `develop` → `main` (it's already re-verified and
+> green), the rest of the COA form fidelity, a handful of product decisions — including
+> a Replacement Validation / Disposal Review regression found while writing these docs
+> — Phase 5 testing, and the production / handover work that is blocked on CICC. Health
+> on `develop`: backend 985 unit + 121 e2e tests, frontend 538 tests, every `CHECKS.md`
+> item clean.
 
 ---
 
 ## G. Merge the PR stack  → `SYSTEM-STATUS.md` "Where things stand"
 
-#105, #106, #107 and #109 are merged into `develop` (2026-10-16). `main` is still behind `develop`: promoting it is the last step of this section.
+#105–#109 and #113–#116 are merged into `develop` (through 2026-11-28). `main` is still
+behind `develop`: promoting it is the last step of this section, and `develop` is
+already fully re-verified and green on every required check — nothing is blocking it.
+
+- [x] Merge IT Personnel + Property Custodian into one **Asset Custodian** role
+      (schema `019`); CICC's real partial equipment list imported through the live
+      API; a requisition line's asset class made optional (schema `021`); three small
+      bug fixes (approver name on submit, PAR/ICS not generated on fulfilment, a React
+      key collision); a 13-advisory dependency bump; a CodeQL fix — PR #116 + #113–115.
+- [ ] **Apply schema `021` to the shared Supabase dev database** (it's at `019`) before
+      testing a manually-entered requisition line with no asset class against it.
+- [ ] **Decide the Replacement Validation / Disposal Review regression**: both screens
+      now redirect into Fulfillment / Disposal (2026-11-26), which don't show held
+      items that qualify for replacement with no open request yet. Restore a screen,
+      or confirm the loss is acceptable (`docs/guides/ROLES.md` has the detail).
+- [ ] Open the `develop` → `main` PR.
 
 - [x] PR #102 / #103 (returns & incidents, repairs, replacement flow) — **merged to `develop`**.
 - [x] #105 `fix/audit-findings-2026-10-14` — access control, audit integrity, numbering, KPIs.
@@ -99,17 +117,18 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 - [x] **Formal Jest security suite** — all 8 Step-5.1 scenarios in
       `Backend/test/security.e2e-spec.ts`, gating CI. Per-module privilege-escalation cases are
       added as modules land (e.g. `property-requisitions.e2e-spec.ts`). `docs/guides/SECURITY.md`.
-- [x] **Coverage ≥ 70% on backend services** — 96.3% statements / 88.6% branches (gate: 65 / 55 / 55 / 65).
-- [ ] Frontend test coverage — no coverage gate on `Frontend/` yet (456 tests exist).
+- [x] **Coverage ≥ 70% on backend services** — 90.2% statements / 86.7% branches (gate: 65 / 55 / 55 / 65).
+- [ ] Frontend test coverage — no coverage gate on `Frontend/` yet (538 tests exist).
 - [ ] **OWASP ZAP scan** — run ZAP against the running system, save the PDF, fix HIGH findings
       (`PHASE-5-TESTING.md` §5.3–5.4).
 - [ ] **JMeter load test** — 362 users, 60 s ramp, the hot endpoints. Needs a **production build**,
       a **dedicated Postgres** (Supabase dev caps connections at 15) and **realistic data volume**
       (`Backend/test/demo-seed` in PR #107 and `perf/seed-volume.sql` help). The `.jmx` plan can be
       authored now.
-  - [x] **k6 baseline done** (`perf/`) — 362 VUs on `GET /assets`, 0 errors, p95 758 ms on one
-        contended box. De-risks the formal run; the ceiling is the single Node event loop, so scale
-        with backend replicas if the formal test confirms it.
+  - [x] **k6 baseline done, re-run 2026-11-28** (`perf/README.md`) — 362 VUs on `GET /assets`, 0
+        errors; p95 was 758 ms (2026-09-06), now 1.04 s. Likely more real per-request work added
+        since plus this run's machine contention — re-run on a less-contended box before concluding
+        the regression is real. Either way the fix is the same: backend replicas, not a rewrite.
 - [ ] **UAT with CICC** — structured instrument for Employees / Supervisors / IT Personnel;
       measure requisition time, inventory accuracy, access-control enforcement, audit completeness,
       satisfaction vs the manual process. The flows verified in the browser on 2026-10-15/16
@@ -130,11 +149,13 @@ Legend: `[ ]` not started · `[~]` partly done · `[x]` done.
 - [ ] Production `.env` via secrets, not files (JWT secrets ≥ 32 chars, DB URL, `ALLOWED_ORIGIN`,
       `TRUST_PROXY`; the process runs on Asia/Manila time unless `TZ` is set).
 - [ ] Backup / restore procedure + a tested restore.
-- [ ] Run the full schema set `Database/schemas/001…017` against the prod DB, in order. **Run
-      `003`, `006`, `007`, `008`, `010` and `013` with plain `psql -f` (no `--single-transaction`):**
+- [ ] Run the full schema set `Database/schemas/001…021` against the prod DB, in order (020 is a
+      numbering gap, there is no such file — `Database/README.md`). **Run `003`, `006`, `007`,
+      `008`, `010`, `013` and `019` with plain `psql -f` (no `--single-transaction`):**
       they use `ALTER TYPE … ADD VALUE`, which cannot run inside a transaction. All are safe to re-run.
-- [x] Shared dev Supabase is at `016` (008–014 applied 2026-10-11, 015 on 2026-10-14, 016 on
-      2026-10-15). Any teammate's older local Docker Postgres still needs the missing files.
+- [ ] Shared dev Supabase is at `019`, **not `021`** (confirmed 2026-11-28: `requisition_items.asset_class`
+      is still `NOT NULL` there). Apply `021` before testing a manually-entered requisition line against
+      it. Any teammate's older local Docker Postgres still needs whichever files it's missing.
 - [ ] The pilot must **not** use the shared Supabase dev database: 15-connection cap, and it holds
       demo rows (`DEMO-`). (The `[VERIFY-2026-10-14]` rows were removed on 2026-10-18.)
 

@@ -2,13 +2,13 @@
 
 This directory contains all database-related files for the Asset Inventory Management and Requisition System.
 
-> Last reviewed 2026-10-18. Schemas **001–018**. If you add a file, update this table, the init list in `docker-compose.yml`, and `PATH-TO-DONE.md` §D.
+> Last reviewed 2026-11-28. Schemas **001–021** (020 is a numbering gap — see below). If you add a file, update this table, the init list in `docker-compose.yml`, and `PATH-TO-DONE.md` §D.
 
 ## Structure
 
 ```
 Database/
-├── schemas/          # SQL schema files — applied in name order (001…018)
+├── schemas/          # SQL schema files — applied in name order (001…021)
 └── seeds/            # Development seed data only — never run in production
     └── 001_dev_seed.sql
 ```
@@ -44,6 +44,10 @@ file once it has been applied anywhere: add the next number. A database built by
 | `016_document_numbers.sql` | `document_counters` and `generated_forms.document_number` (running form numbers) |
 | `017_retire_property_officer.sql` | turns accounts that hold the retired Property Officer role into Property Custodians and invalidates their sessions. **The enum value stays** (Postgres cannot drop it; old audit rows carry it). Plain `UPDATE`: idempotent, safe in a transaction |
 | `018_record_printouts.sql` | record printouts (Module 8): `generated_forms.related_asset_repair_id` (with its index) and `generated_forms.verification_code`. `form_type` is a VARCHAR, so the new `RECORD_PRINT` type needs no enum change. Idempotent |
+| `019_asset_custodian_inventory.sql` | the Asset Custodian role merge ¹: adds `asset_custodian` to `user_role` (`it_personnel` and `property_custodian` stay, same pattern as `property_officer`); also adds the device-photo columns (`assets.photo_data`, `photo_mime_type`, `photo_file_name`) |
+| `021_optional_requisition_asset_class.sql` | `requisition_items.asset_class` becomes nullable — inventory, not the requester, now decides the classification of a manually-entered line |
+
+**There is no `020_*.sql`.** It's a genuine numbering gap (confirmed: no file by that name was ever added then removed — `git log` has no trace of one), not a typo in this table. Per the rule below, a gap is never filled retroactively once `021` may already be applied somewhere under its current name — the next new file is `022`.
 
 ¹ Uses `ALTER TYPE … ADD VALUE`, which cannot run inside a transaction: apply these with plain `psql -f` (no `--single-transaction`), or statement by statement in the Supabase SQL editor. Every file is idempotent and safe to re-run.
 
@@ -68,7 +72,7 @@ The files only run on the **first** boot of an empty volume. For a database that
 # Paste the file into the Supabase SQL editor, or:
 psql $DATABASE_URL -f schemas/016_document_numbers.sql
 ```
-**Status of the shared dev Supabase database:** at `018` (008–014 applied 2026-10-11, 015 on 2026-10-14, 016 on 2026-10-15, 017 on 2026-10-16, 018 on 2026-10-18). 018 was run as the plain file in one transaction (not through the migration runner, so there is no `schema_migrations` table in Supabase and no entry in its migration list): it added `generated_forms.related_asset_repair_id`, `generated_forms.verification_code` and one index, and changed no rows. A backend built from this code needs it, because the entity reads the two new columns. 017 moved the one Property Officer account (`property.officer@cicc.gov.ph` until it was renamed `property.custodian2@cicc.gov.ph` the same day) to Property Custodian and left the 23 old audit rows that say `property_officer` untouched; it is recorded as `017_retire_property_officer`. Any other database needs it before a backend that includes the role merge runs against it, or a leftover Property Officer account is refused everywhere. No production database exists yet: when CICC provides one, apply `001…017` in order.
+**Status of the shared dev Supabase database (checked 2026-11-28):** at `019`, **not `021`** — confirmed directly (`asset_custodian` exists in `user_role`, `assets.photo_data`/`photo_mime_type`/`photo_file_name` exist; but `requisition_items.asset_class` is still `NOT NULL`, so `021` has not run there). There is still no `schema_migrations` table in Supabase (every file so far was run as a plain SQL file, not through the runner, so nothing is tracked). **Apply `021_optional_requisition_asset_class.sql` to Supabase before testing a manually-entered requisition line with no asset class against it** — the current backend code expects the column to be nullable. 018 (2026-10-18) added `generated_forms.related_asset_repair_id`, `generated_forms.verification_code` and one index; 017 (2026-10-16) moved the one Property Officer account (`property.officer@cicc.gov.ph`, renamed `property.custodian2@cicc.gov.ph` the same day) to Property Custodian and left the 23 old audit rows that say `property_officer` untouched, recorded as `017_retire_property_officer`; 019 (2026-11-25) added the `asset_custodian` role and the device-photo columns, and deactivated rather than migrated the one `it_personnel` account. No production database exists yet: when CICC provides one, apply `001…021` in order (skip the nonexistent `020`).
 
 ### The e2e suite does not use these files
 `NODE_ENV=test` builds the schema from the TypeORM entities (`synchronize: true`) on a throwaway Postgres, so a missing or wrong schema file does **not** fail CI. A table that is written only with raw SQL (like `document_counters`) still needs an entity declaring it.

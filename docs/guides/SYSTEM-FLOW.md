@@ -11,7 +11,7 @@ text between the ```mermaid lines into **https://mermaid.live** and it draws it 
 flowchart LR
   EMP["Employee<br/>asks for items,<br/>reports problems"]
   AO["Approving Officer<br/>says yes or no"]
-  CUST["Custodian<br/>IT: computers and gadgets<br/>Property: furniture and supplies"]
+  CUST["Asset Custodian<br/>computers, furniture and supplies — one role since 2026-11-25"]
   ADM["System Admin<br/>accounts, settings,<br/>full audit log"]
   MGT["Management<br/>read-only reports<br/>and dashboards"]
   DOCS["Official forms<br/>PAR, ICS, RIS and more<br/>made automatically"]
@@ -38,7 +38,7 @@ flowchart TD
   A["Employee opens Asset Catalogue<br/>and picks an item"] --> B["Fills in how many, why, and by when<br/>then submits"]
   B --> C{"Approving Officer<br/>reviews it"}
   C -->|"Rejects with a reason"| X["Employee is told why<br/>Request ends"]
-  C -->|"Approves"| D["Goes to the Custodian<br/>IT for computers, Property for furniture"]
+  C -->|"Approves"| D["Goes to the Asset Custodian"]
   D --> E{"Is the item<br/>in stock?"}
   E -->|"No"| H["Custodian puts it ON HOLD<br/>Employee is notified"]
   H --> E

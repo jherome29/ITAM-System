@@ -131,7 +131,7 @@ if (user.totpEnabled) {
 ```
 
 **New endpoints needed:**
-- `POST /api/v1/auth/mfa/setup` — generates TOTP secret + QR code for enrollment (IT Personnel role for user setup, or self-service)
+- `POST /api/v1/auth/mfa/setup` — generates TOTP secret + QR code for enrollment (Asset Custodian role for user setup, or self-service)
 - `POST /api/v1/auth/mfa/verify` — confirms the user scanned the QR code correctly (first-time activation)
 - `POST /api/v1/auth/mfa/disable` — Admin only
 
@@ -142,7 +142,7 @@ if (user.totpEnabled) {
 ### Phased rollout suggestion
 1. Build backend endpoints first
 2. Add the MFA code field to the login form
-3. Admin enrolls IT Personnel accounts first (highest privilege)
+3. Admin enrolls Asset Custodian accounts first (highest privilege)
 4. Roll out to Supervisors, then Employees
 5. Management and System Admin accounts: MFA mandatory from day one
 
@@ -205,7 +205,7 @@ Your capstone requires OWASP ASVS compliance evidence. A ZAP scan report is dire
 ### Before running ZAP
 Make sure these are working first:
 - Login page renders and accepts credentials
-- At least the IT Personnel asset pages are accessible
+- At least the Asset Custodian pages are accessible
 - All API endpoints are reachable
 
 > Schedule this for the first week of the Testing phase. Do not leave it for the last day.
@@ -247,7 +247,7 @@ Once the frontend is complete, write Playwright tests for these critical paths:
 |---|---|
 | Employee login → submit requisition | Full requester journey |
 | Supervisor login → approve requisition | Approval workflow |
-| IT Personnel → fulfill requisition → asset status changes | Fulfillment + lifecycle |
+| Asset Custodian → fulfill requisition → asset status changes | Fulfillment + lifecycle |
 | Employee tries to access `/admin` → redirected | RBAC enforcement |
 | Login with wrong password 5× → account locked | Lockout flow |
 | Logout → refresh token cleared → protected routes blocked | Session termination |

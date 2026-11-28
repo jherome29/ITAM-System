@@ -2,8 +2,8 @@
 
 How to get the stack running on this machine. Written 2026-09-30 against
 Windows 11 / PowerShell, Node v25.2.1, npm 11.6.2, Docker Desktop 29.4.3;
-reviewed 2026-10-18 (Next.js 16.4, schemas 001–018, test counts, and §11, how to
-verify a screen or a PDF on a throwaway database). Folder paths below are the
+reviewed 2026-11-28 (Next.js 16.4, schemas 001–021, test counts, the Asset Custodian
+role merge, and §11, how to verify a screen or a PDF on a throwaway database). Folder paths below are the
 original machine's (`D:\Documents(D)\CAPSTONE`): use your own clone's path.
 
 First-time setup is already done on this machine — if you just want to start
@@ -69,14 +69,14 @@ created there:
 | Role | Email | Password | Lands on |
 |---|---|---|---|
 | System Administrator | `admin@cicc.gov.ph` | `Admin@CICC2026!` | `/master-admin/dashboard` |
-| IT Personnel | `itpersonnel@cicc.gov.ph` | `CiccIT@2026!Sec` | `/it-asset-custodian/dashboard` |
+| **Asset Custodian** (the live, unified custodian account — role changed from `property_custodian` on 2026-11-25, same login) | `property.custodian@cicc.gov.ph` | `PropertyCustodian@2026!` | `/asset-custodian/dashboard` |
 | Employee | `employee@cicc.gov.ph` | `Employee@CICC2026!` | `/employee/dashboard` |
 | Supervisor | `supervisor@cicc.gov.ph` | `Supervisor@CICC2026!` | `/approving-officer/dashboard` |
-| Supervisor (IT Division — approves IT Personnel's requests) | `it.supervisor@cicc.gov.ph` | `ItSupervisor@CICC2026!` | `/approving-officer/dashboard` |
+| Supervisor (IT Division — approves the Asset Custodian's own requests when they were still filed as IT Personnel) | `it.supervisor@cicc.gov.ph` | `ItSupervisor@CICC2026!` | `/approving-officer/dashboard` |
 | Management | `management@cicc.gov.ph` | `Management@CICC2026!` | `/management-audit/dashboard` |
-| Property Custodian | `property.custodian@cicc.gov.ph` | `PropertyCustodian@2026!` | `/property-custodian/dashboard` |
-| Property Custodian (second account; was the Property Officer, `property.officer@cicc.gov.ph` until 2026-10-16) | `property.custodian2@cicc.gov.ph` | `PropertyOfficer@2026!` | `/property-custodian/dashboard` |
-| Supervisor (Property and Supply Management, approves the Property Custodian) | `psm.approver@cicc.gov.ph` | `PSMApprover@2026!` | `/approving-officer/dashboard` |
+| Supervisor (Property and Supply Management, approves the Asset Custodian) | `psm.approver@cicc.gov.ph` | `PSMApprover@2026!` | `/approving-officer/dashboard` |
+
+> **Legacy custodian accounts (kept active, not for new testing — see `docs/guides/ROLES.md`):** `property.custodian2@cicc.gov.ph` / `PropertyOfficer@2026!` (legacy `property_custodian`, Fixed + Supplies only) lands on `/asset-custodian/dashboard` too (the old `/property-custodian/*` path now redirects there); `itpersonnel@cicc.gov.ph` / `CiccIT@2026!Sec` (legacy `it_personnel`) is **deactivated** since 2026-11-25 — CICC's instruction is one custodian handles every asset type now.
 
 > After a DB reset (§6) the seed recreates only `admin@` and `it.personnel@`
 > (note the dot), both with `ChangeMe@1234!`.
@@ -91,7 +91,7 @@ in an httpOnly refresh cookie, so it survives a page reload.
 
 Seeded on 2026-09-30 so the dashboards are not empty:
 
-- **9 assets** — 5 ICT (IT Personnel's scope), 4 Fixed/Supplies (Property roles' scope)
+- **9 assets** — 5 ICT, 4 Fixed/Supplies (all within the Asset Custodian's scope)
 - Statuses in play: 3 available, 1 issued (HP EliteBook → `CICC-EMP-001`), 1 under repair
 - **1 requisition** `REQ-2026-0001`, walked all the way through
   submit → supervisor approve → IT fulfil
@@ -107,12 +107,13 @@ restricts asset queries by role:
 
 | Role | Can see / register |
 |---|---|
-| IT Personnel | `ICT` only |
-| Property Custodian | `Fixed` + `Supplies` only |
+| Asset Custodian (current `asset_custodian` value) | no asset-type restriction — all three types |
+| Legacy `it_personnel` account | `ICT` only |
+| Legacy `property_custodian` / retired `property_officer` account | `Fixed` + `Supplies` only |
 | Admin, Management, Employee, Supervisor | no asset-type restriction |
 
-So IT Personnel showing "Total assets 5" while 9 exist is correct, not a bug.
-Registering a `Fixed` asset as IT Personnel returns **403** by design.
+So a legacy `it_personnel`-scoped account showing "Total assets 5" while 9 exist is correct, not a bug.
+Registering a `Fixed` asset from an ICT-scoped legacy account returns **403** by design.
 
 ### There is no mock data in the frontend
 
@@ -218,7 +219,7 @@ docker exec aimrs_postgres psql -v ON_ERROR_STOP=1 -U aimrs_user -d aimrs_dev -f
 ```
 
 Then add it to the `postgres.volumes` list in `docker-compose.yml` so fresh
-bootstraps pick it up (`Database/schemas/` currently runs 001 to 018). **The files in `Database/schemas/` only run on the
+bootstraps pick it up (`Database/schemas/` currently runs 001 to 021 — 020 is a numbering gap, not a typo; see `Database/README.md`). **The files in `Database/schemas/` only run on the
 FIRST boot of an empty volume** — adding one to the compose file does nothing
 to a database that already exists.
 
@@ -284,12 +285,12 @@ clean — run from PowerShell:
 cd Backend;  npx tsc --noEmit
 cd Backend;  npx eslint "{src,apps,libs,test}/**/*.ts" --max-warnings 0
 cd Backend;  npm run build
-cd Backend;  npm run test:cov        # 981 tests (2026-10-18), coverage gate 65%
+cd Backend;  npm run test:cov        # 985 tests (2026-11-28), coverage gate 65%
 cd Backend;  npm run audit:check
 cd Frontend; npx tsc --noEmit
 cd Frontend; npx eslint . --max-warnings 0
 cd Frontend; npm run build
-cd Frontend; npm test                # 521 vitest tests (2026-10-18)
+cd Frontend; npm test                # 538 vitest tests (2026-11-28)
 cd Frontend; npm run audit:check
 cd ..;       npm run secretlint
 ```
@@ -297,8 +298,8 @@ cd ..;       npm run secretlint
 `cd Frontend && npm run build` writes to the same `.next/` the dev server uses —
 **stop `npm run dev` first**, or the running dev server gets confused.
 
-Backend e2e (spins its own throwaway Postgres on port 5433, needs Docker; 94 tests
-in 12 suites as of 2026-10-16):
+Backend e2e (spins its own throwaway Postgres on port 5433, needs Docker; 121 tests
+in 15 suites as of 2026-11-28):
 
 ```powershell
 cd Backend; npm run test:e2e:local
@@ -411,7 +412,7 @@ await context.route('http://localhost:3001/api/**', async (route) => {
 });
 // log in to the SANDBOX over HTTP, then hand the page the token the way the app does after a login:
 await context.addInitScript((t) => sessionStorage.setItem('aimrs_at', t), token);
-await page.goto('http://localhost:3000/it-asset-custodian/dashboard');
+await page.goto('http://localhost:3000/asset-custodian/dashboard');
 ```
 
 Three traps cost an hour each:

@@ -8,18 +8,21 @@ Legend: ✅ real backend + real UI, verified · 🟡 works but has a caveat ·
 ⬜ not built · 🚫 out of scope. (There is no 🔴 "mock" row any more: the
 frontend contains no sample data, see below.)
 
-> **As of 2026-10-16.** Everything below is in `develop` (PRs #102, #103, #105, #106,
-> #107 and #109), plus the Property Officer → Property Custodian role merge on the
-> `refactor/merge-property-officer-into-custodian` PR. `main` is still behind
-> `develop`. Schemas 001–017 must be applied to any database that predates them
-> (`Database/README.md`); the shared Supabase dev database is at 017.
+> **As of 2026-11-28.** Everything below is in `develop`, including PR #116 (the
+> IT Personnel + Property Custodian → **Asset Custodian** role merge, schema `019`,
+> plus the CICC real-equipment import and a 13-advisory dependency fix) and PRs
+> #113–115 (three small bug fixes — approver name on submit, PAR/ICS not generated
+> on fulfilment, a React key collision). `main` is still behind `develop`; opening
+> that PR is the next step (`NEXT-TIME.md`). Schemas 001–021 must be applied to any
+> database that predates them (`Database/README.md`, note the 020 numbering gap);
+> the shared Supabase dev database is at 019, not yet 021.
 
 ---
 
 ## ✅ Working
 
 **Auth & access**
-- Login for all 6 roles, JWT + refresh-token rotation (one shared refresh, so
+- Login for all 5 roles, JWT + refresh-token rotation (one shared refresh, so
   parallel requests no longer log you out), per-route RBAC guards.
 - Account lockout after N failed logins (N is runtime-configurable); admin
   force-reset-password, unlock, reactivate, force sign-out. Login is rate-limited
@@ -28,9 +31,9 @@ frontend contains no sample data, see below.)
 **Requisitions**
 - Full workflow end to end: submit → supervisor approves/rejects → custodian
   fulfils → asset issued. PAR/ICS generated on issuance.
-- **Four roles file requisitions** — Employee, Supervisor, IT Personnel, Property
-  Custodian — routed to the Approving Officer of their section,
-  else division. Management and the System Administrator do not file.
+- **Three roles file requisitions** — Employee, Supervisor, **Asset Custodian** —
+  routed to the Approving Officer of their section, else division. Management and
+  the System Administrator do not file.
 - **Segregation of duties** — a requisition is never routed to or decided by its
   own requester, and a custodian (IT or Property) **never fulfils or holds their
   own**: it is hidden from their queue and refused with a 403. Another custodian
@@ -69,7 +72,10 @@ frontend contains no sample data, see below.)
 **Assets**
 - Register / edit / lifecycle (issue, return, transfer, repair, flag for disposal,
   restore a flagged asset with a written justification), QR + barcode generate and
-  scan, per-asset transaction history.
+  scan, per-asset transaction history, one device photo per asset (5 MB, schema `019`).
+- CICC's real partial equipment list (PPE/SEP) is importable through the live API
+  as the Asset Custodian, not a raw DB insert — every row gets a real QR code,
+  barcode and audit trail (`Backend/scripts/cicc-import/`).
 - Supply stock: quantity + reorder level; supply lines are stock, not units (they
   cannot be issued or transferred as a unit).
 - Custody & Issuance shows who holds each asset; the asset list says who holds it.
@@ -90,7 +96,7 @@ frontend contains no sample data, see below.)
 
 **Maintenance & Repair** (schemas 013–014)
 - One repair record per stay `under_repair`, whichever screen sent it. Queue for
-  IT Asset Custodian + Property Custodian (and Master Admin → Escalations →
+  the Asset Custodian (and Master Admin → Escalations →
   Repairs). Outcome repaired (back to holder or stock) / not repairable (flagged
   for disposal). A **loaner unit** can be lent while it is away. Condition follows
   the lifecycle. Repair History on the asset page and as a PDF/Excel report.
@@ -144,14 +150,21 @@ editable at runtime (System Admin only, audited, with "last changed … by …")
 - Docker: both images build (repo-root context); `docker compose up --build` brings
   up Postgres (all 17 schemas + seed) + backend + frontend with `/api/health`
   healthchecks; prod compose fails fast on missing secrets; CI builds both images.
-- Formal security e2e suite (8 ASVS scenarios) gates CI. Backend 981 unit tests
-  (95% statements), 120 e2e on a real Postgres, frontend 521 tests.
-- UI: one shared kit (`Frontend/components/ui/`), one type scale with nothing below 14px (client feedback: bigger text for older staff), and a spec that fails the build when a screen goes around them (branch `refactor/ui-consistency`, not yet merged).
-- k6 load baseline: 362 VUs, 0 errors, p95 758 ms (single contended box), `perf/`.
+- Formal security e2e suite (8 ASVS scenarios) gates CI. Backend 985 unit tests
+  (90% statements), 121 e2e on a real Postgres, frontend 538 tests.
+- UI: one shared kit (`Frontend/components/ui/`), one type scale with nothing below 14px (client feedback: bigger text for older staff), and a spec that fails the build when a screen goes around them. Merged to `develop`.
+- k6 load baseline: 362 VUs, 0 errors; p95 was 758 ms on 2026-09-06, re-run 2026-11-28 at 1.04 s (`perf/README.md` — likely more real per-request work since, plus this run's contention).
 
 ---
 
 ## 🟡 Works but has a caveat
+
+- **Replacement Validation and Disposal Review have no screen.** The backend endpoint
+  and the `ReplacementReview.tsx` component both still exist, but `/asset-custodian/replacements`
+  and `/disposal-review` now redirect into Fulfillment and Disposal Recommendations
+  instead (2026-11-26, "retire redundant navigation"), which don't show the one thing
+  those screens were for — held items that already qualify for replacement with no
+  open request yet. Likely an unintended regression of the Asset Custodian merge.
 
 - **COA form templates** — all 18 render with correct data and layout, but several
   still differ from CICC's official forms: an extra unofficial third signatory
