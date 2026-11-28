@@ -159,7 +159,7 @@ export function RequisitionDetailView({ request, fulfillment = false }: Readonly
       </div>
     </div>
 
-    <DocumentsSection key={request.id} request={request} />
+    <DocumentsSection key={`documents-${request.id}`} request={request} />
 
     <div><p className="text-xs font-bold text-slate-500">Justification</p><p className="mt-2 whitespace-pre-line text-sm text-slate-700">{request.justification}</p></div>
 
@@ -177,6 +177,6 @@ export function RequisitionDetailView({ request, fulfillment = false }: Readonly
       </ol>
     </div>
 
-    <RecordPrints key={request.id} kind="requisition" recordId={request.id} stacked={fulfillment} />
+    <RecordPrints key={`prints-${request.id}`} kind="requisition" recordId={request.id} stacked={fulfillment} />
   </div>;
 }

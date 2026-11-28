@@ -400,7 +400,7 @@ export function RepairQueue({
               </>
             )}
             <LoanerSection
-              key={selected.id}
+              key={`loaner-${selected.id}`}
               repair={selected}
               canReturn={!adminFallback}
               onChanged={async (message) => {
@@ -413,7 +413,7 @@ export function RepairQueue({
               onIssued={() => askToPrint('repair', selected.id, `The loaner for ${selected.asset?.itemDescription ?? 'this repair'}`)}
               onError={setActionError}
             />
-            <RecordPrints key={selected.id} kind="repair" recordId={selected.id} />
+            <RecordPrints key={`prints-${selected.id}`} kind="repair" recordId={selected.id} />
             {actionError && <Notice tone="red">{actionError}</Notice>}
           </div>
         )}
