@@ -1307,6 +1307,7 @@ export class RequisitionsService {
     userRole: UserRole,
     ipAddress: string,
     stockDecrements: { assetId: string; from: number; to: number }[],
+    issuedUnits: { assetId: string; assetClass: AssetClass }[],
   ) {
     const lines = new Map(req.items.map((line) => [line.id, line]));
     const supplyLine = (line: RequisitionItemEntity) =>
@@ -1396,6 +1397,7 @@ export class RequisitionsService {
           resolveAssetTypeScope(userRole),
           { issuance: { manager: em, requisitionId: req.id } },
         );
+        issuedUnits.push({ assetId, assetClass: asset.assetClass });
       }
     }
     // The existing foreign key stores the first unit. The audit records every
@@ -1448,10 +1450,14 @@ export class RequisitionsService {
 
     // Item-linking + supply decrement + status flip run in one transaction:
     // an insufficient-stock throw on any IES line rolls the whole fulfillment
-    // back (no partial link, no status change). stockDecrements is declared
-    // outside the callback so the post-commit low-stock sweep and the audit
-    // metadata can both read what was actually decremented.
+    // back (no partial link, no status change). stockDecrements and
+    // issuedUnits are declared outside the callback so the post-commit
+    // low-stock sweep, form generation and the audit metadata can all read
+    // what actually happened — generating a form inside this transaction
+    // would read the asset's pre-commit state on a separate connection (the
+    // same reason the replacement path generates its receipt after commit).
     const stockDecrements: { assetId: string; from: number; to: number }[] = [];
+    const issuedUnits: { assetId: string; assetClass: AssetClass }[] = [];
 
     const saved = await this.reqRepo.manager.transaction(async (em) => {
       if (
@@ -1477,6 +1483,7 @@ export class RequisitionsService {
           userRole,
           ipAddress,
           stockDecrements,
+          issuedUnits,
         );
         req.itPersonnelId = itPersonnelId;
         req.fulfilledAt = new Date();
@@ -1615,6 +1622,20 @@ export class RequisitionsService {
           e instanceof Error ? e.stack : String(e),
         );
       }
+    }
+
+    // CLAUDE.md §6 Module 2: "IT Personnel confirms issuance → PAR or ICS
+    // generated." One per unit issued above (PPE → PAR, SEP → ICS); a failure
+    // is logged by generateIssuanceForm, never thrown here.
+    for (const { assetId, assetClass } of issuedUnits) {
+      await this.generateIssuanceForm(
+        req,
+        assetId,
+        assetClass,
+        itPersonnelId,
+        userRole,
+        ipAddress,
+      );
     }
 
     // Notify requester
@@ -1756,6 +1777,14 @@ export class RequisitionsService {
         ipAddress,
         resolveAssetTypeScope(userRole),
       );
+      await this.generateIssuanceForm(
+        req,
+        unit.id,
+        unit.assetClass,
+        userId,
+        userRole,
+        ipAddress,
+      );
       return true;
     } catch (e) {
       this.logger.error(
@@ -1857,6 +1886,43 @@ export class RequisitionsService {
       );
 
     return { ...summary, outcome: 'returned' };
+  }
+
+  /**
+   * CLAUDE.md §6 Module 2: issuing a unit asset generates its COA
+   * acknowledgment — PAR for PPE, ICS for SEP. Supplies (IES) are covered by
+   * RIS/RSMI/RSPI instead, not a per-unit form. Never thrown: a failure here
+   * must not undo an already-committed issuance, so it is logged and the
+   * custodian can generate the form from Reports & Forms.
+   */
+  private async generateIssuanceForm(
+    req: RequisitionEntity,
+    assetId: string,
+    assetClass: AssetClass,
+    userId: string,
+    userRole: UserRole,
+    ipAddress: string,
+  ): Promise<void> {
+    const formType =
+      assetClass === AssetClass.PPE
+        ? OfficialFormType.PAR
+        : assetClass === AssetClass.SEP
+          ? OfficialFormType.ICS
+          : null;
+    if (!formType) return;
+    await this.reportsService
+      .generateFormRecord(
+        { formType, assetId, requisitionId: req.id },
+        userId,
+        userRole,
+        ipAddress,
+      )
+      .catch((e: unknown) =>
+        this.logger.error(
+          `${req.requestNumber}: could not generate ${formType} for asset ${assetId}`,
+          e instanceof Error ? e.stack : String(e),
+        ),
+      );
   }
 
   // ── SLA breach check — called by a scheduled job (SchedulerService) ───────

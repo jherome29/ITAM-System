@@ -10,6 +10,7 @@ import { AppModule } from './../src/app.module';
 import { createTestApp } from './create-test-app';
 import { UserEntity } from '../src/users/entities/user.entity';
 import { AssetEntity } from '../src/assets/entities/asset.entity';
+import { GeneratedFormEntity } from '../src/reports/entities/generated-form.entity';
 import {
   UserRole,
   AssetClass,
@@ -26,6 +27,7 @@ describe('Requisition workflow (e2e)', () => {
   let app: INestApplication<App>;
   let userRepo: Repository<UserEntity>;
   let assetRepo: Repository<AssetEntity>;
+  let formRepo: Repository<GeneratedFormEntity>;
   let jwtService: JwtService;
 
   let employeeId: string;
@@ -43,6 +45,7 @@ describe('Requisition workflow (e2e)', () => {
 
     userRepo = moduleFixture.get(getRepositoryToken(UserEntity));
     assetRepo = moduleFixture.get(getRepositoryToken(AssetEntity));
+    formRepo = moduleFixture.get(getRepositoryToken(GeneratedFormEntity));
     jwtService = moduleFixture.get(JwtService);
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -265,6 +268,17 @@ describe('Requisition workflow (e2e)', () => {
         }),
       ]),
     );
+
+    // CLAUDE.md §6 Module 2: issuing a unit asset generates its COA
+    // acknowledgment — ICS here, since the unit is SEP (PAR is for PPE).
+    const form = await formRepo.findOne({
+      where: { relatedRequisitionId: req.id },
+    });
+    expect(form).toMatchObject({
+      formType: 'ICS',
+      relatedAssetId: unit.id,
+    });
+    expect(form?.documentNumber).toMatch(/^ICS-\d{4}-\d{4}$/);
   });
 
   it('rejects an Employee attempting to approve their own requisition', async () => {
