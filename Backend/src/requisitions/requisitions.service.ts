@@ -824,7 +824,7 @@ export class RequisitionsService {
     requestedById: string,
     userRole: UserRole,
     ipAddress: string,
-  ): Promise<RequisitionEntity> {
+  ) {
     // Repairs of an asset you hold are not requisitions — they go through
     // Returns & Incidents (asset-requests), which hands the item to its
     // custodian and moves it to under_repair. The enum value stays for
@@ -856,6 +856,7 @@ export class RequisitionsService {
     // watcher is the backstop). "Usable" = active SUPERVISOR, not itself away,
     // and never the requester.
     let approverId = supervisor.id;
+    let approverEntity = supervisor;
     let routedToAlternate = false;
     if (
       this.usersService.isUnavailable(supervisor) &&
@@ -866,6 +867,7 @@ export class RequisitionsService {
         .catch(() => null);
       if (this.isUsableApprover(alt, requestedById)) {
         approverId = alt.id;
+        approverEntity = alt;
         routedToAlternate = true;
       }
     }
@@ -997,7 +999,11 @@ export class RequisitionsService {
       });
     }
 
-    return saved;
+    // Match findOne/findMine's shape (requester + approver summaries, not raw
+    // relations) — the frontend renders this response directly without a
+    // refetch, so an un-hydrated `supervisor` relation showed every new
+    // requisition's approving officer as "Not yet assigned" until reload.
+    return withRequester(saved, requester, approverEntity);
   }
 
   // ── Supervisor approves ────────────────────────────────────────────────────

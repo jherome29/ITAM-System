@@ -342,7 +342,12 @@ describe('RequisitionsService', () => {
       officeOrSection: 'Digital Forensics',
       division: 'Operations',
     };
-    const resolvedSupervisor = { id: 'sup-uuid-1' };
+    const resolvedSupervisor = {
+      id: 'sup-uuid-1',
+      firstName: 'Maria',
+      lastName: 'Santos',
+      employeeId: 'CICC-SUP-001',
+    };
 
     beforeEach(() => {
       mockUsersService.findOne.mockResolvedValue(requester);
@@ -382,6 +387,18 @@ describe('RequisitionsService', () => {
       );
 
       expect(result.status).toBe(RequisitionStatus.PENDING_SUPERVISOR);
+
+      // The response is rendered directly by the frontend with no refetch
+      // (EmployeeWorkspace's handleCreate prepends it to the list), so it must
+      // carry the resolved approver's name — not the raw `supervisor` relation,
+      // which create() never hydrates. Regression: this used to come back
+      // undefined, showing "Not yet assigned" for a requisition that was
+      // already correctly routed in the database.
+      expect(result.approver).toEqual({
+        id: 'sup-uuid-1',
+        name: 'Maria Santos',
+        employeeId: 'CICC-SUP-001',
+      });
 
       // Audit log for submission
       expect(mockAuditService.log).toHaveBeenCalledWith(
