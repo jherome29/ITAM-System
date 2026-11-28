@@ -22,7 +22,7 @@ export interface Requisition {
   createdAt: string;
   updatedAt: string;
   /** Minimal summaries from the API — name/employee ID/section only. */
-  requester?: { id: string; name: string; employeeId: string; officeOrSection: string } | null;
+  requester?: { id: string; name: string; employeeId: string; officeOrSection: string; division?: string } | null;
   approver?: { id: string; name: string; employeeId: string } | null;
   /** Replacement requisitions only — the unit being replaced. */
   replacedAsset?: ReplacedAsset | null;
@@ -39,6 +39,7 @@ export interface RequisitionDocument {
 /** fulfilledItems links a line to the unit handed out — for a replacement, that unit is issued to the requester. */
 export interface FulfillRequisitionDto {
   notes?: string;
+  recordHandover?: boolean;
   fulfilledItems?: Array<{ requisitionItemId: string; assetId: string }>;
 }
 
@@ -88,6 +89,17 @@ export interface ReplacementReview {
   }>;
 }
 
+export interface IssuedSupply {
+  id: string;
+  requisitionId?: string;
+  itemDescription: string;
+  quantity: number;
+  requestNumber: string;
+  fulfilledAt: string | null;
+  requester: Requisition['requester'];
+  stockLinked: boolean;
+}
+
 export interface RequisitionItem {
   id: string;
   assetType: string;
@@ -113,17 +125,28 @@ export interface CreateRequisitionDto {
   requisitionType: string;
   justification: string;
   requiredDate: string;
-  items: Array<{ itemDescription: string; quantity: number; assetType: string; assetClass: string; justification?: string }>;
+  items: Array<{ itemDescription: string; quantity: number; assetType: string; assetClass?: string; justification?: string }>;
   /** Required by the backend only when requisitionType === 'replacement'. */
   replacedAssetId?: string;
 }
 
 export const requisitionsApi = {
+  issuedSupplies: (page: number, search: string, sort: 'newest' | 'oldest', signal: AbortSignal) =>
+    client.get<ApiResponse<PaginatedResponse<IssuedSupply>>>('/v1/requisitions/issued-supplies', {
+      params: { page, search: search || undefined, sort },
+      signal,
+    }).then((r) => r.data.data),
+
   list: (page = 1, limit = 15, status?: string) => {
     const params: Record<string, string | number> = { page, limit };
     if (status) params.status = status;
     return client.get<ApiResponse<PaginatedResponse<Requisition>>>('/v1/requisitions', { params }).then((r) => r.data);
   },
+
+  fulfillmentQueue: (page: number, limit: number) =>
+    client.get<ApiResponse<PaginatedResponse<Requisition>>>('/v1/requisitions', {
+      params: { page, limit, view: 'fulfillment' },
+    }).then((r) => r.data),
 
   mine: (page = 1, limit = 15) =>
     client.get<ApiResponse<PaginatedResponse<Requisition>>>('/v1/requisitions/mine', { params: { page, limit } }).then((r) => r.data),

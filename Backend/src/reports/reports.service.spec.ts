@@ -254,6 +254,27 @@ describe('ReportsService', () => {
       );
     });
 
+    // Printouts have their own access-checked routes (a custodian may only read
+    // the ones in their asset-type scope); the archive is not scoped, so a
+    // printout listed here would be readable across scopes.
+    it('never lists record printouts, even when asked for them by type', async () => {
+      mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAllForms();
+      expect(mockFormRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { formType: Not(OfficialFormType.RECORD_PRINT) },
+        }),
+      );
+
+      mockFormRepo.findAndCount.mockClear();
+      const asked = await service.findAllForms(1, 15, {
+        formType: OfficialFormType.RECORD_PRINT,
+      });
+      expect(asked).toMatchObject({ data: [], total: 0, page: 1, limit: 15 });
+      expect(mockFormRepo.findAndCount).not.toHaveBeenCalled();
+    });
+
     it('treats % and _ in the search as text, not wildcards', async () => {
       mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
 
@@ -261,18 +282,24 @@ describe('ReportsService', () => {
 
       expect(mockFormRepo.findAndCount).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { documentNumber: ILike('%50\\%\\_off%') },
+          where: {
+            formType: Not(OfficialFormType.RECORD_PRINT),
+            documentNumber: ILike('%50\\%\\_off%'),
+          },
         }),
       );
     });
 
-    it('applies no filter when none is given', async () => {
+    it('applies only the printout exclusion when no filter is given', async () => {
       mockFormRepo.findAndCount.mockResolvedValue([[], 0]);
 
       await service.findAllForms();
 
+      // Only the standing exclusion of record printouts; no type or search.
       expect(mockFormRepo.findAndCount).toHaveBeenCalledWith(
-        expect.objectContaining({ where: {} }),
+        expect.objectContaining({
+          where: { formType: Not(OfficialFormType.RECORD_PRINT) },
+        }),
       );
     });
 
@@ -326,6 +353,33 @@ describe('ReportsService', () => {
       expect(result.slaComplianceRate).toBe(100); // 2/2 * 100
       expect(result.fulfilledThisMonth).toBe(3);
       expect(result.generatedAt).toBeDefined();
+    });
+
+    // "Record completeness" only asked IS NOT NULL, so an asset saved with an empty serial number or property
+    // number (the dev database has one of each) counted as complete: the dashboard said 100% beside two gaps.
+    it('counts a blank property or serial number as missing, not as complete', async () => {
+      mockAssetRepo.count.mockResolvedValue(10);
+      mockReqRepo.count.mockResolvedValue(0);
+      const assetQb = makeQb(8);
+      mockAssetRepo.createQueryBuilder.mockReturnValue(assetQb);
+      mockReqRepo.createQueryBuilder
+        .mockReturnValueOnce(makeQb(0, []))
+        .mockReturnValueOnce(makeQb(0))
+        .mockReturnValueOnce(makeQb(0))
+        .mockReturnValueOnce(makeQb(0));
+
+      await service.getKpi();
+
+      const conditions = [
+        ...assetQb.where.mock.calls,
+        ...assetQb.andWhere.mock.calls,
+      ]
+        .map((call) => String(call[0]))
+        .join(' AND ');
+      expect(conditions).toContain(
+        "COALESCE(TRIM(a.propertyNumber), '') <> ''",
+      );
+      expect(conditions).toContain("COALESCE(TRIM(a.serialNumber), '') <> ''");
     });
 
     it('returns 100% defaults and zero avg when no data exists', async () => {
@@ -533,6 +587,55 @@ describe('ReportsService', () => {
       );
       expect(result.buffer.length).toBeGreaterThan(100);
     }, 15000);
+
+    // The report builder drew every row 16pt tall. A description that wrapped in its column printed
+    // its second line over the next row, and a wrapped line near the foot of the page made pdfkit add
+    // a page holding two words: the Audit Trail report came out 171 pages long with 84 of them stray.
+    it('lays out wrapped cells without overprinting a row or drawing below the margin', async () => {
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+      try {
+        mockAssetRepo.find.mockResolvedValue(
+          Array.from({ length: 40 }, (_, i) =>
+            makeAsset({
+              propertyNumber: `P-${String(i).padStart(3, '0')}`,
+              itemDescription: 'forensic mobile rack calibration writeblocker '
+                .repeat(12)
+                .trim(),
+            }),
+          ),
+        );
+        await service.generate(
+          'ASSET_MASTER_LIST',
+          'PDF',
+          'u-1',
+          UserRole.IT_PERSONNEL,
+          '127.0.0.1',
+        );
+
+        const drawn = text.mock.calls.map(([t, , y]) => ({
+          text: String(t),
+          y: typeof y === 'number' ? y : undefined,
+        }));
+        const LANDSCAPE_FOOT = 612 - 40;
+        const body = drawn.filter((d) => !/^Page \d+ of \d+$/.test(d.text));
+        expect(
+          body.every((d) => d.y === undefined || d.y <= LANDSCAPE_FOOT),
+        ).toBe(true);
+
+        // Row 1 starts further down than row 0 by more than the old fixed 16pt.
+        const rowStarts = drawn
+          .filter((d) => /^P-00[01]$/.test(d.text))
+          .map((d) => d.y as number);
+        expect(rowStarts).toHaveLength(2);
+        expect(rowStarts[1] - rowStarts[0]).toBeGreaterThan(24);
+
+        expect(
+          drawn.filter((d) => /^Page \d+ of \d+$/.test(d.text)).length,
+        ).toBeGreaterThan(1);
+      } finally {
+        text.mockRestore();
+      }
+    }, 15000);
   });
 
   // ── fetchReportData() — private, tested via direct access ─────────────────
@@ -578,7 +681,8 @@ describe('ReportsService', () => {
       expect(r.title).toBe('Asset Master List');
       expect(r.rows).toHaveLength(2);
       expect(r.rows[0][9]).toBe('—'); // null cost → fallback
-      expect(r.rows[1][9]).toContain('₱'); // non-null cost → formatted
+      // "PHP", as the COA forms print it: the PDF font has no peso sign and drew "±50,000".
+      expect(r.rows[1][9]).toBe('PHP 50,000.00');
       expect(r.rows[0][10]).toBe('—'); // null date → fallback
     });
 
@@ -661,7 +765,7 @@ describe('ReportsService', () => {
 
       expect(r.title).toBe('Disposal Documentation Report');
       expect(r.rows[0][7]).toBe('—'); // null cost
-      expect(r.rows[1][7]).toContain('₱'); // formatted cost
+      expect(r.rows[1][7]).toBe('PHP 25,000.00'); // not "₱": the PDF font prints it as "±"
     });
 
     it('REPAIR_HISTORY lists each repair with service, outcome and turnaround', async () => {
@@ -1009,6 +1113,226 @@ describe('ReportsService', () => {
   });
 
   // ── document numbers ──────────────────────────────────────────────────────
+  // CICC asked for a paper copy after every step. The owning service (requisitions, requests, repairs)
+  // checks who may see the record and hands over a plain description; this numbers, draws, stores and
+  // records the print. A second print of the same record is a new numbered copy, marked REPRINT.
+  describe('createRecordPrint()', () => {
+    const printable = {
+      kind: 'requisition' as const,
+      recordId: '11111111-1111-4111-8111-111111111111',
+      title: 'REQUISITION RECORD',
+      reference: 'REQ-2026-0054',
+      status: 'Approved, waiting for the custodian',
+      facts: [],
+      notes: [],
+      events: [
+        {
+          at: new Date('2026-10-18T06:30:00Z'),
+          what: 'Filed',
+          by: 'Juan dela Cruz',
+        },
+      ],
+      signatories: [
+        { label: 'Requester', name: 'Juan dela Cruz', role: 'Employee' },
+      ],
+    };
+    const by = { id: 'u-1', name: 'Maria Santos', role: UserRole.SUPERVISOR };
+
+    beforeEach(() => {
+      mockFormRepo.find.mockResolvedValue([]);
+      mockFormRepo.create.mockImplementation((v: object) => ({
+        id: 'f-1',
+        ...v,
+      }));
+      mockFormRepo.save.mockImplementation((v: object) => Promise.resolve(v));
+    });
+
+    it('numbers the print from the PR series and stores it linked to the record', async () => {
+      const { form, buffer } = await service.createRecordPrint(
+        printable,
+        by,
+        '10.0.0.1',
+      );
+
+      expect(form.documentNumber).toBe(`PR-${new Date().getFullYear()}-0007`);
+      expect(mockEntityManager.query).toHaveBeenCalledWith(
+        expect.stringContaining('document_counters'),
+        ['PR', new Date().getFullYear()],
+      );
+      expect(mockFormRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          formType: 'RECORD_PRINT',
+          relatedRequisitionId: printable.recordId,
+          generatedById: 'u-1',
+        }),
+      );
+      expect(buffer.subarray(0, 4).toString()).toBe('%PDF');
+    });
+
+    it('links a return / incident request and a repair through their own columns', async () => {
+      await service.createRecordPrint(
+        { ...printable, kind: 'asset_request' },
+        by,
+        '10.0.0.1',
+      );
+      await service.createRecordPrint(
+        { ...printable, kind: 'repair' },
+        by,
+        '10.0.0.1',
+      );
+
+      expect(mockFormRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ relatedAssetRequestId: printable.recordId }),
+      );
+      expect(mockFormRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ relatedAssetRepairId: printable.recordId }),
+      );
+    });
+
+    it('gives the paper a verification code that is also stored', async () => {
+      const { form } = await service.createRecordPrint(
+        printable,
+        by,
+        '10.0.0.1',
+      );
+
+      expect(form.verificationCode).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    });
+
+    it('counts a later print of the same record as a copy, and finds the first print date', async () => {
+      const first = new Date('2026-10-17T02:00:00Z');
+      mockFormRepo.find.mockResolvedValue([
+        { id: 'a', generatedAt: first },
+        { id: 'b', generatedAt: new Date() },
+      ]);
+      const text = jest.spyOn(PDFDocument.prototype, 'text');
+      try {
+        await service.createRecordPrint(printable, by, '10.0.0.1');
+        const drawn = text.mock.calls.map(([t]) => String(t));
+        expect(drawn.some((t) => t.includes('REPRINT: copy 3'))).toBe(true);
+      } finally {
+        text.mockRestore();
+      }
+    });
+
+    it('writes the print to the audit trail after it is stored', async () => {
+      await service.createRecordPrint(printable, by, '10.0.0.1');
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'u-1',
+          action: 'form_generated',
+          ipAddress: '10.0.0.1',
+          metadata: expect.objectContaining({
+            formType: 'RECORD_PRINT',
+            recordKind: 'requisition',
+            recordReference: 'REQ-2026-0054',
+            copy: 1,
+          }),
+        }),
+      );
+    });
+
+    it('cannot be made through the COA form generator', async () => {
+      await expect(
+        service.generateForm(
+          { formType: 'RECORD_PRINT' as never },
+          'u-1',
+          UserRole.IT_PERSONNEL,
+          '10.0.0.1',
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('formsForRequisition()', () => {
+    it('leaves record printouts out, so they never show up as official COA documents', async () => {
+      mockFormRepo.find.mockResolvedValue([]);
+
+      await service.formsForRequisition('r-1');
+
+      expect(mockFormRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            relatedRequisitionId: 'r-1',
+            formType: Not(OfficialFormType.RECORD_PRINT),
+          },
+        }),
+      );
+    });
+  });
+
+  describe('recordPrints() / recordPrintPdf()', () => {
+    it('lists the prints of one record with who printed them, oldest first', async () => {
+      mockFormRepo.find.mockResolvedValue([
+        {
+          id: 'f-1',
+          documentNumber: 'PR-2026-0001',
+          generatedAt: new Date('2026-10-17T02:00:00Z'),
+          generatedById: 'u-1',
+          verificationCode: 'AAAA-BBBB',
+        },
+        {
+          id: 'f-2',
+          documentNumber: 'PR-2026-0002',
+          generatedAt: new Date('2026-10-18T02:00:00Z'),
+          generatedById: 'u-2',
+          verificationCode: 'CCCC-DDDD',
+        },
+      ]);
+      mockUserRepo.find.mockResolvedValue([
+        { id: 'u-1', firstName: 'Juan', lastName: 'dela Cruz' },
+        { id: 'u-2', firstName: 'Maria', lastName: 'Santos' },
+      ]);
+
+      const list = await service.recordPrints('requisition', 'r-1');
+
+      expect(
+        list.map((p) => [p.documentNumber, p.copy, p.printedByName]),
+      ).toEqual([
+        ['PR-2026-0001', 1, 'Juan dela Cruz'],
+        ['PR-2026-0002', 2, 'Maria Santos'],
+      ]);
+      expect(mockFormRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { formType: 'RECORD_PRINT', relatedRequisitionId: 'r-1' },
+        }),
+      );
+    });
+
+    it('hands back the stored PDF only for a print of that record', async () => {
+      const qb = {
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({
+          pdfContent: Buffer.from('%PDF-x'),
+          documentNumber: 'PR-2026-0001',
+        }),
+      };
+      mockFormRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const pdf = await service.recordPrintPdf('repair', 'rep-1', 'f-1');
+
+      expect(pdf.documentNumber).toBe('PR-2026-0001');
+      expect(qb.where).toHaveBeenCalledWith(
+        expect.stringContaining('relatedAssetRepairId'),
+        expect.objectContaining({ recordId: 'rep-1', formId: 'f-1' }),
+      );
+    });
+
+    it('answers 404 when the print belongs to a different record', async () => {
+      mockFormRepo.createQueryBuilder.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      });
+
+      await expect(
+        service.recordPrintPdf('requisition', 'r-1', 'f-x'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
   describe('generateFormRecord() — document numbers', () => {
     const year = new Date().getFullYear();
     const user = {
@@ -1408,6 +1732,20 @@ describe('ReportsService', () => {
 
       expect(result.buffer).toEqual(pdfContent);
       expect(result.form).toMatchObject({ id: 'f-1' });
+    });
+
+    it('refuses a record printout, which is only served through its own record', async () => {
+      mockFormRepo.createQueryBuilder.mockReturnValue(
+        makeFormQb({
+          id: 'f-1',
+          formType: OfficialFormType.RECORD_PRINT,
+          pdfContent: Buffer.from('pdf-data'),
+        }),
+      );
+
+      await expect(service.downloadForm('f-1')).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('throws NotFoundException when form record does not exist', async () => {

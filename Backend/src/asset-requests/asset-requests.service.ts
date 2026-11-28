@@ -8,8 +8,9 @@ import {
 } from '@nestjs/common';
 import { GeneratedFormEntity } from '../reports/entities/generated-form.entity';
 import { ReportsService } from '../reports/reports.service';
+import { buildAssetRequestPrint } from './asset-request-print';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { AssetRequestEntity } from './entities/asset-request.entity';
 import { AssetRequestAttachmentEntity } from './entities/asset-request-attachment.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
@@ -51,6 +52,7 @@ const OPEN_STATUSES = [
 ];
 const INCIDENT_TYPES = new Set([AssetRequestType.LOSS, AssetRequestType.THEFT]);
 const ACTING_ROLES = new Set([
+  UserRole.ASSET_CUSTODIAN,
   UserRole.IT_PERSONNEL,
   UserRole.PROPERTY_CUSTODIAN,
 ]);
@@ -407,7 +409,11 @@ export class AssetRequestsService {
             generatedAt: true,
             relatedAssetRequestId: true,
           },
-          where: { relatedAssetRequestId: In(reqs.map((r) => r.id)) },
+          // A record printout is not an official document (it has its own Paper copy list).
+          where: {
+            relatedAssetRequestId: In(reqs.map((r) => r.id)),
+            formType: Not(OfficialFormType.RECORD_PRINT),
+          },
           order: { generatedAt: 'ASC' },
         })
       : [];
@@ -450,7 +456,11 @@ export class AssetRequestsService {
    * so the System Administrator is the fallback decider for exactly these.
    */
   private isCustodianOwnRequest(req: AssetRequestEntity): boolean {
-    return req.requestedBy?.role === custodianRoleFor(req.asset.assetType);
+    const role = req.requestedBy?.role;
+    return (
+      role === UserRole.ASSET_CUSTODIAN ||
+      role === custodianRoleFor(req.asset.assetType)
+    );
   }
 
   /** Never the requester. Otherwise the custodian role for this asset type,
@@ -891,7 +901,12 @@ export class AssetRequestsService {
   ) {
     const req = await this.load(id);
     this.assertCanAct(req, user);
-    if (req.status !== AssetRequestStatus.APPROVED) {
+    const directReceipt =
+      req.type === AssetRequestType.RETURN && dto.returnReceived === 'true';
+    if (
+      req.status !== AssetRequestStatus.APPROVED &&
+      !(directReceipt && req.status === AssetRequestStatus.SUBMITTED)
+    ) {
       throw new BadRequestException(
         req.status === AssetRequestStatus.SUBMITTED
           ? 'Approve the request before marking it received.'
@@ -922,60 +937,102 @@ export class AssetRequestsService {
 
     // Lifecycle first: if the state machine refuses (the asset moved on in the
     // meantime) the request stays approved and the custodian sees why.
-    await this.assetsService.updateLifecycle(
-      req.assetId,
-      {
-        status: target,
-        notes: `${req.requestNumber} (${TYPE_LABEL[req.type]}): ${notes ?? req.details}`,
-      },
-      user.id,
-      user.role,
-      ipAddress,
-      resolveAssetTypeScope(user.role),
-      {
-        // Opens the repair record with the holder's description. Every route
-        // into a write-off (damaged beyond repair, lost, stolen) leaves the
-        // item unserviceable — otherwise a lost unit keeps reading
-        // "serviceable" on the holder's screen and on the RLSDDP.
-        assetRequestId: req.id,
-        problem: req.details,
-        ...(target === AssetStatus.FLAGGED_FOR_DISPOSAL
-          ? { condition: AssetCondition.UNSERVICEABLE }
-          : {}),
-      },
-    );
-
-    if (receiptPhotos.length) {
-      await this.attachmentRepo.save(
-        receiptPhotos.map((a) =>
-          this.attachmentRepo.create({
-            ...a,
-            requestId: req.id,
-            stage: 'receipt',
-            uploadedById: user.id,
-          }),
-        ),
-      );
-    }
-
-    // A damaged item surrendered for disposal leaves the holder's hands for
-    // good, so their accountability ends here (a return clears it inside
-    // updateLifecycle). Lost/stolen items deliberately stay on the holder's
-    // record until COA grants relief; repaired items come back to them.
-    const cleared = clearsAccountability(req.type, target);
-    if (cleared && target !== AssetStatus.RETURNED) {
-      await this.repo.manager
-        .getRepository(AssetEntity)
-        .update(req.assetId, { custodianId: null });
-    }
-
-    await this.patch(req, {
+    const completion = {
       status: AssetRequestStatus.COMPLETED,
       completedById: user.id,
       completedAt: new Date(),
       completionNotes: notes,
       resultingStatus: target,
-    });
+    };
+    const cleared = clearsAccountability(req.type, target);
+    if (directReceipt) {
+      await this.repo.manager.transaction(async (manager) => {
+        const requests = manager.getRepository(AssetRequestEntity);
+        const open = await requests.findOne({
+          where: { id: req.id, status: In(OPEN_STATUSES) },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!open)
+          throw new ConflictException('This return is no longer pending.');
+        await this.assetsService.updateLifecycle(
+          req.assetId,
+          {
+            status: AssetStatus.RETURNED,
+            notes: req.requestNumber + ' (Return): ' + (notes ?? req.details),
+          },
+          user.id,
+          user.role,
+          ipAddress,
+          resolveAssetTypeScope(user.role),
+          { returnReceipt: { manager, holderId: req.requestedById } },
+        );
+        if (receiptPhotos.length) {
+          const attachments = manager.getRepository(
+            AssetRequestAttachmentEntity,
+          );
+          await attachments.save(
+            receiptPhotos.map((photo) =>
+              attachments.create({
+                ...photo,
+                requestId: req.id,
+                stage: 'receipt',
+                uploadedById: user.id,
+              }),
+            ),
+          );
+        }
+        await requests.update(req.id, completion);
+      });
+      Object.assign(req, completion);
+    } else {
+      await this.assetsService.updateLifecycle(
+        req.assetId,
+        {
+          status: target,
+          notes: `${req.requestNumber} (${TYPE_LABEL[req.type]}): ${notes ?? req.details}`,
+        },
+        user.id,
+        user.role,
+        ipAddress,
+        resolveAssetTypeScope(user.role),
+        {
+          // Opens the repair record with the holder's description. Every route
+          // into a write-off (damaged beyond repair, lost, stolen) leaves the
+          // item unserviceable — otherwise a lost unit keeps reading
+          // "serviceable" on the holder's screen and on the RLSDDP.
+          assetRequestId: req.id,
+          problem: req.details,
+          ...(target === AssetStatus.FLAGGED_FOR_DISPOSAL
+            ? { condition: AssetCondition.UNSERVICEABLE }
+            : {}),
+        },
+      );
+
+      if (receiptPhotos.length) {
+        await this.attachmentRepo.save(
+          receiptPhotos.map((a) =>
+            this.attachmentRepo.create({
+              ...a,
+              requestId: req.id,
+              stage: 'receipt',
+              uploadedById: user.id,
+            }),
+          ),
+        );
+      }
+
+      // A damaged item surrendered for disposal leaves the holder's hands for
+      // good, so their accountability ends here (a return clears it inside
+      // updateLifecycle). Lost/stolen items deliberately stay on the holder's
+      // record until COA grants relief; repaired items come back to them.
+      if (cleared && target !== AssetStatus.RETURNED) {
+        await this.repo.manager
+          .getRepository(AssetEntity)
+          .update(req.assetId, { custodianId: null });
+      }
+
+      await this.patch(req, completion);
+    }
     if (superseded.length) {
       await this.repo.update(
         superseded.map((r) => r.id),
@@ -1064,6 +1121,49 @@ export class AssetRequestsService {
       .getOne();
     if (!form?.pdfContent) throw new NotFoundException('Document not found');
     return { form, req };
+  }
+
+  // ── Paper copy of a request ────────────────────────────────────────────────
+  // CICC asked for a printout after every step, as proof beyond the digital record. Same read access as
+  // the request itself: whoever can see it can print it.
+  async printRecord(id: string, user: UserEntity, ipAddress: string) {
+    const req = await this.load(id);
+    if (!this.canRead(req, user)) {
+      throw new ForbiddenException('You do not have access to this request.');
+    }
+    const lookup = async (userId: string | null) =>
+      userId ? this.usersService.findOne(userId).catch(() => null) : null;
+    const [requester, decider, completer] = await Promise.all([
+      lookup(req.requestedById),
+      lookup(req.decidedById),
+      lookup(req.completedById),
+    ]);
+    const record = buildAssetRequestPrint({
+      request: req,
+      asset: req.asset,
+      requester,
+      decider,
+      completer,
+    });
+    const { form, buffer } = await this.reportsService.createRecordPrint(
+      record,
+      {
+        id: user.id,
+        name: `${user.firstName} ${user.lastName}`.trim(),
+        role: user.role,
+      },
+      ipAddress,
+    );
+    return { buffer, documentNumber: form.documentNumber, id: form.id };
+  }
+
+  /** The prints made of this request so far. Same read access as the request. */
+  async listPrints(id: string, user: UserEntity) {
+    const req = await this.load(id);
+    if (!this.canRead(req, user)) {
+      throw new ForbiddenException('You do not have access to this request.');
+    }
+    return this.reportsService.recordPrints('asset_request', req.id);
   }
 
   // ── Requester cancels ──────────────────────────────────────────────────────

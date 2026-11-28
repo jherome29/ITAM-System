@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -11,8 +12,13 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  UploadedFile,
+  UseInterceptors,
+  Res,
 } from '@nestjs/common';
-import { AssetsService } from './assets.service';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import { AssetsService, type UploadedAssetPhoto } from './assets.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import { UpdateLifecycleDto } from './dto/update-lifecycle.dto';
@@ -39,7 +45,7 @@ export class AssetsController {
   /**
    * GET /api/v1/assets
    * Full inventory list — paginated.
-   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
+   * Roles: IT Personnel, System Admin, Management, Property Custodian
    */
   @Get()
   @Roles(
@@ -47,7 +53,6 @@ export class AssetsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findAll(
     @Query('page') page = 1,
@@ -56,6 +61,7 @@ export class AssetsController {
     @Query('status') status?: string,
     @Query('assetType') assetType?: string,
     @Query('assetClass') assetClass?: string,
+    @Query('view') view?: string,
     @Req() req?: AuthenticatedRequest,
   ) {
     const assetTypeScope = req
@@ -69,6 +75,9 @@ export class AssetsController {
       assetTypeScope,
       assetType,
       assetClass,
+      view === 'custody',
+      view === 'disposal',
+      view === 'inventory',
     );
     return { message: 'Assets retrieved successfully', data: result };
   }
@@ -84,7 +93,6 @@ export class AssetsController {
     UserRole.SUPERVISOR,
     UserRole.IT_PERSONNEL,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findCatalogue(@Query('page') page = 1, @Query('limit') limit = 20) {
     const result = await this.assetsService.findCatalogue(+page, +limit);
@@ -104,7 +112,6 @@ export class AssetsController {
     UserRole.SUPERVISOR,
     UserRole.IT_PERSONNEL,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findCatalogueItems(
     @Query('search') search?: string,
@@ -125,7 +132,7 @@ export class AssetsController {
    * GET /api/v1/assets/stats
    * Grouped asset counts by status, class, and type.
    * Powers the IT Personnel and Management dashboards.
-   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
+   * Roles: IT Personnel, System Admin, Management, Property Custodian
    */
   @Get('stats')
   @Roles(
@@ -133,12 +140,74 @@ export class AssetsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async getStats(@Req() req: AuthenticatedRequest) {
     const assetTypeScope = resolveAssetTypeScope(req.user.role);
     const result = await this.assetsService.getStats(assetTypeScope);
     return { message: 'Asset statistics retrieved', data: result };
+  }
+
+  @Get(':id/photo')
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
+  async getPhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const photo = await this.assetsService.getPhoto(
+      id,
+      resolveAssetTypeScope(req.user.role),
+    );
+    res.set({
+      'Content-Type': photo.mimeType,
+      'Content-Length': String(photo.data.length),
+      'Cache-Control': 'private, max-age=300',
+    });
+    res.send(photo.data);
+  }
+
+  @Post(':id/photo')
+  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
+  @UseInterceptors(
+    FileInterceptor('photo', {
+      limits: { files: 1, fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  async uploadPhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: UploadedAssetPhoto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const asset = await this.assetsService.savePhoto(
+      id,
+      file,
+      req.user.id,
+      req.user.role,
+      req.ip,
+      resolveAssetTypeScope(req.user.role),
+    );
+    return { message: 'Device photo saved successfully', data: asset };
+  }
+
+  @Delete(':id/photo')
+  @Roles(UserRole.IT_PERSONNEL, UserRole.PROPERTY_CUSTODIAN)
+  async deletePhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const asset = await this.assetsService.deletePhoto(
+      id,
+      req.user.id,
+      req.user.role,
+      req.ip,
+      resolveAssetTypeScope(req.user.role),
+    );
+    return { message: 'Device photo removed', data: asset };
   }
 
   /**
@@ -153,7 +222,6 @@ export class AssetsController {
     UserRole.SUPERVISOR,
     UserRole.IT_PERSONNEL,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
   )
@@ -165,15 +233,32 @@ export class AssetsController {
   /**
    * GET /api/v1/assets/:id
    * Single asset with full lifecycle history.
-   * Roles: IT Personnel, System Admin, Management, Property Custodian, Property Officer
+   * Roles: IT Personnel, System Admin, Management, Property Custodian
    */
+  @Get('tag-lookup')
+  @Roles(
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
+  async findByInventoryTag(
+    @Query('value') value: string | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const data = await this.assetsService.findByInventoryTag(
+      value,
+      resolveAssetTypeScope(req.user.role),
+    );
+    return { message: 'Asset retrieved successfully', data };
+  }
+
   @Get(':id')
   @Roles(
     UserRole.IT_PERSONNEL,
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
@@ -263,7 +348,7 @@ export class AssetsController {
       assetTypeScope,
     );
     return {
-      message: `Asset status updated to "${dto.status}"`,
+      message: `Asset status updated to "${asset.status}"`,
       data: asset,
     };
   }

@@ -69,12 +69,17 @@ describe('pages scenario', () => {
         'supervisor',
         'it_personnel',
         'property_custodian',
-        'property_officer',
         'management',
         'system_admin',
       ] as const) {
         expect(c.holders[holder]).toBeGreaterThan(0);
       }
+    });
+
+    it('never issues anything to the retired Property Officer role', () => {
+      // The role was merged into the Property Custodian and no account has it, so
+      // the seeder could not find anyone to issue to.
+      expect(Object.keys(c.holders)).not.toContain('property_officer');
     });
 
     it('My Requisitions: the Approving Officer and IT have filed their own', () => {

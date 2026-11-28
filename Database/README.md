@@ -2,18 +2,25 @@
 
 This directory contains all database-related files for the Asset Inventory Management and Requisition System.
 
-> Last reviewed 2026-10-16. Schemas **001–016**. If you add a file, update this table, the init list in `docker-compose.yml`, and `PATH-TO-DONE.md` §D.
+> Last reviewed 2026-10-18. Schemas **001–018**. If you add a file, update this table, the init list in `docker-compose.yml`, and `PATH-TO-DONE.md` §D.
 
 ## Structure
 
 ```
 Database/
-├── schemas/          # SQL schema files — applied in name order (001…016)
+├── schemas/          # SQL schema files — applied in name order (001…018)
 └── seeds/            # Development seed data only — never run in production
     └── 001_dev_seed.sql
 ```
 
 `Database/migrations/` is reserved for post-launch incremental changes and does not exist yet: until the first production deploy every change is a new numbered file in `schemas/`.
+
+### Applying them
+
+`node Backend/scripts/db-migrate.mjs` (with `DATABASE_URL`, and `DATABASE_SSL` as for the app) applies every file not yet recorded in the
+`schema_migrations` table, in order. Hosted environments run it as the pre-deploy command, so merging a new numbered file is enough. Never edit a
+file once it has been applied anywhere: add the next number. A database built by hand before the runner existed is recorded once with
+`MIGRATE_BASELINE=<last applied number>` (for example `017`).
 
 ### The schema files
 
@@ -35,6 +42,8 @@ Database/
 | `014_repair_loaner.sql` | loaner unit on a repair |
 | `015_function_search_path.sql` | pins the `search_path` of the two trigger functions (Supabase security advisor) |
 | `016_document_numbers.sql` | `document_counters` and `generated_forms.document_number` (running form numbers) |
+| `017_retire_property_officer.sql` | turns accounts that hold the retired Property Officer role into Property Custodians and invalidates their sessions. **The enum value stays** (Postgres cannot drop it; old audit rows carry it). Plain `UPDATE`: idempotent, safe in a transaction |
+| `018_record_printouts.sql` | record printouts (Module 8): `generated_forms.related_asset_repair_id` (with its index) and `generated_forms.verification_code`. `form_type` is a VARCHAR, so the new `RECORD_PRINT` type needs no enum change. Idempotent |
 
 ¹ Uses `ALTER TYPE … ADD VALUE`, which cannot run inside a transaction: apply these with plain `psql -f` (no `--single-transaction`), or statement by statement in the Supabase SQL editor. Every file is idempotent and safe to re-run.
 
@@ -49,7 +58,7 @@ Database/
 ### Via Docker (recommended for dev)
 ```bash
 docker compose up --build
-# postgres:16 applies every schemas/*.sql (001…016, listed in docker-compose.yml) then the
+# postgres:16 applies every schemas/*.sql (001…018, listed in docker-compose.yml) then the
 # dev seed on first start (empty volume). `docker compose down -v` to reset.
 ```
 The files only run on the **first** boot of an empty volume. For a database that already exists, apply the new file yourself (`RUN-LOCAL.md` §5).
@@ -59,7 +68,7 @@ The files only run on the **first** boot of an empty volume. For a database that
 # Paste the file into the Supabase SQL editor, or:
 psql $DATABASE_URL -f schemas/016_document_numbers.sql
 ```
-**Status of the shared dev Supabase database:** at `016` (008–014 applied 2026-10-11, 015 on 2026-10-14, 016 on 2026-10-15). No production database exists yet: when CICC provides one, apply `001…016` in order.
+**Status of the shared dev Supabase database:** at `018` (008–014 applied 2026-10-11, 015 on 2026-10-14, 016 on 2026-10-15, 017 on 2026-10-16, 018 on 2026-10-18). 018 was run as the plain file in one transaction (not through the migration runner, so there is no `schema_migrations` table in Supabase and no entry in its migration list): it added `generated_forms.related_asset_repair_id`, `generated_forms.verification_code` and one index, and changed no rows. A backend built from this code needs it, because the entity reads the two new columns. 017 moved the one Property Officer account (`property.officer@cicc.gov.ph` until it was renamed `property.custodian2@cicc.gov.ph` the same day) to Property Custodian and left the 23 old audit rows that say `property_officer` untouched; it is recorded as `017_retire_property_officer`. Any other database needs it before a backend that includes the role merge runs against it, or a leftover Property Officer account is refused everywhere. No production database exists yet: when CICC provides one, apply `001…017` in order.
 
 ### The e2e suite does not use these files
 `NODE_ENV=test` builds the schema from the TypeORM entities (`synchronize: true`) on a throwaway Postgres, so a missing or wrong schema file does **not** fail CI. A table that is written only with raw SQL (like `document_counters`) still needs an entity declaring it.

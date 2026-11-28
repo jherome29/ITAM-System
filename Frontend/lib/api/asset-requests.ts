@@ -107,10 +107,11 @@ export const assetRequestsApi = {
     client.patch<ApiResponse<AssetRequest>>(`/v1/asset-requests/${id}/reject`, { reason }).then((r) => r.data),
 
   /** Sent as multipart so condition-on-receipt photos can ride along. */
-  complete: (id: string, dto: { outcome?: 'repair' | 'disposal'; notes?: string; files?: File[] }) => {
+  complete: (id: string, dto: { outcome?: 'repair' | 'disposal'; notes?: string; files?: File[]; returnReceived?: boolean }) => {
     const body = new FormData();
     if (dto.outcome) body.append('outcome', dto.outcome);
     if (dto.notes) body.append('notes', dto.notes);
+    if (dto.returnReceived) body.append('returnReceived', 'true');
     (dto.files ?? []).forEach((file) => body.append('attachments', file, file.name));
     return client.patch<ApiResponse<AssetRequest>>(`/v1/asset-requests/${id}/complete`, body).then((r) => r.data);
   },

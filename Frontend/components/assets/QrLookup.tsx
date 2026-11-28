@@ -1,110 +1,178 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { IScannerControls } from '@zxing/browser';
 import { useRouter } from 'next/navigation';
-import { QrCode, Search } from 'lucide-react';
+import { ScanBarcode, Search } from 'lucide-react';
 import { assetsApi, type Asset } from '@/lib/api/assets';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { PrimaryButton } from '@/components/admin/AdminUi';
+import { buttonClass } from '@/components/ui/buttons';
+import { controlClass, surfaceClass } from '@/components/ui/controls';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { Notice } from '@/components/ui/Notice';
 
-export function QrLookup({ detailBasePath }: Readonly<{ detailBasePath: string }>) {
+export function QrLookup({ detailBasePath, eyebrow }: Readonly<{ detailBasePath: string; eyebrow?: string }>) {
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [result, setResult] = useState<Asset | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [cameraOn, setCameraOn] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const video = useRef<HTMLVideoElement>(null);
+  const pendingLookup = useRef<AbortController | null>(null);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!query.trim()) return;
+  const lookup = useCallback(async (value: string) => {
+    const tag = value.trim();
+    if (!tag) return;
+    pendingLookup.current?.abort();
+    const request = new AbortController();
+    pendingLookup.current = request;
+    setCameraOn(false);
+    setQuery(tag);
     setError('');
     setResult(null);
     setLoading(true);
     try {
-      const res = await assetsApi.list(1, 5, query.trim());
-      const items = Array.isArray(res.data)
-        ? (res.data as Asset[])
-        : ((res.data as unknown as { data: Asset[] }).data ?? []);
-      if (items.length === 0) {
-        setError('No asset found matching that QR code or property number.');
-      } else {
-        setResult(items[0]);
-      }
-    } catch {
-      setError('Search failed. Please try again.');
+      const { data } = await assetsApi.findByInventoryTag(tag, request.signal);
+      if (!request.signal.aborted) setResult(data);
+    } catch (err) {
+      if (request.signal.aborted) return;
+      const response = (err as { response?: { status?: number; data?: { message?: string } } }).response;
+      setError([400, 404, 409].includes(response?.status ?? 0) && response?.data?.message
+        ? response.data.message
+        : 'Could not look up the inventory tag. Please try again.');
     } finally {
-      setLoading(false);
+      if (!request.signal.aborted) setLoading(false);
     }
+  }, []);
+
+  useEffect(() => () => pendingLookup.current?.abort(), []);
+
+  useEffect(() => {
+    const preview = video.current;
+    if (!cameraOn || !preview) return;
+    let active = true;
+    let stream: MediaStream | undefined;
+    let controls: IScannerControls | undefined;
+    const stop = () => {
+      active = false;
+      controls?.stop();
+      stream?.getTracks().forEach((track) => track.stop());
+      preview.srcObject = null;
+    };
+
+    const start = async () => {
+      try {
+        const { BrowserMultiFormatReader } = await import('@zxing/browser');
+        if (!active) return;
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+        if (!active) { stop(); return; }
+        const reader = new BrowserMultiFormatReader();
+        controls = await reader.decodeFromStream(stream, preview, (decoded) => {
+          if (!active || !decoded) return;
+          stop();
+          void lookup(decoded.getText());
+        });
+        if (active) setCameraReady(true);
+        else controls.stop();
+      } catch (err) {
+        if (!active) return;
+        stop();
+        setCameraOn(false);
+        setCameraError(err instanceof Error && err.name === 'NotAllowedError'
+          ? 'Camera permission was denied. Allow access or enter the tag below.'
+          : 'Could not start a camera. Check that it is connected and available.');
+      }
+    };
+    void start();
+    return stop;
+  }, [cameraOn, lookup]);
+
+  const startCamera = () => {
+    setCameraError('');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError('Camera access needs a supported browser on localhost or HTTPS. Enter the tag below instead.');
+      return;
+    }
+    setCameraReady(false);
+    setCameraOn(true);
   };
 
-  const inputClass = 'flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors';
-
   return (
-    <div className="space-y-6 max-w-xl">
-      <PageHeader title="QR / Barcode Lookup" />
+    <div className="max-w-xl space-y-6">
+      <PageHeader eyebrow={eyebrow} title="Barcode Scanner" detail="Scan a tag or type its number to open the asset record." />
 
-      <div className="bg-white rounded-lg shadow-sm border border-blue-200 p-6 space-y-5">
+      <div className={`${surfaceClass} space-y-5 p-6`}>
         <div className="flex flex-col items-center gap-3 py-4">
-          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center">
-            <QrCode className="w-8 h-8 text-[#1a4d7a]" />
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50">
+            <ScanBarcode className="h-8 w-8 text-brand" aria-hidden="true" />
           </div>
-          <p className="text-sm text-gray-500 text-center">
-            Scan a QR code using your device camera, or enter a QR code value / property number below.
+          <p className="text-center text-sm text-slate-600">
+            Point your camera at a printed inventory barcode or QR tag.
           </p>
+          <button type="button" disabled={loading} className={buttonClass()}
+            onClick={cameraOn ? () => setCameraOn(false) : startCamera}>
+            {cameraOn ? 'Stop camera' : 'Start camera'}
+          </button>
         </div>
+        {cameraOn && (
+          <div className="space-y-2">
+            <video ref={video} autoPlay muted playsInline aria-label="Inventory tag camera preview" className="aspect-video w-full rounded-lg bg-slate-950 object-contain" />
+            <p role="status" className="text-center text-sm text-slate-600">{cameraReady ? 'Center the tag in the camera view.' : 'Starting camera…'}</p>
+          </div>
+        )}
+        {cameraError && <Notice tone="red">{cameraError}</Notice>}
 
-        <form onSubmit={handleSearch} className="flex gap-2">
+        <form onSubmit={(event) => { event.preventDefault(); void lookup(query); }} className="flex flex-wrap gap-2">
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="QR code value or property number..."
-            aria-label="QR code value or property number"
-            className={inputClass}
+            placeholder="Barcode, QR value, or property number"
+            aria-label="Barcode, QR value, or property number"
+            className={`${controlClass} flex-1`}
           />
-          <button
-            type="submit"
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-[#1a4d7a] text-white rounded-md text-sm font-medium hover:bg-[#143d61] disabled:opacity-60 transition-colors"
-          >
-            <Search className="w-4 h-4" />
-            {loading ? 'Searching...' : 'Search'}
-          </button>
+          <PrimaryButton type="submit" icon={Search} disabled={loading || !query.trim()}>
+            {loading ? 'Searching…' : 'Search'}
+          </PrimaryButton>
         </form>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">{error}</div>
+          <Notice tone="red">{error}</Notice>
         )}
 
         {result && (
-          <div className="border border-blue-200 rounded-lg overflow-hidden">
-            <div className="bg-blue-50 p-4 border-b border-blue-200">
-              <h3 className="font-semibold text-[#1a4d7a]">{result.itemDescription}</h3>
-              <p className="text-sm text-gray-500 font-mono mt-0.5">{result.propertyNumber ?? result.id}</p>
+          <div className="overflow-hidden rounded-lg border border-blue-200">
+            <div className="border-b border-blue-200 bg-blue-50 p-4">
+              <h3 className="text-base font-bold text-brand">{result.itemDescription}</h3>
+              <p className="mt-0.5 font-mono text-sm text-slate-600">{result.propertyNumber ?? result.id}</p>
             </div>
-            <div className="p-4 space-y-2 text-sm">
+            <div className="space-y-2 p-4 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-500">Status</span>
+                <span className="text-slate-600">Status</span>
                 <StatusBadge status={result.status} />
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Brand</span>
-                <span className="text-gray-800">{result.brand ?? '—'}</span>
+                <span className="text-slate-600">Brand</span>
+                <span className="text-slate-900">{result.brand ?? '—'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Location</span>
-                <span className="text-gray-800">{result.officeOrSection ?? '—'}</span>
+                <span className="text-slate-600">Location</span>
+                <span className="text-slate-900">{result.officeOrSection ?? '—'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Condition</span>
-                <span className="text-gray-800 capitalize">{result.condition?.replace(/_/g, ' ') ?? '—'}</span>
+                <span className="text-slate-600">Condition</span>
+                <span className="capitalize text-slate-900">{result.condition?.replace(/_/g, ' ') ?? '—'}</span>
               </div>
             </div>
-            <div className="p-4 border-t border-gray-100">
-              <button type="button"
-                onClick={() => router.push(`${detailBasePath}/${result.id}`)}
-                className="w-full py-2 bg-[#1a4d7a] text-white rounded-md text-sm font-medium hover:bg-[#143d61] transition-colors"
-              >
+            <div className="border-t border-slate-100 p-4">
+              <button type="button" onClick={() => router.push(`${detailBasePath}/${result.id}`)} className={`${buttonClass()} w-full`}>
                 View Full Asset Details
               </button>
             </div>

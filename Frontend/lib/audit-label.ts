@@ -28,4 +28,3 @@ export function auditRecordText(
   if (!log.affectedRecordId) return log.affectedRecordType ?? '—';
   return `${log.affectedRecordType ?? 'record'} ${shortId(log.affectedRecordId)}`;
 }
-

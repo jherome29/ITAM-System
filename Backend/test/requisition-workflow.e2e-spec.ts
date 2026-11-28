@@ -92,6 +92,7 @@ describe('Requisition workflow (e2e)', () => {
       assetRepo.create({
         itemDescription: 'E2E Test Laptop',
         assetClass: AssetClass.PPE,
+        acquisitionCost: 50000,
         assetType: AssetType.ICT,
         condition: AssetCondition.SERVICEABLE,
         status: AssetStatus.AVAILABLE,
@@ -185,6 +186,85 @@ describe('Requisition workflow (e2e)', () => {
 
     expect(lifecycleRes.body.data.status).toBe('issued');
     expect(lifecycleRes.body.data.custodianId).toBe(employeeId);
+  });
+
+  it('issues inventory from a requisition and links custody to its paper record', async () => {
+    const custodian = await userRepo.save(
+      userRepo.create({
+        employeeId: 'E2E-CUSTODY-001',
+        firstName: 'Test',
+        lastName: 'Custodian',
+        email: 'e2e.custody@cicc.gov.ph',
+        passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS),
+        role: UserRole.ASSET_CUSTODIAN,
+        division: 'Test Division',
+        officeOrSection: 'Test Section',
+      }),
+    );
+    const unit = await assetRepo.save(
+      assetRepo.create({
+        assetType: AssetType.ICT,
+        assetClass: AssetClass.SEP,
+        condition: AssetCondition.SERVICEABLE,
+        status: AssetStatus.AVAILABLE,
+        itemDescription: 'Custody test monitor',
+        propertyNumber: 'E2E-CUSTODY-MONITOR',
+      }),
+    );
+    const employeeToken = await loginAs('e2e.employee@cicc.gov.ph');
+    const supervisorToken = await loginAs('e2e.supervisor@cicc.gov.ph');
+    const custodianToken = await loginAs(custodian.email);
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/requisitions')
+      .set('Authorization', 'Bearer ' + employeeToken)
+      .send({
+        requisitionType: 'new',
+        justification: 'Equipment handover test',
+        requiredDate: new Date(Date.now() + 7 * 86400000).toISOString(),
+        items: [
+          {
+            assetType: AssetType.ICT,
+            itemDescription: unit.itemDescription,
+            quantity: 1,
+          },
+        ],
+      })
+      .expect(201);
+    const req = created.body.data as {
+      id: string;
+      requestNumber: string;
+      items: Array<{ id: string }>;
+    };
+    await request(app.getHttpServer())
+      .post('/api/v1/requisitions/' + req.id + '/approve')
+      .set('Authorization', 'Bearer ' + supervisorToken)
+      .send({})
+      .expect(200);
+    await request(app.getHttpServer())
+      .post('/api/v1/requisitions/' + req.id + '/fulfill')
+      .set('Authorization', 'Bearer ' + custodianToken)
+      .send({
+        recordHandover: true,
+        fulfilledItems: [
+          { requisitionItemId: req.items[0].id, assetId: unit.id },
+        ],
+      })
+      .expect(200);
+    const custody = await request(app.getHttpServer())
+      .get('/api/v1/assets?view=custody')
+      .set('Authorization', 'Bearer ' + custodianToken)
+      .expect(200);
+    expect(custody.body.data.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: unit.id,
+          status: AssetStatus.ISSUED,
+          custodianId: employeeId,
+          lastIssuedRequisitionId: req.id,
+          lastIssuedFor: req.requestNumber,
+        }),
+      ]),
+    );
   });
 
   it('rejects an Employee attempting to approve their own requisition', async () => {

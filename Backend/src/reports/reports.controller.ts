@@ -20,12 +20,14 @@ import {
   IsString,
   IsUUID,
   Matches,
+  MaxLength,
 } from 'class-validator';
 import { Response } from 'express';
 import { ReportsService, GenerateFormInput } from './reports.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { FIELD_MAX } from '../common/field-limits';
 import {
   UserRole,
   OfficialFormType,
@@ -62,21 +64,27 @@ export class GenerateReportDto {
   format!: string;
 }
 
-class GenerateFormDto implements GenerateFormInput {
+export class GenerateFormDto implements GenerateFormInput {
   @IsEnum(OfficialFormType) formType!: OfficialFormType;
   @IsOptional() @IsUUID() assetId?: string;
   @IsOptional() @IsUUID() requisitionId?: string;
-  @IsOptional() @IsString() targetOffice?: string;
-  @IsOptional() @IsString() circumstances?: string;
+  @IsOptional() @IsString() @MaxLength(FIELD_MAX.long) targetOffice?: string;
+  @IsOptional() @IsString() @MaxLength(FIELD_MAX.text) circumstances?: string;
   @IsOptional() @IsString() lossType?:
     | 'Lost'
     | 'Stolen'
     | 'Damaged'
     | 'Destroyed';
-  @IsOptional() @IsString() purpose?: string;
-  @IsOptional() @IsString() requestingDivision?: string;
+  @IsOptional() @IsString() @MaxLength(FIELD_MAX.text) purpose?: string;
+  @IsOptional()
+  @IsString()
+  @MaxLength(FIELD_MAX.long)
+  requestingDivision?: string;
   @IsOptional() @IsUUID() returneeId?: string;
-  @IsOptional() @IsString() returneeEmployeeId?: string;
+  @IsOptional()
+  @IsString()
+  @MaxLength(FIELD_MAX.employeeId)
+  returneeEmployeeId?: string;
   @IsOptional() @IsUUID() receiverId?: string;
   @IsOptional() @IsString() dateFrom?: string;
   @IsOptional() @IsString() dateTo?: string;
@@ -99,7 +107,6 @@ export class ReportsController {
     UserRole.MANAGEMENT,
     UserRole.IT_PERSONNEL,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findAll(@Query('page') page = 1, @Query('limit') limit = 50) {
     const result = await this.svc.findAll(+page, +limit);
@@ -116,7 +123,6 @@ export class ReportsController {
     UserRole.MANAGEMENT,
     UserRole.IT_PERSONNEL,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findAllForms(
     @Query('page') page = 1,
@@ -201,7 +207,6 @@ export class ReportsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async downloadForm(
     @Param('id', ParseUUIDPipe) id: string,

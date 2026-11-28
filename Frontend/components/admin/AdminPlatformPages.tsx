@@ -10,6 +10,7 @@ import { auditRecordText, auditUserText } from '@/lib/audit-label';
 import { reportsApi } from '@/lib/api/reports';
 import { apiErrorMessage } from '@/lib/api/error-message';
 import { downloadBlob } from '@/lib/download';
+import { toCsv } from '@/lib/csv';
 import {
   systemConfigApi,
   changedSystemConfigPayload,
@@ -18,16 +19,21 @@ import {
   type SystemConfigFormValues,
   type SystemConfigMeta,
 } from '@/lib/api/systemConfig';
-import { AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, TableWrap, tdClass, thClass } from './AdminUi';
+import { AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, TableWrap, tdClass, tdNoWrapClass, thClass } from './AdminUi';
+import { formatDateTime } from '@/lib/dates';
+import { DateRange } from '@/components/ui/DateField';
+import { buttonClass } from '@/components/ui/buttons';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyRow } from '@/components/ui/EmptyRow';
+import { Pager } from '@/components/ui/Pager';
+import { usePaged } from '@/lib/use-paged';
+import { roleLabel } from '@/lib/assets/asset-history';
 
 type PlatformSlug = 'configuration' | 'audit';
 
 function downloadCsv(filename: string, rows: Array<Record<string, string | number>>) {
   if (rows.length === 0) return;
-  const headers = Object.keys(rows[0]);
-  const escape = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
-  const csv = [headers.map(escape).join(','), ...rows.map((row) => headers.map((header) => escape(row[header])).join(','))].join('\n');
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const url = URL.createObjectURL(new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' }));
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
@@ -48,11 +54,11 @@ function ProvenanceLine({
 }: Readonly<{ meta: Record<string, SystemConfigMeta> | null; keyName: string }>) {
   const entry = meta?.[keyName];
   if (!entry || (!entry.updatedAt && !entry.updatedBy)) {
-    return <p className="mt-1 text-xs text-slate-400">Built-in default — never changed here.</p>;
+    return <p className="mt-1 text-xs text-slate-500">Built-in default — never changed here.</p>;
   }
   return (
-    <p className="mt-1 text-xs text-slate-400">
-      Last changed {entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : 'at an unknown time'}
+    <p className="mt-1 text-xs text-slate-500">
+      Last changed {entry.updatedAt ? formatDateTime(entry.updatedAt) : 'at an unknown time'}
       {entry.updatedBy ? ` by ${entry.updatedByName ?? 'a removed account'}` : ''}
     </p>
   );
@@ -78,7 +84,7 @@ function SystemSettingsPage() {
         setMeta(r.data.meta ?? null);
         setError('');
       })
-      .catch(() => setError('Failed to load configuration. Please try again.'))
+      .catch(() => setError('Could not load configuration. Please try again.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -115,14 +121,14 @@ function SystemSettingsPage() {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })
         ?.response?.data?.message;
-      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to save configuration.'));
+      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Could not save configuration.'));
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <AdminPageHeader
         title="System Settings"
         detail="Runtime AIMRS rules. Changes apply immediately once saved and are recorded in the audit trail."
@@ -138,12 +144,12 @@ function SystemSettingsPage() {
       {!form && error ? (
         <Panel title="System Settings">
           <div className="space-y-3 p-5">
-            <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            <Notice tone="red">{error}</Notice>
             <button
               type="button"
               onClick={retry}
               disabled={loading}
-              className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-60"
+              className={buttonClass()}
             >
               {loading ? 'Retrying…' : 'Retry'}
             </button>
@@ -158,7 +164,7 @@ function SystemSettingsPage() {
       ) : (
         <>
           {error && (
-            <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            <Notice tone="red">{error}</Notice>
           )}
           {saved && (
             <div className="border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
@@ -300,7 +306,7 @@ function SystemSettingsPage() {
             </div>
           </Panel>
 
-          <p className="px-1 text-xs text-slate-400">
+          <p className="px-1 text-xs text-slate-500">
             Document-number formats, notification routing, data retention, and localization are not
             configurable here yet.
           </p>
@@ -329,7 +335,7 @@ export function AuditLogPage({ eyebrow }: Readonly<{ eyebrow?: string }> = {}) {
     auditApi
       .list(1, AUDIT_PAGE_SIZE, undefined, from || undefined, to || undefined)
       .then((res) => setLogs(res.data.data))
-      .catch(() => setToast('Failed to load audit log.'))
+      .catch(() => setToast('Could not load audit log.'))
       .finally(() => setLoading(false));
   }, [from, to]);
 
@@ -346,9 +352,10 @@ export function AuditLogPage({ eyebrow }: Readonly<{ eyebrow?: string }> = {}) {
   const capped = logs.length === AUDIT_PAGE_SIZE;
 
   const rows = logs.filter((log) =>
-    `${log.userName ?? ''} ${log.userId} ${log.userRole} ${log.action} ${log.affectedRecordType ?? ''} ${log.recordLabel ?? ''} ${log.affectedRecordId ?? ''} ${log.ipAddress}`.toLowerCase().includes(search.toLowerCase()),
+    `${log.userName ?? ''} ${log.userId} ${roleLabel(log.userRole)} ${log.action} ${log.affectedRecordType ?? ''} ${log.recordLabel ?? ''} ${log.affectedRecordId ?? ''} ${log.ipAddress}`.toLowerCase().includes(search.toLowerCase()),
   );
 
+  const paged = usePaged(rows, `${search}|${from}|${to}`);
   const uniqueUsers = new Set(logs.map((log) => log.userId)).size;
   const uniqueActions = new Set(logs.map((log) => log.action)).size;
 
@@ -383,14 +390,13 @@ export function AuditLogPage({ eyebrow }: Readonly<{ eyebrow?: string }> = {}) {
     }
   };
 
-  return <div className="space-y-4"><AdminPageHeader eyebrow={eyebrow} title="Audit Log" detail="Inspect append-only evidence of authentication, authorization, asset, requisition, report, and administrative activity." action={<div className="flex flex-wrap gap-2"><SecondaryButton icon={Download} onClick={handleExport}>Export CSV</SecondaryButton><SecondaryButton icon={Download} onClick={() => void handleReport('pdf')} disabled={reporting}>Report (PDF)</SecondaryButton><SecondaryButton icon={Download} onClick={() => void handleReport('excel')} disabled={reporting}>Report (Excel)</SecondaryButton></div>} />
+  return <div className="space-y-5"><AdminPageHeader eyebrow={eyebrow} title="Audit Log" detail="Inspect append-only evidence of authentication, authorization, asset, requisition, report, and administrative activity." action={<div className="flex flex-wrap gap-2"><SecondaryButton icon={Download} onClick={handleExport}>Export CSV</SecondaryButton><SecondaryButton icon={Download} onClick={() => void handleReport('pdf')} disabled={reporting}>Report (PDF)</SecondaryButton><SecondaryButton icon={Download} onClick={() => void handleReport('excel')} disabled={reporting}>Report (Excel)</SecondaryButton></div>} />
     <div className="flex items-start gap-3 border border-blue-200 bg-blue-50 px-4 py-3"><Archive className="mt-0.5 h-5 w-5 flex-none text-blue-700" /><div><p className="text-sm font-bold text-blue-950">Immutable audit evidence</p><p className="mt-0.5 text-xs text-blue-800">Audit records cannot be edited or deleted. Every logged action succeeded by definition; timestamps are recorded in UTC.</p></div></div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><MetricCard label="Events loaded" value={String(logs.length)} detail={from || to ? 'Within the selected date range' : 'Most recent audit records from the API'} tone="blue" icon={Activity} /><MetricCard label="Unique users" value={String(uniqueUsers)} detail="Distinct accounts represented" tone="blue" icon={KeyRound} /><MetricCard label="Unique actions" value={String(uniqueActions)} detail="Distinct action types represented" tone="blue" icon={FileClock} /></div>
-    <SearchToolbar value={search} onChange={setSearch} filterLabel="User, role, action, or record">
-      <label className="flex items-center gap-2 whitespace-nowrap text-xs font-semibold text-slate-600">From<input type="date" value={from} max={to || undefined} onChange={(event) => handleDateChange('from', event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /></label>
-      <label className="flex items-center gap-2 whitespace-nowrap text-xs font-semibold text-slate-600">To<input type="date" value={to} min={from || undefined} onChange={(event) => handleDateChange('to', event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /></label>
+    <SearchToolbar value={search} onChange={setSearch} placeholder="Search by user, role, action, record, or IP" filters={[]}>
+      <DateRange from={from} to={to} onFromChange={(day) => handleDateChange('from', day)} onToChange={(day) => handleDateChange('to', day)} />
       {(from || to) && <SecondaryButton onClick={() => { setLoading(true); setFrom(''); setTo(''); }}>Clear dates</SecondaryButton>}
     </SearchToolbar>
-    <Panel title="Audit Events" detail={loading ? 'Loading audit events…' : `${rows.length} audit events shown${capped ? ` — first ${AUDIT_PAGE_SIZE}, narrow the date range for more` : ''}`}>{loading ? <div className="p-6"><LoadingSkeleton rows={8} /></div> : <TableWrap><table className="min-w-[960px] w-full"><thead><tr><th className={thClass}>Timestamp</th><th className={thClass}>User</th><th className={thClass}>Role at time</th><th className={thClass}>Action</th><th className={thClass}>Affected record</th><th className={thClass}>IP address</th><th className={`${thClass} text-right`}>Inspect</th></tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400">No audit logs found.</td></tr> : rows.map((log) => <tr key={log.id} className="hover:bg-slate-50"><td className={tdClass}>{new Date(log.timestamp).toLocaleString()}<span className="block text-xs text-slate-500">{log.id.slice(0, 8)}…</span></td><td className={`${tdClass} font-semibold text-slate-950`} title={log.userId}>{auditUserText(log)}</td><td className={tdClass}>{log.userRole}</td><td className={`${tdClass} font-mono text-xs`}>{log.action}</td><td className={`${tdClass} text-xs`} title={log.affectedRecordId ?? undefined}>{auditRecordText(log)}</td><td className={`${tdClass} font-mono text-xs`}>{log.ipAddress}</td><td className={`${tdClass} text-right`}><button type="button" onClick={() => setSelected(log)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`Inspect ${log.id}`}><FileClock className="h-4 w-4" /></button></td></tr>)}</tbody></table></TableWrap>}</Panel>
-    <DetailDrawer open={Boolean(selected)} title={selected?.action ?? 'Audit event'} onClose={() => setSelected(null)}>{selected && <div className="space-y-4">{[['ID', selected.id], ['Timestamp', new Date(selected.timestamp).toLocaleString()], ['User', selected.userName ?? '—'], ['User ID', selected.userId], ['Role at time', selected.userRole], ['Action', selected.action], ['Affected record', selected.recordLabel ?? '—'], ['Affected record type', selected.affectedRecordType ?? '—'], ['Affected record ID', selected.affectedRecordId ?? '—'], ['IP address', selected.ipAddress], ['Metadata', selected.metadata ? JSON.stringify(selected.metadata) : '—']].map(([key, value]) => <div key={key} className="flex justify-between gap-4 border-b border-slate-100 pb-3 text-sm"><span className="capitalize text-slate-500">{key}</span><span className="text-right font-mono text-xs font-semibold">{value}</span></div>)}<Panel title="Event integrity"><div className="space-y-2 p-4 text-xs text-slate-600"><p><strong>Write mode:</strong> Append only</p><p><strong>Update:</strong> Not permitted</p><p><strong>Delete:</strong> Not permitted</p><p><strong>Metadata:</strong> Includes UTC timestamp, user ID, role, source IP, record ID, and safe before/after values where applicable.</p></div></Panel></div>}</DetailDrawer><Toast message={toast} /></div>;
+    <Panel title="Audit Events" detail={loading ? 'Loading audit events…' : `${rows.length} audit events shown${capped ? ` — first ${AUDIT_PAGE_SIZE}, narrow the date range for more` : ''}`}>{loading ? <div className="p-6"><LoadingSkeleton rows={8} /></div> : <TableWrap><table className="min-w-[960px] w-full"><thead><tr><th className={thClass}>Timestamp</th><th className={thClass}>User</th><th className={thClass}>Role at time</th><th className={thClass}>Action</th><th className={thClass}>Affected record</th><th className={thClass}>IP address</th><th className={`${thClass} text-right`}>Inspect</th></tr></thead><tbody>{rows.length === 0 ? <EmptyRow colSpan={7}>No audit logs found.</EmptyRow> : paged.pageItems.map((log) => <tr key={log.id} className="hover:bg-slate-50"><td className={tdNoWrapClass}>{formatDateTime(log.timestamp)}<span className="block text-xs text-slate-500">{log.id.slice(0, 8)}…</span></td><td className={`${tdClass} font-semibold text-slate-950`} title={log.userId}>{auditUserText(log)}</td><td className={tdClass}>{roleLabel(log.userRole)}</td><td className={`${tdClass} font-mono text-xs`}>{log.action}</td><td className={`${tdClass} text-xs`} title={log.affectedRecordId ?? undefined}>{auditRecordText(log)}</td><td className={`${tdClass} font-mono text-xs`}>{log.ipAddress}</td><td className={`${tdClass} text-right`}><button type="button" onClick={() => setSelected(log)} className="grid h-10 w-10 place-items-center rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`Inspect ${log.action} by ${log.userName ?? 'an unknown user'}, ${formatDateTime(log.timestamp)}`}><FileClock className="h-5 w-5" /></button></td></tr>)}</tbody></table></TableWrap>}{!loading && <Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="audit events" />}</Panel>
+    <DetailDrawer open={Boolean(selected)} title={selected?.action ?? 'Audit event'} onClose={() => setSelected(null)}>{selected && <div className="space-y-4">{[['ID', selected.id], ['Timestamp', formatDateTime(selected.timestamp)], ['User', selected.userName ?? '—'], ['User ID', selected.userId], ['Role at time', roleLabel(selected.userRole)], ['Action', selected.action], ['Affected record', selected.recordLabel ?? '—'], ['Affected record type', selected.affectedRecordType ?? '—'], ['Affected record ID', selected.affectedRecordId ?? '—'], ['IP address', selected.ipAddress], ['Metadata', selected.metadata ? JSON.stringify(selected.metadata) : '—']].map(([key, value]) => <div key={key} className="flex justify-between gap-4 border-b border-slate-100 pb-3 text-sm"><span className="capitalize text-slate-500">{key}</span><span className="text-right font-mono text-xs font-semibold">{value}</span></div>)}<Panel title="Event integrity"><div className="space-y-2 p-4 text-xs text-slate-600"><p><strong>Write mode:</strong> Append only</p><p><strong>Update:</strong> Not permitted</p><p><strong>Delete:</strong> Not permitted</p><p><strong>Metadata:</strong> Includes UTC timestamp, user ID, role, source IP, record ID, and safe before/after values where applicable.</p></div></Panel></div>}</DetailDrawer><Toast message={toast} /></div>;
 }

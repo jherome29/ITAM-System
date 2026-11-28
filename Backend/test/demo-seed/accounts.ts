@@ -4,8 +4,7 @@ import { UserRole } from '../../../packages/shared/src/enums';
 // never live in the repo (CLAUDE.md §8.5). They come from an untracked JSON file
 // whose path is passed in; this module only validates its shape.
 
-/** Roles the seed actually logs in as. Management and the Property Officer only
- *  read, so they are not needed. */
+/** Roles the seed actually logs in as. Management only reads, so it is not needed. */
 export const REQUIRED_ROLES = [
   UserRole.EMPLOYEE,
   UserRole.SUPERVISOR,

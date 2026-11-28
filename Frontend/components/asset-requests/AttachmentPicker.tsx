@@ -31,12 +31,12 @@ export function AttachmentPicker({
               // eslint-disable-next-line @next/next/no-img-element -- local object URL preview
               <img src={previews[i]} alt={file.name} className="h-full w-full object-cover" />
             ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-1 p-2 text-center text-[11px] text-slate-600">
-                <FileText className="h-6 w-6 text-slate-400" />
+              <div className="flex h-full flex-col items-center justify-center gap-1 p-2 text-center text-xs text-slate-600">
+                <FileText className="h-6 w-6 text-slate-500" />
                 <span className="line-clamp-2 break-all">{file.name}</span>
               </div>
             )}
-            <span className="absolute bottom-0 left-0 right-0 bg-slate-900/60 px-1 text-[10px] text-white">{formatBytes(file.size)}</span>
+            <span className="absolute bottom-0 left-0 right-0 bg-slate-900/60 px-1 text-xs text-white">{formatBytes(file.size)}</span>
             <button
               type="button"
               onClick={() => onChange(files.filter((_, j) => j !== i))}

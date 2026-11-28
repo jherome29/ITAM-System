@@ -44,6 +44,11 @@ export function assetApiToRow(asset: Asset): AssetRow {
   return {
     id: asset.id,
     item: asset.itemDescription,
+    assetType: asset.assetType,
+    lastIssuedAt: asset.lastIssuedAt ?? undefined,
+    issuedDateLabel: asset.lastIssuedAt ? formatDate(asset.lastIssuedAt) : 'Not recorded',
+    lastIssuedFor: asset.lastIssuedFor ?? undefined,
+    lastIssuedRequisitionId: asset.lastIssuedRequisitionId ?? undefined,
     propertyNumber: asset.propertyNumber,
     serialNumber: asset.serialNumber,
     status: asset.status,

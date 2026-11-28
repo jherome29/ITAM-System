@@ -18,6 +18,18 @@ describe('DetailDrawer', () => {
     expect(markup(false)).toBe('');
   });
 
+  it('keeps a very long title to two lines, with the whole text on hover', () => {
+    const long = 'Request forensic mobile rack calibration '.repeat(20).trim();
+    const html = renderToStaticMarkup(
+      <DetailDrawer open title={long} onClose={() => undefined}>
+        <p>Body</p>
+      </DetailDrawer>,
+    );
+
+    expect(html).toContain('line-clamp-2');
+    expect(html).toContain(`title="${long}"`);
+  });
+
   it('is a modal dialog named by its title', () => {
     const html = markup(true);
 

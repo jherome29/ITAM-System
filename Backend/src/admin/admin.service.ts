@@ -6,9 +6,13 @@ import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { AssetEntity } from '../assets/entities/asset.entity';
 import { AuditLogEntity } from '../audit/entities/audit-log.entity';
 import { SystemConfigService } from '../system-config/system-config.service';
+import { AssetRequestsService } from '../asset-requests/asset-requests.service';
+import { AssetRepairsService } from '../assets/asset-repairs.service';
+import { RequisitionsService } from '../requisitions/requisitions.service';
 import { AUDIT_REASON_REFRESH_TOKEN_REUSE } from '../audit/audit-reasons';
 import {
   AssetClass,
+  ASSIGNABLE_USER_ROLES,
   AssetStatus,
   AuditAction,
   RequisitionStatus,
@@ -21,7 +25,7 @@ export interface AdminDashboardStats {
     active: number;
     inactive: number;
     locked: number;
-    byRole: Record<UserRole, number>;
+    byRole: Partial<Record<UserRole, number>>;
   };
   requisitions: {
     pendingSupervisor: number;
@@ -35,6 +39,14 @@ export interface AdminDashboardStats {
   audit: {
     failedLoginsToday: number;
     eventsToday: number;
+  };
+  // Work only the System Administrator may do: what a custodian filed for themselves (they may not decide it,
+  // so the admin is the fallback). Counts what THIS administrator can act on, from the same services the three
+  // admin screens read.
+  decisions: {
+    returnsIncidents: number;
+    repairs: number;
+    requisitions: number;
   };
   generatedAt: string;
 }
@@ -55,9 +67,12 @@ export class AdminService {
     @InjectRepository(AuditLogEntity)
     private readonly audit: Repository<AuditLogEntity>,
     private readonly systemConfig: SystemConfigService,
+    private readonly assetRequests: AssetRequestsService,
+    private readonly repairs: AssetRepairsService,
+    private readonly requisitionsService: RequisitionsService,
   ) {}
 
-  async getDashboardStats(): Promise<AdminDashboardStats> {
+  async getDashboardStats(admin: UserEntity): Promise<AdminDashboardStats> {
     const now = new Date();
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
@@ -74,6 +89,7 @@ export class AdminService {
       lowStock,
       failedLoginsToday,
       eventsToday,
+      decisions,
     ] = await Promise.all([
       this.users.count(),
       this.users.count({ where: { isActive: true } }),
@@ -93,6 +109,7 @@ export class AdminService {
       this.countLowStock(),
       this.countFailedLoginsSince(startOfToday),
       this.audit.count({ where: { timestamp: MoreThanOrEqual(startOfToday) } }),
+      this.countDecisions(admin),
     ]);
 
     return {
@@ -106,7 +123,27 @@ export class AdminService {
       requisitions: { pendingSupervisor, slaBreached },
       assets: { total: totalAssets, available: availableAssets, lowStock },
       audit: { failedLoginsToday, eventsToday },
+      decisions,
       generatedAt: now.toISOString(),
+    };
+  }
+
+  // The three Master Admin escalation screens (Returns & Incidents, Repairs, Requisition Fulfillment) list
+  // everything, but only a custodian's own item is the administrator's to decide. Each service already knows
+  // that rule (`canAct`, `fulfilmentFallback`), so ask them instead of copying it: the dashboard number is then
+  // exactly the number of items with decision buttons on those screens.
+  private async countDecisions(
+    admin: UserEntity,
+  ): Promise<AdminDashboardStats['decisions']> {
+    const [requests, openRepairs, fulfilment] = await Promise.all([
+      this.assetRequests.findQueue(admin, 'open'),
+      this.repairs.list(admin, 'open'),
+      this.requisitionsService.fulfilmentFallback(),
+    ]);
+    return {
+      returnsIncidents: requests.filter((r) => r.canAct).length,
+      repairs: openRepairs.filter((r) => r.canAct).length,
+      requisitions: fulfilment.total,
     };
   }
 
@@ -125,9 +162,10 @@ export class AdminService {
       .getCount();
   }
 
-  // Every role starts at 0 so the dashboard renders a complete legend even for
-  // roles that have no accounts yet.
-  private async countUsersByRole(): Promise<Record<UserRole, number>> {
+  // Every assignable role starts at 0 so the dashboard renders a complete legend
+  // even for roles that have no accounts yet. The retired Property Officer role
+  // appears only while an account still holds it: that is a leftover to migrate.
+  private async countUsersByRole(): Promise<Partial<Record<UserRole, number>>> {
     const rows = await this.users
       .createQueryBuilder('u')
       .select('u.role', 'role')
@@ -135,9 +173,9 @@ export class AdminService {
       .groupBy('u.role')
       .getRawMany<{ role: UserRole; count: string }>();
 
-    const byRole = Object.values(UserRole).reduce(
+    const byRole = ASSIGNABLE_USER_ROLES.reduce(
       (acc, role) => ({ ...acc, [role]: 0 }),
-      {} as Record<UserRole, number>,
+      {} as Partial<Record<UserRole, number>>,
     );
     for (const { role, count } of rows) {
       byRole[role] = Number(count);

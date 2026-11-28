@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { roleNavigation } from '@/lib/roles/role-navigation';
 import { hasUiPermission } from '@/lib/roles/role-permissions';
 import { ProposedUserRole } from '@/lib/roles/proposed-roles';
+import { mapBackendRoleToProposedRole } from '@/lib/roles/role-mapping';
 
 describe('role-based sidebar navigation', () => {
+  it('routes both existing custodian account types to the combined role', () => {
+    expect(mapBackendRoleToProposedRole('it_personnel')).toBe(ProposedUserRole.ASSET_CUSTODIAN);
+    expect(mapBackendRoleToProposedRole('property_custodian')).toBe(ProposedUserRole.ASSET_CUSTODIAN);
+  });
   it('shows only personal workflow pages for employees', () => {
     const labels = roleNavigation[ProposedUserRole.EMPLOYEE].map((item) => item.label);
     expect(labels).toEqual([
@@ -16,25 +21,15 @@ describe('role-based sidebar navigation', () => {
     ]);
   });
 
-  it('keeps ICT asset custodian navigation ICT-specific', () => {
-    const labels = roleNavigation[ProposedUserRole.IT_ASSET_CUSTODIAN].map((item) => item.label).join(' ');
-    const hrefs = roleNavigation[ProposedUserRole.IT_ASSET_CUSTODIAN].map((item) => item.href);
-    expect(labels).toContain('ICT Asset Registry');
-    expect(labels).toContain('ICT Reports & Forms');
-    expect(labels).not.toContain('Fixed Asset Registry');
-    expect(labels).not.toContain('Supply Inventory');
-    expect(labels).not.toContain('Register New Asset');
-    expect(hrefs).toContain('/it-asset-custodian/physical-inventory');
-  });
-
-  it('keeps property custodian navigation away from ICT functions', () => {
-    const labels = roleNavigation[ProposedUserRole.PROPERTY_CUSTODIAN].map((item) => item.label).join(' ');
-    expect(labels).toContain('Fixed Asset Registry');
-    expect(labels).toContain('Supply Inventory');
-    expect(labels).not.toContain('ICT Asset Registry');
-    expect(labels).not.toContain('ICT Reports & Forms');
-    expect(labels).not.toContain('Register New Asset');
-    expect(roleNavigation[ProposedUserRole.PROPERTY_CUSTODIAN].map((item) => item.href)).toContain('/property-custodian/physical-inventory');
+  it('combines custodian operations while keeping three inventory pages', () => {
+    const items = roleNavigation[ProposedUserRole.ASSET_CUSTODIAN];
+    expect(items.filter(item => ['IT Inventory', 'Fixed Asset Inventory', 'Supplies Inventory'].includes(item.label)).map(item => item.href)).toEqual([
+      '/asset-custodian/it-inventory', '/asset-custodian/fixed-assets', '/asset-custodian/supplies',
+    ]);
+    expect(items.map(item => item.label)).toContain('Maintenance & Repair');
+    expect(hasUiPermission(ProposedUserRole.ASSET_CUSTODIAN, 'issue_ict_assets')).toBe(true);
+    expect(hasUiPermission(ProposedUserRole.ASSET_CUSTODIAN, 'issue_property')).toBe(true);
+    expect(Object.values(ProposedUserRole)).toHaveLength(5);
   });
 
   it('keeps master administrator out of ordinary approval actions', () => {

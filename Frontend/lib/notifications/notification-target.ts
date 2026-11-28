@@ -18,7 +18,7 @@ const OWN_REQUEST_OUTCOMES = new Set([
  * take `?open=<id>` and open that request's detail drawer on arrival.
  */
 type Target = (basePath: string, id: string, alertType: string) => string | null;
-const CUSTODIAN_BASES = new Set(['/it-asset-custodian', '/property-custodian']);
+const CUSTODIAN_BASES = new Set(['/asset-custodian', '/it-asset-custodian', '/property-custodian']);
 const openParam = (id: string) => `?open=${encodeURIComponent(id)}`;
 
 const requisitionTarget: Target = (basePath, id, alertType) => {
@@ -29,6 +29,8 @@ const requisitionTarget: Target = (basePath, id, alertType) => {
       return `/employee/requisitions/${encodeURIComponent(id)}`;
     case '/approving-officer':
       return isOwnOutcome ? `/approving-officer/requisitions${open}` : `/approving-officer/approvals${open}`;
+    case '/asset-custodian':
+      return isOwnOutcome ? `/asset-custodian/requisitions${open}` : `/asset-custodian/fulfillment${open}`;
     case '/it-asset-custodian':
       return isOwnOutcome ? `/it-asset-custodian/requisitions${open}` : `/it-asset-custodian/fulfillment${open}`;
     case '/property-custodian':
@@ -42,9 +44,9 @@ const requisitionTarget: Target = (basePath, id, alertType) => {
 // return / incident requests (the employee has a dedicated page instead).
 const HOLDER_BASES = new Set([
   '/approving-officer',
+  '/asset-custodian',
   '/it-asset-custodian',
   '/property-custodian',
-  '/property-officer',
   '/master-admin',
   '/management-audit',
 ]);

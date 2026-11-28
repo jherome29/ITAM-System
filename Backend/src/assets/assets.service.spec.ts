@@ -364,6 +364,7 @@ describe('AssetsService', () => {
         itemDescription: 'Laptop',
         assetClass: AssetClass.PPE,
         assetType: AssetType.ICT,
+        acquisitionCost: 50000,
         condition: AssetCondition.SERVICEABLE,
       } as any;
 
@@ -414,6 +415,7 @@ describe('AssetsService', () => {
         itemDescription: 'Office Chair',
         assetClass: AssetClass.SEP,
         assetType: AssetType.FIXED,
+        acquisitionCost: 10000,
         condition: AssetCondition.SERVICEABLE,
       } as any;
 
@@ -452,7 +454,12 @@ describe('AssetsService', () => {
     // covered by its own describe below.
 
     test.each(validPairs)('%s → %s should succeed', async (from, to) => {
-      const asset = makeAsset({ status: from });
+      const asset = makeAsset({
+        status: from,
+        ...(to === AssetStatus.DISPOSED
+          ? { condition: AssetCondition.UNSERVICEABLE }
+          : {}),
+      });
       mockAssetRepo.findOne.mockResolvedValue(asset);
       mockAssetRepo.save.mockResolvedValue({ ...asset, status: to });
       const tx = { id: 'tx-1' };
@@ -464,7 +471,15 @@ describe('AssetsService', () => {
         // Disposal flags require a justification (CLAUDE.md §6 Module 1).
         to === AssetStatus.FLAGGED_FOR_DISPOSAL
           ? { status: to, notes: 'Beyond economical repair' }
-          : { status: to },
+          : to === AssetStatus.DISPOSED
+            ? {
+                status: to,
+                disposalDate: '2026-01-01',
+                disposalMethod: 'Sale',
+                disposalReference: 'DOC-1',
+                disposalConfirmed: true,
+              }
+            : { status: to },
         'user-1',
         UserRole.IT_PERSONNEL,
         '127.0.0.1',
@@ -837,13 +852,19 @@ describe('AssetsService', () => {
       },
     );
 
-    it('does not make disposing it any harder: flagged → disposed still needs no extra notes', async () => {
+    it('records completed disposal without a separate free-text note', async () => {
       flagged();
 
       await expect(
         service.updateLifecycle(
           'asset-uuid-1',
-          { status: AssetStatus.DISPOSED },
+          {
+            status: AssetStatus.DISPOSED,
+            disposalDate: '2026-01-01',
+            disposalMethod: 'Sale',
+            disposalReference: 'DOC-1',
+            disposalConfirmed: true,
+          },
           'it-1',
           UserRole.IT_PERSONNEL,
           '127.0.0.1',
@@ -1902,6 +1923,7 @@ describe('AssetsService', () => {
   // ── getStats() — inventory dashboard KPI counts ───────────────────────────
   describe('getStats()', () => {
     const makeStatsQb = (rawRows: Record<string, string>[]) => ({
+      setParameter: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
@@ -1915,7 +1937,9 @@ describe('AssetsService', () => {
           makeStatsQb([{ status: AssetStatus.AVAILABLE, count: '10' }]),
         )
         .mockReturnValueOnce(makeStatsQb([{ assetClass: 'PPE', count: '7' }]))
-        .mockReturnValueOnce(makeStatsQb([{ assetType: 'ICT', count: '10' }]));
+        .mockReturnValueOnce(
+          makeStatsQb([{ assetType: 'ICT', count: '10', inventoryCount: '8' }]),
+        );
 
       const result = await service.getStats();
       expect(result.total).toBe(10);
@@ -1923,6 +1947,7 @@ describe('AssetsService', () => {
       expect(result.issued).toBe(0); // ?? 0 fallback for missing keys
       expect(result.byClass).toEqual({ PPE: 7 });
       expect(result.byType).toEqual({ ICT: 10 });
+      expect(result.inventoryByType).toEqual({ ICT: 8 });
     });
 
     it('returns all zeros and empty maps when no assets exist', async () => {
@@ -1942,7 +1967,9 @@ describe('AssetsService', () => {
         { status: AssetStatus.AVAILABLE, count: '3' },
       ]);
       const classQb = makeStatsQb([{ assetClass: 'SEP', count: '3' }]);
-      const typeQb = makeStatsQb([{ assetType: 'Fixed', count: '3' }]);
+      const typeQb = makeStatsQb([
+        { assetType: 'Fixed', count: '3', inventoryCount: '3' },
+      ]);
       mockAssetRepo.createQueryBuilder
         .mockReturnValueOnce(statusQb)
         .mockReturnValueOnce(classQb)

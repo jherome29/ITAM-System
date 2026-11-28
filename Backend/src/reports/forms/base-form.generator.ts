@@ -80,6 +80,45 @@ export function createDoc(): PDFKit.PDFDocument {
 }
 
 /**
+ * The page a management report (Asset Master List, Audit Trail ...) is drawn on: landscape
+ * letter, because those tables have many columns. Pages added later keep the layout.
+ */
+export function createReportDoc(): PDFKit.PDFDocument {
+  return new PDFDocument({
+    size: 'LETTER',
+    layout: 'landscape',
+    margins: {
+      top: PAGE.margin,
+      bottom: PAGE.margin,
+      left: PAGE.margin,
+      right: PAGE.margin,
+    },
+    autoFirstPage: true,
+    bufferPages: true,
+  });
+}
+
+/**
+ * The writable area of the page the document is on. Read from the page rather than from
+ * the A4 constants so the same table code serves a landscape report: on an A4 form it comes
+ * to exactly PAGE.margin, CONTENT_WIDTH and CONTENT_BOTTOM.
+ */
+function pageBox(doc: PDFKit.PDFDocument): {
+  left: number;
+  top: number;
+  width: number;
+  bottom: number;
+} {
+  const m = doc.page.margins;
+  return {
+    left: m.left,
+    top: m.top,
+    width: doc.page.width - m.left - m.right,
+    bottom: doc.page.height - m.bottom,
+  };
+}
+
+/**
  * Makes room for `needed` points below `y`: returns `y` when it fits, otherwise
  * starts a new page and returns the top margin. Anything drawn after a table
  * (signature blocks, totals) goes through this so it never lands off the page.
@@ -89,9 +128,10 @@ export function ensureSpace(
   y: number,
   needed: number,
 ): number {
-  if (y + needed <= CONTENT_BOTTOM) return y;
+  const box = pageBox(doc);
+  if (y + needed <= box.bottom) return y;
   doc.addPage();
-  return PAGE.margin;
+  return box.top;
 }
 
 /**
@@ -200,10 +240,19 @@ export function drawFormTitle(
   return y;
 }
 
+/** Gap under a line of label: value text. One 7.5-8pt line plus this stays within the usual step. */
+const LINE_GAP = 3.5;
+/** The usual step between single-line rows: what every form used before rows were measured. */
+const MIN_LINE_STEP = 13;
+
 /**
  * Draws header meta fields in a 2-column key:value layout.
  * fields = [{label, value}, ...]
  * Returns Y after the last field.
+ *
+ * A row is as tall as its tallest value: a 100-character property number or a long office
+ * wraps onto several lines, and a fixed step used to print the next row over it. Short values
+ * keep the usual 13pt step, so a form that never wrapped looks exactly as it did.
  */
 export function drawMetaFields(
   doc: PDFKit.PDFDocument,
@@ -211,11 +260,22 @@ export function drawMetaFields(
   y: number,
 ): number {
   const half = CONTENT_WIDTH / 2;
+  const heightOf = (field?: { label: string; value: string }): number => {
+    if (!field?.label) return 0;
+    doc.font(FONT_REGULAR).fontSize(7.5);
+    return doc.heightOfString(`${field.label}: ${field.value}`, {
+      width: half - 10,
+    });
+  };
   for (let i = 0; i < fields.length; i += 2) {
     const left = fields[i];
     const right = fields[i + 1];
     doc.font(FONT_BOLD).fontSize(7.5).fillColor(BLACK);
-    doc.text(`${left.label}:`, PAGE.margin, y, { continued: true });
+    // The line takes its width from this first call: without one, a long value ran the page's full width.
+    doc.text(`${left.label}:`, PAGE.margin, y, {
+      continued: true,
+      width: half - 10,
+    });
     doc
       .font(FONT_REGULAR)
       .fontSize(7.5)
@@ -223,15 +283,41 @@ export function drawMetaFields(
     // An empty label is a filler that keeps the pairs aligned: draw nothing.
     if (right?.label) {
       doc.font(FONT_BOLD).fontSize(7.5).fillColor(BLACK);
-      doc.text(`${right.label}:`, PAGE.margin + half, y, { continued: true });
+      doc.text(`${right.label}:`, PAGE.margin + half, y, {
+        continued: true,
+        width: half - 10,
+      });
       doc
         .font(FONT_REGULAR)
         .fontSize(7.5)
         .text(` ${right.value}`, { width: half - 10 });
     }
-    y += 13;
+    y += Math.max(
+      MIN_LINE_STEP,
+      Math.max(heightOf(left), heightOf(right)) + LINE_GAP,
+    );
   }
   return y;
+}
+
+/**
+ * One full-width "Label: value" line (a form's From / To), as tall as its value needs. Returns
+ * the y below it. The value may wrap onto several lines; a fixed step used to print whatever came
+ * next over the second line.
+ */
+export function drawLabelledLine(
+  doc: PDFKit.PDFDocument,
+  label: string,
+  value: string,
+  y: number,
+): number {
+  const width = CONTENT_WIDTH - 20;
+  doc.font(FONT_BOLD).fontSize(8).fillColor(BLACK);
+  doc.text(`${label}:`, PAGE.margin, y, { continued: true });
+  doc.font(FONT_REGULAR).fontSize(8).text(`  ${value}`, { width });
+  doc.font(FONT_REGULAR).fontSize(8);
+  const height = doc.heightOfString(`${label}:   ${value}`, { width });
+  return y + Math.max(MIN_LINE_STEP, height + LINE_GAP);
 }
 
 /**
@@ -281,6 +367,35 @@ function longestWord(text: string): string {
   return longest;
 }
 
+/** How many of a report's first rows to read when judging how much room each column wants. */
+const PROPORTION_SAMPLE_ROWS = 200;
+/** A column never asks for more than this many characters' worth, so one long text cannot starve the rest. */
+const MAX_COLUMN_UNITS = 40;
+/** ...nor for fewer than this, so a short code still gets a legible column. */
+const MIN_COLUMN_UNITS = 6;
+
+/**
+ * Proportions for the columns of a report, from what they hold: a description column is
+ * given far more room than a class code. drawTable scales them to the page and holds each
+ * column to its longest word, so these only have to be in the right ratio.
+ */
+export function columnProportions(
+  headers: string[],
+  rows: string[][],
+): number[] {
+  const sample = rows.slice(0, PROPORTION_SAMPLE_ROWS);
+  return headers.map((header, i) => {
+    const average = sample.length
+      ? sample.reduce((sum, row) => sum + String(row[i] ?? '').length, 0) /
+        sample.length
+      : 0;
+    return Math.min(
+      Math.max(average, String(header).length, MIN_COLUMN_UNITS),
+      MAX_COLUMN_UNITS,
+    );
+  });
+}
+
 /**
  * The columns scaled to the content width, so a table neither runs past the
  * right margin nor stops short of the rules above and below it, and no column
@@ -291,6 +406,7 @@ function fitColumns(
   doc: PDFKit.PDFDocument,
   cols: { header: string; width: number }[],
   rows: string[][],
+  totalWidth: number,
 ): { header: string; width: number }[] {
   const mins = cols.map((col, i) => {
     doc.font(FONT_BOLD).fontSize(7);
@@ -307,7 +423,7 @@ function fitColumns(
   const widths = fitColumnWidths(
     cols.map((c) => c.width),
     mins,
-    CONTENT_WIDTH,
+    totalWidth,
   );
   return cols.map((col, i) => ({ ...col, width: widths[i] }));
 }
@@ -335,15 +451,14 @@ function tableHeaderHeight(
 function drawTableHeader(
   doc: PDFKit.PDFDocument,
   cols: { header: string; width: number }[],
+  x: number,
   y: number,
   height: number,
 ): number {
   const tableWidth = cols.reduce((s, c) => s + c.width, 0);
-  doc
-    .rect(PAGE.margin, y, tableWidth, height)
-    .fillAndStroke(GRAY_LIGHT, GRAY_BORDER);
+  doc.rect(x, y, tableWidth, height).fillAndStroke(GRAY_LIGHT, GRAY_BORDER);
 
-  let cx = PAGE.margin;
+  let cx = x;
   for (const col of cols) {
     doc.font(FONT_BOLD).fontSize(7).fillColor(BLACK);
     doc.text(col.header, cx + 2, y + 4, {
@@ -373,18 +488,19 @@ export function drawTable(
   y: number,
   rowHeight = 18,
 ): number {
-  const cols = fitColumns(doc, columns, rows);
+  const box = pageBox(doc);
+  const cols = fitColumns(doc, columns, rows, box.width);
   const headerHeight = tableHeaderHeight(doc, cols);
-  const tableWidth = CONTENT_WIDTH;
-  const startX = PAGE.margin;
+  const tableWidth = box.width;
+  const startX = box.left;
 
   // The header never sits alone at the foot of a page: it needs room for itself
   // and a first row.
-  if (y + headerHeight + rowHeight > CONTENT_BOTTOM) {
+  if (y + headerHeight + rowHeight > box.bottom) {
     doc.addPage();
-    y = PAGE.margin;
+    y = box.top;
   }
-  y = drawTableHeader(doc, cols, y, headerHeight);
+  y = drawTableHeader(doc, cols, startX, y, headerHeight);
 
   for (const row of rows) {
     const cells = cols.map((_, i) => (row[i] ?? '').toString());
@@ -397,9 +513,9 @@ export function drawTable(
       ),
     );
 
-    if (y + height > CONTENT_BOTTOM) {
+    if (y + height > box.bottom) {
       doc.addPage();
-      y = drawTableHeader(doc, cols, PAGE.margin, headerHeight);
+      y = drawTableHeader(doc, cols, startX, box.top, headerHeight);
     }
 
     // Row border
@@ -497,8 +613,8 @@ function addPageNumbers(doc: PDFKit.PDFDocument): void {
       .font(FONT_REGULAR)
       .fontSize(7)
       .fillColor('#666666')
-      .text(`Page ${i + 1} of ${count}`, PAGE.margin, PAGE.height - 28, {
-        width: CONTENT_WIDTH,
+      .text(`Page ${i + 1} of ${count}`, PAGE.margin, doc.page.height - 28, {
+        width: doc.page.width - PAGE.margin * 2,
         align: 'center',
         lineBreak: false,
       });
@@ -560,6 +676,7 @@ export function today(): string {
 /** Formats a user role enum to display text for signature blocks. */
 export function roleDisplay(role: string): string {
   const map: Record<string, string> = {
+    asset_custodian: 'Asset Custodian',
     it_personnel: 'IT Personnel / Supply Officer',
     system_admin: 'System Administrator',
     supervisor: 'Division Supervisor',

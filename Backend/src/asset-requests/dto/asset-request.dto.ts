@@ -62,6 +62,10 @@ export const DAMAGE_OUTCOMES = ['repair', 'disposal'] as const;
 export type DamageOutcome = (typeof DAMAGE_OUTCOMES)[number];
 
 export class CompleteAssetRequestDto {
+  @IsOptional()
+  @IsIn(['true'])
+  returnReceived?: 'true';
+
   // Damage only: whether the received item goes to repair or is flagged for disposal.
   @IsOptional()
   @IsIn(DAMAGE_OUTCOMES)

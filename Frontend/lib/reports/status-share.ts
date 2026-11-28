@@ -45,7 +45,7 @@ function remainder(total: number, rows: StatusRow[], label: string, tone: string
 export function requisitionStatusRows(stats: RequisitionCounts): StatusRow[] {
   const rows: StatusRow[] = [
     { label: 'Awaiting approval', count: Math.max(0, stats.pending - stats.approved), tone: 'bg-amber-500' },
-    { label: 'Approved — awaiting fulfilment', count: stats.approved, tone: 'bg-blue-600' },
+    { label: 'Approved — awaiting fulfillment', count: stats.approved, tone: 'bg-blue-600' },
     { label: 'On hold', count: stats.onHold, tone: 'bg-slate-500' },
     { label: 'Fulfilled', count: stats.fulfilled, tone: 'bg-emerald-500' },
     { label: 'Rejected', count: stats.rejected, tone: 'bg-red-400' },

@@ -1,10 +1,13 @@
 import {
   IsDateString,
+  IsBoolean,
   IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
+  MaxLength,
 } from 'class-validator';
 import { AssetStatus } from '../../../../packages/shared/src/enums';
 
@@ -61,4 +64,23 @@ export class UpdateLifecycleDto {
   @IsString()
   @IsNotEmpty()
   officeLocation?: string;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsDateString({ strict: true })
+  disposalDate?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  disposalMethod?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  disposalReference?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  disposalConfirmed?: boolean;
 }

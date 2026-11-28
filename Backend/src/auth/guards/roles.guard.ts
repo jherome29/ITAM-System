@@ -40,7 +40,14 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Authentication required');
     }
 
-    const hasRole = requiredRoles.includes(user.role);
+    // Both legacy account values use the Asset Custodian permissions.
+    const normalizeRole = (role: UserRole) =>
+      role === UserRole.IT_PERSONNEL || role === UserRole.PROPERTY_CUSTODIAN
+        ? UserRole.ASSET_CUSTODIAN
+        : role;
+    const hasRole = requiredRoles.some(
+      (role) => normalizeRole(role) === normalizeRole(user.role),
+    );
 
     if (!hasRole) {
       throw new ForbiddenException(

@@ -8,7 +8,6 @@ const SLUG_ALIASES: Record<string, string> = {
   inventory: 'physical-inventory',
   'reports-forms': 'reports',
   'registry-overview': 'assets',
-  'disposal-review': 'disposal',
   'audit-history': 'audit',
   'audit-log': 'audit',
   'forms-archive': 'forms',
@@ -30,9 +29,7 @@ export function normalizeWorkflowSlug(slug: string): string {
  */
 const LIVE_WORKFLOW_PAGES: Partial<Record<ProposedUserRole, readonly string[]>> = {
   [ProposedUserRole.APPROVING_OFFICER]: ['approvals', 'requisitions'],
-  [ProposedUserRole.IT_ASSET_CUSTODIAN]: ['fulfillment', 'custody', 'disposal', 'requisitions'],
-  [ProposedUserRole.PROPERTY_CUSTODIAN]: ['fulfillment', 'custody', 'disposal', 'requisitions'],
-  [ProposedUserRole.PROPERTY_OFFICER]: ['requisitions'],
+  [ProposedUserRole.ASSET_CUSTODIAN]: ['fulfillment', 'custody', 'disposal', 'requisitions'],
   // A custodian cannot fulfil their own requisition; the administrator does.
   [ProposedUserRole.MASTER_ADMIN]: ['fulfillment'],
 };

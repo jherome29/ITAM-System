@@ -12,8 +12,14 @@ describe('normalizeWorkflowSlug', () => {
     expect(normalizeWorkflowSlug('queue')).toBe('approvals');
     expect(normalizeWorkflowSlug('history')).toBe('approval-history');
     expect(normalizeWorkflowSlug('inventory')).toBe('physical-inventory');
-    expect(normalizeWorkflowSlug('disposal-review')).toBe('disposal');
     expect(normalizeWorkflowSlug('audit-history')).toBe('audit');
+  });
+
+  // The alias existed for the Property Officer's URL. 'disposal-review' is now the
+  // Property Custodian's own Disposal Review screen, so it must not be rewritten to the
+  // recommend-for-disposal page.
+  it('does not turn disposal-review into disposal', () => {
+    expect(normalizeWorkflowSlug('disposal-review')).toBe('disposal-review');
   });
 
   it('leaves any other slug alone', () => {
@@ -27,16 +33,15 @@ describe('isLiveWorkflowPage — pages that read real records', () => {
     [Role.APPROVING_OFFICER, 'approvals'],
     [Role.APPROVING_OFFICER, 'queue'], // alias
     [Role.APPROVING_OFFICER, 'requisitions'],
-    [Role.IT_ASSET_CUSTODIAN, 'fulfillment'],
-    [Role.IT_ASSET_CUSTODIAN, 'custody'],
-    [Role.IT_ASSET_CUSTODIAN, 'disposal'],
-    [Role.IT_ASSET_CUSTODIAN, 'requisitions'],
-    [Role.PROPERTY_CUSTODIAN, 'fulfillment'],
-    [Role.PROPERTY_CUSTODIAN, 'custody'],
-    [Role.PROPERTY_CUSTODIAN, 'disposal'],
-    // The two property roles file requisitions like any other holder.
-    [Role.PROPERTY_CUSTODIAN, 'requisitions'],
-    [Role.PROPERTY_OFFICER, 'requisitions'],
+    [Role.ASSET_CUSTODIAN, 'fulfillment'],
+    [Role.ASSET_CUSTODIAN, 'custody'],
+    [Role.ASSET_CUSTODIAN, 'disposal'],
+    [Role.ASSET_CUSTODIAN, 'requisitions'],
+    [Role.ASSET_CUSTODIAN, 'fulfillment'],
+    [Role.ASSET_CUSTODIAN, 'custody'],
+    [Role.ASSET_CUSTODIAN, 'disposal'],
+    // The Property Custodian files requisitions like any other holder.
+    [Role.ASSET_CUSTODIAN, 'requisitions'],
     // The System Administrator fulfils a custodian's own requisition (the
     // custodian cannot), so the fulfilment screen is theirs too.
     [Role.MASTER_ADMIN, 'fulfillment'],
@@ -49,15 +54,15 @@ describe('isLiveWorkflowPage — the sample-data screens, and pages with their o
   it.each([
     [Role.APPROVING_OFFICER, 'approval-history'],
     [Role.APPROVING_OFFICER, 'history'],
-    [Role.PROPERTY_CUSTODIAN, 'physical-inventory'],
-    [Role.PROPERTY_CUSTODIAN, 'inventory'],
-    [Role.IT_ASSET_CUSTODIAN, 'physical-inventory'],
-    [Role.PROPERTY_OFFICER, 'corrections'],
-    [Role.PROPERTY_OFFICER, 'reconciliation'],
-    [Role.PROPERTY_OFFICER, 'disposal'], // live for the custodians, not for the Officer
-    [Role.PROPERTY_OFFICER, 'disposal-review'],
-    [Role.PROPERTY_OFFICER, 'audit'],
-    [Role.PROPERTY_OFFICER, 'audit-history'],
+    [Role.ASSET_CUSTODIAN, 'physical-inventory'],
+    [Role.ASSET_CUSTODIAN, 'inventory'],
+    [Role.ASSET_CUSTODIAN, 'physical-inventory'],
+    [Role.ASSET_CUSTODIAN, 'corrections'],
+    [Role.ASSET_CUSTODIAN, 'reconciliation'],
+    [Role.ASSET_CUSTODIAN, 'disposal-review'], // its own component, not a WorkflowPage table
+    [Role.ASSET_CUSTODIAN, 'replacements'], // likewise
+    [Role.ASSET_CUSTODIAN, 'audit'],
+    [Role.ASSET_CUSTODIAN, 'audit-history'],
     // Management's Audit Log is the real audit viewer, not a WorkflowPage table.
     [Role.MANAGEMENT_AUDIT_VIEWER, 'audit'],
     [Role.MANAGEMENT_AUDIT_VIEWER, 'audit-log'],

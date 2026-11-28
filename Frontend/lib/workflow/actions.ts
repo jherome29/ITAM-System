@@ -21,14 +21,14 @@ export function rowActionLabel(slug: string): string {
     case 'custody':
       return 'Manage';
     case 'disposal':
-      return 'Recommend Disposal';
+      return 'Manage';
     default:
       return 'Open';
   }
 }
 
 /** Actions offered in a record's drawer, given its current status. */
-export function detailActions(slug: string, status = ''): string[] {
+export function detailActions(slug: string, status = '', condition = ''): string[] {
   switch (slug) {
     case 'approvals':
       return status === 'pending_supervisor' ? ['Approve', 'Reject'] : [];
@@ -40,8 +40,8 @@ export function detailActions(slug: string, status = ''): string[] {
         .map((next) => CUSTODY_ACTION_FOR_STATUS[next])
         .filter((action): action is string => Boolean(action));
     case 'disposal':
-      return (ASSET_LIFECYCLE_TRANSITIONS[status] ?? []).includes('flagged_for_disposal')
-        ? ['Recommend Disposal']
+      return status === 'flagged_for_disposal' && condition === 'unserviceable'
+        ? ['Record Disposal']
         : [];
     default:
       // 'requisitions' (My Requisitions) is view-only: there is no cancel endpoint.

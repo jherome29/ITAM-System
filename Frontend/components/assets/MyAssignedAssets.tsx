@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CalendarClock, ClipboardList, PackageCheck, RefreshCcw } from 'lucide-react';
-import { AdminPageHeader, MetricCard, Panel, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from '@/components/admin/AdminUi';
+import { AdminPageHeader, MetricCard, Panel, SecondaryButton, StatusChip, TableWrap, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
 import { AssetRequestDetail } from '@/components/asset-requests/AssetRequestDetail';
 import { AssetRequestForm } from '@/components/asset-requests/AssetRequestForm';
 import { RequisitionForm } from '@/components/requisitions/RequisitionForm';
@@ -11,12 +11,22 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
+import { usePrintPrompt } from '@/components/shared/RecordPrints';
 import { assetsApi, type MyAsset } from '@/lib/api/assets';
 import { assetRequestsApi, type AssetRequest, type AssetRequestType } from '@/lib/api/asset-requests';
 import { REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE, REQUEST_TYPE_LABEL, blockingRequest, isOpen } from '@/lib/asset-requests/asset-request-rules';
 import { locationLabel } from '@/lib/assets/asset-location';
 import { formatDate, formatDateTime } from '@/lib/requisitions/requisition-view';
 import { humanize } from '@/lib/text';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyRow } from '@/components/ui/EmptyRow';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { ClampText } from '@/components/ui/ClampText';
+import { Pager } from '@/components/ui/Pager';
+import { usePaged } from '@/lib/use-paged';
+
+// Two columns of cards, so an even number keeps the last row full.
+const CARDS_PER_PAGE = 12;
 
 // Why a non-issued asset is still on the holder's list.
 const HOLDING_NOTE: Record<string, string> = {
@@ -67,13 +77,14 @@ export function MyAssignedAssets({
   const [viewing, setViewing] = useState<AssetRequest | null>(null);
   const [cancelling, setCancelling] = useState<AssetRequest | null>(null);
   const [toast, setToast] = useState('');
+  const { ask: askToPrint, prompt: printPrompt } = usePrintPrompt();
 
   const load = useCallback(
     () => Promise.all([assetsApi.mine(), assetRequestsApi.mine()]).then(([a, r]) => { setAssets(a.data); setRequests(r.data); }),
     [],
   );
   useEffect(() => {
-    load().catch(() => setError('Failed to load your assets. Please refresh the page.')).finally(() => setLoading(false));
+    load().catch(() => setError('Could not load your assets. Please refresh the page.')).finally(() => setLoading(false));
   }, [load]);
 
   const handledOpenId = useRef<string | null>(null);
@@ -91,6 +102,7 @@ export function MyAssignedAssets({
     try {
       const res = await assetRequestsApi.cancel(cancelling.id);
       notify(`${cancelling.requestNumber} cancelled.`);
+      askToPrint('asset_request', cancelling.id, cancelling.requestNumber);
       if (viewing?.id === res.data.id) setViewing(res.data);
       await load();
     } catch {
@@ -100,17 +112,20 @@ export function MyAssignedAssets({
     }
   };
 
-  return <div className="space-y-4">
+  const pagedAssets = usePaged(assets, '', CARDS_PER_PAGE);
+  const pagedRequests = usePaged(requests);
+
+  return <div className="space-y-5">
     <AdminPageHeader eyebrow={eyebrow} title="My Assigned Assets" detail={`Property currently issued to you. Request a return or repair, report damage, loss or theft${canRequestReplacement ? ', or request a replacement once an asset qualifies' : ''} — the responsible custodian is notified.`} />
-    {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
+    {error && <Notice tone="red">{error}</Notice>}
     <div className="grid gap-3 sm:grid-cols-3">
       <MetricCard label="Assigned to me" value={String(assets.length)} detail="Current accountability" tone="blue" icon={PackageCheck} />
       <MetricCard label="Open requests" value={String(openTotal)} detail="Returns and incidents in progress" tone="amber" icon={ClipboardList} />
       <MetricCard label="Return due" value={String(assets.filter((a) => a.expectedReturnDate).length)} detail="Assets with an expected return date" tone="red" icon={CalendarClock} />
     </div>
-    {loading ? <Panel title="Assigned assets" detail="Loading..."><div className="p-4"><LoadingSkeleton rows={4} /></div></Panel>
+    {loading ? <Panel title="Assigned assets" detail="Loading…"><div className="p-4"><LoadingSkeleton rows={4} /></div></Panel>
       : assets.length === 0 ? <Panel title="Assigned assets" detail="Nothing is issued to you right now."><p className="p-4 text-sm text-slate-500">When a custodian issues an asset to you, it will appear here.</p></Panel>
-      : <div className="grid gap-4 lg:grid-cols-2">{assets.map((asset) => (
+      : <div className="space-y-4"><div className="grid gap-4 lg:grid-cols-2">{pagedAssets.pageItems.map((asset) => (
         <AssetCard
           key={asset.id}
           asset={asset}
@@ -121,20 +136,21 @@ export function MyAssignedAssets({
           onView={setViewing}
           onCancel={setCancelling}
         />
-      ))}</div>}
+      ))}</div><Pager page={pagedAssets.page} total={pagedAssets.total} pageSize={pagedAssets.size} onPage={pagedAssets.setPage} noun="assets" /></div>}
 
     {showRequestHistory && !loading && <Panel title="My return & incident requests" detail={`${requests.length} request${requests.length === 1 ? '' : 's'}`}>
       <TableWrap><table className="w-full min-w-[720px]"><thead><tr><th className={thClass}>Request</th><th className={thClass}>Type</th><th className={thClass}>Asset</th><th className={thClass}>Filed</th><th className={thClass}>Status</th><th className={thClass} /></tr></thead><tbody>
-        {requests.map((r) => <tr key={r.id}>
-          <td className={`${tdClass} font-bold text-slate-950`}>{r.requestNumber}</td>
+        {pagedRequests.pageItems.map((r) => <tr key={r.id}>
+          <td className={`${tdNoWrapClass} font-bold text-slate-950`}>{r.requestNumber}</td>
           <td className={tdClass}>{REQUEST_TYPE_LABEL[r.type]}</td>
-          <td className={tdClass}>{r.asset?.itemDescription ?? '—'}</td>
-          <td className={tdClass}>{formatDateTime(r.createdAt)}</td>
+          <td className={tdClass}><ClampText>{r.asset?.itemDescription}</ClampText></td>
+          <td className={tdNoWrapClass}>{formatDateTime(r.createdAt)}</td>
           <td className={tdClass}><StatusChip status={REQUEST_STATUS_LABEL[r.status]} tone={REQUEST_STATUS_TONE[r.status]} /></td>
           <td className={`${tdClass} text-right`}><SecondaryButton onClick={() => setViewing(r)}>View</SecondaryButton></td>
         </tr>)}
-        {requests.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">You have not filed any return or incident requests.</td></tr>}
+        {requests.length === 0 && <EmptyRow colSpan={6}>You have not filed any return or incident requests.</EmptyRow>}
       </tbody></table></TableWrap>
+      <Pager page={pagedRequests.page} total={pagedRequests.total} pageSize={pagedRequests.size} onPage={pagedRequests.setPage} noun="requests" />
     </Panel>}
 
     <DetailDrawer open={Boolean(filing)} title={filing ? `${REQUEST_TYPE_LABEL[filing.type]} — ${filing.asset.itemDescription}` : ''} onClose={() => setFiling(null)}>
@@ -144,11 +160,11 @@ export function MyAssignedAssets({
         myRequests={requests}
         fixedAssetId={filing.asset.id}
         {...(filing.type === 'loss' ? { initialType: 'loss' as const } : { fixedType: filing.type })}
-        onSubmitted={(r) => { setFiling(null); notify(`${r.requestNumber} submitted — the ${r.custodianLabel ?? 'custodian'} has been notified.`); void load(); }}
+        onSubmitted={(r) => { setFiling(null); notify(`${r.requestNumber} submitted — the ${r.custodianLabel ?? 'custodian'} has been notified.`); askToPrint('asset_request', r.id, r.requestNumber); void load(); }}
       />}
     </DetailDrawer>
     <CenteredModal open={Boolean(replacing)} title={replacing ? `Replace ${replacing.itemDescription}` : 'Request replacement'} description="Pick the replacement item. The request goes to your Approving Officer, then the custodian issues it and collects your current unit." onClose={() => setReplacing(null)}>
-      {replacing && <RequisitionForm key={replacing.id} replacing={replacing} onSubmit={(created) => { setReplacing(null); notify(`${created.requestNumber} submitted for approval.`); void load(); }} />}
+      {replacing && <RequisitionForm key={replacing.id} replacing={replacing} onSubmit={(created) => { setReplacing(null); notify(`${created.requestNumber} submitted for approval.`); askToPrint('requisition', created.id, created.requestNumber); void load(); }} />}
     </CenteredModal>
     <DetailDrawer open={Boolean(viewing)} title={viewing?.requestNumber ?? 'Request'} onClose={() => setViewing(null)}>
       {viewing && <div className="space-y-4">
@@ -158,6 +174,7 @@ export function MyAssignedAssets({
     </DetailDrawer>
     <ConfirmDialog open={Boolean(cancelling)} title={`Cancel ${cancelling?.requestNumber ?? ''}?`} detail="The custodian will be notified that you no longer need this request." confirmLabel="Cancel request" cancelLabel="Keep request" onConfirm={() => void confirmCancel()} onCancel={() => setCancelling(null)} />
     <Toast message={toast} />
+    {printPrompt}
   </div>;
 }
 
@@ -186,7 +203,7 @@ function AssetCard({
     : (replacement.eligible ? undefined : replacement.reason);
 
   return <article className="border border-slate-200 bg-white p-4 shadow-sm">
-    <div className="flex items-start justify-between gap-3"><div><p className="text-base font-bold text-slate-950">{asset.itemDescription}</p><p className="mt-1 text-xs text-slate-500">{[asset.propertyNumber, asset.serialNumber && `Serial ${asset.serialNumber}`].filter(Boolean).join(' · ') || asset.assetType}</p></div><StatusChip status={asset.condition.replaceAll('_', ' ')} /></div>
+    <div className="flex items-start justify-between gap-3"><div><p className="text-base font-bold text-slate-950"><ClampText lines={2}>{asset.itemDescription}</ClampText></p><p className="mt-1 text-xs text-slate-500">{[asset.propertyNumber, asset.serialNumber && `Serial ${asset.serialNumber}`].filter(Boolean).join(' · ') || asset.assetType}</p></div><StatusBadge status={asset.condition} /></div>
     <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">{[['Status', humanize(asset.status)], ['Expected return', asset.expectedReturnDate ? formatDate(asset.expectedReturnDate) : 'No fixed date'], ['Type', `${asset.assetType} · ${asset.assetClass}`], ['Location', locationLabel(asset)]].map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 font-semibold text-slate-800">{value}</dd></div>)}</dl>
     {open.map((r) => <div key={r.id} className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
       <span><span className="font-bold text-amber-900">{REQUEST_TYPE_LABEL[r.type]}</span> <span className="text-amber-800">· {r.requestNumber} · {REQUEST_STATUS_LABEL[r.status]}{r.handoverDate ? ` · bring it in ${formatDate(r.handoverDate)}` : ''}</span></span>

@@ -135,7 +135,10 @@ describe('UsersService', () => {
       expect(result).toHaveLength(1);
       expect(mockRepo.find).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { role: UserRole.IT_PERSONNEL, isActive: true },
+          where: [
+            { role: UserRole.ASSET_CUSTODIAN, isActive: true },
+            { role: UserRole.IT_PERSONNEL, isActive: true },
+          ],
         }),
       );
     });

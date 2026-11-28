@@ -3,8 +3,11 @@ import {
   CONTENT_WIDTH,
   PAGE,
   bufferize,
+  columnProportions,
   createDoc,
+  createReportDoc,
   drawFormTitle,
+  drawLabelledLine,
   drawMetaFields,
   drawSignatureBlock,
   drawTable,
@@ -111,6 +114,130 @@ describe('drawTable pagination', () => {
 
     expect(y).toBeGreaterThan(PAGE.margin);
     expect(y).toBeLessThan(PAGE.height - PAGE.margin);
+  });
+});
+
+// The management reports (Asset Master List, Audit Trail ...) drew their own table with a fixed
+// 16pt row and equal columns. A description that wrapped in its narrow column printed its second
+// line over the next row (illegible), and a wrapped line near the foot of the page made pdfkit add
+// a page holding two words: the Audit Trail report came out at 171 pages, 84 of them stray. They
+// now use drawTable, which measures each row, on a landscape page.
+describe('drawTable on a landscape report page', () => {
+  const LANDSCAPE = { width: 792, height: 612 };
+  const WRAPPING = [
+    { header: 'ID', width: 10 },
+    { header: 'DESCRIPTION', width: 40 },
+  ];
+  const wrappingRows = (n: number) =>
+    Array.from({ length: n }, (_, i) => [
+      `id-${i + 1}`,
+      // ~500 characters: wider than the description column, so it wraps onto three lines.
+      'forensic mobile rack calibration writeblocker portable array subscription acquisition signal cartridge chassis analyser storage annual evidence shielded removable workstation '
+        .repeat(3)
+        .trim(),
+    ]);
+
+  it('is a landscape letter page', () => {
+    const doc = createReportDoc();
+
+    expect(doc.page.width).toBe(LANDSCAPE.width);
+    expect(doc.page.height).toBe(LANDSCAPE.height);
+  });
+
+  it('stays landscape on every page it adds', () => {
+    const doc = createReportDoc();
+    drawTable(doc, WRAPPING, wrappingRows(60), 100);
+
+    expect(doc.bufferedPageRange().count).toBeGreaterThan(1);
+    expect(doc.page.width).toBe(LANDSCAPE.width);
+  });
+
+  it('fills the width of the landscape page, not the width of an A4 portrait one', () => {
+    const doc = createReportDoc();
+    const rects: number[] = [];
+    const original = doc.rect.bind(doc);
+    jest
+      .spyOn(doc, 'rect')
+      .mockImplementation((x: number, y: number, w: number, h: number) => {
+        rects.push(w);
+        return original(x, y, w, h);
+      });
+    drawTable(doc, WRAPPING, wrappingRows(2), 100);
+
+    expect(Math.max(...rects)).toBeCloseTo(LANDSCAPE.width - 80, 0);
+  });
+
+  it('never draws below the foot of the landscape page', () => {
+    const doc = createReportDoc();
+    const drawn = spyOnText(doc);
+    drawTable(doc, WRAPPING, wrappingRows(80), 100);
+
+    const lowest = LANDSCAPE.height - 40;
+    expect(drawn.every((d) => d.y === undefined || d.y <= lowest)).toBe(true);
+  });
+
+  it('gives a row whose text wraps the height it needs, so it cannot print over the next row', () => {
+    const doc = createReportDoc();
+    const drawn = spyOnText(doc);
+    drawTable(doc, WRAPPING, wrappingRows(3), 100);
+
+    const firstCells = drawn
+      .filter((d) => /^id-\d$/.test(d.text))
+      .map((d) => d.y as number);
+    expect(firstCells).toHaveLength(3);
+    // The description wraps onto three 7pt lines (~32pt); the old fixed row put the next one 16pt down.
+    expect(firstCells[1] - firstCells[0]).toBeGreaterThan(24);
+  });
+
+  it('does not add a page to hold the end of a cell that wrapped past the foot', () => {
+    const doc = createReportDoc();
+    drawTable(doc, WRAPPING, wrappingRows(60), 100);
+    const pages = doc.bufferedPageRange().count;
+
+    // Each row is ~32pt in a ~500pt body: about 15 rows a page, so 60 rows is 4 or 5 pages. The old
+    // builder, with a fixed row and text spilling below the margin, came out at nearly twice that.
+    expect(pages).toBeLessThanOrEqual(6);
+  });
+});
+
+describe('columnProportions', () => {
+  it('gives a long-text column more of the width than a short code', () => {
+    const rowsIn = [
+      [
+        'VOL-ICT-0001',
+        'Dell Latitude 5399 laptop, Intel Core i7, 32GB RAM, 14 inch display',
+        'IES',
+      ],
+      [
+        'VOL-ICT-0002',
+        'Dell Latitude 5398 laptop, Intel Core i7, 24GB RAM, 14 inch display',
+        'IES',
+      ],
+    ];
+
+    const [code, description, cls] = columnProportions(
+      ['Property #', 'Description', 'Class'],
+      rowsIn,
+    );
+
+    expect(description).toBeGreaterThan(code);
+    expect(code).toBeGreaterThan(cls);
+  });
+
+  it('caps a column of very long text, so it cannot starve the others', () => {
+    const [, description] = columnProportions(
+      ['ID', 'Description'],
+      [['a', 'x'.repeat(900)]],
+    );
+
+    expect(description).toBeLessThanOrEqual(40);
+  });
+
+  it('never returns a width a header cannot fit, and copes with no rows', () => {
+    expect(
+      columnProportions(['Acquisition Cost'], [])[0],
+    ).toBeGreaterThanOrEqual(6);
+    expect(columnProportions([], [])).toEqual([]);
   });
 });
 
@@ -561,7 +688,7 @@ describe('roleDisplay', () => {
     },
   );
 
-  it('names the two property roles', () => {
+  it('names the Property Custodian, and still names the retired Property Officer for old records', () => {
     expect(roleDisplay(UserRole.PROPERTY_CUSTODIAN)).toBe('Property Custodian');
     expect(roleDisplay(UserRole.PROPERTY_OFFICER)).toBe('Property Officer');
   });
@@ -584,5 +711,111 @@ describe('drawMetaFields', () => {
     );
 
     expect(drawn.map((d) => d.text)).not.toContain(':');
+  });
+
+  // The rows advanced a fixed 13pt however many lines their text took: a 100-character property
+  // number or a long office wrapped onto the next row and printed over it.
+  // A "Label: value" pair is drawn as two continued text calls, and the line takes its width from the FIRST
+  // call. The label call had none, so a long value ran the full width of the page and over the field
+  // beside it (a 90-character name printed across the next column).
+  it('gives the label the column width, so a long value wraps inside its own column', () => {
+    const doc = createDoc();
+    const widths: Array<number | undefined> = [];
+    const original = doc.text.bind(doc);
+    jest.spyOn(doc, 'text').mockImplementation(((
+      text: string,
+      x?: number | string,
+      y?: number | string,
+      options?: PDFKit.Mixins.TextOptions,
+    ) => {
+      if (/:$/.test(String(text))) widths.push(options?.width);
+      return original(text, x as number, y as number, options);
+    }) as unknown as typeof doc.text);
+
+    drawMetaFields(
+      doc,
+      [
+        { label: 'Requested by', value: 'N'.repeat(90) },
+        { label: 'Type', value: 'New' },
+      ],
+      100,
+    );
+
+    expect(widths).toHaveLength(2);
+    expect(
+      widths.every((w) => typeof w === 'number' && w > 200 && w < 260),
+    ).toBe(true);
+  });
+
+  it('keeps the usual spacing for short values', () => {
+    const doc = createDoc();
+
+    const y = drawMetaFields(
+      doc,
+      [
+        { label: 'Entity Name', value: 'CICC' },
+        { label: 'Date', value: '10/16/2026' },
+        { label: 'Office', value: 'Systems' },
+        { label: 'Fund', value: '01' },
+      ],
+      100,
+    );
+
+    expect(y).toBe(126);
+  });
+
+  it('gives a row whose value wraps the height it needs, so the next row is not printed over it', () => {
+    const doc = createDoc();
+    const drawn = spyOnText(doc);
+    const long = 'forensic mobile rack calibration writeblocker portable array '
+      .repeat(6)
+      .trim();
+
+    const y = drawMetaFields(
+      doc,
+      [
+        { label: 'Property No.', value: long },
+        { label: 'Date', value: '10/16/2026' },
+        { label: 'Office', value: 'Systems' },
+        { label: 'Fund', value: '01' },
+      ],
+      100,
+    );
+
+    const secondRow = drawn.find((d) => d.text === 'Office:')?.y as number;
+    expect(secondRow - 100).toBeGreaterThan(30);
+    expect(y - secondRow).toBe(13);
+  });
+});
+
+describe('drawLabelledLine', () => {
+  it('moves down the usual 13pt for a short value', () => {
+    const doc = createDoc();
+
+    expect(drawLabelledLine(doc, 'To', 'Records Section', 100)).toBe(113);
+  });
+
+  it('moves down by the height of a value that wraps onto several lines', () => {
+    const doc = createDoc();
+    const long =
+      'Office of the Deputy Executive Director for Cyber Investigation Operations '
+        .repeat(8)
+        .trim();
+
+    const y = drawLabelledLine(doc, 'To', long, 100);
+
+    expect(y - 100).toBeGreaterThan(40);
+  });
+
+  it('draws the label in bold, then the value', () => {
+    const doc = createDoc();
+    const drawn = spyOnText(doc);
+
+    drawLabelledLine(doc, 'From', 'Information Technology', 100);
+
+    expect(drawn.map((d) => d.text)).toEqual([
+      'From:',
+      '  Information Technology',
+    ]);
   });
 });

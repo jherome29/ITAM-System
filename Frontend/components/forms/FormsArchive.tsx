@@ -2,19 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { Download } from 'lucide-react';
-import { Panel, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from '@/components/admin/AdminUi';
+import { Panel, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { apiErrorMessage } from '@/lib/api/error-message';
 import { reportsApi, type FormMeta } from '@/lib/api/reports';
 import { downloadBlob } from '@/lib/download';
 import { FORM_CATALOG, formByType, formTypeLabel } from '@/lib/forms/form-catalog';
+import { formatDateTime } from '@/lib/dates';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyRow } from '@/components/ui/EmptyRow';
+import { Pager } from '@/components/ui/Pager';
 
 const PAGE_SIZE = 15;
 const TYPE_OPTIONS = [{ value: 'All', label: 'All form types' }, ...FORM_CATALOG.map((f) => ({ value: f.type, label: `${f.abbr} — ${f.name}` }))];
 
-const when = (iso: string) =>
-  new Date(iso).toLocaleString('en-PH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 /** What a stored form is about, in words: the asset, the requisition, or the period it reports on. */
 function subjectOf(form: FormMeta): string {
@@ -51,7 +53,7 @@ export function FormsArchive({ refreshKey }: Readonly<{ refreshKey: number }>) {
         setLoadError('');
       })
       .catch(() => {
-        if (current) setLoadError('Failed to load the forms archive. Please refresh the page.');
+        if (current) setLoadError('Could not load the forms archive. Please refresh the page.');
       })
       .finally(() => {
         if (current) setLoading(false);
@@ -78,7 +80,6 @@ export function FormsArchive({ refreshKey }: Readonly<{ refreshKey: number }>) {
     setPage(next);
   };
 
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const filtered = formType !== 'All' || debounced !== '';
 
   return (
@@ -100,7 +101,7 @@ export function FormsArchive({ refreshKey }: Readonly<{ refreshKey: number }>) {
           setFormType(value);
         }}
       />
-      {loadError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{loadError}</div>}
+      {loadError && <Notice tone="red">{loadError}</Notice>}
       <Panel title="Generated forms" detail={loading ? 'Loading…' : `${total.toLocaleString('en-PH')} ${filtered ? 'matching ' : ''}${total === 1 ? 'form' : 'forms'} on file`}>
         {loading ? (
           <div className="p-6"><LoadingSkeleton rows={6} /></div>
@@ -122,12 +123,12 @@ export function FormsArchive({ refreshKey }: Readonly<{ refreshKey: number }>) {
                   <tr key={form.id} className="hover:bg-blue-50/40">
                     <td className={tdClass}>
                       <p className="font-bold text-slate-950">{formByType(form.formType)?.abbr ?? form.formType}</p>
-                      <p className="max-w-48 truncate text-xs text-slate-500" title={formTypeLabel(form.formType)}>{formTypeLabel(form.formType)}</p>
+                      <p className="max-w-56 text-xs text-slate-500" title={formTypeLabel(form.formType)}>{formTypeLabel(form.formType)}</p>
                     </td>
-                    <td className={tdClass}>{form.documentNumber ? <StatusChip status={form.documentNumber} tone="blue" /> : <span className="text-slate-400">—</span>}</td>
-                    <td className={`${tdClass} max-w-48 truncate`} title={subjectOf(form)}>{subjectOf(form)}</td>
+                    <td className={tdClass}>{form.documentNumber ? <StatusChip status={form.documentNumber} tone="blue" /> : <span className="text-slate-500">—</span>}</td>
+                    <td className={`${tdClass} max-w-56`} title={subjectOf(form)}>{subjectOf(form)}</td>
                     <td className={tdClass}>{form.generatedByName ?? '—'}</td>
-                    <td className={tdClass}>{when(form.generatedAt)}</td>
+                    <td className={tdNoWrapClass}>{formatDateTime(form.generatedAt)}</td>
                     <td className={`${tdClass} text-right`}>
                       <SecondaryButton icon={Download} onClick={() => void download(form)} disabled={downloading === form.id || form.filePath !== 'stored'}>
                         {downloading === form.id ? 'Downloading…' : 'Download'}
@@ -136,25 +137,13 @@ export function FormsArchive({ refreshKey }: Readonly<{ refreshKey: number }>) {
                   </tr>
                 ))}
                 {forms.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
-                      {filtered ? 'No forms match the current filter.' : 'No forms have been generated yet.'}
-                    </td>
-                  </tr>
+                  <EmptyRow colSpan={6}>{filtered ? 'No forms match the current filter.' : 'No forms have been generated yet.'}</EmptyRow>
                 )}
               </tbody>
             </table>
           </TableWrap>
         )}
-        {total > PAGE_SIZE && (
-          <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3">
-            <p className="text-xs text-slate-500">Page {page} of {pages}</p>
-            <div className="flex gap-2">
-              <SecondaryButton onClick={() => goTo(page - 1)} disabled={page <= 1}>Previous</SecondaryButton>
-              <SecondaryButton onClick={() => goTo(page + 1)} disabled={page >= pages}>Next</SecondaryButton>
-            </div>
-          </div>
-        )}
+        <Pager page={page} total={total} pageSize={PAGE_SIZE} onPage={goTo} noun="forms" />
       </Panel>
       <Toast message={toast} />
     </div>

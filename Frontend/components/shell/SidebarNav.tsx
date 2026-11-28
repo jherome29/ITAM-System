@@ -1,7 +1,8 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
-import { LogOut, Shield, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
+import { LogOut, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import type { RoleNavItem } from '@/lib/roles/role-navigation';
 import { proposedRoleLabels, ProposedUserRole } from '@/lib/roles/proposed-roles';
@@ -25,6 +26,7 @@ export function SidebarNav({
 }>) {
   const pathname = usePathname();
   const { logout, user } = useAuth();
+  const compact = collapsed && !mobile;
   const displayName = user ? `${user.firstName} ${user.lastName}` : proposedRoleLabels[role];
   const initials = user
     ? `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase()
@@ -34,21 +36,15 @@ export function SidebarNav({
     <aside
       className={`${
         mobile ? 'h-full' : 'fixed inset-y-0 left-0 z-30 hidden h-screen lg:flex'
-      } ${collapsed && !mobile ? 'w-20' : 'w-64'} flex-col bg-[#0b2038] text-white transition-all`}
+      } ${collapsed && !mobile ? 'w-20' : 'w-72'} flex-col bg-navy text-white transition-all`}
     >
-      <div
-        className={`flex h-16 items-center border-b border-white/10 ${
-          collapsed && !mobile ? 'justify-center px-2' : 'gap-3 px-4'
-        }`}
-      >
-        {(!collapsed || mobile) && (
+      <div className={`flex h-16 shrink-0 items-center border-b border-white/10 ${compact ? 'justify-center px-2' : 'gap-3 px-4'}`}>
+        {!compact && (
           <>
-            <span className="grid h-9 w-9 flex-none place-items-center rounded-lg bg-blue-600">
-              <Shield className="h-5 w-5" />
-            </span>
+            <Image src="/logo.png" alt="CICC logo" width={40} height={40} priority className="h-10 w-10 flex-none object-contain" />
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold">{appConfig.appName}</p>
-              <p className="truncate text-xs text-blue-200">CICC Asset Mgmt</p>
+              <p className="text-base font-bold leading-tight">{appConfig.appName}</p>
+              <p className="text-xs leading-tight text-blue-200">CICC Asset Management</p>
             </div>
           </>
         )}
@@ -57,22 +53,14 @@ export function SidebarNav({
             <X className="h-5 w-5" />
           </button>
         ) : (
-          <button
-            type="button"
-            onClick={onToggle}
-            className={`${collapsed ? '' : 'ml-auto'} rounded-md p-2 text-blue-100 hover:bg-white/10`}
-            aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
-          >
+          <button type="button" onClick={onToggle} className={`${compact ? '' : 'ml-auto'} shrink-0 rounded-md p-2 text-blue-100 hover:bg-white/10`}
+            aria-label={compact ? 'Expand navigation' : 'Collapse navigation'} aria-expanded={!compact}>
             {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </button>
         )}
       </div>
 
-      <nav
-        className={`scrollbar-on-dark flex-1 space-y-1 overflow-y-auto py-5 ${
-          collapsed && !mobile ? 'px-2' : 'px-3'
-        }`}
-      >
+      <nav className={`flex-1 space-y-1 overflow-y-auto py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${compact ? 'px-2' : 'px-3'}`}>
         {items.map((item, index) => {
           const Icon = item.icon;
           const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -80,7 +68,7 @@ export function SidebarNav({
           return (
             <div key={item.href}>
               {showSection && (
-                <p className={`${index === 0 ? '' : 'pt-5'} px-1 pb-2 text-[11px] font-bold uppercase tracking-widest text-blue-300`}>
+                <p className={`${index === 0 ? '' : 'pt-5'} px-1 pb-2 text-xs font-bold uppercase tracking-wider text-blue-300`}>
                   {item.section}
                 </p>
               )}
@@ -88,14 +76,14 @@ export function SidebarNav({
                 href={item.href}
                 onClick={onClose}
                 title={item.label}
-                className={`flex h-10 items-center rounded-md text-sm font-semibold transition ${
+                className={`flex min-h-11 items-center rounded-md py-2 text-sm font-semibold transition ${
                   collapsed && !mobile ? 'justify-center px-0' : 'gap-3 px-3'
                 } ${
                   isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-blue-100 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                <Icon className="h-4 w-4 flex-none" />
-                {(!collapsed || mobile) && <span className="truncate">{item.label}</span>}
+                <Icon className="h-5 w-5 flex-none" />
+                {(!collapsed || mobile) && <span className="leading-snug">{item.label}</span>}
               </Link>
             </div>
           );
@@ -104,20 +92,20 @@ export function SidebarNav({
 
       <div className="border-t border-white/10 px-4 py-3">
         <div className={`flex min-h-12 items-center ${collapsed && !mobile ? 'justify-center' : 'gap-3'}`}>
-          <span className="grid h-9 w-9 flex-none place-items-center rounded-full border border-blue-300/30 bg-blue-950 text-[11px] font-bold leading-none text-blue-100">
+          <span className="grid h-9 w-9 flex-none place-items-center rounded-full border border-blue-300/30 bg-blue-950 text-xs font-bold leading-none text-blue-100">
             {initials}
           </span>
           {(!collapsed || mobile) && (
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold leading-5 text-white">{displayName}</p>
-              <p className="truncate text-xs leading-4 text-blue-200">{proposedRoleLabels[role]}</p>
+              <p className="text-xs leading-5 text-blue-200">{proposedRoleLabels[role]}</p>
             </div>
           )}
           {(!collapsed || mobile) && (
             <button
               type="button"
               onClick={() => logout()}
-              className="grid h-8 w-8 flex-none place-items-center rounded-md text-blue-200 hover:bg-white/10 hover:text-white"
+              className="grid h-10 w-10 flex-none place-items-center rounded-md text-blue-200 hover:bg-white/10 hover:text-white"
               aria-label="Sign out"
               title="Sign out"
             >

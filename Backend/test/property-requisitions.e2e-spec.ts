@@ -16,9 +16,9 @@ import {
 } from '../../packages/shared/src/enums';
 import { BCRYPT_ROUNDS } from '../../packages/shared/src/constants';
 
-// The Property Custodian and Property Officer hold property like anyone else, so
-// they file requisitions like any other holder (their requests route to the
-// Approving Officer of their section, then division). Management and the System
+// The Property Custodian holds property like anyone else, so they file
+// requisitions like any other holder (their requests route to the Approving
+// Officer of their section, then division). Management and the System
 // Administrator do not file. Fulfilling is the custodian's job, so a custodian
 // never fulfils what they filed themselves: another custodian does, or - for a
 // custodian's own request only - the System Administrator.
@@ -96,7 +96,6 @@ describe('Property roles file requisitions (e2e)', () => {
     await makeUser('APPROVER', UserRole.SUPERVISOR, psm, hash);
     await makeUser('PC', UserRole.PROPERTY_CUSTODIAN, psm, hash);
     await makeUser('PC2', UserRole.PROPERTY_CUSTODIAN, psm, hash);
-    await makeUser('PO', UserRole.PROPERTY_OFFICER, psm, hash);
     // ...and a division that has none.
     await makeUser(
       'ORPHAN_PC',
@@ -123,7 +122,7 @@ describe('Property roles file requisitions (e2e)', () => {
   });
 
   describe('filing', () => {
-    it.each(['PC', 'PO'])(
+    it.each(['PC', 'PC2'])(
       'the %s files a requisition, routed to the Approving Officer of their division',
       async (who) => {
         const res = await file(who, `${who} chair`).expect(201);
@@ -371,6 +370,67 @@ describe('Property roles file requisitions (e2e)', () => {
         .send({ notes: 'Issued by the administrator: no second IT custodian' })
         .expect(200);
       expect(byAdmin.body.data.status).toBe('fulfilled');
+    });
+  });
+
+  // The Property Officer's two screens that read real records moved to the Property
+  // Custodian's menu when the role was merged into it, so the custodian must be
+  // able to reach what they read.
+  describe('the review screens the Property Officer used to have', () => {
+    it('lets the Property Custodian open Replacement Validation (200)', async () => {
+      const res = await request(server())
+        .get('/api/v1/requisitions/replacement-review')
+        .set(auth('PC'))
+        .expect(200);
+
+      expect(res.body.data).toBeDefined();
+    });
+
+    it('lets the Property Custodian list the assets flagged for disposal (200)', async () => {
+      await request(server())
+        .get('/api/v1/assets?status=flagged_for_disposal')
+        .set(auth('PC'))
+        .expect(200);
+    });
+  });
+
+  // The Property Officer was a read-only subset of the Property Custodian and was
+  // merged into it. The database enum keeps the value (old audit rows carry it),
+  // so the API is what stops anyone being given it again.
+  describe('the retired Property Officer role', () => {
+    const newAccount = (role: string) => ({
+      employeeId: `PR-RET-${tag}`,
+      firstName: 'Retired',
+      lastName: 'Role',
+      email: `pr.retired.${tag}@cicc.gov.ph`,
+      password,
+      role,
+      division: 'Property and Supply Management',
+      officeOrSection: 'Property Custody Unit',
+    });
+
+    it('cannot be given to a new account (400)', async () => {
+      await request(server())
+        .post('/api/v1/users')
+        .set(auth('ADMIN'))
+        .send(newAccount('property_officer'))
+        .expect(400);
+    });
+
+    it('cannot be given to an existing account (400)', async () => {
+      await request(server())
+        .patch(`/api/v1/users/${users.EMP.id}/role`)
+        .set(auth('ADMIN'))
+        .send({ role: 'property_officer' })
+        .expect(400);
+    });
+
+    it('the Property Custodian role is still assignable (201)', async () => {
+      await request(server())
+        .post('/api/v1/users')
+        .set(auth('ADMIN'))
+        .send(newAccount('property_custodian'))
+        .expect(201);
     });
   });
 });

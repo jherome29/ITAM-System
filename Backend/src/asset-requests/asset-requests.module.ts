@@ -28,5 +28,6 @@ import { GeneratedFormEntity } from '../reports/entities/generated-form.entity';
   ],
   controllers: [AssetRequestsController],
   providers: [AssetRequestsService],
+  exports: [AssetRequestsService], // the admin dashboard counts what the administrator may decide
 })
 export class AssetRequestsModule {}

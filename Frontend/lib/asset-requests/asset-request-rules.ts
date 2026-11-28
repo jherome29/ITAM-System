@@ -1,4 +1,5 @@
 import type { AssetRequest, AssetRequestStatus, AssetRequestType } from '@/lib/api/asset-requests';
+import { formatDate } from '../dates';
 
 export const REQUEST_TYPE_LABEL: Record<AssetRequestType, string> = {
   return: 'Return request',
@@ -193,8 +194,7 @@ export function bringList(r: Pick<AssetRequest, 'asset'>): string[] {
   return [r.asset.itemDescription, ...parts];
 }
 
-const shortDate = (iso: string) =>
-  new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
+const shortDate = (iso: string) => formatDate(iso.slice(0, 10));
 
 /**
  * Requester-facing guidance once the custodian approves: what to bring and

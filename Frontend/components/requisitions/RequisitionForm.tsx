@@ -8,6 +8,9 @@ import type { CatalogueItem, MyAsset } from '@/lib/api/assets';
 import { requisitionsApi, type CreateRequisitionDto, type Requisition } from '@/lib/api/requisitions';
 import { MAX_REQUEST_QUANTITY, maxRequestQuantity } from '@/lib/requisitions/catalogue-items';
 import { localToday } from '@/lib/dates';
+import { DateField } from '@/components/ui/DateField';
+import { Chip } from '@/components/ui/Chip';
+import { Notice } from '@/components/ui/Notice';
 
 // Shared by every role that can submit a requisition (Employee, Approving
 // Officer, IT Asset Custodian). Submits directly to POST /v1/requisitions with
@@ -62,7 +65,7 @@ export function buildCreateRequisitionDto(v: RequisitionFormValues): CreateRequi
       itemDescription: v.itemDescription,
       quantity: Number(v.quantity),
       assetType: v.assetType,
-      assetClass: v.assetClass,
+      ...(v.assetClass ? { assetClass: v.assetClass } : {}),
       justification: v.justification,
     }],
   };
@@ -86,12 +89,12 @@ export function RequisitionForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [manual, setManual] = useState(false);
-  const [manualClass, setManualClass] = useState(replacing?.assetClass ?? 'SEP');
+  const [manualType, setManualType] = useState(replacing?.assetType ?? 'ICT');
   const [picked, setPicked] = useState<CatalogueItem | null>(defaultItem);
 
   const requisitionType = deriveRequisitionType(
     Boolean(replacing),
-    manual ? { isSupply: false, assetClass: manualClass } : picked,
+    manual ? { isSupply: manualType === 'Supplies', assetClass: '' } : picked,
   );
 
   const pick = (item: CatalogueItem | null) => {
@@ -113,8 +116,8 @@ export function RequisitionForm({
       requiredDate: String(data.get('requiredDate')),
       itemDescription: manual ? String(data.get('itemDescription')) : picked!.itemDescription,
       quantity: replacing ? '1' : String(data.get('quantity')),
-      assetType: manual ? (replacing?.assetType ?? String(data.get('assetType'))) : picked!.assetType,
-      assetClass: manual ? manualClass : picked!.assetClass,
+      assetType: manual ? manualType : picked!.assetType,
+      assetClass: manual ? (replacing?.assetClass ?? '') : picked!.assetClass,
       replacedAssetId: replacing?.id ?? '',
     });
     setSubmitting(true);
@@ -123,7 +126,7 @@ export function RequisitionForm({
       onSubmit(res.data);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
-      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Failed to submit requisition.'));
+      setError(Array.isArray(msg) ? msg.join(' · ') : (msg ?? 'Could not submit requisition.'));
     } finally {
       setSubmitting(false);
     }
@@ -132,7 +135,7 @@ export function RequisitionForm({
   const maxQty = manual ? MAX_REQUEST_QUANTITY : maxRequestQuantity(picked);
 
   return <form className="space-y-4" onSubmit={handleSubmit}>
-    {error && <div className="border border-red-200 bg-red-50 p-3 text-xs text-red-700">{error}</div>}
+    {error && <Notice tone="red">{error}</Notice>}
 
     {replacing && (
       <div className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
@@ -152,10 +155,7 @@ export function RequisitionForm({
           <p>This item will be marked <b>not in inventory</b>. The custodian may need to put it on hold until it can be sourced.</p>
         </div>
         <Field label="Describe the item"><input name="itemDescription" required className={inputClass} placeholder="e.g. 27-inch monitor, USB-C docking station" /></Field>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {!replacing && <Field label="Asset type"><select name="assetType" defaultValue="ICT" className={inputClass}><option value="ICT">ICT</option><option value="Fixed">Fixed</option><option value="Supplies">Supplies</option></select></Field>}
-          <Field label="Asset class"><select name="assetClass" value={manualClass} onChange={(e) => setManualClass(e.target.value)} className={inputClass}><option value="PPE">PPE</option><option value="SEP">SEP</option>{!replacing && <option value="IES">IES</option>}</select></Field>
-        </div>
+        {!replacing && <Field label="Asset type"><select name="assetType" value={manualType} onChange={(event) => setManualType(event.target.value)} className={inputClass}><option value="ICT">ICT</option><option value="Fixed">Fixed</option><option value="Supplies">Supplies</option></select></Field>}
         <button type="button" onClick={() => setManual(false)} className="text-xs font-bold text-blue-700 hover:underline">← Back to inventory search</button>
       </div>
     ) : (
@@ -170,14 +170,14 @@ export function RequisitionForm({
 
     <div className="flex items-center gap-2 text-xs">
       <span className="font-bold text-slate-600">Request type</span>
-      <span className="rounded-full bg-slate-100 px-2.5 py-0.5 font-bold text-slate-700 ring-1 ring-slate-200">{REQUISITION_TYPE_LABEL[requisitionType]}</span>
+      <Chip>{REQUISITION_TYPE_LABEL[requisitionType]}</Chip>
       {!replacing && <span className="text-slate-500">To repair or replace an asset you hold, use My Assigned Assets.</span>}
     </div>
     <div className="grid gap-4 sm:grid-cols-2">
       {replacing
         ? <Field label="Quantity"><input value="1" readOnly className={`${inputClass} bg-slate-50`} aria-describedby="replacement-qty" /><span id="replacement-qty" className="mt-1 block text-xs text-slate-500">One-for-one replacement.</span></Field>
         : <Field label={manual || !picked ? 'Quantity' : `Quantity (max ${maxQty})`}><input key={maxQty} name="quantity" type="number" min="1" max={maxQty} defaultValue="1" required className={inputClass} /></Field>}
-      <Field label="Required date"><input name="requiredDate" required type="date" min={localToday()} className={inputClass} /></Field>
+      <Field label="Required date"><DateField name="requiredDate" required min={localToday()} /></Field>
     </div>
     <Field label="Business justification"><textarea name="justification" required minLength={20} className={`${inputClass} h-28 py-2`} placeholder={replacing ? 'Describe what is wrong with your current unit and how it affects your work.' : 'Explain the operational need and intended use.'} /></Field>
     <div className="border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">Submission routes to your assigned Approving Officer. Availability and issuance are confirmed by the responsible custodian after approval.</div>

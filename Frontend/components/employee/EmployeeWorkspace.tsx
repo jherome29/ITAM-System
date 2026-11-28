@@ -7,15 +7,20 @@ import { DetailDrawer } from '@/components/ui/DetailDrawer';
 import { CenteredModal } from '@/components/ui/CenteredModal';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
-import { AdminPageHeader, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from '@/components/admin/AdminUi';
+import { usePrintPrompt } from '@/components/shared/RecordPrints';
+import { AdminPageHeader, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
 import { assetsApi, type Asset, type CatalogueItem } from '@/lib/api/assets';
 import { requisitionsApi, type Requisition } from '@/lib/api/requisitions';
 import { catalogueItemKey } from '@/components/requisitions/CatalogueItemPicker';
+import { ClampText } from '@/components/ui/ClampText';
+import { Pager } from '@/components/ui/Pager';
+import { usePaged } from '@/lib/use-paged';
+import { collectAllPages } from '@/lib/api/collect-pages';
 import { RequisitionForm } from '@/components/requisitions/RequisitionForm';
 import { formatAvailability } from '@/lib/requisitions/catalogue-items';
 import { formatDate, formatDateTime, requisitionStatusLabel } from '@/lib/requisitions/requisition-view';
 import { RequisitionDetailView } from '@/components/requisitions/RequisitionDetailView';
-import { StatusBadge } from '@/components/dashboard/StatusBadge';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { assetRequestsApi, type AssetRequest } from '@/lib/api/asset-requests';
 import { ALL_REQUEST_TYPES, REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE, REQUEST_TYPE_LABEL, isOpen } from '@/lib/asset-requests/asset-request-rules';
 import { AssetRequestForm } from '@/components/asset-requests/AssetRequestForm';
@@ -23,6 +28,9 @@ import { AssetRequestDetail } from '@/components/asset-requests/AssetRequestDeta
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { MyAssignedAssets } from '@/components/assets/MyAssignedAssets';
 import { EmployeeDashboard } from './EmployeeDashboard';
+import { buttonClass } from '@/components/ui/buttons';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyMessage, EmptyRow } from '@/components/ui/EmptyRow';
 
 type EmployeeSlug = 'dashboard' | 'catalogue' | 'requisitions' | 'new-requisition' | 'assigned-assets' | 'returns-incidents';
 
@@ -44,6 +52,9 @@ const ATTENTION_CONDITIONS = new Set(['unserviceable', 'for_repair', 'for_dispos
 
 const CATALOGUE_FILTERS = ['All', 'ICT', 'Fixed', 'Supplies', 'PPE', 'SEP', 'IES'];
 const TYPE_FILTERS = new Set(['ICT', 'Fixed', 'Supplies']);
+// The most grouped items the API returns in one answer (CATALOGUE_ITEMS_MAX in the backend); a full
+// answer means there may be more, so the page says so instead of claiming it is the whole list.
+const CATALOGUE_LIMIT = 100;
 
 function EmployeeCatalogue() {
   const [items, setItems] = useState<CatalogueItem[]>([]);
@@ -53,6 +64,7 @@ function EmployeeCatalogue() {
   const [selected, setSelected] = useState<CatalogueItem | null>(null);
   const [requested, setRequested] = useState<string[]>([]);
   const [toast, setToast] = useState('');
+  const { ask: askToPrint, prompt: printPrompt } = usePrintPrompt();
 
   useEffect(() => {
     // Grouped, available-only inventory; search and filter run server-side so
@@ -63,7 +75,7 @@ function EmployeeCatalogue() {
         search: search.trim() || undefined,
         assetType: TYPE_FILTERS.has(filter) ? filter : undefined,
         assetClass: filter !== 'All' && !TYPE_FILTERS.has(filter) ? filter : undefined,
-        limit: 100,
+        limit: CATALOGUE_LIMIT,
       })
         .then((res) => !cancelled && setItems(res.data))
         .catch(() => {})
@@ -72,13 +84,14 @@ function EmployeeCatalogue() {
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [search, filter]);
 
+  const paged = usePaged(items, `${search}|${filter}`);
   const unitsOf = (type: string) => items.filter((i) => i.assetType === type).reduce((sum, i) => sum + i.available, 0);
 
-  return <div className="space-y-4"><EmployeeHeader title="Asset Catalogue" detail="Browse assets and supplies available for requisition. Availability is confirmed by the responsible custodian after approval." />
+  return <div className="space-y-5"><EmployeeHeader title="Asset Catalogue" detail="Browse assets and supplies available for requisition. Availability is confirmed by the responsible custodian after approval." />
     <div className="grid gap-3 sm:grid-cols-3"><MetricCard label="Requestable items" value={String(items.length)} detail="Distinct items matching your filters" tone="blue" icon={Search} /><MetricCard label="ICT units available" value={String(unitsOf('ICT'))} detail="Subject to fulfillment check" tone="green" icon={PackageCheck} /><MetricCard label="Needs attention" value={String(items.filter((i) => i.conditions.some((c) => ATTENTION_CONDITIONS.has(c))).length)} detail="Flagged condition — verify before requesting" tone="amber" icon={AlertTriangle} /></div>
     <SearchToolbar value={search} onChange={setSearch} filterLabel="All catalogue items" filterValue={filter} filterOptions={CATALOGUE_FILTERS} onFilterChange={setFilter} />
-    {loading ? <Panel title="Request Catalogue" detail="Loading catalogue..."><div className="p-4"><LoadingSkeleton rows={8} /></div></Panel> : items.length === 0 ? <Panel title="Request Catalogue" detail="0 items match your filters"><div className="p-8 text-center text-sm text-slate-500">No catalogue items are currently available for requisition.</div></Panel> : <Panel title="Request Catalogue" detail={`${items.length} items match your filters`}><TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>Item</th><th className={thClass}>Class</th><th className={thClass}>Type</th><th className={thClass}>Availability</th><th className={thClass}>Location</th><th className={thClass}>Condition</th><th className={`${thClass} text-right`}>Request</th></tr></thead><tbody>{items.map((item) => { const key = catalogueItemKey(item); return <tr key={key} className="hover:bg-slate-50"><td className={tdClass}><p className="font-bold text-slate-950">{item.itemDescription}</p><p className="text-xs text-slate-500">{[item.brand, item.itemCode].filter(Boolean).join(' · ') || '—'}</p></td><td className={tdClass}>{item.assetClass}</td><td className={tdClass}>{item.assetType}</td><td className={tdClass}><span className="font-semibold text-emerald-700">{formatAvailability(item)}</span></td><td className={tdClass}>{item.locations.join(' · ') || '—'}</td><td className={tdClass}><StatusChip status={item.conditions.join(', ').replaceAll('_', ' ') || 'Unspecified'} /></td><td className={`${tdClass} text-right`}><button type="button" disabled={requested.includes(key)} onClick={() => setSelected(item)} className="h-8 rounded-md bg-blue-700 px-3 text-xs font-bold text-white hover:bg-blue-800 disabled:bg-emerald-600">{requested.includes(key) ? 'Requested' : 'Request item'}</button></td></tr>; })}</tbody></table></TableWrap></Panel>}
-    <CenteredModal open={Boolean(selected)} title={selected ? `Request ${selected.itemDescription}` : 'Request item'} description="Complete the details below to submit this item for approval." onClose={() => setSelected(null)}>{selected && <RequisitionForm defaultItem={selected} onSubmit={(created) => { setRequested((current) => [...current, catalogueItemKey(selected)]); setSelected(null); setToast(`${selected.itemDescription} request ${created.requestNumber} was submitted for approval.`); }} />}</CenteredModal><Toast message={toast} /></div>;
+    {loading ? <Panel title="Request Catalogue" detail="Loading catalogue…"><div className="p-4"><LoadingSkeleton rows={8} /></div></Panel> : items.length === 0 ? <Panel title="Request Catalogue" detail="0 items match your filters"><EmptyMessage>No catalogue items are currently available for requisition.</EmptyMessage></Panel> : <Panel title="Request Catalogue" detail={items.length >= CATALOGUE_LIMIT ? `Showing the first ${CATALOGUE_LIMIT} items — search to narrow the list` : `${items.length} items match your filters`}><TableWrap><table className="min-w-[900px] w-full"><thead><tr><th className={thClass}>Item</th><th className={thClass}>Class</th><th className={thClass}>Type</th><th className={thClass}>Availability</th><th className={thClass}>Location</th><th className={thClass}>Condition</th><th className={`${thClass} text-right`}>Request</th></tr></thead><tbody>{paged.pageItems.map((item) => { const key = catalogueItemKey(item); return <tr key={key} className="hover:bg-slate-50"><td className={tdClass}><p className="font-bold text-slate-950"><ClampText lines={2}>{item.itemDescription}</ClampText></p><p className="text-xs text-slate-500"><ClampText lines={1}>{[item.brand, item.itemCode].filter(Boolean).join(' · ')}</ClampText></p></td><td className={tdClass}>{item.assetClass}</td><td className={tdClass}>{item.assetType}</td><td className={tdClass}><span className="font-semibold text-emerald-700">{formatAvailability(item)}</span></td><td className={tdClass}><ClampText lines={2}>{item.locations.join(' · ')}</ClampText></td><td className={tdClass}>{item.conditions.length ? <span className="flex flex-wrap gap-1">{item.conditions.map((c) => <StatusBadge key={c} status={c} />)}</span> : <StatusChip status="Unspecified" />}</td><td className={`${tdClass} text-right`}><button type="button" disabled={requested.includes(key)} onClick={() => setSelected(item)} className={buttonClass({ variant: requested.includes(key) ? 'success' : 'primary', size: 'sm' })}>{requested.includes(key) ? 'Requested' : 'Request item'}</button></td></tr>; })}</tbody></table></TableWrap><Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="items" /></Panel>}
+    <CenteredModal open={Boolean(selected)} title={selected ? `Request ${selected.itemDescription}` : 'Request item'} description="Complete the details below to submit this item for approval." onClose={() => setSelected(null)}>{selected && <RequisitionForm defaultItem={selected} onSubmit={(created) => { setRequested((current) => [...current, catalogueItemKey(selected)]); setSelected(null); setToast(`${selected.itemDescription} request ${created.requestNumber} was submitted for approval.`); askToPrint('requisition', created.id, created.requestNumber); }} />}</CenteredModal><Toast message={toast} />{printPrompt}</div>;
 }
 
 function EmployeeRequisitions({ initialCreateOpen = false }: Readonly<{ initialCreateOpen?: boolean }>) {
@@ -89,10 +102,13 @@ function EmployeeRequisitions({ initialCreateOpen = false }: Readonly<{ initialC
   const [creating, setCreating] = useState(initialCreateOpen);
   const [selected, setSelected] = useState<Requisition | null>(null);
   const [toast, setToast] = useState('');
+  const { ask: askToPrint, prompt: printPrompt } = usePrintPrompt();
 
   useEffect(() => {
-    requisitionsApi.mine()
-      .then((res) => setRequests(res.data.data))
+    // Every page: mine() answers 15 at a time, so an employee with more requests than that used to
+    // see only the newest 15 and a wrong "Total requests".
+    collectAllPages<Requisition>((page, limit) => requisitionsApi.mine(page, limit).then((res) => ({ data: res.data.data, total: res.data.total })))
+      .then(setRequests)
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -103,14 +119,16 @@ function EmployeeRequisitions({ initialCreateOpen = false }: Readonly<{ initialC
     return matchesFilter && haystack.includes(search.toLowerCase());
   });
 
-  const handleCreate = (created: Requisition) => { setRequests((current) => [created, ...current]); setCreating(false); setToast(`${created.requestNumber} was submitted for approval.`); };
+  const paged = usePaged(rows, `${search}|${filter}`);
 
-  return <div className="space-y-4"><EmployeeHeader title="My Requisitions" detail="Create requests and track approval, fulfillment, remarks, and lifecycle progress." action={<PrimaryButton icon={Plus} onClick={() => setCreating(true)}>New requisition</PrimaryButton>} />
+  const handleCreate = (created: Requisition) => { setRequests((current) => [created, ...current]); setCreating(false); setToast(`${created.requestNumber} was submitted for approval.`); askToPrint('requisition', created.id, created.requestNumber); };
+
+  return <div className="space-y-5"><EmployeeHeader title="My Requisitions" detail="Create requests and track approval, fulfillment, remarks, and lifecycle progress." action={<PrimaryButton icon={Plus} onClick={() => setCreating(true)}>New requisition</PrimaryButton>} />
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Total requests" value={String(requests.length)} detail="Your records only" tone="blue" icon={ClipboardList} /><MetricCard label="Pending approval" value={String(requests.filter((item) => item.status === 'pending_supervisor').length)} detail="Awaiting supervisor decision" tone="amber" icon={CalendarClock} /><MetricCard label="On hold" value={String(requests.filter((item) => item.status === 'on_hold').length)} detail="Asset unavailable — IT Personnel notified" tone="red" icon={FileWarning} /><MetricCard label="Fulfilled" value={String(requests.filter((item) => item.status === 'fulfilled').length)} detail="Issued or completed" tone="green" icon={CheckCircle2} /></div>
     <SearchToolbar value={search} onChange={setSearch} filterLabel="All requisitions" filterValue={filter} filterOptions={['All', 'pending_supervisor', 'pending_fulfillment', 'on_hold', 'fulfilled', 'rejected', 'cancelled', 'new', 'replacement', 'repair', 'supply']} onFilterChange={setFilter} />
-    {loading ? <Panel title="Requisition History" detail="Loading your requisitions..."><div className="p-4"><LoadingSkeleton rows={6} /></div></Panel> : rows.length === 0 ? <Panel title="Requisition History" detail="0 requests match your filters"><div className="p-8 text-center text-sm text-slate-500">You have not submitted any requisitions yet.</div></Panel> : <Panel title="Requisition History" detail={`${rows.length} requests shown`}><TableWrap><table className="min-w-[1000px] w-full"><thead><tr><th className={thClass}>Request</th><th className={thClass}>Type</th><th className={thClass}>Quantity</th><th className={thClass}>Required date</th><th className={thClass}>Approving officer</th><th className={thClass}>Last update</th><th className={thClass}>Status</th></tr></thead><tbody>{rows.map((request) => { const items = request.items ?? []; const primaryItem = items[0]?.itemDescription ?? 'Requisition'; const extraItems = items.length > 1 ? ` +${items.length - 1} more` : ''; const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0); return <tr key={request.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelected(request)} className="text-left"><span className="block font-bold text-slate-950">{primaryItem}{extraItems}</span><span className="text-xs text-slate-500">{request.requestNumber}</span></button></td><td className={tdClass}>{request.requisitionType.replace(/_/g, ' ')}</td><td className={tdClass}>{totalQuantity}</td><td className={tdClass}>{formatDate(request.requiredDate)}</td><td className={tdClass}>{request.approver?.name ?? 'Not yet assigned'}</td><td className={tdClass}>{formatDateTime(request.updatedAt)}</td><td className={tdClass}><StatusBadge status={request.status} label={requisitionStatusLabel(request.status)} /></td></tr>; })}</tbody></table></TableWrap></Panel>}
+    {loading ? <Panel title="Requisition History" detail="Loading your requisitions…"><div className="p-4"><LoadingSkeleton rows={6} /></div></Panel> : rows.length === 0 ? <Panel title="Requisition History" detail="0 requests match your filters"><EmptyMessage>You have not submitted any requisitions yet.</EmptyMessage></Panel> : <Panel title="Requisition History" detail={`${rows.length} requests shown`}><TableWrap><table className="min-w-[1000px] w-full"><thead><tr><th className={thClass}>Request</th><th className={thClass}>Type</th><th className={thClass}>Quantity</th><th className={thClass}>Required date</th><th className={thClass}>Approving officer</th><th className={thClass}>Last update</th><th className={thClass}>Status</th></tr></thead><tbody>{paged.pageItems.map((request) => { const items = request.items ?? []; const primaryItem = items[0]?.itemDescription ?? 'Requisition'; const extraItems = items.length > 1 ? ` +${items.length - 1} more` : ''; const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0); return <tr key={request.id} className="hover:bg-slate-50"><td className={tdClass}><button type="button" onClick={() => setSelected(request)} className="text-left"><span className="block font-bold text-slate-950"><ClampText lines={2}>{`${primaryItem}${extraItems}`}</ClampText></span><span className="text-xs text-slate-500">{request.requestNumber}</span></button></td><td className={tdClass}>{request.requisitionType.replace(/_/g, ' ')}</td><td className={tdClass}>{totalQuantity}</td><td className={tdClass}>{formatDate(request.requiredDate)}</td><td className={tdClass}>{request.approver?.name ?? 'Not yet assigned'}</td><td className={tdClass}>{formatDateTime(request.updatedAt)}</td><td className={tdClass}><StatusBadge status={request.status} label={requisitionStatusLabel(request.status)} /></td></tr>; })}</tbody></table></TableWrap><Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="requests" /></Panel>}
     <CenteredModal open={creating} title="New requisition" description="Provide the request details and justification for approval." onClose={() => setCreating(false)}><RequisitionForm onSubmit={handleCreate} /></CenteredModal>
-    <DetailDrawer open={Boolean(selected)} title={selected?.requestNumber ?? 'Requisition details'} onClose={() => setSelected(null)}>{selected && <RequisitionDetailView request={selected} />}</DetailDrawer><Toast message={toast} /></div>;
+    <DetailDrawer open={Boolean(selected)} title={selected?.requestNumber ?? 'Requisition details'} onClose={() => setSelected(null)}>{selected && <RequisitionDetailView request={selected} />}</DetailDrawer><Toast message={toast} />{printPrompt}</div>;
 }
 
 
@@ -128,13 +146,14 @@ function EmployeeIncidents({ openId }: Readonly<{ openId?: string }>) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
   const [toast, setToast] = useState('');
+  const { ask: askToPrint, prompt: printPrompt } = usePrintPrompt();
 
   const load = useCallback(
     () => Promise.all([assetsApi.mine(), assetRequestsApi.mine()]).then(([a, r]) => { setAssets(a.data); setRequests(r.data); return r.data; }),
     [],
   );
   useEffect(() => {
-    load().catch(() => setError('Failed to load your requests. Please refresh the page.')).finally(() => setLoading(false));
+    load().catch(() => setError('Could not load your requests. Please refresh the page.')).finally(() => setLoading(false));
   }, [load]);
 
   const handledOpenId = useRef<string | null>(null);
@@ -151,6 +170,7 @@ function EmployeeIncidents({ openId }: Readonly<{ openId?: string }>) {
     try {
       const res = await assetRequestsApi.cancel(cancelling.id);
       notify(`${cancelling.requestNumber} cancelled.`);
+      askToPrint('asset_request', cancelling.id, cancelling.requestNumber);
       if (selected?.id === res.data.id) setSelected(res.data);
       await load();
     } catch {
@@ -167,27 +187,29 @@ function EmployeeIncidents({ openId }: Readonly<{ openId?: string }>) {
     if (ALL_REQUEST_TYPES.some((t) => REQUEST_TYPE_LABEL[t] === filter) && REQUEST_TYPE_LABEL[r.type] !== filter) return false;
     return [r.requestNumber, r.asset?.itemDescription, r.details, REQUEST_TYPE_LABEL[r.type]].join(' ').toLowerCase().includes(search.toLowerCase());
   });
+  const paged = usePaged(rows, `${search}|${filter}`);
   const hasIssued = assets.some((a) => a.status === 'issued');
 
-  return <div className="space-y-4"><EmployeeHeader title="Returns & Incidents" detail="Return an asset or report a repair, damage, loss or theft involving property assigned to you." action={<PrimaryButton icon={Plus} disabled={!hasIssued} onClick={() => setCreating(true)}>File report</PrimaryButton>} />
+  return <div className="space-y-5"><EmployeeHeader title="Returns & Incidents" detail="Return an asset or report a repair, damage, loss or theft involving property assigned to you." action={<PrimaryButton icon={Plus} disabled={!hasIssued} onClick={() => setCreating(true)}>File report</PrimaryButton>} />
     <div className="border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">For loss or theft, notify your supervisor and the responsible custodian immediately in addition to filing this report.</div>
-    {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
+    {error && <Notice tone="red">{error}</Notice>}
     <SearchToolbar value={search} onChange={setSearch} filterLabel="All requests" filterValue={filter} filterOptions={filters} onFilterChange={setFilter} />
-    <Panel title="My Requests" detail={loading ? 'Loading...' : `${rows.length} of ${requests.length} requests`}>
+    <Panel title="My Requests" detail={loading ? 'Loading…' : `${rows.length} of ${requests.length} requests`}>
       {loading ? <div className="p-4"><LoadingSkeleton rows={4} /></div> : <TableWrap><table className="min-w-[760px] w-full"><thead><tr><th className={thClass}>Request</th><th className={thClass}>Type</th><th className={thClass}>Asset</th><th className={thClass}>Filed</th><th className={thClass}>Status</th><th className={thClass} /></tr></thead><tbody>
-        {rows.map((r) => <tr key={r.id}>
-          <td className={`${tdClass} font-bold text-slate-950`}>{r.requestNumber}</td>
+        {paged.pageItems.map((r) => <tr key={r.id}>
+          <td className={`${tdNoWrapClass} font-bold text-slate-950`}>{r.requestNumber}</td>
           <td className={tdClass}>{REQUEST_TYPE_LABEL[r.type]}</td>
-          <td className={tdClass}>{r.asset?.itemDescription ?? '—'}</td>
-          <td className={tdClass}>{formatDateTime(r.createdAt)}</td>
+          <td className={tdClass}><ClampText>{r.asset?.itemDescription}</ClampText></td>
+          <td className={tdNoWrapClass}>{formatDateTime(r.createdAt)}</td>
           <td className={tdClass}><StatusChip status={REQUEST_STATUS_LABEL[r.status]} tone={REQUEST_STATUS_TONE[r.status]} /></td>
           <td className={`${tdClass} text-right`}><SecondaryButton onClick={() => setSelected(r)}>View</SecondaryButton></td>
         </tr>)}
-        {rows.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">No requests yet.</td></tr>}
+        {rows.length === 0 && <EmptyRow colSpan={6}>No requests yet.</EmptyRow>}
       </tbody></table></TableWrap>}
+      <Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="requests" />
     </Panel>
     <DetailDrawer open={creating} title="File return or incident report" onClose={() => setCreating(false)}>
-      {creating && <AssetRequestForm assets={assets} myRequests={requests} onSubmitted={(r) => { setCreating(false); notify(`${r.requestNumber} submitted — the ${r.custodianLabel ?? 'custodian'} has been notified.`); void load(); }} />}
+      {creating && <AssetRequestForm assets={assets} myRequests={requests} onSubmitted={(r) => { setCreating(false); notify(`${r.requestNumber} submitted — the ${r.custodianLabel ?? 'custodian'} has been notified.`); askToPrint('asset_request', r.id, r.requestNumber); void load(); }} />}
     </DetailDrawer>
     <DetailDrawer open={Boolean(selected)} title={selected?.requestNumber ?? 'Request'} onClose={() => setSelected(null)}>
       {selected && <div className="space-y-4">
@@ -197,6 +219,7 @@ function EmployeeIncidents({ openId }: Readonly<{ openId?: string }>) {
     </DetailDrawer>
     <ConfirmDialog open={Boolean(cancelling)} title={`Cancel ${cancelling?.requestNumber ?? ''}?`} detail="The custodian will be notified that you no longer need this request." confirmLabel="Cancel request" cancelLabel="Keep request" onConfirm={() => void confirmCancel()} onCancel={() => setCancelling(null)} />
     <Toast message={toast} />
+    {printPrompt}
   </div>;
 }
 
@@ -214,7 +237,7 @@ export function EmployeeRequisitionDetail({ id }: Readonly<{ id: string }>) {
       .finally(() => setLoading(false));
   }, [id]);
 
-  if (loading) return <div className="mx-auto max-w-3xl space-y-4"><EmployeeHeader title="Requisition details" detail="Loading your requisition..." /><Panel title="Requisition details"><div className="p-5"><LoadingSkeleton rows={6} /></div></Panel></div>;
-  if (!request) return <div className="space-y-4"><EmployeeHeader title="Requisition not found" detail="This request does not exist or is not assigned to the current employee." /><Link href="/employee/requisitions" className="text-sm font-bold text-blue-700">Return to My Requisitions</Link></div>;
-  return <div className="mx-auto max-w-3xl space-y-4"><EmployeeHeader title={request.requestNumber} detail="Your requisition details and approval progress." /><Panel title="Requisition Details"><div className="p-5"><RequisitionDetailView request={request} /></div></Panel><Link href="/employee/requisitions" className="inline-flex text-sm font-bold text-blue-700">Back to My Requisitions</Link></div>;
+  if (loading) return <div className="max-w-3xl space-y-5"><EmployeeHeader title="Requisition details" detail="Loading your requisition…" /><Panel title="Requisition details"><div className="p-5"><LoadingSkeleton rows={6} /></div></Panel></div>;
+  if (!request) return <div className="space-y-5"><EmployeeHeader title="Requisition not found" detail="This request does not exist or is not assigned to the current employee." /><Link href="/employee/requisitions" className="text-sm font-bold text-blue-700">Return to My Requisitions</Link></div>;
+  return <div className="max-w-3xl space-y-5"><EmployeeHeader title={request.requestNumber} detail="Your requisition details and approval progress." /><Panel title="Requisition Details"><div className="p-5"><RequisitionDetailView request={request} /></div></Panel><Link href="/employee/requisitions" className="inline-flex text-sm font-bold text-blue-700">Back to My Requisitions</Link></div>;
 }

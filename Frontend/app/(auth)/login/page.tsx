@@ -5,15 +5,18 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/lib/auth/use-auth';
+import { buttonClass } from '@/components/ui/buttons';
+import { controlClass, controlWithTrailingIconClass, labelClass } from '@/components/ui/controls';
+import { Notice } from '@/components/ui/Notice';
 
 const ROLE_REDIRECTS: Record<string, string> = {
   employee: '/employee/dashboard',
   supervisor: '/approving-officer/dashboard',
-  it_personnel: '/it-asset-custodian/dashboard',
+  asset_custodian: '/asset-custodian/dashboard',
+  it_personnel: '/asset-custodian/dashboard',
   system_admin: '/master-admin/dashboard',
   management: '/management-audit/dashboard',
-  property_custodian: '/property-custodian/dashboard',
-  property_officer: '/property-officer/dashboard',
+  property_custodian: '/asset-custodian/dashboard',
 };
 
 export default function LoginPage() {
@@ -51,20 +54,18 @@ export default function LoginPage() {
     <div className="max-w-md w-full bg-white rounded-lg shadow-lg border border-blue-200 p-8">
       <div className="flex flex-col items-center mb-8">
         <Image src="/logo.png" alt="CICC Logo" width={96} height={96} className="object-contain mb-4" />
-        <h1 className="text-2xl font-semibold text-[#1a4d7a]">Asset Management System</h1>
-        <p className="text-sm text-gray-500 mt-1">Cybercrime Investigation and Coordinating Center</p>
-        <p className="text-sm text-gray-400 mt-1">Sign in to continue</p>
+        <h1 className="text-2xl font-bold text-brand">Asset Management System</h1>
+        <p className="text-sm text-slate-500 mt-1">Cybercrime Investigation and Coordinating Center</p>
+        <p className="text-sm text-slate-500 mt-1">Sign in to continue</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">
-            {error}
-          </div>
+          <Notice tone="red">{error}</Notice>
         )}
 
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="email" className={labelClass}>
             Email Address
           </label>
           <input
@@ -73,13 +74,13 @@ export default function LoginPage() {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors"
+            className={controlClass}
             required
           />
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="password" className={labelClass}>
             Password
           </label>
           <div className="relative">
@@ -89,8 +90,8 @@ export default function LoginPage() {
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              // pr-10 leaves room for the toggle; ::-ms-reveal hides Edge's built-in eye so there aren't two.
-              className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1a4d7a]/30 focus:border-[#1a4d7a] transition-colors [&::-ms-reveal]:hidden"
+              // The trailing-icon control leaves room for the toggle; ::-ms-reveal hides Edge's built-in eye so there aren't two.
+              className={`${controlWithTrailingIconClass} [&::-ms-reveal]:hidden`}
               required
             />
             <button
@@ -99,9 +100,9 @@ export default function LoginPage() {
               aria-label={showPassword ? 'Hide password' : 'Show password'}
               aria-pressed={showPassword}
               aria-controls="password"
-              className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-[#1a4d7a] focus:outline-none focus-visible:text-[#1a4d7a] focus-visible:ring-2 focus-visible:ring-[#1a4d7a]/30 rounded-r-md transition-colors"
+              className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-brand focus:outline-none focus-visible:text-brand focus-visible:ring-2 focus-visible:ring-brand/30 rounded-r-md transition-colors"
             >
-              {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+              {showPassword ? <EyeOff className="h-5 w-5" aria-hidden="true" /> : <Eye className="h-5 w-5" aria-hidden="true" />}
             </button>
           </div>
         </div>
@@ -109,9 +110,9 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-[#1a4d7a] text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-[#143d61] disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-150 mt-2"
+          className={`${buttonClass()} mt-2 w-full`}
         >
-          {loading ? 'Signing in...' : 'Sign In'}
+          {loading ? 'Signing in…' : 'Sign In'}
         </button>
       </form>
     </div>

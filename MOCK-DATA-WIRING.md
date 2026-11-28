@@ -24,7 +24,7 @@ behind it can never show a made-up one.
 | Page | Roles | Reads / writes |
 |---|---|---|
 | Approval Queue | Approving Officer | `GET /v1/requisitions`, `…/approve`, `…/reject` |
-| My Requisitions | Approving Officer, IT Asset Custodian, **Property Custodian, Property Officer** (the Employee has its own pages) | `GET /v1/requisitions/mine`, `POST /v1/requisitions` |
+| My Requisitions | Approving Officer, IT Asset Custodian, **Property Custodian** (the Employee has its own pages) | `GET /v1/requisitions/mine`, `POST /v1/requisitions` |
 | Requisition Fulfillment | IT Asset Custodian, Property Custodian | `GET /v1/requisitions` (their own requisitions are excluded), `…/fulfill`, `…/hold` |
 | Requisition Fulfilment (fallback) | **Master Admin** | `GET /v1/requisitions/fulfilment-fallback` (only requisitions a custodian filed themselves), `…/fulfill`, `…/hold` |
 | Custody & Issuance | IT Asset Custodian, Property Custodian | `GET /v1/assets` (carries who holds each asset), `PATCH …/lifecycle` |
@@ -40,7 +40,7 @@ and Management's Audit Log — the same append-only viewer the Master Admin uses
 These have **no backend**, so their menu entries were removed rather than left as
 sample screens:
 
-- Inventory corrections and reconciliation workflows (Property Officer)
+- Inventory corrections and reconciliation workflows
 - *Recording* a physical count (the count sheet is read-only against live assets)
 - Trends / utilisation reporting (the Management dashboard shows real status shares,
   not monthly trends)
@@ -56,6 +56,5 @@ and its menu entry to `lib/roles/role-navigation.ts` — nothing else needs un-h
 components only they used) were deleted on 2026-10-15. Login had stopped sending anyone
 there, and every capability had a new equivalent except one: the IT custodian's
 management-report generator (`/it-personnel/reports`). That now lives at
-`/it-asset-custodian/management-reports`, in the IT menu. The Property Officer's "Go to Forms"
-button, the only link from a new screen into an old one, now points at
-`/property-officer/reports`.
+`/it-asset-custodian/management-reports`, in the IT menu. The Property Custodian's "Go to Forms"
+button, the only link from a new screen into an old one, now points at `/property-custodian/reports` (the Property Officer role that used to own that page was merged into the Property Custodian on 2026-10-16).

@@ -61,8 +61,8 @@ export async function applyPages(
   const admin = session[UserRole.SYSTEM_ADMIN];
   const custodian = (type: AssetType) => session[custodianFor(type)];
 
-  // The roles the seeder is logged in as. The Property Officer and Management only ever
-  // *hold* assets here, so they are looked up in the directory instead.
+  // The roles the seeder is logged in as. Management only ever *holds* assets here,
+  // so it is looked up in the directory instead.
   const login: Partial<Record<Holder, Session>> = {
     employee: session[UserRole.EMPLOYEE],
     supervisor: session[UserRole.SUPERVISOR],

@@ -7,36 +7,50 @@ const hrefsOf = (role: ProposedUserRole) => roleNavigation[role].map((item) => i
 // Menu entries that opened screens with no backend behind them: hard-coded
 // sample rows and buttons that saved nothing. They are removed until the
 // feature (and its business rules) exist.
-describe('Property Officer menu', () => {
+describe('Property Custodian menu', () => {
   it('does not offer screens that have no backend', () => {
-    const hrefs = hrefsOf(ProposedUserRole.PROPERTY_OFFICER);
-    expect(hrefs).not.toContain('/property-officer/corrections');
-    expect(hrefs).not.toContain('/property-officer/reconciliation');
-    expect(hrefs).not.toContain('/property-officer/audit');
+    const hrefs = hrefsOf(ProposedUserRole.ASSET_CUSTODIAN);
+    expect(hrefs).not.toContain('/asset-custodian/corrections');
+    expect(hrefs).not.toContain('/asset-custodian/reconciliation');
+    expect(hrefs).not.toContain('/asset-custodian/audit');
   });
 
-  it('keeps every screen that reads real records', () => {
-    expect(hrefsOf(ProposedUserRole.PROPERTY_OFFICER)).toEqual(
+  it('keeps active custodian tools in the sidebar without the retired entries', () => {
+    const hrefs = hrefsOf(ProposedUserRole.ASSET_CUSTODIAN);
+    expect(hrefs).not.toContain('/asset-custodian/returns-incidents');
+    expect(hrefs).not.toContain('/asset-custodian/disposal-review');
+    expect(hrefs).not.toContain('/asset-custodian/replacements');
+    expect(hrefs).toEqual(
       expect.arrayContaining([
-        '/property-officer/dashboard',
-        '/property-officer/assets',
-        '/property-officer/replacements',
-        '/property-officer/disposal', // Disposal Review — now the real list of flagged assets
-        '/property-officer/reports',
-        '/property-officer/assigned-assets',
-        '/property-officer/notifications',
+        '/asset-custodian/disposal', // the recommend-for-disposal screen stays
+        '/asset-custodian/reports',
+        '/asset-custodian/assigned-assets',
+        '/asset-custodian/notifications',
       ]),
     );
   });
 });
 
+// The Property Officer was a read-only subset of the Property Custodian, so it was
+// merged into it. The role has no workspace, menu or label left.
+describe('the retired Property Officer role', () => {
+  it('is no longer a role of the frontend', () => {
+    expect(Object.values(ProposedUserRole)).not.toContain('property_officer');
+    expect(Object.keys(roleNavigation)).not.toContain('property_officer');
+  });
+
+  it('has no menu entry in any workspace', () => {
+    const hrefs = Object.values(roleNavigation).flatMap((items) => items.map((i) => i.href));
+    expect(hrefs.filter((h) => h.startsWith('/property-officer'))).toEqual([]);
+  });
+});
+
 // Holding property does not make someone a requester, but the Property Custodian
-// and Property Officer file requisitions like the employees they are. Management
-// (read-only oversight) and the System Administrator do not.
+// files requisitions like the employee they are. Management (read-only oversight)
+// and the System Administrator do not.
 describe('who can file a requisition, by menu', () => {
-  it('gives the two property roles My Requisitions', () => {
-    expect(hrefsOf(ProposedUserRole.PROPERTY_CUSTODIAN)).toContain('/property-custodian/requisitions');
-    expect(hrefsOf(ProposedUserRole.PROPERTY_OFFICER)).toContain('/property-officer/requisitions');
+  it('gives the Property Custodian My Requisitions', () => {
+    expect(hrefsOf(ProposedUserRole.ASSET_CUSTODIAN)).toContain('/asset-custodian/requisitions');
   });
 
   it('keeps Management and the Master Admin from filing', () => {
@@ -52,7 +66,7 @@ describe('who can file a requisition, by menu', () => {
 describe('screens that used to show sample data and are now real', () => {
   it('stay in the menu of the roles that have them', () => {
     expect(hrefsOf(ProposedUserRole.APPROVING_OFFICER)).toContain('/approving-officer/approval-history');
-    expect(hrefsOf(ProposedUserRole.PROPERTY_CUSTODIAN)).toContain('/property-custodian/physical-inventory');
-    expect(hrefsOf(ProposedUserRole.IT_ASSET_CUSTODIAN)).toContain('/it-asset-custodian/physical-inventory');
+    expect(hrefsOf(ProposedUserRole.ASSET_CUSTODIAN)).toContain('/asset-custodian/physical-inventory');
+    expect(hrefsOf(ProposedUserRole.ASSET_CUSTODIAN)).toContain('/asset-custodian/physical-inventory');
   });
 });

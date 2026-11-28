@@ -55,6 +55,10 @@ RUN npm ci --omit=dev --workspace=backend --include-workspace-root \
 # node_modules / dist are world-readable; the app writes nothing to disk
 # (PDFs are buffered and stored in the DB), so no chown is needed.
 COPY --from=builder /repo/Backend/dist ./Backend/dist
+# The migration runner (Railway pre-deploy command: `node scripts/db-migrate.mjs`) and the schema files it
+# applies. It resolves ../../Database/schemas from its own folder, so they sit beside Backend/ as in the repo.
+COPY Backend/scripts ./Backend/scripts
+COPY Database/schemas ./Database/schemas
 USER nestjs
 WORKDIR /repo/Backend
 EXPOSE 3001

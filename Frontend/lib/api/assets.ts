@@ -22,10 +22,15 @@ export interface Asset {
   assetType: string;
   qrCode: string;
   barcodeValue: string;
+  photoFileName: string | null;
+  photoMimeType: string | null;
   status: string;
   custodianId: string | null;
   /** Who holds it — name and employee ID only. Present on the custodians' asset list. */
   custodian?: { id: string; name: string; employeeId: string } | null;
+  lastIssuedAt?: string | null;
+  lastIssuedFor?: string | null;
+  lastIssuedRequisitionId?: string | null;
   quantity: number;
   reorderLevel: number | null;
   expectedReturnDate: string | null;
@@ -80,6 +85,7 @@ export interface CatalogueItem {
 }
 
 export interface AssetStats {
+  inventoryByType: Record<string, number>;
   total: number;
   available: number;
   issued: number;
@@ -122,6 +128,10 @@ export interface UpdateLifecycleDto {
   expectedReturnDate?: string; // For ISSUED — arms the overdue-return watcher
   officeOrSection?: string; // Arrival (transferred → available) — where it now sits
   officeLocation?: string; // Arrival (transferred → available) — room / floor
+  disposalDate?: string;
+  disposalMethod?: string;
+  disposalReference?: string;
+  disposalConfirmed?: boolean;
 }
 
 export interface UpdateAssetDto {
@@ -130,7 +140,7 @@ export interface UpdateAssetDto {
   itemDescription?: string;
   brand?: string;
   serialNumber?: string;
-  propertyNumber?: string;
+  propertyNumber?: string | null;
   components?: string;
   acquisitionCost?: number;
   acquisitionDate?: string;
@@ -153,12 +163,14 @@ export const assetsApi = {
     status?: string,
     assetType?: string,
     assetClass?: string,
+    view?: "inventory",
   ) => {
     const params: Record<string, string | number> = { page, limit };
     if (search) params.search = search;
     if (status) params.status = status;
     if (assetType) params.assetType = assetType;
     if (assetClass) params.assetClass = assetClass;
+    if (view) params.view = view;
     return client
       .get<ApiResponse<PaginatedResponse<Asset>>>("/v1/assets", { params })
       .then((r) => r.data);
@@ -166,6 +178,16 @@ export const assetsApi = {
 
   stats: () =>
     client.get<ApiResponse<AssetStats>>("/v1/assets/stats").then((r) => r.data),
+
+  custody: (page: number, limit: number) =>
+    client.get<ApiResponse<PaginatedResponse<Asset>>>("/v1/assets", {
+      params: { page, limit, view: "custody" },
+    }).then((r) => r.data),
+
+  disposalQueue: (page: number, limit: number) =>
+    client.get<ApiResponse<PaginatedResponse<Asset>>>("/v1/assets", {
+      params: { page, limit, view: "disposal" },
+    }).then((r) => r.data),
 
   catalogue: () =>
     client
@@ -187,8 +209,16 @@ export const assetsApi = {
   mine: () =>
     client.get<ApiResponse<MyAsset[]>>('/v1/assets/mine').then((r) => r.data),
 
+  findByInventoryTag: (value: string, signal?: AbortSignal) =>
+    client.get<ApiResponse<Asset>>('/v1/assets/tag-lookup', { params: { value }, signal }).then((r) => r.data),
+
   getOne: (id: string) =>
     client.get<ApiResponse<Asset>>(`/v1/assets/${id}`).then((r) => r.data),
+
+  markUnserviceable: (id: string, reason: string) =>
+    client.patch<ApiResponse<Asset>>(`/v1/assets/${id}/lifecycle`, {
+      status: 'flagged_for_disposal', notes: reason.trim(),
+    }).then((r) => r.data),
 
   create: (dto: CreateAssetDto) =>
     client.post<ApiResponse<Asset>>("/v1/assets", dto).then((r) => r.data),
@@ -200,11 +230,23 @@ export const assetsApi = {
 
   generateQr: (id: string) =>
     client
-      .post<ApiResponse<{ qrCode: string }>>(`/v1/assets/${id}/qr`)
+      .post<ApiResponse<{ qrCode: string; barcodeValue: string; assetId: string }>>(`/v1/assets/${id}/qr`)
       .then((r) => r.data),
 
   update: (id: string, dto: UpdateAssetDto) =>
     client
       .patch<ApiResponse<Asset>>(`/v1/assets/${id}`, dto)
       .then((r) => r.data),
+
+  photo: (id: string) =>
+    client.get<Blob>(`/v1/assets/${id}/photo`, { responseType: "blob" }).then((r) => r.data),
+
+  uploadPhoto: (id: string, photo: File) => {
+    const body = new FormData();
+    body.append("photo", photo);
+    return client.post<ApiResponse<Asset>>(`/v1/assets/${id}/photo`, body).then((r) => r.data);
+  },
+
+  deletePhoto: (id: string) =>
+    client.delete<ApiResponse<Asset>>(`/v1/assets/${id}/photo`).then((r) => r.data),
 };

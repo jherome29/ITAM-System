@@ -141,9 +141,9 @@ describe('demo scenario', () => {
     expect(c.pcAssetRequests).toBeGreaterThan(0);
     // Replacement validation and disposal review are scoped by asset type, so
     // each custodian domain needs its own: ICT for IT Personnel, Fixed and
-    // Supplies for the Property Custodian and Property Officer. (A lost laptop
-    // is invisible to the Property Officer — that gap shipped once already.)
-    for (const scope of [c.it, c.po]) {
+    // Supplies for the Property Custodian. (A lost laptop is invisible to the
+    // Property Custodian's pages — that gap shipped once already.)
+    for (const scope of [c.it, c.pc]) {
       expect(scope.replacementRequests).toBeGreaterThan(0);
       expect(scope.replacementCandidates).toBeGreaterThan(0);
       expect(scope.disposalCandidates).toBeGreaterThan(0);

@@ -34,8 +34,8 @@ export class AssetEntity {
   @Column({ nullable: true })
   serialNumber!: string;
 
-  @Column({ nullable: true, unique: true })
-  propertyNumber!: string;
+  @Column({ type: 'varchar', nullable: true, unique: true })
+  propertyNumber!: string | null;
 
   @Column({ nullable: true, type: 'text' })
   components!: string;
@@ -103,6 +103,15 @@ export class AssetEntity {
 
   @Column({ nullable: true, type: 'timestamp with time zone' })
   overdueNotifiedAt!: Date | null;
+
+  @Column({ nullable: true, type: 'bytea', select: false })
+  photoData!: Buffer | null;
+
+  @Column({ nullable: true, type: 'varchar', length: 50 })
+  photoMimeType!: string | null;
+
+  @Column({ nullable: true, type: 'varchar', length: 255 })
+  photoFileName!: string | null;
 
   @OneToMany(() => AssetTransactionEntity, (tx) => tx.asset, { eager: false })
   locationHistory!: AssetTransactionEntity[];

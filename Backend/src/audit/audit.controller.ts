@@ -72,7 +72,7 @@ export class AuditController {
    * GET /api/v1/audit/record/:recordId
    * Full history of a specific record (asset, requisition, user, etc.).
    * Roles: System Admin, Management (any record); IT Personnel, Property
-   * Custodian, Property Officer (only assets inside their own asset-type scope
+   * Custodian (only assets inside their own asset-type scope
    * — AuditService.findRecordHistory enforces it, so a custodian cannot pull a
    * user's login history through this route).
    */
@@ -82,7 +82,6 @@ export class AuditController {
     UserRole.MANAGEMENT,
     UserRole.IT_PERSONNEL,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findByRecord(
     @Param('recordId', ParseUUIDPipe) recordId: string,

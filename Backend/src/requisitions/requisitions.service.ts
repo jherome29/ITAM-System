@@ -9,7 +9,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Not, Repository } from 'typeorm';
+import { EntityManager, In, IsNull, Not, Repository } from 'typeorm';
 import { RequisitionEntity } from './entities/requisition.entity';
 import { RequisitionItemEntity } from './entities/requisition-item.entity';
 import { RequisitionApprovalEntity } from './entities/requisition-approval.entity';
@@ -21,6 +21,7 @@ import {
 } from '../assets/assets.service';
 import { ReplacementBasis } from '../assets/replacement-eligibility';
 import { ReportsService } from '../reports/reports.service';
+import { buildRequisitionPrint } from './requisition-print';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
@@ -29,6 +30,7 @@ import {
   ApproveRequisitionDto,
   RejectRequisitionDto,
   FulfillRequisitionDto,
+  FulfilledItemDto,
 } from './dto/approval.dto';
 import {
   RequisitionStatus,
@@ -36,9 +38,10 @@ import {
   AuditAction,
   UserRole,
   NotificationAlertType,
-  AssetType,
   AssetClass,
+  AssetCondition,
   AssetStatus,
+  AssetType,
   OfficialFormType,
 } from '../../../packages/shared/src/enums';
 import { resolveAssetTypeScope } from '../common/utils/asset-type-scope.util';
@@ -54,6 +57,7 @@ import { SystemConfigService } from '../system-config/system-config.service';
 
 /** How each fulfilling role is named in requester-facing notifications. */
 const FULFILLER_LABEL: Partial<Record<UserRole, string>> = {
+  [UserRole.ASSET_CUSTODIAN]: 'Asset Custodian',
   [UserRole.IT_PERSONNEL]: 'IT Asset Custodian',
   [UserRole.PROPERTY_CUSTODIAN]: 'Property Custodian',
 };
@@ -65,6 +69,7 @@ export interface RequesterSummary {
   name: string;
   employeeId: string;
   officeOrSection: string;
+  division: string;
 }
 
 /** Item names compare ignoring case and stray spacing ("  usb DRIVES " = "USB drives"). */
@@ -79,6 +84,7 @@ function toRequesterSummary(user?: UserEntity | null): RequesterSummary | null {
     name: `${user.firstName} ${user.lastName}`.trim(),
     employeeId: user.employeeId,
     officeOrSection: user.officeOrSection,
+    division: user.division,
   };
 }
 
@@ -166,6 +172,7 @@ export function isCustodianOwnRequisition(
   items: Array<{ assetType: AssetType }>,
 ): boolean {
   if (
+    requesterRole !== UserRole.ASSET_CUSTODIAN &&
     requesterRole !== UserRole.IT_PERSONNEL &&
     requesterRole !== UserRole.PROPERTY_CUSTODIAN
   ) {
@@ -204,6 +211,7 @@ export class RequisitionsService {
     page = 1,
     limit = 20,
     statusFilter?: string,
+    includeRequester = false,
   ) {
     const qb = this.reqRepo
       .createQueryBuilder('r')
@@ -224,6 +232,14 @@ export class RequisitionsService {
           id: requestingUserId,
           status: RequisitionStatus.PENDING_SUPERVISOR,
         });
+        break;
+      case UserRole.ASSET_CUSTODIAN:
+        qb.where('r.status IN (:...statuses)', {
+          statuses: [
+            RequisitionStatus.PENDING_FULFILLMENT,
+            RequisitionStatus.ON_HOLD,
+          ],
+        }).andWhere('r.requestedById != :me', { me: requestingUserId });
         break;
       case UserRole.IT_PERSONNEL:
         qb.where('r.status IN (:...statuses)', {
@@ -260,18 +276,13 @@ export class RequisitionsService {
           )
           .andWhere('r.requestedById != :me', { me: requestingUserId });
         break;
-      case UserRole.PROPERTY_OFFICER:
-        qb.andWhere(
-          'EXISTS (SELECT 1 FROM requisition_items ri WHERE ri.requisition_id = r.id AND ri.asset_type IN (:...poScope))',
-          { poScope: resolveAssetTypeScope(UserRole.PROPERTY_OFFICER) },
-        );
-        break;
       // SYSTEM_ADMIN and MANAGEMENT see all
     }
 
     if (statusFilter) {
       qb.andWhere('r.status = :sf', { sf: statusFilter.toLowerCase() });
     }
+    if (includeRequester) qb.addOrderBy('r.id', 'DESC');
 
     const [rows, total] = await qb.getManyAndCount();
     const data = rows.map((r) => withRequester(r));
@@ -353,7 +364,7 @@ export class RequisitionsService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  // ── Replacement review (Property Officer watch list) ──────────────────────
+  // ── Replacement review (the custodians' watch list) ───────────────────────
   /**
    * Replacement requisitions (newest 200) with the criterion they were
    * justified on at submission — read from the immutable audit entry, since
@@ -450,6 +461,72 @@ export class RequisitionsService {
     return { ...pdf, requestNumber: req.requestNumber };
   }
 
+  // ── Paper copy of a requisition ─────────────────────────────────────────────
+  // CICC asked for a printout after every step, as proof beyond the digital record. Same read access as
+  // the requisition itself (findOne's IDOR and scope guards): whoever can see it can print it.
+  async printRecord(
+    id: string,
+    requestingUserId: string,
+    requestingRole: UserRole,
+    ipAddress: string,
+  ) {
+    const req = await this.findOne(id, requestingUserId, requestingRole);
+    const lookup = (userId: string | null) =>
+      userId ? this.usersService.findOne(userId).catch(() => null) : null;
+    const [requester, approver, fulfiller, replaced, printer, holdEntries] =
+      await Promise.all([
+        lookup(req.requestedById),
+        lookup(req.supervisorId),
+        lookup(req.itPersonnelId),
+        req.replacedAssetId
+          ? this.assetsService.findOne(req.replacedAssetId).catch(() => null)
+          : null,
+        lookup(requestingUserId),
+        this.auditService.findByRecordsAndAction(
+          [req.id],
+          AuditAction.REQUISITION_ON_HOLD,
+        ),
+      ]);
+    const holders = await Promise.all(
+      holdEntries.map(async (e) => lookup(e.userId)),
+    );
+    const record = buildRequisitionPrint({
+      requisition: req,
+      requester,
+      approver,
+      fulfiller,
+      holds: holdEntries.map((e, i) => ({
+        at: e.timestamp,
+        by: holders[i]
+          ? `${holders[i]?.firstName} ${holders[i]?.lastName}`.trim()
+          : 'Custodian',
+      })),
+      replacedAsset: replaced,
+    });
+    const { form, buffer } = await this.reportsService.createRecordPrint(
+      record,
+      {
+        id: requestingUserId,
+        name: printer
+          ? `${printer.firstName} ${printer.lastName}`.trim()
+          : 'Unknown',
+        role: requestingRole,
+      },
+      ipAddress,
+    );
+    return { buffer, documentNumber: form.documentNumber, id: form.id };
+  }
+
+  /** The prints made of this requisition so far. Same read access as the requisition. */
+  async listPrints(
+    id: string,
+    requestingUserId: string,
+    requestingRole: UserRole,
+  ) {
+    const req = await this.findOne(id, requestingUserId, requestingRole);
+    return this.reportsService.recordPrints('requisition', req.id);
+  }
+
   // ── Requisition stats — dashboard counts in flat shape matching frontend ────
   // SVC: Improve — personal requisition status overview
   async getStats(
@@ -477,7 +554,7 @@ export class RequisitionsService {
 
     // Scope to the caller's asset-type custody, mirroring findAll()'s
     // EXISTS-subquery pattern (same join shape used there for
-    // IT_PERSONNEL/PROPERTY_CUSTODIAN/PROPERTY_OFFICER). SYSTEM_ADMIN and
+    // IT_PERSONNEL/PROPERTY_CUSTODIAN). SYSTEM_ADMIN and
     // MANAGEMENT get undefined back from resolveAssetTypeScope and stay
     // unscoped, matching findAll()'s "see all" behavior for those roles.
     const assetTypeScope = resolveAssetTypeScope(userRole);
@@ -510,6 +587,60 @@ export class RequisitionsService {
   }
 
   // ── Single requisition with full approval timeline ─────────────────────────
+  async findIssuedSupplies(
+    page: number,
+    search: string,
+    order: 'ASC' | 'DESC' = 'DESC',
+  ) {
+    const limit = 20;
+    const query = this.itemRepo
+      .createQueryBuilder('item')
+      .innerJoinAndSelect('item.requisition', 'req')
+      .where('req.status = :status', { status: RequisitionStatus.FULFILLED })
+      .andWhere('(item.assetType = :supplies OR item.assetClass = :ies)', {
+        supplies: AssetType.SUPPLIES,
+        ies: AssetClass.IES,
+      })
+      .orderBy('req.fulfilledAt', order, 'NULLS LAST')
+      .addOrderBy('item.id', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    if (search) {
+      query
+        .innerJoin('req.requestedBy', 'requester')
+        .andWhere(
+          "CONCAT_WS(' ', item.itemDescription, req.requestNumber, requester.firstName, requester.lastName, requester.employeeId, requester.officeOrSection) ILIKE :search",
+          { search: `%${search}%` },
+        );
+    }
+
+    const [items, total] = await query.getManyAndCount();
+    const requesters = await this.usersService.findHolderSummaries(
+      items.map((item) => item.requisition.requestedById),
+    );
+    const byId = new Map(
+      requesters.map((requester) => [requester.id, requester]),
+    );
+    return {
+      data: items.map((item) => ({
+        id: item.id,
+        itemDescription: item.itemDescription,
+        quantity: item.quantity,
+        requisitionId: item.requisition.id,
+        requestNumber: item.requisition.requestNumber,
+        fulfilledAt: item.requisition.fulfilledAt,
+        requester: byId.get(item.requisition.requestedById) ?? null,
+        stockLinked:
+          item.assetClass === AssetClass.IES && Boolean(item.fulfilledAssetId),
+      })),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
+  }
+
   async findOne(
     id: string,
     requestingUserId?: string,
@@ -791,11 +922,17 @@ export class RequisitionsService {
       dto.items.map(async (item) =>
         this.itemRepo.create({
           ...item,
+          assetClass:
+            item.assetType === AssetType.SUPPLIES
+              ? AssetClass.IES
+              : (item.assetClass ?? null),
           requisitionId: saved.id,
           inInventory: await this.assetsService.isInCatalogue(
             item.itemDescription,
             item.assetType,
-            item.assetClass,
+            item.assetType === AssetType.SUPPLIES
+              ? AssetClass.IES
+              : item.assetClass,
           ),
         }),
       ),
@@ -941,18 +1078,20 @@ export class RequisitionsService {
       )
     ).flat();
     await Promise.all(
-      fulfillers.map((u) =>
-        this.notificationsService.notify(
-          u.id,
-          NotificationAlertType.PENDING_APPROVAL,
-          'Requisition Ready for Fulfillment',
-          req.requisitionType === RequisitionType.REPLACEMENT
-            ? `Replacement requisition ${req.requestNumber} has been approved and is awaiting fulfillment. Collect the old unit from the requester when you hand over the replacement.`
-            : `Requisition ${req.requestNumber} has been approved and is awaiting fulfillment.`,
-          id,
-          'requisition',
+      [...new Map(fulfillers.map((u) => [u.id, u])).values()]
+        .filter((u) => u.id !== req.requestedById)
+        .map((u) =>
+          this.notificationsService.notify(
+            u.id,
+            NotificationAlertType.PENDING_APPROVAL,
+            'Requisition Ready for Fulfillment',
+            req.requisitionType === RequisitionType.REPLACEMENT
+              ? `Replacement requisition ${req.requestNumber} has been approved and is awaiting fulfillment. Collect the old unit from the requester when you hand over the replacement.`
+              : `Requisition ${req.requestNumber} has been approved and is awaiting fulfillment.`,
+            id,
+            'requisition',
+          ),
         ),
-      ),
     );
 
     // Audit log
@@ -1154,6 +1293,113 @@ export class RequisitionsService {
 
   // ── IT Personnel fulfills ─────────────────────────────────────────────────
   // Status: pending_fulfillment | on_hold → fulfilled
+  private async recordHandover(
+    em: EntityManager,
+    req: RequisitionEntity,
+    picks: FulfilledItemDto[],
+    custodianId: string,
+    userRole: UserRole,
+    ipAddress: string,
+    stockDecrements: { assetId: string; from: number; to: number }[],
+  ) {
+    const lines = new Map(req.items.map((line) => [line.id, line]));
+    const supplyLine = (line: RequisitionItemEntity) =>
+      line.assetType === AssetType.SUPPLIES ||
+      line.assetClass === AssetClass.IES;
+    const selected = new Map<string, string[]>();
+    for (const pick of picks) {
+      if (!lines.has(pick.requisitionItemId)) {
+        throw new BadRequestException(
+          'One of the selected items belongs to a different requisition.',
+        );
+      }
+      const assetIds = selected.get(pick.requisitionItemId) ?? [];
+      assetIds.push(pick.assetId);
+      selected.set(pick.requisitionItemId, assetIds);
+    }
+    for (const line of req.items) {
+      const expected = supplyLine(line) ? 1 : line.quantity;
+      if (selected.get(line.id)?.length !== expected) {
+        throw new BadRequestException(
+          `Select ${expected} inventory record(s) for ${line.itemDescription}.`,
+        );
+      }
+    }
+
+    const assetRepo = em.getRepository(AssetEntity);
+    const resolvedClasses = new Map<string, AssetClass>();
+    // Acquire asset locks in the same order across fulfillments.
+    const sortedPicks = [...picks].sort((a, b) =>
+      a.assetId.localeCompare(b.assetId),
+    );
+    for (const { requisitionItemId, assetId } of sortedPicks) {
+      const line = lines.get(requisitionItemId)!;
+      const isSupply = supplyLine(line);
+      const asset = await assetRepo.findOne({
+        where: { id: assetId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const expectedType = isSupply ? AssetType.SUPPLIES : line.assetType;
+      if (
+        !asset ||
+        asset.assetType !== expectedType ||
+        (asset.assetClass === AssetClass.IES) !== isSupply
+      ) {
+        throw new BadRequestException(
+          `Select a matching inventory record for ${line.itemDescription}.`,
+        );
+      }
+      if (
+        asset.status !== AssetStatus.AVAILABLE ||
+        asset.condition !== AssetCondition.SERVICEABLE ||
+        (!isSupply && asset.custodianId)
+      ) {
+        throw new BadRequestException(
+          `${asset.itemDescription} is no longer available for issuance.`,
+        );
+      }
+      const lineClass = resolvedClasses.get(line.id);
+      if (lineClass && lineClass !== asset.assetClass) {
+        throw new BadRequestException(
+          `Select assets of the same class for ${line.itemDescription}.`,
+        );
+      }
+      resolvedClasses.set(line.id, asset.assetClass);
+
+      if (isSupply) {
+        if (asset.quantity < line.quantity) {
+          throw new BadRequestException(
+            `Insufficient stock for ${line.itemDescription}: requested ${line.quantity}, available ${asset.quantity}.`,
+          );
+        }
+        const from = asset.quantity;
+        asset.quantity -= line.quantity;
+        await assetRepo.save(asset);
+        stockDecrements.push({ assetId, from, to: asset.quantity });
+      } else {
+        await this.assetsService.updateLifecycle(
+          assetId,
+          {
+            status: AssetStatus.ISSUED,
+            custodianId: req.requestedById,
+            notes: `Issued for requisition ${req.requestNumber}.`,
+          },
+          custodianId,
+          userRole,
+          ipAddress,
+          resolveAssetTypeScope(userRole),
+          { issuance: { manager: em, requisitionId: req.id } },
+        );
+      }
+    }
+    // The existing foreign key stores the first unit. The audit records every
+    // selected unit, and each asset receives its own issue transaction.
+    for (const line of req.items) {
+      line.fulfilledAssetId = selected.get(line.id)![0];
+      line.assetClass = resolvedClasses.get(line.id)!;
+    }
+  }
+
   async fulfill(
     id: string,
     itPersonnelId: string,
@@ -1202,6 +1448,36 @@ export class RequisitionsService {
     const stockDecrements: { assetId: string; from: number; to: number }[] = [];
 
     const saved = await this.reqRepo.manager.transaction(async (em) => {
+      if (
+        dto.recordHandover &&
+        req.requisitionType !== RequisitionType.REPLACEMENT
+      ) {
+        const repo = em.getRepository(RequisitionEntity);
+        const latest = await repo
+          .createQueryBuilder('r')
+          .setLock('pessimistic_write')
+          .where('r.id = :id', { id })
+          .getOne();
+        if (!latest || !fulfillableStatuses.includes(latest.status)) {
+          throw new BadRequestException(
+            'This requisition has already been processed.',
+          );
+        }
+        await this.recordHandover(
+          em,
+          req,
+          dto.fulfilledItems ?? [],
+          itPersonnelId,
+          userRole,
+          ipAddress,
+          stockDecrements,
+        );
+        req.itPersonnelId = itPersonnelId;
+        req.fulfilledAt = new Date();
+        req.fulfillmentNotes = dto.notes ?? '';
+        req.status = RequisitionStatus.FULFILLED;
+        return repo.save(req);
+      }
       const itemRepo = em.getRepository(RequisitionItemEntity);
       const assetRepo = em.getRepository(AssetEntity);
 
@@ -1240,6 +1516,25 @@ export class RequisitionsService {
             );
           }
 
+          const linkedAsset = await assetRepo.findOne({
+            where: { id: assetId },
+            lock: { mode: 'pessimistic_write' },
+          });
+          if (
+            linkedAsset &&
+            ([AssetStatus.FLAGGED_FOR_DISPOSAL, AssetStatus.DISPOSED].includes(
+              linkedAsset.status,
+            ) ||
+              [
+                AssetCondition.UNSERVICEABLE,
+                AssetCondition.FOR_DISPOSAL,
+              ].includes(linkedAsset.condition))
+          ) {
+            throw new BadRequestException(
+              'Unserviceable assets and assets for disposal cannot fulfill a requisition.',
+            );
+          }
+
           await itemRepo.update(requisitionItemId, {
             fulfilledAssetId: assetId,
           });
@@ -1259,10 +1554,7 @@ export class RequisitionsService {
             // insufficient-stock guard below cannot be bypassed by a
             // read-then-write race (two txns both reading the pre-decrement
             // quantity, both subtracting, last write wins).
-            const supply = await assetRepo.findOne({
-              where: { id: assetId },
-              lock: { mode: 'pessimistic_write' },
-            });
+            const supply = linkedAsset;
             if (!supply) {
               throw new BadRequestException(
                 `Supply asset "${assetId}" not found.`,

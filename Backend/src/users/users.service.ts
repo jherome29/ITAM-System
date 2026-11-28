@@ -54,7 +54,15 @@ export class UsersService {
     // Server-side role filter — callers that only want one role (e.g. the
     // alternate-approver picker fetching supervisors) must not paginate past
     // CICC's ~362 personnel to find them.
-    if (role) {
+    if (role === UserRole.ASSET_CUSTODIAN) {
+      qb.andWhere('u.role IN (:...roles)', {
+        roles: [
+          UserRole.ASSET_CUSTODIAN,
+          UserRole.IT_PERSONNEL,
+          UserRole.PROPERTY_CUSTODIAN,
+        ],
+      });
+    } else if (role) {
       qb.andWhere('u.role = :role', { role });
     }
 
@@ -74,7 +82,13 @@ export class UsersService {
 
   async findByRole(role: UserRole): Promise<UserEntity[]> {
     return this.userRepo.find({
-      where: { role, isActive: true },
+      where:
+        role === UserRole.IT_PERSONNEL || role === UserRole.PROPERTY_CUSTODIAN
+          ? [
+              { role: UserRole.ASSET_CUSTODIAN, isActive: true },
+              { role, isActive: true },
+            ]
+          : { role, isActive: true },
       order: { lastName: 'ASC' },
     });
   }

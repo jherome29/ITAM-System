@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AlertTriangle, FileDown } from 'lucide-react';
-import { StatusBadge } from '@/components/dashboard/StatusBadge';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { requisitionsApi, type Requisition, type RequisitionDocument } from '@/lib/api/requisitions';
 import { FORM_LABEL } from '@/lib/asset-requests/asset-request-rules';
 import { downloadBlob } from '@/lib/download';
@@ -15,17 +15,18 @@ import {
   slaBadge,
   type SlaTone,
 } from '@/lib/requisitions/requisition-view';
+import { Chip } from '@/components/ui/Chip';
+import { RecordPrints } from '@/components/shared/RecordPrints';
+import type { Tone } from '@/components/ui/tones';
+import { humanize } from '@/lib/text';
 
-export const slaToneClass: Record<SlaTone, string> = {
-  red: 'bg-red-50 text-red-700 ring-red-200',
-  amber: 'bg-amber-50 text-amber-800 ring-amber-200',
-  slate: 'bg-slate-100 text-slate-600 ring-slate-200',
-};
+// The SLA countdown is a chip in the shared tones: red once overdue, amber when close.
+const SLA_TONE: Record<SlaTone, Tone> = { red: 'red', amber: 'amber', slate: 'slate' };
 
 export function SlaBadge({ request }: Readonly<{ request: Pick<Requisition, 'status' | 'slaDeadline'> }>) {
   const sla = slaBadge(request);
   if (!sla) return null;
-  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ring-1 ${slaToneClass[sla.tone]}`}>{sla.label}</span>;
+  return <Chip tone={SLA_TONE[sla.tone]}>{sla.label}</Chip>;
 }
 
 /**
@@ -107,25 +108,33 @@ function DocumentsSection({ request }: Readonly<{ request: Requisition }>) {
  * Requisitions). Identifies people by name/employee ID — never by UUID — and
  * builds the timeline from the stored decision timestamps.
  */
-export function RequisitionDetailView({ request }: Readonly<{ request: Requisition }>) {
+export function RequisitionDetailView({ request, fulfillment = false }: Readonly<{ request: Requisition; fulfillment?: boolean }>) {
   const items = request.items ?? [];
   const totalQty = items.reduce((sum, item) => sum + item.quantity, 0);
   const facts: Array<[string, string]> = [
     ['Request No.', request.requestNumber],
-    ['Requested by', requesterLabel(request.requester)],
+    ['Requested by', fulfillment && request.requester
+      ? `${request.requester.name} · ${request.requester.employeeId}`
+      : requesterLabel(request.requester)],
     ['Approving officer', request.approver ? `${request.approver.name} · ${request.approver.employeeId}` : 'Not yet assigned'],
-    ['Request type', request.requisitionType.replaceAll('_', ' ')],
+    ['Request type', humanize(request.requisitionType)],
     ['Total quantity', String(totalQty)],
     ['Required by', formatDate(request.requiredDate)],
   ];
+  if (fulfillment) {
+    facts.push(
+      ['Requester division', request.requester?.division || 'Not recorded'],
+      ['Requester office / section', request.requester?.officeOrSection || 'Not recorded'],
+    );
+  }
 
   return <div className="space-y-5">
-    <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className={fulfillment ? 'space-y-2' : 'flex flex-wrap items-start justify-between gap-3'}>
       <div>
         <p className="text-lg font-bold text-slate-950">{items.map((item) => item.itemDescription).join(', ') || 'Requisition'}</p>
         <p className="mt-1 text-xs text-slate-500">{request.requestNumber} · Submitted {formatDateTime(request.submittedAt)}</p>
       </div>
-      <div className="flex flex-col items-end gap-1.5">
+      <div className={fulfillment ? 'flex flex-wrap items-center gap-2' : 'flex flex-col items-end gap-1.5'}>
         <StatusBadge status={request.status} label={requisitionStatusLabel(request.status)} />
         <SlaBadge request={request} />
       </div>
@@ -143,9 +152,9 @@ export function RequisitionDetailView({ request }: Readonly<{ request: Requisiti
         {items.map((item) => <div key={item.id} className="rounded-lg border border-slate-200 p-3 text-sm">
           <div className="flex items-start justify-between gap-2">
             <p className="font-semibold text-slate-800">{item.itemDescription}</p>
-            {item.inInventory === false && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800 ring-1 ring-amber-200"><AlertTriangle className="h-3 w-3" aria-hidden="true" />Not in inventory</span>}
+            {item.inInventory === false && <Chip tone="amber" icon={<AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />}>Not in inventory</Chip>}
           </div>
-          <p className="mt-1 text-xs text-slate-500">{item.assetType} · {item.assetClass} · Qty {item.quantity}</p>
+          <p className="mt-1 text-xs text-slate-500">{[item.assetType, item.assetClass, `Qty ${item.quantity}`].filter(Boolean).join(' · ')}</p>
         </div>)}
       </div>
     </div>
@@ -167,5 +176,7 @@ export function RequisitionDetailView({ request }: Readonly<{ request: Requisiti
         </li>)}
       </ol>
     </div>
+
+    <RecordPrints key={request.id} kind="requisition" recordId={request.id} stacked={fulfillment} />
   </div>;
 }

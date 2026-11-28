@@ -16,6 +16,9 @@ describe('rowActionMode', () => {
 
   it('keeps the direct confirm where the one action is always valid', () => {
     expect(rowActionMode('fulfillment')).toBe('confirm');
-    expect(rowActionMode('disposal')).toBe('confirm');
+  });
+
+  it('opens the record before recording disposal', () => {
+    expect(rowActionMode('disposal')).toBe('drawer');
   });
 });

@@ -7,6 +7,7 @@ import { AssetEntity } from './entities/asset.entity';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
+import { ReportsService } from '../reports/reports.service';
 import { UserEntity } from '../users/entities/user.entity';
 import {
   AssetClass,
@@ -103,6 +104,11 @@ describe('AssetRepairsService', () => {
   };
   const mockAudit = { log: jest.fn() };
   const mockNotify = { notify: jest.fn() };
+  const mockReports = {
+    createRecordPrint: jest.fn(),
+    recordPrints: jest.fn(),
+    recordPrintPdf: jest.fn(),
+  };
   const mockUsers = {
     findOne: jest.fn((id: string) =>
       Promise.resolve(
@@ -130,9 +136,62 @@ describe('AssetRepairsService', () => {
         { provide: AuditService, useValue: mockAudit },
         { provide: NotificationsService, useValue: mockNotify },
         { provide: UsersService, useValue: mockUsers },
+        { provide: ReportsService, useValue: mockReports },
       ],
     }).compile();
     service = module.get(AssetRepairsService);
+  });
+
+  // CICC asked for a paper copy after every step. The item's holder may print their own item's repair; the
+  // custodians, Admin and Management may print inside their scope; no other employee may.
+  describe('printing a repair', () => {
+    beforeEach(() => {
+      mockReports.createRecordPrint.mockResolvedValue({
+        form: { id: 'f-1', documentNumber: 'PR-2026-0001' },
+        buffer: Buffer.from('%PDF-x'),
+      });
+      mockReports.recordPrints.mockResolvedValue([]);
+    });
+
+    it('lets the holder print the repair of their own item', async () => {
+      await expect(
+        service.printRecord('rep-1', EMP, '1.1.1.1'),
+      ).resolves.toMatchObject({ documentNumber: 'PR-2026-0001' });
+      expect(mockReports.createRecordPrint).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'repair', recordId: 'rep-1' }),
+        expect.objectContaining({ id: 'emp-1', role: UserRole.EMPLOYEE }),
+        '1.1.1.1',
+      );
+    });
+
+    it('lets the custodian of that asset type, the Admin and Management print it', async () => {
+      await expect(
+        service.printRecord('rep-1', IT, '1.1.1.1'),
+      ).resolves.toBeDefined();
+      await expect(
+        service.printRecord('rep-1', ADMIN, '1.1.1.1'),
+      ).resolves.toBeDefined();
+      await expect(
+        service.listPrints('rep-1', user('mg-1', UserRole.MANAGEMENT)),
+      ).resolves.toEqual([]);
+    });
+
+    it('refuses an employee who is not the holder, and a custodian of the other asset type', async () => {
+      await expect(
+        service.printRecord(
+          'rep-1',
+          user('emp-2', UserRole.EMPLOYEE),
+          '1.1.1.1',
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.printRecord('rep-1', PC, '1.1.1.1'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.listPrints('rep-1', user('sup-1', UserRole.SUPERVISOR)),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockReports.createRecordPrint).not.toHaveBeenCalled();
+    });
   });
 
   describe('who may act', () => {

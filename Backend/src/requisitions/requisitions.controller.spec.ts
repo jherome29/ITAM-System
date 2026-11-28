@@ -52,9 +52,9 @@ describe('RequisitionsController — the approver decision history route', () =>
 });
 
 // Who may ask for things. Holding property does not make someone a requester:
-// the Property Custodian and Property Officer now file requisitions like the
-// employee they are, but Management (read-only oversight) and the System
-// Administrator (a privileged system role that can approve any requisition) do not.
+// the Property Custodian files requisitions like the employee they are, but
+// Management (read-only oversight) and the System Administrator (a privileged
+// system role that can approve any requisition) do not.
 describe('RequisitionsController - who may file and who may fulfil', () => {
   const prototype = RequisitionsController.prototype as unknown as Record<
     string,
@@ -63,14 +63,13 @@ describe('RequisitionsController - who may file and who may fulfil', () => {
   const rolesOf = (name: string) =>
     [...(Reflect.getMetadata(ROLES_KEY, prototype[name]) as UserRole[])].sort();
 
-  it('lets the employee-side roles file a requisition, including the two property roles', () => {
+  it('lets the employee-side roles file a requisition, including the Property Custodian', () => {
     expect(rolesOf('create')).toEqual(
       [
         UserRole.EMPLOYEE,
         UserRole.SUPERVISOR,
         UserRole.IT_PERSONNEL,
         UserRole.PROPERTY_CUSTODIAN,
-        UserRole.PROPERTY_OFFICER,
       ].sort(),
     );
   });

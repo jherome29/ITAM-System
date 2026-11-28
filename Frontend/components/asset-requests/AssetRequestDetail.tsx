@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { CheckSquare, FileDown } from 'lucide-react';
 import { StatusChip } from '@/components/admin/AdminUi';
 import { AttachmentGallery } from './AttachmentGallery';
+import { RecordPrints } from '@/components/shared/RecordPrints';
 import { assetRequestsApi, type AssetRequest, type AssetRequestDocument } from '@/lib/api/asset-requests';
 import {
   FORM_LABEL,
@@ -205,6 +206,8 @@ export function AssetRequestDetail({
           ))}
         </ol>
       </div>
+
+      <RecordPrints key={r.id} kind="asset_request" recordId={r.id} />
     </div>
   );
 }

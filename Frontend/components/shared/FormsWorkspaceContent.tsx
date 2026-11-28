@@ -9,6 +9,7 @@ import { FormsArchive } from '@/components/forms/FormsArchive';
 import { Toast } from '@/components/ui/Toast';
 import { reportsApi, type FormMeta } from '@/lib/api/reports';
 import { FORM_CATALOG, formTypeLabel, type FormDef } from '@/lib/forms/form-catalog';
+import { formatDate } from '@/lib/dates';
 
 type Tab = 'generate' | 'archive';
 
@@ -17,12 +18,11 @@ const TABS: Array<{ id: Tab; label: string; icon: typeof FileText }> = [
   { id: 'archive', label: 'Forms archive', icon: Archive },
 ];
 
-const shortDate = (iso: string) => new Date(iso).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
 
 /**
  * Reports & Forms: the official COA / CICC forms. Custodians generate them from
  * the catalogue and find every form already on file in the archive; the
- * oversight roles (Property Officer, Management) get the archive alone.
+ * oversight role (Management) gets the archive alone.
  */
 export function FormsWorkspaceContent({ eyebrow, canGenerate = true }: Readonly<{ eyebrow: string; canGenerate?: boolean }>) {
   const [tab, setTab] = useState<Tab>(canGenerate ? 'generate' : 'archive');
@@ -54,7 +54,7 @@ export function FormsWorkspaceContent({ eyebrow, canGenerate = true }: Readonly<
   const latest = summary?.latest ?? null;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <AdminPageHeader
         eyebrow={eyebrow}
         title="Reports & Forms"
@@ -69,7 +69,7 @@ export function FormsWorkspaceContent({ eyebrow, canGenerate = true }: Readonly<
         <MetricCard label="Forms on file" value={summary ? summary.total.toLocaleString('en-PH') : '—'} detail="Stored with their PDF for audit" tone="blue" icon={Archive} />
         <MetricCard
           label="Last generated"
-          value={latest ? shortDate(latest.generatedAt) : '—'}
+          value={latest ? formatDate(latest.generatedAt) : '—'}
           detail={latest ? `${formTypeLabel(latest.formType)}${latest.documentNumber ? ` · ${latest.documentNumber}` : ''}` : 'Nothing generated yet'}
           tone="slate"
           icon={Clock}
@@ -78,7 +78,7 @@ export function FormsWorkspaceContent({ eyebrow, canGenerate = true }: Readonly<
       </div>
 
       {canGenerate && (
-        <div role="tablist" aria-label="Reports and forms" className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+        <div role="tablist" aria-label="Reports and forms" className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
           {TABS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}

@@ -40,7 +40,6 @@ export type Holder =
   | 'supervisor'
   | 'it_personnel'
   | 'property_custodian'
-  | 'property_officer'
   | 'management'
   | 'system_admin';
 
@@ -195,7 +194,7 @@ export const PAGES_ASSETS: PageAsset[] = [
     '2025-09-02',
   ),
   ict('laptop-roberto', 5, 'property', LAPTOP, 'Dell', 46_500, '2025-09-02'),
-  ict('laptop-carmela', 6, 'governance', LAPTOP, 'Dell', 46_500, '2025-09-02'),
+  ict('laptop-pc-held', 6, 'governance', LAPTOP, 'Dell', 46_500, '2025-09-02'),
   ict('laptop-ana', 7, 'director', LAPTOP, 'Dell', 46_500, '2025-09-02'),
   ict('laptop-admin', 8, 'it', LAPTOP, 'Dell', 46_500, '2025-09-02'),
   ict(
@@ -319,7 +318,7 @@ export const PAGES_ASSETS: PageAsset[] = [
     8_900,
     '2025-05-20',
   ),
-  fixed('chair-carmela', 5, 'governance', CHAIR, 'Uratex', 6_500, '2025-05-20'),
+  fixed('chair-pc-held', 5, 'governance', CHAIR, 'Uratex', 6_500, '2025-05-20'),
   fixed(
     'aircon-ana',
     6,
@@ -471,8 +470,8 @@ export const PAGES_STEPS: Step[] = [
   issue('laptop-roberto', 'property_custodian'),
   issue('chair-roberto', 'property_custodian'),
   issue('cabinet-roberto', 'property_custodian'),
-  issue('laptop-carmela', 'property_officer'),
-  issue('chair-carmela', 'property_officer'),
+  issue('laptop-pc-held', 'property_custodian'),
+  issue('chair-pc-held', 'property_custodian'),
   issue('laptop-ana', 'management'),
   issue('aircon-ana', 'management'),
   issue('laptop-admin', 'system_admin'),
@@ -1187,7 +1186,6 @@ export function pagesCoverage(): PagesCoverage {
     supervisor: 0,
     it_personnel: 0,
     property_custodian: 0,
-    property_officer: 0,
     management: 0,
     system_admin: 0,
   } as Record<Holder, number>;

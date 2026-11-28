@@ -19,6 +19,10 @@ import { AdminModule } from './admin/admin.module';
 import { AssetRequestsModule } from './asset-requests/asset-requests.module';
 import { SnakeNamingStrategy } from './common/snake-naming.strategy';
 
+// TypeORM's dynamic loader cannot resolve the bundled Postgres driver.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const postgresDriver = require('pg') as unknown;
+
 @Module({
   imports: [
     // Global config — validates ALL required env vars at startup (SECURITY.md §8)
@@ -49,6 +53,7 @@ import { SnakeNamingStrategy } from './common/snake-naming.strategy';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
+        driver: postgresDriver,
         url: config.get<string>('DATABASE_URL'),
         autoLoadEntities: true,
         // Schema created via SQL scripts — do not let TypeORM alter it.

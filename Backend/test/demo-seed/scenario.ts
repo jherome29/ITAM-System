@@ -245,7 +245,7 @@ export const DEMO_ASSETS: DemoAsset[] = [
     ...SUPPLY_STORE,
   }),
   // Older units the demo employee already holds: replacement validation is
-  // scoped by asset type, so the Property Officer needs Fixed examples of its
+  // scoped by asset type, so the Property Custodian needs Fixed examples of its
   // own — a cabinet with a replacement request open, a chair that qualifies but
   // has none yet, and a TV reported stolen.
   unit('cabinet-old', 'FIX', 7, {
@@ -638,7 +638,7 @@ export const DEMO_ASSET_REQUESTS: DemoAssetRequest[] = [
     outcome: 'completed',
     handoverInDays: 2,
     notes:
-      'Affidavit of loss received. RLSDDP prepared for the Property Officer.',
+      'Affidavit of loss received. RLSDDP prepared for the Property Custodian.',
   },
   {
     key: 'damage-desk',
@@ -659,7 +659,8 @@ export const DEMO_ASSET_REQUESTS: DemoAssetRequest[] = [
     preferredInDays: 2,
     outcome: 'completed',
     handoverInDays: 2,
-    notes: 'Police blotter received. RLSDDP prepared for the Property Officer.',
+    notes:
+      'Police blotter received. RLSDDP prepared for the Property Custodian.',
   },
   {
     key: 'return-fan',
@@ -905,8 +906,8 @@ export interface Coverage {
   pcAssetRequests: number;
   /** IT Personnel's domain: ICT assets. */
   it: ScopeCoverage;
-  /** Property Custodian / Property Officer's domain: Fixed assets and Supplies. */
-  po: ScopeCoverage;
+  /** The Property Custodian's domain: Fixed assets and Supplies. */
+  pc: ScopeCoverage;
   lowStockSupplies: number;
   overdueLoans: number;
 }
@@ -994,7 +995,7 @@ export function coverage(now = Date.now()): Coverage {
       (r) => ownerOfAsset(r.asset) === UserRole.PROPERTY_CUSTODIAN,
     ).length,
     it: inScope(UserRole.IT_PERSONNEL),
-    po: inScope(UserRole.PROPERTY_CUSTODIAN),
+    pc: inScope(UserRole.PROPERTY_CUSTODIAN),
     lowStockSupplies: DEMO_ASSETS.filter(
       (a) =>
         a.dto.assetClass === AssetClass.IES &&

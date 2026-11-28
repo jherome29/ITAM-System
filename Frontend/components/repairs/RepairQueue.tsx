@@ -3,9 +3,11 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock, Wrench } from 'lucide-react';
-import { AdminPageHeader, Field, inputClass, MetricCard, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, tdClass, thClass } from '@/components/admin/AdminUi';
+import { AdminPageHeader, Field, MetricCard, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, inputClass, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
+import { CenteredModal } from '@/components/ui/CenteredModal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DetailDrawer } from '@/components/ui/DetailDrawer';
+import { surfaceClass } from '@/components/ui/controls';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { Toast } from '@/components/ui/Toast';
 import { assetsApi, type Asset } from '@/lib/api/assets';
@@ -13,6 +15,13 @@ import { OUTCOME_LABEL, SERVICE_TYPE_LABEL, repairsApi, type Repair, type Repair
 import { localToday } from '@/lib/dates';
 import { formatDate, formatDateTime } from '@/lib/requisitions/requisition-view';
 import { humanize } from '@/lib/text';
+import { DateField } from '@/components/ui/DateField';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyRow } from '@/components/ui/EmptyRow';
+import { ClampText } from '@/components/ui/ClampText';
+import { Pager } from '@/components/ui/Pager';
+import { RecordPrints, usePrintPrompt } from '@/components/shared/RecordPrints';
+import { usePaged } from '@/lib/use-paged';
 
 const FILTERS = [
   { value: 'open', label: 'Under repair' },
@@ -37,10 +46,12 @@ function statusOf(r: Repair): { label: string; tone: 'amber' | 'red' | 'green' |
  * it), and once the repair closes, collect it back. `canReturn` is the
  * custodian's queue — the System Admin's escalation view only reads.
  */
-function LoanerSection({ repair, canReturn, onChanged, onError }: Readonly<{
+function LoanerSection({ repair, canReturn, onChanged, onIssued, onError }: Readonly<{
   repair: Repair;
   canReturn: boolean;
   onChanged: (message: string) => Promise<void>;
+  /** After a loaner has been handed out, so the screen can offer a paper copy. */
+  onIssued: () => void;
   onError: (message: string) => void;
 }>) {
   const [units, setUnits] = useState<Asset[] | null>(null);
@@ -66,6 +77,7 @@ function LoanerSection({ repair, canReturn, onChanged, onError }: Readonly<{
     try {
       await repairsApi.issueLoaner(repair.id, { assetId: unitId, expectedReturnDate: returnBy || undefined });
       await onChanged('Loaner issued — the holder has been notified.');
+      onIssued();
     } catch (err) {
       onError(errorMessage(err, 'Could not issue the loaner.'));
     } finally {
@@ -115,7 +127,7 @@ function LoanerSection({ repair, canReturn, onChanged, onError }: Readonly<{
               </select>
             </Field>
             <Field label="Return by">
-              <input type="date" className={inputClass} value={returnBy} min={localToday()} onChange={(e) => setReturnBy(e.target.value)} />
+              <DateField value={returnBy} min={localToday()} onChange={(e) => setReturnBy(e.target.value)} />
             </Field>
           </div>
           <SecondaryButton disabled={busy || !unitId} onClick={() => void issue()}>{busy ? 'Issuing…' : 'Issue loaner'}</SecondaryButton>
@@ -171,12 +183,14 @@ export function RepairQueue({
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
   const [toast, setToast] = useState('');
+  const { ask: askToPrint, prompt: printPrompt, isOpen: printPromptOpen } = usePrintPrompt();
+  const RepairDialog = adminFallback ? DetailDrawer : CenteredModal;
 
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2600); };
   const load = useCallback(() => repairsApi.list().then((res) => setRows(res.data)), []);
 
   useEffect(() => {
-    load().catch(() => setLoadError('Failed to load repairs. Please refresh the page.')).finally(() => setLoading(false));
+    load().catch(() => setLoadError('Could not load repairs. Please refresh the page.')).finally(() => setLoading(false));
   }, [load]);
 
   const open = (r: Repair | null) => {
@@ -245,6 +259,7 @@ export function RepairQueue({
       });
       open(res.data);
       notify(outcome === 'repaired' ? 'Repair completed — the holder has been notified.' : 'Marked not repairable — flagged for disposal.');
+      askToPrint('repair', selected.id, `The repair of ${selected.asset?.itemDescription ?? 'this item'}`);
       await load().catch(() => {});
     } catch (err) {
       setActionError(errorMessage(err, 'Could not complete the repair.'));
@@ -262,6 +277,7 @@ export function RepairQueue({
       return true;
     })
     .filter((r) => [r.asset?.itemDescription, r.asset?.propertyNumber, r.holder?.name, r.holder?.employeeId, r.serviceProvider].join(' ').toLowerCase().includes(q));
+  const paged = usePaged(visible, `${search}|${filter}`);
   const openRows = rows.filter((r) => !r.completedAt);
 
   if (loading) return <LoadingSkeleton rows={8} />;
@@ -273,7 +289,7 @@ export function RepairQueue({
   })();
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <AdminPageHeader
         eyebrow={eyebrow}
         title={adminFallback ? 'Repairs (escalations)' : 'Maintenance & Repair'}
@@ -281,37 +297,44 @@ export function RepairQueue({
           ? "Repairs of a custodian's own item escalate here — they cannot close their own. Everything else is read-only."
           : 'Every asset under repair. Record where it is and when it is due back, the diagnosis and the work done, then close it as repaired or not repairable — the holder is told either way.'}
       />
-      {loadError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{loadError}</div>}
+      {loadError && <Notice tone="red">{loadError}</Notice>}
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard label="Under repair" value={String(openRows.length)} detail="Open repair records" tone="amber" icon={Wrench} />
         <MetricCard label="Overdue" value={String(rows.filter((r) => r.overdue).length)} detail="Past their expected completion" tone="red" icon={AlertTriangle} />
         <MetricCard label="Completed" value={String(rows.length - openRows.length)} detail="Repaired or written off" tone="green" icon={CheckCircle2} />
       </div>
       <SearchToolbar value={search} onChange={setSearch} filterValue={filter} filterOptions={FILTERS} onFilterChange={setFilter} />
-      <Panel title="Repairs" detail={`${visible.length} shown · ${rows.length} total`}>
+      <section aria-label="Repair records" className={`min-w-0 overflow-hidden ${surfaceClass}`}>
+        {adminFallback && (
+          <div className="border-b border-slate-200 px-4 py-4">
+            <h2 className="text-base font-bold text-slate-950">Repairs</h2>
+            <p className="mt-1 text-xs text-slate-500">{visible.length} shown · {rows.length} total</p>
+          </div>
+        )}
         <TableWrap>
-          <table className="w-full min-w-[900px]">
-            <thead><tr><th className={thClass}>Asset</th><th className={thClass}>Holder</th><th className={thClass}>Service</th><th className={thClass}>Opened</th><th className={thClass}>Due back</th><th className={thClass}>Status</th><th className={thClass} /></tr></thead>
+          <table className="w-full text-left text-sm">
+            <thead><tr><th className={thClass}>Asset</th><th className={thClass}>Held by</th><th className={thClass}>Service</th><th className={thClass}>Opened</th><th className={thClass}>Due back</th><th className={thClass}>Status</th><th className={`${thClass} text-right`}>Actions</th></tr></thead>
             <tbody>
-              {visible.map((r) => {
+              {paged.pageItems.map((r) => {
                 const status = statusOf(r);
                 return <tr key={r.id} className="hover:bg-blue-50/40">
-                  <td className={tdClass}><p className="font-bold text-slate-950">{r.asset?.itemDescription ?? '—'}</p><p className="text-xs text-slate-500">{[r.asset?.propertyNumber, r.asset && `${r.asset.assetType} · ${r.asset.assetClass}`].filter(Boolean).join(' · ')}</p></td>
+                  <td className={tdClass}><p className="font-bold text-slate-950"><ClampText lines={2}>{r.asset?.itemDescription}</ClampText></p><p className="text-xs text-slate-500">{[r.asset?.propertyNumber, r.asset && `${r.asset.assetType} · ${r.asset.assetClass}`].filter(Boolean).join(' · ')}</p></td>
                   <td className={tdClass}>{r.holder ? <><p>{r.holder.name}</p><p className="text-xs text-slate-500">{r.holder.employeeId}</p></> : <span className="text-slate-500">In stock</span>}</td>
                   <td className={tdClass}>{SERVICE_TYPE_LABEL[r.serviceType]}{r.serviceProvider ? <p className="text-xs text-slate-500">{r.serviceProvider}</p> : null}</td>
-                  <td className={tdClass}>{formatDate(r.openedAt)}</td>
+                  <td className={tdNoWrapClass}>{formatDate(r.openedAt)}</td>
                   <td className={tdClass}>{r.completedAt ? formatDate(r.completedAt) : formatDate(r.dueDate)}</td>
                   <td className={tdClass}><StatusChip status={status.label} tone={status.tone} /></td>
                   <td className={`${tdClass} text-right`}><SecondaryButton onClick={() => open(r)}>{!r.completedAt && r.canAct ? 'Update' : 'View'}</SecondaryButton></td>
                 </tr>;
               })}
-              {visible.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">No repairs match the current filter.</td></tr>}
+              {visible.length === 0 && <EmptyRow colSpan={7}>{search || filter !== 'All' ? 'No repairs match the current filters.' : 'No repairs recorded yet.'}</EmptyRow>}
             </tbody>
           </table>
         </TableWrap>
-      </Panel>
+        <Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="repairs" />
+      </section>
 
-      <DetailDrawer open={Boolean(selected)} title={selected?.asset?.itemDescription ?? 'Repair'} onClose={() => open(null)}>
+      <RepairDialog open={Boolean(selected)} title={selected?.asset?.itemDescription ?? 'Repair'} onClose={() => open(null)} inactive={confirming || printPromptOpen}>
         {selected && draft && (
           <div className="space-y-5">
             <dl className="grid grid-cols-2 gap-3 text-sm">
@@ -324,7 +347,7 @@ export function RepairQueue({
                 ['Status', statusOf(selected).label],
               ] as const).map(([label, value]) => <div key={label} className="rounded-lg bg-slate-50 p-3"><dt className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt><dd className="mt-1 font-semibold text-slate-900">{value}</dd></div>)}
             </dl>
-            {selected.overdue && <p className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700"><Clock className="h-4 w-4" aria-hidden="true" />Past its expected completion — update the date or record the outcome.</p>}
+            {selected.overdue && <Notice tone="red" icon={<Clock className="mt-0.5 h-5 w-5 flex-none" aria-hidden="true" />}>Past its expected completion — update the date or record the outcome.</Notice>}
             <div><p className="text-xs font-bold text-slate-500">Reported problem</p><p className="mt-1 whitespace-pre-line text-sm text-slate-700">{selected.reportedProblem ?? 'No description was recorded when it went in.'}</p></div>
             {selected.asset?.components && <p className="text-xs text-slate-500">Components: {selected.asset.components}</p>}
             {assetBasePath && selected.asset && <Link href={`${assetBasePath}/${selected.asset.id}`} className="inline-flex text-sm font-bold text-blue-700 hover:underline">Open asset record →</Link>}
@@ -351,7 +374,7 @@ export function RepairQueue({
                       </select>
                     </Field>
                     <Field label="Expected back">
-                      <input type="date" className={inputClass} value={draft.expectedCompletionDate} min={localToday()} onChange={(e) => edit({ expectedCompletionDate: e.target.value })} />
+                      <DateField value={draft.expectedCompletionDate} min={localToday()} onChange={(e) => edit({ expectedCompletionDate: e.target.value })} />
                     </Field>
                   </div>
                   {draft.serviceType === 'external' && (
@@ -387,12 +410,15 @@ export function RepairQueue({
                 notify(message);
                 await load().catch(() => {});
               }}
+              onIssued={() => askToPrint('repair', selected.id, `The loaner for ${selected.asset?.itemDescription ?? 'this repair'}`)}
               onError={setActionError}
             />
-            {actionError && <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{actionError}</p>}
+            <RecordPrints key={selected.id} kind="repair" recordId={selected.id} />
+            {actionError && <Notice tone="red">{actionError}</Notice>}
           </div>
         )}
-      </DetailDrawer>
+      </RepairDialog>
+      {printPrompt}
       <ConfirmDialog
         open={confirming}
         title={outcome === 'repaired' ? 'Complete this repair?' : 'Mark as not repairable?'}

@@ -1,44 +1,11 @@
-import { MyAssignedAssets } from '@/components/assets/MyAssignedAssets';
-import { RepairQueue } from '@/components/repairs/RepairQueue';
-import { AssetRequestQueue } from '@/components/asset-requests/AssetRequestQueue';
-import { AssetDetailManager } from '@/components/assets/AssetDetailManager';
-import { AssetRegistryList } from '@/components/assets/AssetRegistryList';
-import { QrLookup } from '@/components/assets/QrLookup';
-import { RegisterAssetForm } from '@/components/assets/RegisterAssetForm';
-import { PropertyCustodianDashboard } from '@/components/property-custodian/PropertyCustodianDashboard';
-import { PhysicalInventorySheet } from '@/components/assets/PhysicalInventorySheet';
-import { notFound } from 'next/navigation';
-import { WorkflowPage } from '@/components/prototype/WorkflowPage';
-import { FormsWorkspaceContent } from '@/components/shared/FormsWorkspaceContent';
-import { NotificationsContent } from '@/components/shared/NotificationsContent';
-import { ProposedUserRole } from '@/lib/roles/proposed-roles';
-import { isLiveWorkflowPage } from '@/lib/workflow/live-pages';
-
-export default async function PropertyCustodianPage({
-  params,
-  searchParams,
-}: Readonly<{ params: Promise<{ slug?: string[] }>; searchParams: Promise<{ open?: string | string[] }> }>) {
+import { redirect } from 'next/navigation';
+export default async function LegacyCustodianPage({ params, searchParams }: Readonly<{
+  params: Promise<{ slug?: string[] }>;
+  searchParams: Promise<{ open?: string | string[] }>;
+}>) {
   const { slug } = await params;
+  const segments = slug?.length ? [...slug] : ['dashboard'];
+
   const { open } = await searchParams;
-  const segment = slug?.[0] ?? 'dashboard';
-  const child = slug?.[1];
-  if (segment === 'dashboard') return <PropertyCustodianDashboard />;
-  if (segment === 'notifications') return <NotificationsContent />;
-  if (segment === 'assigned-assets') return <MyAssignedAssets eyebrow="Property Custodian" canRequestReplacement showRequestHistory openId={typeof open === 'string' ? open : undefined} />;
-  if (segment === 'fixed-assets' && child === 'new') return <RegisterAssetForm basePath="/property-custodian/fixed-assets" />;
-  if (segment === 'fixed-assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/fixed-assets" formsPath="/property-custodian/reports" />;
-  if (segment === 'fixed-assets') return <AssetRegistryList basePath="/property-custodian/fixed-assets" assetType="Fixed" title="Fixed Asset Registry" />;
-  if (segment === 'supplies' && child === 'new') return <RegisterAssetForm basePath="/property-custodian/supplies" />;
-  if (segment === 'supplies' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/supplies" formsPath="/property-custodian/reports" />;
-  if (segment === 'supplies') return <AssetRegistryList basePath="/property-custodian/supplies" assetType="Supplies" title="Supply Inventory" />;
-  if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/property-custodian/assets" formsPath="/property-custodian/reports" />;
-  if (segment === 'qr-scanner') return <QrLookup detailBasePath="/property-custodian/assets" />;
-  if (segment === 'reports') return <FormsWorkspaceContent eyebrow="Property Custodian" />;
-  if (segment === 'maintenance') return <RepairQueue eyebrow="Property Custodian" assetBasePath="/property-custodian/assets" openId={typeof open === 'string' ? open : undefined} />;
-  if (segment === 'returns-incidents') return <AssetRequestQueue eyebrow="Property Custodian" openId={typeof open === 'string' ? open : undefined} />;
-  if (segment === 'physical-inventory') return <PhysicalInventorySheet eyebrow="Property Custodian" formsPath="/property-custodian/reports" />;
-  // Only pages wired to real records may reach WorkflowPage; anything else is sample
-  // data, so it is not found (see lib/workflow/live-pages.ts).
-  if (!isLiveWorkflowPage(ProposedUserRole.PROPERTY_CUSTODIAN, segment)) notFound();
-  return <WorkflowPage role={ProposedUserRole.PROPERTY_CUSTODIAN} slug={segment} openId={typeof open === 'string' ? open : undefined} />;
+  redirect('/asset-custodian/' + segments.map(encodeURIComponent).join('/') + (typeof open === 'string' ? `?open=${encodeURIComponent(open)}` : ''));
 }

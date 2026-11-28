@@ -54,13 +54,13 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findAll(
     @Req() req: AuthReq,
     @Query('page') page = 1,
     @Query('limit') limit = 20,
     @Query('status') status?: string,
+    @Query('view') view?: string,
   ) {
     const result = await this.svc.findAll(
       req.user.id,
@@ -68,6 +68,7 @@ export class RequisitionsController {
       +page,
       +limit,
       status,
+      view === 'fulfillment',
     );
     return { message: 'Requisitions retrieved', data: result };
   }
@@ -76,6 +77,24 @@ export class RequisitionsController {
    * GET /api/v1/requisitions/mine
    * All of the authenticated user's own requisitions (any role).
    */
+  @Get('issued-supplies')
+  @Roles(UserRole.ASSET_CUSTODIAN)
+  async issuedSupplies(
+    @Query('page') page = '1',
+    @Query('search') search = '',
+    @Query('sort') sort = 'newest',
+  ) {
+    const pageNumber = Math.max(1, Number.parseInt(page, 10) || 1);
+    return {
+      message: 'Issued supplies retrieved',
+      data: await this.svc.findIssuedSupplies(
+        pageNumber,
+        search.trim(),
+        sort === 'oldest' ? 'ASC' : 'DESC',
+      ),
+    };
+  }
+
   @Get('mine')
   @Roles(
     UserRole.EMPLOYEE,
@@ -84,7 +103,6 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findMine(
     @Req() req: AuthReq,
@@ -141,7 +159,6 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async getStats(@Req() req: AuthReq) {
     const result = await this.svc.getStats(req.user.id, req.user.role);
@@ -156,7 +173,6 @@ export class RequisitionsController {
    */
   @Get('replacement-review')
   @Roles(
-    UserRole.PROPERTY_OFFICER,
     UserRole.PROPERTY_CUSTODIAN,
     UserRole.IT_PERSONNEL,
     UserRole.SYSTEM_ADMIN,
@@ -179,7 +195,6 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthReq) {
     const result = await this.svc.findOneForView(
@@ -203,7 +218,6 @@ export class RequisitionsController {
     UserRole.SYSTEM_ADMIN,
     UserRole.MANAGEMENT,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async document(
     @Param('id', ParseUUIDPipe) id: string,
@@ -227,10 +241,62 @@ export class RequisitionsController {
   }
 
   /**
+   * POST /api/v1/requisitions/:id/print
+   * A numbered paper copy of this requisition (what it is, every step so far, signature lines). Anyone who
+   * may see the requisition may print it; each print is stored, numbered and audited, and a later one is
+   * marked REPRINT.
+   */
+  @Post(':id/print')
+  @HttpCode(HttpStatus.OK)
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
+  async print(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthReq,
+    @Res() res: Response,
+  ) {
+    const doc = await this.svc.printRecord(
+      id,
+      req.user.id,
+      req.user.role,
+      req.ip,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Length': String(doc.buffer.length),
+      'Content-Disposition': `inline; filename="${doc.documentNumber}.pdf"`,
+      'X-Document-Number': doc.documentNumber ?? '',
+      'Cache-Control': 'private, no-store',
+    });
+    res.end(doc.buffer);
+  }
+
+  /** GET /api/v1/requisitions/:id/prints - the prints made of this requisition (same read access). */
+  @Get(':id/prints')
+  @Roles(
+    UserRole.EMPLOYEE,
+    UserRole.SUPERVISOR,
+    UserRole.IT_PERSONNEL,
+    UserRole.SYSTEM_ADMIN,
+    UserRole.MANAGEMENT,
+    UserRole.PROPERTY_CUSTODIAN,
+  )
+  async prints(@Param('id', ParseUUIDPipe) id: string, @Req() req: AuthReq) {
+    const data = await this.svc.listPrints(id, req.user.id, req.user.role);
+    return { message: 'Printouts retrieved', data };
+  }
+
+  /**
    * POST /api/v1/requisitions
    * Submit a new requisition - Employee, Supervisor, IT Personnel, Property
-   * Custodian, Property Officer. Management (read-only oversight) and the System
-   * Administrator (who can approve any requisition) do not file.
+   * Custodian. Management (read-only oversight) and the System Administrator
+   * (who can approve any requisition) do not file.
    * Status on creation: pending_supervisor
    */
   @Post()
@@ -239,7 +305,6 @@ export class RequisitionsController {
     UserRole.SUPERVISOR,
     UserRole.IT_PERSONNEL,
     UserRole.PROPERTY_CUSTODIAN,
-    UserRole.PROPERTY_OFFICER,
   )
   async create(@Body() dto: CreateRequisitionDto, @Req() req: AuthReq) {
     const result = await this.svc.create(

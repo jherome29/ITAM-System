@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, ILike, In, Not, Repository } from 'typeorm';
-import PDFDocument from 'pdfkit';
 import ExcelJS from 'exceljs';
 import { GeneratedReportEntity } from './entities/generated-report.entity';
 import { GeneratedFormEntity } from './entities/generated-form.entity';
@@ -15,8 +14,19 @@ import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { AuditService } from '../audit/audit.service';
 import { SystemConfigService } from '../system-config/system-config.service';
-import { withFormIdentity } from './forms/base-form.generator';
+import {
+  bufferize,
+  columnProportions,
+  createReportDoc,
+  drawTable,
+  ensureSpace,
+  phpFormat,
+  withFormIdentity,
+} from './forms/base-form.generator';
 import { DOCUMENT_SERIES, allocateDocumentNumber } from './document-numbers';
+import { randomInt } from 'node:crypto';
+import { generateRecordPrint } from './forms/record-print.generator';
+import type { PrintableRecord, RecordKind } from './record-print';
 import {
   OfficialFormType,
   AuditAction,
@@ -117,10 +127,15 @@ export class ReportsService {
     limit = 50,
     filter: { formType?: OfficialFormType; search?: string } = {},
   ) {
+    // Record printouts are not archive documents: the archive is not scoped by
+    // asset type, and a printout may only be read through its own record.
+    if (filter.formType === OfficialFormType.RECORD_PRINT) {
+      return { data: [], total: 0, page, limit };
+    }
     const search = filter.search?.trim();
     const [forms, total] = await this.formRepo.findAndCount({
       where: {
-        ...(filter.formType ? { formType: filter.formType } : {}),
+        formType: filter.formType ?? Not(OfficialFormType.RECORD_PRINT),
         // % and _ are typed as text, not wildcards.
         ...(search
           ? { documentNumber: ILike(`%${search.replace(/[\\%_]/g, '\\$&')}%`) }
@@ -185,8 +200,9 @@ export class ReportsService {
     const totalAssets = await this.assetRepo.count();
     const completeAssets = await this.assetRepo
       .createQueryBuilder('a')
-      .where('a.propertyNumber IS NOT NULL')
-      .andWhere('a.serialNumber IS NOT NULL')
+      // Blank text is as missing as NULL: an empty serial number is not a serial number.
+      .where("COALESCE(TRIM(a.propertyNumber), '') <> ''")
+      .andWhere("COALESCE(TRIM(a.serialNumber), '') <> ''")
       .getCount();
     const recordCompleteness =
       totalAssets > 0 ? Math.round((completeAssets / totalAssets) * 100) : 100;
@@ -317,84 +333,48 @@ export class ReportsService {
       range,
     );
 
-    return new Promise<Buffer>((resolve, reject) => {
-      const doc = new PDFDocument({
-        margin: 40,
-        size: 'LETTER',
-        layout: 'landscape',
-      });
-      const chunks: Buffer[] = [];
-      doc.on('data', (c: Buffer) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
+    const doc = createReportDoc();
 
-      // Header bar
-      doc.rect(40, 40, doc.page.width - 80, 36).fill('#1a4d7a');
-      doc
-        .fillColor('white')
-        .font('Helvetica-Bold')
-        .fontSize(14)
-        .text('AIMRS — ' + title, 50, 52, { width: doc.page.width - 100 });
-      doc
-        .fillColor('#555')
-        .font('Helvetica')
-        .fontSize(8)
-        .text(
-          `Generated: ${new Date().toLocaleString('en-PH')}  |  ${this.systemConfig.getEntityName()}`,
-          50,
-          85,
-        );
+    // Header bar
+    doc.rect(40, 40, doc.page.width - 80, 36).fill('#1a4d7a');
+    doc
+      .fillColor('white')
+      .font('Helvetica-Bold')
+      .fontSize(14)
+      .text('AIMRS — ' + title, 50, 52, { width: doc.page.width - 100 });
+    doc
+      .fillColor('#555')
+      .font('Helvetica')
+      .fontSize(8)
+      .text(
+        `Generated: ${new Date().toLocaleString('en-PH')}  |  ${this.systemConfig.getEntityName()}`,
+        50,
+        85,
+      );
 
-      // Column layout
-      const colCount = headers.length;
-      const colW = Math.floor((doc.page.width - 80) / colCount);
-      let y = 100;
+    // The same table the COA forms use: it measures each row (a description that wraps gets the
+    // height it needs, instead of printing over the next row), repeats the column header on every
+    // page and never draws below the margin, where pdfkit would answer with a stray page.
+    const cells = rows.map((row) => row.map((cell) => String(cell ?? '—')));
+    const widths = columnProportions(headers.map(String), cells);
+    const y = drawTable(
+      doc,
+      headers.map((header, i) => ({
+        header: String(header),
+        width: widths[i],
+      })),
+      cells,
+      100,
+    );
 
-      // Table header row
-      doc.rect(40, y, doc.page.width - 80, 18).fill('#e8f0f7');
-      headers.forEach((h, i) => {
-        doc
-          .fillColor('#1a4d7a')
-          .font('Helvetica-Bold')
-          .fontSize(7)
-          .text(String(h), 44 + i * colW, y + 5, {
-            width: colW - 4,
-            ellipsis: true,
-          });
-      });
-      y += 18;
+    const footerY = ensureSpace(doc, y, 12);
+    doc
+      .fillColor('#555')
+      .font('Helvetica')
+      .fontSize(7)
+      .text(`Total records: ${rows.length}`, 40, footerY, { lineBreak: false });
 
-      // Data rows
-      rows.forEach((row, ri) => {
-        if (y > doc.page.height - 60) {
-          doc.addPage({ layout: 'landscape', size: 'LETTER', margin: 40 });
-          y = 40;
-        }
-        if (ri % 2 === 0) {
-          doc.rect(40, y, doc.page.width - 80, 16).fill('#f8fafc');
-        }
-        row.forEach((cell, i) => {
-          doc
-            .fillColor('#333')
-            .font('Helvetica')
-            .fontSize(7)
-            .text(String(cell ?? '—'), 44 + i * colW, y + 4, {
-              width: colW - 4,
-              ellipsis: true,
-            });
-        });
-        y += 16;
-      });
-
-      // Footer
-      doc
-        .fillColor('#aaa')
-        .font('Helvetica')
-        .fontSize(7)
-        .text(`Total records: ${rows.length}`, 40, doc.page.height - 30);
-
-      doc.end();
-    });
+    return bufferize(doc);
   }
 
   // ── Excel report builder ───────────────────────────────────────────────────
@@ -514,9 +494,7 @@ export class ReportsService {
             (a.condition ?? '—').replaceAll('_', ' '),
             a.status.replaceAll('_', ' '),
             `${a.division ?? '—'} / ${a.officeOrSection ?? '—'}`,
-            a.acquisitionCost == null
-              ? '—'
-              : `₱${Number(a.acquisitionCost).toLocaleString('en-PH')}`,
+            a.acquisitionCost == null ? '—' : phpFormat(a.acquisitionCost),
             a.acquisitionDate
               ? new Date(a.acquisitionDate).toLocaleDateString('en-PH')
               : '—',
@@ -711,9 +689,7 @@ export class ReportsService {
             a.assetClass,
             (a.condition ?? '—').replaceAll('_', ' '),
             a.status.replaceAll('_', ' '),
-            a.acquisitionCost == null
-              ? '—'
-              : `₱${Number(a.acquisitionCost).toLocaleString('en-PH')}`,
+            a.acquisitionCost == null ? '—' : phpFormat(a.acquisitionCost),
           ]),
         };
       }
@@ -797,6 +773,13 @@ export class ReportsService {
     userRole: UserRole,
     ipAddress: string,
   ): Promise<{ form: GeneratedFormEntity; buffer: Buffer }> {
+    // A record printout is made by the Print copy button on the record (createRecordPrint), which has
+    // already checked that the caller may see it; the COA form generator has no record to draw.
+    if (input.formType === OfficialFormType.RECORD_PRINT) {
+      throw new BadRequestException(
+        'A record printout is made with the Print copy button on the record itself.',
+      );
+    }
     const series = DOCUMENT_SERIES[input.formType];
     const identity = {
       entityName: this.systemConfig.getEntityName(),
@@ -1248,10 +1231,164 @@ export class ReportsService {
     return { form: saved, buffer };
   }
 
-  /** Forms generated for a requisition (no PDF blob), oldest first. */
+  // ── Record printouts (schema 018) ──────────────────────────────────────────
+
+  private static readonly PRINT_LINK = {
+    requisition: 'relatedRequisitionId',
+    asset_request: 'relatedAssetRequestId',
+    repair: 'relatedAssetRepairId',
+  } as const;
+
+  /** Eight characters without the look-alikes (0 O 1 I), as K7Q2-9DXM: easy to read aloud and to type. */
+  private newVerificationCode(): string {
+    const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    const pick = () => alphabet[randomInt(alphabet.length)];
+    return `${Array.from({ length: 4 }, pick).join('')}-${Array.from({ length: 4 }, pick).join('')}`;
+  }
+
+  /**
+   * A numbered paper copy of one record. The caller (the service that owns the record) has already checked
+   * that the user may see it. Every print is stored, so a paper copy can be checked against what the system
+   * showed at that moment; a later print of the same record is the next copy and says REPRINT.
+   * SVC: Deliver and Support - proof beyond the digital record.
+   */
+  async createRecordPrint(
+    record: PrintableRecord,
+    printedBy: { id: string; name: string; role: UserRole },
+    ipAddress: string,
+  ): Promise<{ form: GeneratedFormEntity; buffer: Buffer }> {
+    const link = ReportsService.PRINT_LINK[record.kind];
+    const prior = await this.formRepo.find({
+      where: {
+        formType: OfficialFormType.RECORD_PRINT,
+        [link]: record.recordId,
+      },
+      select: { id: true, generatedAt: true },
+      order: { generatedAt: 'ASC' },
+    });
+    const copy = prior.length + 1;
+    const code = this.newVerificationCode();
+    const identity = {
+      entityName: this.systemConfig.getEntityName(),
+      fundCluster: this.systemConfig.getFundCluster(),
+    };
+
+    // Number and row in one transaction, as for every other form: a print that fails to draw gives its
+    // number back, so the series has no gaps.
+    const saved = await this.formRepo.manager.transaction(async (em) => {
+      const documentNumber = await allocateDocumentNumber(
+        em,
+        DOCUMENT_SERIES[OfficialFormType.RECORD_PRINT] as string,
+        new Date().getFullYear(),
+      );
+      const buffer = await withFormIdentity(
+        { ...identity, documentNumber },
+        () =>
+          generateRecordPrint(record, {
+            printNumber: documentNumber,
+            printedAt: new Date(),
+            printedBy: { name: printedBy.name, role: printedBy.role },
+            copy,
+            firstPrintedAt: prior[0]?.generatedAt,
+            verificationCode: code,
+          }),
+      );
+      const repo = em.getRepository(GeneratedFormEntity);
+      const form = await repo.save(
+        repo.create({
+          formType: OfficialFormType.RECORD_PRINT,
+          documentNumber,
+          [link]: record.recordId,
+          verificationCode: code,
+          filePath: 'stored',
+          generatedById: printedBy.id,
+          pdfContent: buffer,
+        }),
+      );
+      return { form, buffer };
+    });
+
+    // After the commit, so the trail never records a print that was rolled back.
+    await this.auditService.log({
+      userId: printedBy.id,
+      userRole: printedBy.role,
+      action: AuditAction.FORM_GENERATED,
+      affectedRecordId: saved.form.id,
+      affectedRecordType: 'form',
+      ipAddress,
+      metadata: {
+        formType: OfficialFormType.RECORD_PRINT,
+        documentNumber: saved.form.documentNumber ?? undefined,
+        recordKind: record.kind,
+        recordReference: record.reference,
+        copy,
+      },
+    });
+    return saved;
+  }
+
+  /** The prints of one record, oldest first, with who made each (no PDF blob). */
+  async recordPrints(kind: RecordKind, recordId: string) {
+    const link = ReportsService.PRINT_LINK[kind];
+    const forms = await this.formRepo.find({
+      where: { formType: OfficialFormType.RECORD_PRINT, [link]: recordId },
+      select: {
+        id: true,
+        documentNumber: true,
+        generatedAt: true,
+        generatedById: true,
+        verificationCode: true,
+      },
+      order: { generatedAt: 'ASC' },
+    });
+    const users = forms.length
+      ? await this.userRepo.find({
+          where: { id: In([...new Set(forms.map((f) => f.generatedById))]) },
+        })
+      : [];
+    const names = new Map(
+      users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]),
+    );
+    return forms.map((f, i) => ({
+      id: f.id,
+      documentNumber: f.documentNumber,
+      verificationCode: f.verificationCode,
+      generatedAt: f.generatedAt,
+      copy: i + 1,
+      printedByName: names.get(f.generatedById) ?? 'Unknown',
+    }));
+  }
+
+  /** A stored print, only if it belongs to this record: the link is what lets the people on the record read it. */
+  async recordPrintPdf(kind: RecordKind, recordId: string, formId: string) {
+    const link = ReportsService.PRINT_LINK[kind];
+    const form = await this.formRepo
+      .createQueryBuilder('f')
+      .select(['f.id', 'f.documentNumber', 'f.pdfContent'])
+      .where(
+        `f.id = :formId AND f.${link} = :recordId AND f.formType = :type`,
+        {
+          formId,
+          recordId,
+          type: OfficialFormType.RECORD_PRINT,
+        },
+      )
+      .getOne();
+    if (!form?.pdfContent) throw new NotFoundException('Printout not found');
+    return { documentNumber: form.documentNumber, buffer: form.pdfContent };
+  }
+
+  /**
+   * COA forms generated for a requisition (no PDF blob), oldest first. Record
+   * printouts are the same table but not an official document: they have their
+   * own Paper copy list, so they stay out of "Official documents".
+   */
   formsForRequisition(requisitionId: string) {
     return this.formRepo.find({
-      where: { relatedRequisitionId: requisitionId },
+      where: {
+        relatedRequisitionId: requisitionId,
+        formType: Not(OfficialFormType.RECORD_PRINT),
+      },
       select: { id: true, formType: true, generatedAt: true },
       order: { generatedAt: 'ASC' },
     });
@@ -1288,7 +1425,10 @@ export class ReportsService {
       .where('f.id = :id', { id })
       .getOne();
 
-    if (!form) throw new NotFoundException(`Form record ${id} not found`);
+    // A printout is served by its record's own route, which checks access to
+    // that record; this route only checks the caller's role.
+    if (!form || form.formType === OfficialFormType.RECORD_PRINT)
+      throw new NotFoundException(`Form record ${id} not found`);
     if (!form.pdfContent)
       throw new NotFoundException(
         `Form ${id} has no stored PDF — it may have been generated before this feature was enabled`,

@@ -7,7 +7,12 @@ import { AdminPageHeader, MetricCard, Panel, TableWrap, tdClass, thClass } from 
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
 import { assetsApi, type Asset } from '@/lib/api/assets';
 import { collectAllPages } from '@/lib/api/collect-pages';
+import { Pager } from '@/components/ui/Pager';
+import { usePaged } from '@/lib/use-paged';
 import { buildCountSheet } from '@/lib/assets/count-sheet';
+import { buttonClass } from '@/components/ui/buttons';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyMessage } from '@/components/ui/EmptyRow';
 
 /**
  * Physical Inventory: what the system expects to find at each location, from
@@ -24,23 +29,24 @@ export function PhysicalInventorySheet({ eyebrow, formsPath }: Readonly<{ eyebro
   useEffect(() => {
     collectAllPages<Asset>((page, limit) => assetsApi.list(page, limit).then((res) => ({ data: res.data.data, total: res.data.total })))
       .then(setAssets)
-      .catch(() => setLoadError('Failed to load the asset records. Please refresh the page.'))
+      .catch(() => setLoadError('Could not load the asset records. Please refresh the page.'))
       .finally(() => setLoading(false));
   }, []);
 
+  const { rows, totals } = buildCountSheet(assets);
+  const paged = usePaged(rows);
+
   if (loading) return <LoadingSkeleton rows={8} />;
 
-  const { rows, totals } = buildCountSheet(assets);
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <AdminPageHeader
         eyebrow={eyebrow}
         title="Physical Inventory"
         detail="What the system expects to find at each location. Count against this sheet, then generate the official count report from Reports & Forms."
-        action={<Link href={formsPath} className="inline-flex h-10 items-center rounded-md bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800">Open Reports &amp; Forms</Link>}
+        action={<Link href={formsPath} className={buttonClass()}>Open Reports &amp; Forms</Link>}
       />
-      {loadError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{loadError}</div>}
+      {loadError && <Notice tone="red">{loadError}</Notice>}
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
         This is the system&apos;s expected count. Recording the quantities you actually counted is not available in this version yet.
       </div>
@@ -51,7 +57,7 @@ export function PhysicalInventorySheet({ eyebrow, formsPath }: Readonly<{ eyebro
       </div>
       <Panel title="Expected count by location" detail={`${rows.length} locations`}>
         {rows.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-slate-500">No assets to count yet.</p>
+          <EmptyMessage>No assets to count yet.</EmptyMessage>
         ) : (
           <TableWrap>
             <table className="w-full min-w-[760px]">
@@ -67,7 +73,7 @@ export function PhysicalInventorySheet({ eyebrow, formsPath }: Readonly<{ eyebro
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {paged.pageItems.map((r) => (
                   <tr key={r.location} className="hover:bg-blue-50/40">
                     <td className={`${tdClass} font-bold text-slate-950`}>{r.location}</td>
                     <td className={`${tdClass} text-right`}>{r.items}</td>
@@ -91,6 +97,7 @@ export function PhysicalInventorySheet({ eyebrow, formsPath }: Readonly<{ eyebro
             </table>
           </TableWrap>
         )}
+        <Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="locations" />
       </Panel>
     </div>
   );

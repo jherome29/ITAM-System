@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Field, inputClass, PrimaryButton } from '@/components/admin/AdminUi';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { DateField } from '@/components/ui/DateField';
 import { localToday } from '@/lib/dates';
 import { formatDate } from '@/lib/requisitions/requisition-view';
 import { AttachmentPicker } from './AttachmentPicker';
@@ -19,6 +20,7 @@ import {
   supersededRequests,
   fileProblem,
 } from '@/lib/asset-requests/asset-request-rules';
+import { Notice } from '@/components/ui/Notice';
 
 /**
  * Files a return / repair / damage / loss / theft request on an asset the user
@@ -135,9 +137,7 @@ export function AssetRequestForm({
       )}
 
       <Field label={dateCopy.label}>
-        <input
-          type="date"
-          className={inputClass}
+        <DateField
           value={date}
           aria-describedby="request-date-hint"
           onChange={(e) => edit(setDate)(e.target.value)}
@@ -158,7 +158,7 @@ export function AssetRequestForm({
         <span className="mb-1.5 block text-xs font-bold text-slate-600">Photos or documents (optional)</span>
         <AttachmentPicker files={files} onChange={edit(setFiles)} />
       </div>
-      {error && <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p>}
+      {error && <Notice tone="red">{error}</Notice>}
       <PrimaryButton type="submit" disabled={submitting || Boolean(blocker)}>
         {submitting ? 'Submitting…' : `Review and submit`}
       </PrimaryButton>
