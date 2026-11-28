@@ -23,8 +23,9 @@ export class RequisitionItemDto {
   @IsEnum(AssetType)
   assetType!: AssetType;
 
+  @IsOptional()
   @IsEnum(AssetClass)
-  assetClass!: AssetClass;
+  assetClass?: AssetClass;
 
   @IsString()
   @IsNotEmpty()

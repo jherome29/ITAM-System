@@ -1,13 +1,16 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
+import { createTestApp } from './create-test-app';
 import { UserEntity } from '../src/users/entities/user.entity';
 import { AssetEntity } from '../src/assets/entities/asset.entity';
+import { GeneratedFormEntity } from '../src/reports/entities/generated-form.entity';
 import {
   UserRole,
   AssetClass,
@@ -24,6 +27,8 @@ describe('Requisition workflow (e2e)', () => {
   let app: INestApplication<App>;
   let userRepo: Repository<UserEntity>;
   let assetRepo: Repository<AssetEntity>;
+  let formRepo: Repository<GeneratedFormEntity>;
+  let jwtService: JwtService;
 
   let employeeId: string;
   let supervisorId: string;
@@ -36,12 +41,12 @@ describe('Requisition workflow (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api'); // matches main.ts bootstrap() — not implied by AppModule alone
-    await app.init();
+    app = await createTestApp(moduleFixture);
 
     userRepo = moduleFixture.get(getRepositoryToken(UserEntity));
     assetRepo = moduleFixture.get(getRepositoryToken(AssetEntity));
+    formRepo = moduleFixture.get(getRepositoryToken(GeneratedFormEntity));
+    jwtService = moduleFixture.get(JwtService);
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
@@ -90,6 +95,7 @@ describe('Requisition workflow (e2e)', () => {
       assetRepo.create({
         itemDescription: 'E2E Test Laptop',
         assetClass: AssetClass.PPE,
+        acquisitionCost: 50000,
         assetType: AssetType.ICT,
         condition: AssetCondition.SERVICEABLE,
         status: AssetStatus.AVAILABLE,
@@ -185,6 +191,96 @@ describe('Requisition workflow (e2e)', () => {
     expect(lifecycleRes.body.data.custodianId).toBe(employeeId);
   });
 
+  it('issues inventory from a requisition and links custody to its paper record', async () => {
+    const custodian = await userRepo.save(
+      userRepo.create({
+        employeeId: 'E2E-CUSTODY-001',
+        firstName: 'Test',
+        lastName: 'Custodian',
+        email: 'e2e.custody@cicc.gov.ph',
+        passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS),
+        role: UserRole.ASSET_CUSTODIAN,
+        division: 'Test Division',
+        officeOrSection: 'Test Section',
+      }),
+    );
+    const unit = await assetRepo.save(
+      assetRepo.create({
+        assetType: AssetType.ICT,
+        assetClass: AssetClass.SEP,
+        condition: AssetCondition.SERVICEABLE,
+        status: AssetStatus.AVAILABLE,
+        itemDescription: 'Custody test monitor',
+        propertyNumber: 'E2E-CUSTODY-MONITOR',
+      }),
+    );
+    const employeeToken = await loginAs('e2e.employee@cicc.gov.ph');
+    const supervisorToken = await loginAs('e2e.supervisor@cicc.gov.ph');
+    const custodianToken = await loginAs(custodian.email);
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/requisitions')
+      .set('Authorization', 'Bearer ' + employeeToken)
+      .send({
+        requisitionType: 'new',
+        justification: 'Equipment handover test',
+        requiredDate: new Date(Date.now() + 7 * 86400000).toISOString(),
+        items: [
+          {
+            assetType: AssetType.ICT,
+            itemDescription: unit.itemDescription,
+            quantity: 1,
+          },
+        ],
+      })
+      .expect(201);
+    const req = created.body.data as {
+      id: string;
+      requestNumber: string;
+      items: Array<{ id: string }>;
+    };
+    await request(app.getHttpServer())
+      .post('/api/v1/requisitions/' + req.id + '/approve')
+      .set('Authorization', 'Bearer ' + supervisorToken)
+      .send({})
+      .expect(200);
+    await request(app.getHttpServer())
+      .post('/api/v1/requisitions/' + req.id + '/fulfill')
+      .set('Authorization', 'Bearer ' + custodianToken)
+      .send({
+        recordHandover: true,
+        fulfilledItems: [
+          { requisitionItemId: req.items[0].id, assetId: unit.id },
+        ],
+      })
+      .expect(200);
+    const custody = await request(app.getHttpServer())
+      .get('/api/v1/assets?view=custody')
+      .set('Authorization', 'Bearer ' + custodianToken)
+      .expect(200);
+    expect(custody.body.data.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: unit.id,
+          status: AssetStatus.ISSUED,
+          custodianId: employeeId,
+          lastIssuedRequisitionId: req.id,
+          lastIssuedFor: req.requestNumber,
+        }),
+      ]),
+    );
+
+    // CLAUDE.md §6 Module 2: issuing a unit asset generates its COA
+    // acknowledgment — ICS here, since the unit is SEP (PAR is for PPE).
+    const form = await formRepo.findOne({
+      where: { relatedRequisitionId: req.id },
+    });
+    expect(form).toMatchObject({
+      formType: 'ICS',
+      relatedAssetId: unit.id,
+    });
+    expect(form?.documentNumber).toMatch(/^ICS-\d{4}-\d{4}$/);
+  });
+
   it('rejects an Employee attempting to approve their own requisition', async () => {
     const employeeToken = await loginAs('e2e.employee@cicc.gov.ph');
 
@@ -213,5 +309,59 @@ describe('Requisition workflow (e2e)', () => {
       .set('Authorization', `Bearer ${employeeToken}`)
       .send({})
       .expect(403);
+  });
+
+  // Request numbers were count()+1 over all years with no lock: simultaneous
+  // submissions drew the same number and the UNIQUE constraint turned the losers
+  // into 500s (6 of 8 failed against the dev database). The 362-user load test
+  // submits requisitions concurrently, so this is a real path.
+  it('gives simultaneous submissions distinct request numbers instead of failing the losers', async () => {
+    // Signed directly rather than via /auth/login: the login throttle window
+    // (10/min) is shared by every e2e spec file. tokenVersion is read fresh
+    // because the earlier tests' logins bumped it.
+    const employee = await userRepo.findOneByOrFail({ id: employeeId });
+    const token = jwtService.sign(
+      {
+        sub: employee.id,
+        employeeId: employee.employeeId,
+        role: employee.role,
+        tokenVersion: employee.tokenVersion,
+      },
+      { secret: process.env.JWT_SECRET, expiresIn: '5m' },
+    );
+
+    const submit = (n: number) =>
+      request(app.getHttpServer())
+        .post('/api/v1/requisitions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          requisitionType: 'new',
+          justification: `Concurrent submission ${n}`,
+          requiredDate: new Date(
+            Date.now() + 7 * 24 * 60 * 60 * 1000,
+          ).toISOString(),
+          items: [
+            {
+              assetType: AssetType.ICT,
+              assetClass: AssetClass.PPE,
+              itemDescription: `Concurrent laptop ${n}`,
+              quantity: 1,
+            },
+          ],
+        })
+        .then((res) => res);
+
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => submit(i + 1)),
+    );
+
+    expect(results.map((r) => r.status)).toEqual(Array(8).fill(201));
+    const numbers = results.map((r) => r.body.data.requestNumber as string);
+    expect(new Set(numbers).size).toBe(8);
+    const prefix = `REQ-${new Date().getFullYear()}-`;
+    for (const n of numbers) {
+      expect(n.startsWith(prefix)).toBe(true);
+      expect(n.slice(prefix.length)).toMatch(/^\d{4}$/);
+    }
   });
 });

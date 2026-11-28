@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -8,11 +8,10 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import * as bcrypt from 'bcrypt';
 import { AppModule } from './../src/app.module';
+import { createTestApp } from './create-test-app';
 import { UserEntity } from '../src/users/entities/user.entity';
 import { AuditLogEntity } from '../src/audit/entities/audit-log.entity';
 import { AuthController } from '../src/auth/auth.controller';
-import { ResponseInterceptor } from '../src/common/interceptors/response.interceptor';
-import { GlobalExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { UserRole, AuditAction } from '../../packages/shared/src/enums';
 import { BCRYPT_ROUNDS } from '../../packages/shared/src/constants';
 
@@ -68,22 +67,7 @@ describe('Security (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
-    // Mirror src/main.ts bootstrap() so the e2e pipeline matches production:
-    // global prefix, the strict ValidationPipe (scenario 7 depends on it), the
-    // response envelope, and the exception filter.
-    app.setGlobalPrefix('api');
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
-    app.useGlobalInterceptors(new ResponseInterceptor());
-    app.useGlobalFilters(new GlobalExceptionFilter());
-    await app.init();
+    app = await createTestApp(moduleFixture);
 
     jwtService = moduleFixture.get(JwtService);
     userRepo = moduleFixture.get(getRepositoryToken(UserEntity));

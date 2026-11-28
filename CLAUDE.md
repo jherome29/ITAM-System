@@ -1,6 +1,8 @@
 # AIMRS — Asset Inventory Management and Requisition System
 ## CLAUDE.md — Project Intelligence File
 
+> **Last reviewed against the code: 2026-11-28.** §18 lists every other markdown file and what must be updated when something changes.
+
 > **For:** Cybercrime Investigation and Coordinating Center (CICC)
 > **Academic Institution:** University of Santo Tomas, College of Information and Computing Sciences, Department of Information Systems
 > **Capstone Group:** Casambros, Nelson James · Montaniel, Andrei Fredrick · Ocampo, Jherome Luis · Valenton, Jairus Nathan
@@ -26,8 +28,8 @@ The system is not simply a CRUD application — it is a **digital implementation
 
 | Layer | Technology | Notes |
 |---|---|---|
-| **Frontend** | Next.js (TypeScript) | App Router, SSR/SSG where appropriate |
-| **Backend** | NestJS (TypeScript) | Microservices-oriented, REST API |
+| **Frontend** | Next.js 16.4 (React 19, Tailwind 4), TypeScript | App Router; `next dev` runs on Turbopack |
+| **Backend** | NestJS 11 + TypeORM (TypeScript) | REST API; the service split below is implemented as modules of one NestJS app (one deployable) |
 | **Database (Dev/Test)** | Supabase (managed PostgreSQL) | Temporary — dev lifecycle only |
 | **Database (Production)** | PostgreSQL (CICC-managed) | MySQL as fallback per CICC IT |
 | **Containerization** | Docker | Standardizes all environments |
@@ -70,7 +72,7 @@ The system is not simply a CRUD application — it is a **digital implementation
 
 ### 3.2 Microservices Breakdown
 
-Each service has defined API endpoints, is independently deployable, and does not affect other services when updated.
+Each service has defined API endpoints and its own module boundary. They are modules of one NestJS application and ship as one backend image; the boundaries are what would let them be split later.
 
 | Service | Responsibilities |
 |---|---|
@@ -88,78 +90,104 @@ cicc/
 ├── Frontend/                   # Next.js frontend
 │   ├── app/                    # App Router pages
 │   │   ├── (auth)/             # Login page (public)
-│   │   ├── employee/           # Employee role pages
-│   │   ├── supervisor/         # Supervisor role pages
-│   │   ├── it-personnel/       # IT Personnel role pages
-│   │   ├── admin/              # System Administrator pages
-│   │   └── management/         # Management/read-only pages
-│   ├── components/             # Shared UI components
+│   │   ├── employee/           # Employee workspace
+│   │   ├── approving-officer/  # Approving Officer workspace (catch-all [[...slug]] router)
+│   │   ├── asset-custodian/    # Asset Custodian workspace (catch-all router) — unified IT + Property custody, 2026-11-25
+│   │   ├── it-asset-custodian/ # Legacy redirect shim → /asset-custodian/* (kept for old links/bookmarks)
+│   │   ├── property-custodian/ # Legacy redirect shim → /asset-custodian/* (kept for old links/bookmarks)
+│   │   ├── master-admin/       # Master Administrator workspace (catch-all router)
+│   │   └── management-audit/   # Management & Audit viewer workspace, read-only (catch-all router)
+│   ├── components/             # UI components; components/ui/ is the shared kit (see §16 "UI kit")
 │   ├── lib/                    # Utilities, API clients, hooks
 │   └── public/                 # Static assets (logo.png, etc.)
 ├── Backend/                    # NestJS backend
 │   ├── src/
-│   │   ├── assets/             # Asset module
-│   │   ├── requisitions/       # Requisition module
+│   │   ├── assets/             # Asset registry, lifecycle, QR, repairs (asset-repairs.service, repairs.controller)
+│   │   ├── asset-requests/     # Returns & Incidents (Module 6)
+│   │   ├── requisitions/       # Requisition workflow
 │   │   ├── auth/               # Auth module (RBAC, JWT)
-│   │   ├── audit/              # Audit trail module
-│   │   ├── notifications/      # Alert module
+│   │   ├── audit/              # Append-only audit trail
+│   │   ├── notifications/      # In-system alerts
+│   │   ├── scheduler/          # Cron watchers (SLA, nudges, overdue return, low stock, overdue repair)
+│   │   ├── system-config/      # Runtime-tunable settings
+│   │   ├── admin/              # Master Admin dashboard statistics
+│   │   ├── health/             # GET /api/health
 │   │   ├── reports/            # Report generation + COA form generators
-│   │   │   └── forms/          # 18 individual COA form generator files
-│   │   └── users/              # User account management
+│   │   │   └── forms/          # 18 individual COA form generator files + base-form.generator.ts
+│   │   ├── users/              # User account management
+│   │   ├── common/             # Shared guards, filters, utils (asset-type scope, app pipeline)
+│   │   └── database/
 │   ├── test/                   # Jest unit & integration tests
 │   └── webpack.config.js       # Custom webpack (pdfkit externalized, TypeORM drivers ignored)
 ├── packages/
 │   └── shared/                 # Shared TypeScript types/enums (OfficialFormType, UserRole, etc.)
 ├── Database/
-│   ├── migrations/             # SQL migration scripts
-│   └── seeds/                  # Dev seed data
+│   ├── schemas/                # 001…021 SQL, applied in name order (the source of truth for the schema; 020 is a numbering gap, never filled — see Database/README.md)
+│   └── seeds/                  # Dev seed data (never run in production)
 ├── FORMS/                      # Reference copies of official COA form templates
 ├── docker-compose.yml          # Dev environment
 ├── docker-compose.prod.yml     # Production (CICC-managed)
+├── docs/                       # guides/ (ROLES, SECURITY, COA-FORMS-AUDIT, FUTURE-TOOLING), phases/
+├── perf/                       # k6 load baseline
+├── scripts/                    # audit-allowlist.mjs (dependency-audit gate)
 ├── CLAUDE.md                   # ← This file
-├── CHECKS.md                   # Pre-task quality checklist (TypeScript, ESLint, build, tests)
-└── ROLES.md                    # Role permissions and test credentials reference
+├── CHECKS.md                   # Pre-task quality checklist
+└── …status docs                # README, FEATURE-STATUS, SYSTEM-STATUS, PATH-TO-DONE, NEXT-TIME, TEAM-HANDOFF, RUN-LOCAL — see §18
 ```
 
 ---
 
 ## 4. User Roles & Access Control (RBAC)
 
-There are **five user roles** with strictly differentiated permissions. Every API endpoint must enforce role-based guards at the NestJS controller level. The frontend renders only functions permitted for the active user's role.
+There are **five user roles** with strictly differentiated permissions: Employee, Supervisor (Approving Officer), **Asset Custodian**, System Administrator (Master Administrator) and Management. Asset Custodian is a single custodian role covering **all three asset types** (ICT, Fixed, Supplies) — "all assets are handled by one person" was the explicit instruction behind this merge.
+
+**How the role got here (two consolidations, same shape each time):** originally there were separate **IT Personnel** (ICT) and **Property Custodian** (Fixed + Supplies) roles, plus a **Property Officer** that was a read-only subset of the Property Custodian. Property Officer was merged into Property Custodian on 2026-10-16. Then, on 2026-11-25, IT Personnel and Property Custodian were themselves merged into one **Asset Custodian** role. Each merge kept the retired value in the enum rather than deleting it:
+
+- `property_officer`, `it_personnel` and `property_custodian` all still exist in the Postgres `user_role` enum and the shared `UserRole` enum (Postgres cannot drop an enum value, and old audit rows carry all three). None can be newly assigned through the admin UI — the role dropdown (`USER_ROLE_OPTIONS`) only ever offers `asset_custodian` for a custodian account now.
+- **RBAC access is already unified**: `RolesGuard.normalizeRole()` (`Backend/src/auth/guards/roles.guard.ts`) treats `asset_custodian`, `it_personnel` and `property_custodian` as the same logical role for every `@Roles(...)` check — a route written against the old `IT_PERSONNEL`/`PROPERTY_CUSTODIAN` pair and a route written against `ASSET_CUSTODIAN` are equally satisfied by an account carrying any of the three values. Both spellings exist across controllers; don't "fix" one to match the other, they're already equivalent.
+- **Asset-type scope still depends on the actual value held** (`resolveAssetTypeScope`, unaffected by the RBAC unification above): `asset_custodian` → ICT + Fixed + Supplies (no restriction); legacy `it_personnel` → ICT only; legacy `property_custodian` and the retired `property_officer` → Fixed + Supplies only. A pre-merge account that never gets its role changed keeps working, just with its old narrower scope.
+- **A gap worth tightening, not yet closed:** unlike `property_officer` (hard-blocked from `ASSIGNABLE_USER_ROLES`), the backend's `UpdateUserDto`/`CreateUserDto` validation still technically accepts `it_personnel` or `property_custodian` on a direct API call — only the frontend dropdown hides them. The three former custodian/legacy accounts in the dev database (`itpersonnel@cicc.gov.ph`, `it_personnel`, deactivated — "one person" means the old split role is retired, not just unused; `property.custodian2@cicc.gov.ph`, legacy `property_custodian`, still active; `property.custodian@cicc.gov.ph`, now `asset_custodian`, the live one) are a worked example of all three states at once.
+- Frontend: one workspace, `/asset-custodian/` (catch-all router). `/it-asset-custodian/*` and `/property-custodian/*` are now thin redirect shims into it (`Frontend/app/it-asset-custodian/[[...slug]]/page.tsx`, `.../property-custodian/...`), the same pattern used for the earlier `/property-officer/*` retirement.
+
+Every API endpoint must enforce role-based guards at the NestJS controller level. The frontend renders only functions permitted for the active user's role. This matrix is read from the controllers' `@Roles(...)` lists (normalized as above); when a guard changes, change it here and in `docs/guides/ROLES.md`.
 
 ### Role Matrix
 
-| Feature | Employee | Supervisor | IT Personnel | System Admin | Management |
+| Feature | Employee | Supervisor | Asset Custodian | System Admin | Management |
 |---|:---:|:---:|:---:|:---:|:---:|
 | Login | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Submit requisition | ✓ | ✓ | ✓ | — | — |
-| Track own request status | ✓ | ✓ | ✓ | — | — |
-| View asset catalogue | ✓ | ✓ | ✓ | — | — |
+| Submit requisition / replacement | ✓ | ✓ | ✓ | — | — |
+| Track own requests | ✓ | ✓ | ✓ | — | — |
+| Browse the asset catalogue (requisition picker) | ✓ | ✓ | ✓ | — | — |
+| See assets I hold; file return / repair / damage / loss / theft on them | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Receive notifications | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Approve/reject requisitions | — | ✓ | — | ✓ | — |
-| Approval history view | — | ✓ | ✓ | ✓ | ✓ |
-| Register new assets | — | — | ✓ | — | — |
-| Edit asset details (non-status fields) | — | — | ✓ | — | — |
-| Update asset lifecycle | — | — | ✓ | — | — |
-| Generate QR/barcodes | — | — | ✓ | — | — |
-| Scan QR/barcodes | — | — | ✓ | — | — |
-| Issue / return / transfer assets | — | — | ✓ | — | — |
-| Flag assets for repair/disposal | — | — | ✓ | — | — |
-| View asset transaction history | — | — | ✓ | ✓ | ✓ |
+| Print a numbered paper copy of a record I can see (requisition, return / incident request, repair) — Module 8 | ✓ ⁴ | ✓ ⁴ | ✓ ³ | ✓ | ✓ |
+| Approve / reject requisitions | — | ✓ | — | ✓ | — |
+| Approval history (decisions I made) | — | ✓ | — | ✓ | — |
+| Fulfil / hold requisitions | — | — | ✓ ¹ | ✓ ² | — |
+| Decide returns & incidents requests | — | — | ✓ ¹ | ✓ ² | — |
+| Run maintenance & repair (incl. loaner) | — | — | ✓ ¹ | ✓ ² | — |
+| Register assets, edit non-status fields, add/remove a device photo | — | — | ✓ ³ | — | — |
+| Update asset lifecycle (issue / return / transfer / repair / flag for disposal) | — | — | ✓ ³ | — | — |
+| Generate / scan QR and barcodes | — | — | ✓ ³ | — | — |
+| View the asset registry and inventory dashboard | — | — | ✓ ³ | ✓ | ✓ |
+| View an asset's transaction history | — | — | ✓ ³ | ✓ | ✓ |
+| See the replacement-validation list and assets flagged for disposal (read-only) | — | — | ✓ ³ | ✓ | ✓ |
 | Generate official forms (PAR, ICS, RIS…) | — | — | ✓ | ✓ | — |
-| View all inventory dashboard | — | — | ✓ | ✓ | ✓ |
-| User account management | — | — | — | ✓ | — |
-| Role assignment | — | — | — | ✓ | — |
-| View full audit trail (all records) | — | — | — | ✓ | ✓ |
-| System configuration | — | — | — | ✓ | — |
+| View / download the forms archive | — | — | ✓ | ✓ | ✓ |
 | Generate management reports | — | — | ✓ | ✓ | ✓ |
+| User accounts, role assignment, system configuration | — | — | — | ✓ | — |
+| View the full audit trail (all records) | — | — | — | ✓ | ✓ |
+| Executive KPI dashboard | — | — | — | ✓ | ✓ |
+
+¹ Never for a requisition or request they filed themselves. ² Only for a custodian's own request or requisition (the fallback). ³ Inside the account's own asset-type scope: a current `asset_custodian` account has none (ICT + Fixed + Supplies); a legacy account still carrying `it_personnel` sees **ICT** only, and one still carrying `property_custodian` (or the retired `property_officer`) sees **Fixed** and **Supplies** only. Enforced in the service layer on every read and write (`resolveAssetTypeScope`), not just in the menu. ⁴ Only a record they can already read: their own requisition or request, a requisition routed to them, or a repair of an item they hold (a repair's holder may print it although the repair queue is the custodians').
 
 ### Role Notes
-- **Employee** — Service requester. Can submit requisitions, browse catalogue, track own requests.
-- **Supervisor** — First-level approver. Reviews and approves/rejects requests from their section.
-- **IT Personnel** — Asset custodian. Manages the entire asset registry, lifecycle, QR/barcodes, issuance, returns, transfers, repairs, and forms. The primary operational role.
-- **System Administrator** — Full system access. Manages user accounts, role assignments, audit trail, and system configuration.
-- **Management** — Read-only oversight. Accesses dashboards, reports, and audit trails for monitoring and audit-readiness.
+- **Employee** — Service requester. Submits requisitions, asks for a replacement from My Assigned Assets, files return / repair / damage / loss / theft requests for what they hold, tracks their own requests.
+- **Supervisor (Approving Officer)** — First-level approver. Reviews requisitions routed to them (their section, else division) and approves or rejects with comments. Can mark themselves unavailable and designate an alternate approver. Their own requisitions go to their alternate. Also files requisitions as a requester.
+- **Asset Custodian** — Custodian of every asset type (merged from IT Personnel + Property Custodian on 2026-11-25, see above): registry, lifecycle, QR/barcode, device photos, issuance / returns / transfers, requisition fulfilment, returns & incidents, maintenance & repair (incl. loaner units), disposal recommendations, the read-only **Replacement Validation** and **Disposal Review** lists, official forms and management reports. Files requisitions and replacements like any other holder; never fulfils, decides or holds anything they filed themselves. A pre-merge account that still carries the legacy `it_personnel` or `property_custodian` value does the same things, just scoped to its narrower asset-type set (footnote 3) until its role is changed.
+- **System Administrator** — Accounts, roles, system settings, the full audit log. Can approve any requisition. The **fallback decider** for exactly the requests a custodian filed themselves (returns & incidents, repairs, requisitions). Has no operational asset role: cannot register or edit assets, and does not file requisitions.
+- **Management** — Read-only oversight: dashboards, reports, the audit log, the forms archive. Never files, approves or fulfils anything.
 
 > **Security principle:** Principle of Least Privilege. Users access only what their role explicitly requires. Role-guard decorators must be applied on every protected NestJS route.
 
@@ -218,6 +246,8 @@ interface Asset {
 }
 ```
 
+**Device photo (schema `019`, optional):** `GET/POST/DELETE /api/v1/assets/:id/photo` — one photo per asset, stored as `bytea` (`photo_data`, `photo_mime_type`, `photo_file_name`), max 5 MB, single file field `photo`. Upload/delete is Asset Custodian only; read is Asset Custodian, System Admin or Management, inside the usual asset-type scope. Wired into `RegisterAssetForm` and `AssetDetailManager` on the frontend.
+
 ### 5.4 Asset Lifecycle States
 
 ```
@@ -228,7 +258,11 @@ interface Asset {
                     └──[Transferred] → [Available (new location)]
                     │
                     └──[Flagged for Disposal] → [Disposed]
+                                   │
+                                   └──→ [Available]   (restored: found after being reported lost, or flagged in error)
 ```
+
+Restoring a flagged asset to `available` needs a written justification (as the flag itself does), releases any holder, and sets the condition to `serviceable` — an item that turns out to be damaged is then flagged for repair. `disposed` is terminal.
 
 Every state transition must:
 1. Be authorized by the appropriate role
@@ -242,7 +276,7 @@ Every state transition must:
 
 ### Module 1: Asset Registry & Lifecycle
 
-**Primary user:** IT Personnel
+**Primary user:** Asset Custodian
 
 Key screens (matching Figma mockup):
 - Asset Inventory Dashboard (overview cards + table)
@@ -256,10 +290,11 @@ Key screens (matching Figma mockup):
 - An asset cannot be issued if its status is not `available`
 - An asset cannot be requisitioned as a replacement unless the existing asset has met useful-life threshold, condition criteria, or loss/damage criteria (replacement validation)
 - A disposal flag requires documented justification, condition assessment, and recommended action — actual disposal execution is out of scope; only documentation is managed
+- Reversing a disposal flag (restoring the asset to `available`) also requires a documented justification; it is audited like any other transition
 
 ### Module 2: Requisition & Approval Workflow
 
-**Primary users:** Employee (requester), Supervisor (approver), IT Personnel (fulfiller)
+**Primary users:** Employee (requester), Supervisor (approver), Asset Custodian (fulfiller)
 
 Key screens (matching Figma mockup):
 - Employee Dashboard (pending requests, quick submit button)
@@ -271,19 +306,25 @@ Key screens (matching Figma mockup):
 
 **Approval routing logic:**
 - Employee submits → routes to immediate Supervisor
-- Supervisor approves → routes to IT Personnel for fulfillment check and issuance
-- If asset unavailable → system flags and notifies IT Personnel to log
+- Supervisor approves → routes to the Asset Custodian for fulfillment check and issuance
+- If asset unavailable → system flags and notifies the Asset Custodian to log
 - Escalation: if approval exceeds 24-hour SLA → alert triggered
-- IT Personnel confirms issuance → PAR or ICS generated; status updated to `issued`
+- Asset Custodian confirms issuance → PAR or ICS generated; status updated to `issued`
 
 **SLA Target:** 24-hour requisition approval turnaround
 
+**Who files, and who may not fulfil their own (2026-10-16; role names updated 2026-11-25 for the Asset Custodian merge):** `POST /api/v1/requisitions` takes Employee, Supervisor, **Asset Custodian** (they hold property like anyone, so they request and replace like anyone — including a legacy account still carrying `it_personnel` or `property_custodian`; the catalogue endpoints allow them too). Management and the System Administrator do not file (403). Routing is unchanged — the active Approving Officer of the requester's section, else division — so each division that files needs an Approving Officer; the Property and Supply Management division's is `CICC-SUP-002` (alternate `CICC-ALT01`; credentials in `docs/guides/ROLES.md`). **Segregation of duties:** a custodian never fulfils or holds a requisition they filed — `isCustodianOwnRequisition()` (requester is a custodian and every line is in their own asset-type scope) hides it from their own queue and `assertMayFulfil()` refuses it (403). Another custodian fulfils it, or — for exactly those requests — the System Administrator, via `GET /api/v1/requisitions/fulfilment-fallback` (Master Admin → Requisition Fulfilment); the admin is refused on any other requisition. Mirrors the Returns & Incidents fallback (§Module 6).
+
+**Request type is derived, never picked:** `supply` for an IES item, `new` otherwise, `replacement` only when started from My Assigned Assets. A `repair` requisition is refused (400) — repairs go through Returns & Incidents (Module 6); the enum value stays for historical rows.
+
+**Replacement flow (§17):** holder clicks "Request replacement" on an asset that qualifies — `GET /api/v1/assets/mine` returns `replacement: { eligible, basis, reason, openRequestNumber }` per asset (`Backend/src/assets/replacement-eligibility.ts`: not serviceable → `condition`, repaired ≥ `repeat_repair_limit` times (system config, default 3, min 2) in the last 12 months → `repeat_repair`, past useful life → `useful_life`, held while flagged for disposal → `loss_or_damage`). The holder's button and the requisition guard both go through `AssetsService.replacementEligibilityFor`, so they never disagree. The server re-checks: requester must hold it, one unit of the same `assetType`, one open replacement per asset (409). Approver and custodian see `replacedAsset` on the requisition. **Replacement Validation** (`GET /api/v1/requisitions/replacement-review`, Asset Custodian / Admin / Management, scoped by asset type) lists every replacement request with the basis it was justified on at submission (read from its `requisition_submitted` audit entry) and the old unit's repairs in 12 months, plus held items that already qualify but have no open request. **Not reachable from the UI since the 2026-11-26 nav cleanup** ("Retire redundant Asset Custodian navigation"): `/asset-custodian/replacements` and `/property-custodian/replacements` now just `redirect()` to `/asset-custodian/fulfillment`, and `ReplacementReview.tsx` is mounted nowhere. The Fulfillment queue only shows replacements that already have an open requisition, so the one thing the old screen showed that Fulfillment can't — **held items that qualify for replacement but have no open request yet** — currently has no screen at all. Same for **Disposal Review** (`/asset-custodian/disposal-review` → redirects to `/asset-custodian/disposal`, which shows only items already flagged, not a dedicated review list). Likely an unintended regression of the role merge rather than a deliberate cut; worth a product decision (`PATH-TO-DONE.md`). **Fulfilling takes the old unit back** — an issued old unit becomes `returned` (custodian cleared) and its Receipt of Returned Property/SEP is generated, linked via `related_requisition_id`; a lost/stolen unit has nothing to collect and stays on the holder. **…and can issue the new one in the same step:** when the custodian picks a unit on Fulfil (`fulfilledItems` for the single line), it must be `available`, the same `assetType`, not IES and not the old unit — checked before anything is written — and it is issued to the requester right after the fulfilment commits (an issue failure is logged and audited as `issued: false`; the custodian can still issue from Custody & Issuance). No pick = the old behaviour. **Requester documents:** `GET /api/v1/requisitions/:id` carries `documents` (forms with `related_requisition_id`), and `GET /api/v1/requisitions/:id/documents/:formId` downloads one with the same read access as the requisition — the receipt shows on the requisition detail for the requester too.
+
 ### Module 3: Dashboard & Reporting
 
-**Primary users:** IT Personnel, System Admin, Management
+**Primary users:** Asset Custodian, System Admin, Management
 
 Key screens:
-- IT Personnel Dashboard (inventory status, pending requisitions, low-stock alerts)
+- Asset Custodian Dashboard (inventory status, pending requisitions, low-stock alerts)
 - System Administrator Dashboard (system health, user activity, audit overview)
 - Management Dashboard (executive metrics: asset utilization, requisition rates, SLA compliance)
 - Report Generation Page (select report type → export PDF/Excel)
@@ -307,7 +348,9 @@ Key screens:
 
 **System configuration provenance:** `GET /api/v1/system-config` responses carry a `meta` map — `{ updatedAt, updatedBy }` per config key, `null`/`null` while the compiled-in default is in effect. Surfaced as "Last changed … by …" on Master Admin → System Settings and a "Runtime config last changed …" line on the admin dashboard.
 
-**Watcher status (no side effects):** `GET /api/v1/notifications/watcher-status` (System Admin only) returns the last completed scheduler sweep — `{ lastSweep: { at, trigger, summary } | null }`, in-memory per instance. Rendered as "Background watchers — <time> · <trigger>" on the admin dashboard's Platform-health panel; the manual `POST /api/v1/notifications/run-checks` trigger is unchanged.
+**Watcher status (no side effects):** `GET /api/v1/notifications/watcher-status` (System Admin only) returns the last completed scheduler sweep plus each watcher's own last run — `{ lastSweep: { at, trigger, summary } | null, watchers: { slaBreaches, pendingNudges, overdueReturns, lowStock, overdueRepairs: { at, trigger, count } } }` (`count: -1` = it threw), in-memory per instance — so an hourly sweep no longer hides the daily counts. The admin dashboard's Platform-health panel lists all five with their counts and has a **Run checks now** button (`POST /api/v1/notifications/run-checks`, unchanged).
+
+**Administration Overview (2026-10-18):** `GET /api/v1/admin/dashboard-stats` (System Admin only; it now takes the signed-in administrator) also returns `decisions: { returnsIncidents, repairs, requisitions }`: what only the administrator may decide, i.e. what a custodian filed for themselves. It is counted by asking the three services the Master Admin escalation screens read (`AssetRequestsService.findQueue` and `AssetRepairsService.list`, counting `canAct`; `RequisitionsService.fulfilmentFallback`), not by copying their rule, so the number is exactly the items that have decision buttons there. The page shows it as the **Needs your decision** card (it replaced Pending approvals: the administrator has no approval screen, and the past-SLA line stays in the attention list as information) and as attention rows that link to each screen. The watcher rows say "N new alerts sent" (a watcher counts only the alerts it sent on that run, each is sent once) with the live figure beside it ("11 past SLA now"), and a watcher that has not run since the last restart says when it runs, not "Not run yet". The hardcoded "Admin console: Loaded" row was removed (it could never be anything else). Recent audit activity names who did it, `System (automatic)` when the entry is flagged `systemInitiated`. A frontend that gets no `decisions` (an older backend, mid-deploy) shows "could not load" rather than a wrong "nothing waiting". Rules and wording are in `Frontend/lib/admin-dashboard.ts`; `Backend/test/admin-dashboard.e2e-spec.ts` proves the counts on a real Postgres. **Record completeness** (also on the Management dashboard) counts a blank property or serial number as missing, not only NULL.
 
 **Health endpoint (no auth):** `GET /api/health` — runs `SELECT 1`, returns `{ status, db, uptime }`, `503` when the DB is unreachable. Consumed by the `docker-compose*.yml` healthchecks and CICC IT's reverse proxy.
 
@@ -317,11 +360,58 @@ Auto-triggered alerts (in-system + email optional):
 
 | Alert | Trigger | Recipients |
 |---|---|---|
-| Low stock | Asset quantity drops below configured threshold | IT Personnel, System Admin |
-| Overdue return | Asset not returned past agreed date | IT Personnel, Supervisor, requestor |
+| Low stock | Asset quantity drops below configured threshold | Asset Custodian, System Admin |
+| Overdue return | Asset not returned past agreed date | Asset Custodian, Supervisor, requestor |
 | Pending approval | Requisition awaiting action > 12 hours | Supervisor |
 | SLA breach | Approval not completed within 24 hours | System Admin, Management |
 | Alternate approver | Primary supervisor unavailable | System-designated backup approver |
+| Return / incident request (`asset_request`) | Holder files or cancels a return/repair/damage/loss/theft request | The Asset Custodian (scoped by the item's asset type) |
+| Return / incident update (`asset_request_update`) | Custodian approves, rejects, or completes it | The requester |
+| Repair outcome (`repair_update`) | Repair closed as repaired or not repairable | The holder when it went in |
+| Repair overdue (`repair_overdue`) | Open repair past its expected completion (or opened + `REPAIR_DEFAULT_TURNAROUND_DAYS` = 14) — daily watcher, once per due date | Custodian role for the asset type (not the holder) |
+
+Notifications carry `relatedRecordType` + `relatedRecordId`; clicking one (bell popup or inbox) deep-links via `Frontend/lib/notifications/notification-target.ts` to the right queue with `?open=<id>`, which opens that record's drawer.
+
+### Module 6: Returns & Incidents (`Backend/src/asset-requests`, schema `010`)
+
+The holder of an **issued** asset files a return, repair, damage, loss or theft request (`POST /api/v1/asset-requests`, multipart: up to 3 JPG/PNG/WEBP/PDF attachments × 5 MB, type checked by magic bytes, stored as `bytea` with `select: false` like COA PDFs).
+
+- **Two-step:** `submitted` → custodian **approves** (optional hand-over date) → `approved` → custodian **marks received** → `completed`. `rejected` (reason required; **only before approval** — approve and reject are the two alternatives at step one) and `cancelled` (requester only, any open state) are terminal.
+- **Routing:** scoped by the holder's and the request's asset type (`resolveAssetTypeScope`) — any custodian account whose scope covers that type can act on it (today, an `asset_custodian` account covers all three; a legacy `it_personnel`/`property_custodian` account is still scoped to its old slice); Admin / Management read-only. A custodian can never act on their own request — the **System Administrator is the fallback decider for exactly those** (Master Admin → Returns & Incidents). Views carry a server-computed `canAct`; the queue shows decision controls only when it is true.
+- **One open case per asset** (409), except a loss/theft may still be reported while a return/repair/damage is pending — and filing it **supersedes** that request (auto-`cancelled`, `decisionNotes` = "Superseded by AR-…", audited), because the item can no longer be handed over. Older pairs that are both open: a hand-over cannot be completed while the incident is open (409), and completing the incident closes it. No supervisor step. Closed requests never block — the holder can file again once a request is completed, rejected or cancelled and the asset is issued to them again.
+- **Repair loop:** a repaired item goes back to its holder via `under_repair → issued` (allowed only to the current holder, no employee ID needed). `→ available` always clears the holder — before, a repaired item sat in stock *and* on the old holder's list at once.
+
+### Module 7: Maintenance & Repair (`Backend/src/assets` — `asset-repairs.service.ts`, `repairs.controller.ts`, schema `013`)
+
+- **One `asset_repairs` row per stay in `under_repair`**, opened and closed inside `AssetsService.updateLifecycle` — so a repair is recorded whichever screen moved the asset (Returns & Incidents completion, asset page, Maintenance queue). Carries holder-at-the-time, the AR that sent it in, reported problem, in-house vs external + service provider, expected completion date, findings, work done, outcome. At most one open per asset (partial unique index). No cost columns (§11 #7-8).
+- **Endpoints:** `GET /api/v1/repairs?status=open|closed` (scoped by asset type; Asset Custodian / Admin / Management), `GET …/asset/:assetId` (asset page history), `PATCH …/:id` (progress), `POST …/:id/complete` `{ outcome: repaired|unrepairable, findings, actionTaken, returnToStock? }`. Same `canAct` rule as Returns & Incidents: the custodian role for the type, never the holder; System Admin only for a custodian's own item.
+- **Outcomes:** repaired → back to the holder (`issued`) or into stock (`available`, holder cleared) · unrepairable (findings required — they are the disposal justification) → `flagged_for_disposal`, holder **keeps** accountability and becomes eligible for a replacement. The holder is notified either way.
+- **Loaner while under repair** (schema `014`, `asset_repairs.loaner_asset_id`): `POST /api/v1/repairs/:id/loaner { assetId, expectedReturnDate? }` (same `canAct` rule) issues an available unit of the same asset type — not IES, not the item itself — to the holder with an expected return date (default: the repair's due date, never in the past), so the overdue-return watcher covers it; one loaner out per repair (409). Closing the repair asks the holder to bring it back and moves its return date up to that day (re-arming the watcher). The repair view carries `loaner { …, withHolder }`; the drawer has **Issue loaner** while open and **Mark loaner returned** once closed (custodian queue only).
+- **Condition follows the lifecycle** (`conditionAfter`): serviceable → `for_repair` going in; `serviceable` when repaired; `unserviceable` when written off (also a damaged item surrendered for disposal). It used to never change, which also skewed replacement eligibility.
+- **UI:** Maintenance & Repair queue (`components/repairs/RepairQueue.tsx`) for the Asset Custodian, Master Admin → Escalations → Repairs, Repair History panel on the asset page, "Under repair at … — expected back …" on the holder's card. **Repair History** report (`REPAIR_HISTORY`, PDF/Excel) with turnaround per repair.
+- **Completion drives the lifecycle and auto-generates the COA documents** (`requiredDocuments()` in the service — §7.2 trigger events). Forms are stored in `generated_forms` with `related_asset_request_id` (schema `012`) and downloadable by the requester via `GET …/:id/documents/:formId`; failures don't undo completion and can be retried (`POST …/:id/documents`).
+
+  | Request → outcome | Asset | Holder's accountability | Documents |
+  |---|---|---|---|
+  | Return | `returned` | cleared | Receipt of Returned Property (PPE) / SEP (SEP, IES) |
+  | Repair | `under_repair` | kept | none (no COA form applies) |
+  | Damage → repair | `under_repair` | kept | RLSDDP (Damaged) |
+  | Damage → disposal | `flagged_for_disposal` | **cleared** (item surrendered) | Receipt + RLSDDP (Damaged) + IIRUP |
+  | Loss / Theft | `flagged_for_disposal` | **kept until COA relief** | RLSDDP (Lost / Stolen) — no IIRUP (nothing to inspect) |
+
+  On approval the requester is told what to bring (the item + the asset's `components`) or, for loss/theft, which supporting documents to prepare. Receipt forms resolve the returnee from the last completed return when the asset has no custodian.
+- **Condition-on-receipt photos:** `PATCH …/:id/complete` also accepts multipart `attachments` (same limits). Attachments carry `stage` — `request` (holder's evidence) or `receipt` (custodian's photos) — plus `uploadedById` (schema `011`); the UI shows them as separate galleries.
+- `GET /api/v1/assets/mine` backs "My Assigned Assets" (`components/assets/MyAssignedAssets.tsx`), which **every role** has — anyone can hold property. Only Employee / Approving Officer / Asset Custodian get "Request replacement" (requisition RBAC).
+
+### Module 8: Record printouts (`Backend/src/reports/record-print.ts`, `forms/record-print.generator.ts`, schema `018`)
+
+CICC asked for a paper copy after every step on a requisition, a return / incident request and a repair, as proof beyond the digital record. A **record printout** is a numbered A4 PDF of one record as it stands now: CICC header and seal, the facts, the items table, the notes, a step-by-step timeline (oldest first, from the stored timestamps and the audit trail), the next step, signature lines and a verification code. It is not a COA form and does not replace one.
+
+- **Endpoints:** `POST /api/v1/requisitions/:id/print`, `POST /api/v1/asset-requests/:id/print`, `POST /api/v1/repairs/:id/print` → `200`, `application/pdf` inline, number in `X-Document-Number`. `GET …/:id/prints` lists the copies made (`id, documentNumber, verificationCode, generatedAt, copy, printedByName`). A stored copy is read again through its record: `GET /requisitions/:id/documents/:formId`, `GET /asset-requests/:id/documents/:formId`, `GET /repairs/:id/prints/:formId`.
+- **Access = access to the record.** Each owning service checks that the caller may read the record (requisition: `findOne` access; request: `canRead`; repair: its holder, or the Asset Custodian inside their asset-type scope, or Admin / Management) and builds a plain `PrintableRecord`; `ReportsService.createRecordPrint` only numbers, draws, stores and audits it. A print of record A is never served under record B (404). Printing never blocks or changes the action: it is a button and a prompt, not a step.
+- **Numbering:** `PR-YYYY-NNNN` from `document_counters` (series `PR`) in the same transaction that stores the PDF, so a failed print leaves no hole. Every print gets a new number and a verification code (`K7Q2-9DXM`, an alphabet without look-alike characters) printed on the paper, kept with the stored copy and shown beside each copy in the Paper copy list, so a paper can be matched to the record later. Later prints say `REPRINT: copy N`. There is no public verify endpoint.
+- **Storage:** `generated_forms` (`form_type = 'RECORD_PRINT'`, a VARCHAR, so no enum change; new columns `related_asset_repair_id`, `verification_code`), audited as `FORM_GENERATED` with the record and print number in metadata. **A printout is not an archive document:** it is left out of a record's "Official documents" list and out of the Forms archive, because the archive is not asset-type-scoped and its download route checks only the role, so listing it there would let any custodian account read any other custodian's printout regardless of asset type. `GET /reports/forms` excludes it, `GET /reports/forms/:id/download` answers 404 for one, and `POST /reports/forms/generate` with `RECORD_PRINT` is a 400.
+- **Frontend:** `Frontend/components/shared/RecordPrints.tsx`. `RecordPrints` is the **Paper copy** section (Print copy button and the last five copies with Open) in `RequisitionDetailView`, `AssetRequestDetail` and the repair drawer, so every role's view of a record has it. `usePrintPrompt()` shows **"Keep a paper copy?"** right after a step is saved: file / approve / reject / fulfil / hold a requisition; file / approve / reject / complete / cancel a return or incident request; close a repair; issue a loaner. `Frontend/lib/print-record.ts` opens the tab inside the click (a popup blocker refuses one opened after an await) and falls back to a download. Direct asset moves from Custody & Issuance are not covered: they already generate their COA forms.
 
 ---
 
@@ -333,37 +423,56 @@ All reports are generated from live database records at time of export. Access g
 
 | Report | Format | Audience |
 |---|---|---|
-| Asset Master List | PDF / Excel | IT Personnel, Management, Admin |
-| Requisition History Log | PDF / Excel | Supervisors, IT Personnel, Management |
-| Asset Issuance Record | PDF | IT Personnel, Management |
-| Asset Return Record | PDF | IT Personnel, Management |
+| Asset Master List | PDF / Excel | Asset Custodian, Management, Admin |
+| Requisition History Log | PDF / Excel | Supervisors, Asset Custodian, Management |
+| Asset Issuance Record | PDF | Asset Custodian, Management |
+| Asset Return Record | PDF | Asset Custodian, Management |
 | Physical Count Summary | PDF / Excel | Management, Admin |
 | Asset Utilization Summary | PDF / Excel | Management |
 | Audit Trail Report | PDF / Excel | System Admin, Management |
-| Disposal Documentation Report | PDF | IT Personnel, Management |
+| Disposal Documentation Report | PDF | Asset Custodian, Management |
+
+`POST /api/v1/reports/generate` validates `reportType` against the shared `ReportType` enum (unknown → 400). **Audit Trail Report** (`AUDIT_TRAIL`) lists who/role/action/record/IP newest first for an optional `dateFrom`/`dateTo`, capped at 10,000 rows (the cap is stated in the title); only the System Administrator and Management may generate it (403 otherwise). Surfaced as **Report (PDF / Excel)** on the Audit Log page. Physical Count Summary excludes disposed assets, matching the Physical Inventory sheet. *Asset Utilization Summary is not built.*
 
 ### 7.2 Official COA/CICC Transaction Forms (Auto-generated)
 
 | File Reference | Official Form Name | Trigger Event |
 |---|---|---|
 | RIS | Requisition and Issue Slip | Employee submits supply/material requisition |
-| RSMI | Report of Supplies and Materials Issued | IT Personnel completes supply issuance for a period |
-| RSPI | Report of Supplies and Properties Issued | IT Personnel completes SEP/property issuance for a period |
+| RSMI | Report of Supplies and Materials Issued | Asset Custodian completes supply issuance for a period |
+| RSPI | Report of Supplies and Properties Issued | Asset Custodian completes SEP/property issuance for a period |
 | RECEIPT OF RETURNED PROPERTY-EQUI | Receipt of Returned Property/Equipment | Employee returns property item or equipment |
 | RECEIPT OF RETURNED SEMI-EXPENDAB | Receipt of Returned Semi-Expendable Property | Employee returns SEP item |
-| Property-Form-Annex-A.4 | Registry of Supplies/Property (Annex A.4) | IT Personnel registers/updates supply or property record |
+| Property-Form-Annex-A.4 | Registry of Supplies/Property (Annex A.4) | Asset Custodian registers/updates supply or property record |
 | Move-In Form 2026 | Move-In / Asset Transfer Receiving Form | Receiving unit accepts transferred assets |
 | MOVE OUT FORM 2026 | Move-Out / Asset Transfer Releasing Form | Originating unit releases assets to another unit |
-| Appendix 58 - SC | Sticker Card | IT Personnel tags registered asset |
-| Appendix 59 - ICS | Inventory Custodian Slip | IT Personnel issues SEP item to employee |
+| Appendix 58 - SC | Sticker Card | Asset Custodian tags registered asset |
+| Appendix 59 - ICS | Inventory Custodian Slip | Asset Custodian issues SEP item to employee |
 | Appendix 62 - IAR | Inspection and Acceptance Report | Inspection committee accepts newly procured assets |
-| Appendix 65 - WMR | Waste Materials Report | IT Personnel documents waste/unusable materials |
+| Appendix 65 - WMR | Waste Materials Report | Asset Custodian documents waste/unusable materials |
 | Appendix 66 - RPCI | Report on Physical Count of Inventories | Periodic physical count reconciliation |
-| Appendix 71 - PAR | Property Acknowledgment Receipt | IT Personnel issues property item to employee |
+| Appendix 71 - PAR | Property Acknowledgment Receipt | Asset Custodian issues property item to employee |
 | Appendix 73 - RPCPPE | Report on Physical Count of PPE | Periodic physical count of PPE items |
-| Appendix 74 - IIRUP | Inventory and Inspection Report of Unserviceable Property | IT Personnel flags unserviceable assets |
-| Appendix 75 - RLSDDP | Report of Lost, Stolen, Damaged, or Destroyed Property | IT Personnel/officer reports property loss/damage |
+| Appendix 74 - IIRUP | Inventory and Inspection Report of Unserviceable Property | Asset Custodian flags unserviceable assets |
+| Appendix 75 - RLSDDP | Report of Lost, Stolen, Damaged, or Destroyed Property | Asset Custodian reports property loss/damage |
 | Appendix 76 - PTR | Property Transfer Report | Inter-office/inter-unit property transfer |
+
+**Numbering, identity, archive (schema `016`):**
+- PAR, ICS, PTR, IAR, Receipt of Returned Property (RRPE) / SEP (RRSP), RLSDDP and Move-Out take a real running number `<SERIES>-<YYYY>-<NNNN>` (`Backend/src/reports/document-numbers.ts`), allocated from `document_counters` with one atomic upsert **inside the transaction that stores the form** — a form that fails to generate rolls its number back (no holes), and two at once never share one. Stored in `generated_forms.document_number`, shown on the PDF, in the download file name / `X-Document-Number` header (exposed via CORS) and in the archive. RIS keeps the requisition number; the periodic reports (RPCI, RPCPPE, RSMI, RSPI, WMR, Annex A.4) are not numbered. Record printouts (Module 8) take series `PR` from the same counters but are not archive documents. The format is a placeholder until CICC's property office gives its own series.
+- **Entity name and Fund Cluster are system settings** (`entity_name`, `fund_cluster`; Master Admin → System Settings → Official forms), not fixed text. The generators are plain functions, so ReportsService runs them inside `withFormIdentity()` (AsyncLocalStorage) and `identityFields()` / `documentNumber()` read it back. An unset Fund Cluster prints a fill-in line.
+- Tables paginate (`drawTable` / `ensureSpace` / "Page n of N"); text drawn below `CONTENT_BOTTOM` makes pdfkit start a new page per call, so anything after a table goes through `ensureSpace`.
+- RSMI lists supply (IES) lines only, priced from the stock they were issued from (`fulfilledAssetId`); a line with no stock link prints a dash and is left out of the total. RPCI carries the stock on record and leaves the physical count blank. Conditions print as words (`conditionLabel`).
+- Receipts accept `returneeEmployeeId`; a unit collected by a replacement requisition takes its holder from that requisition. A PTR without `targetOffice` is a 400.
+- `GET /api/v1/reports/forms` returns `assetLabel`, `requisitionNumber`, `generatedByName`, `documentNumber` and filters by `formType` / `search` (document number) with paging. The page is **Reports & Forms** (`components/shared/FormsWorkspaceContent.tsx`): a catalogue of the 18 forms (`lib/forms/form-catalog.ts`) with a drawer per form (record pickers, not UUIDs) and the archive; Management gets the archive only.
+
+**Layout and content rules (`Backend/src/reports/forms/base-form.generator.ts`, found by rendering and reading all 18 forms on 2026-10-16):**
+- `drawFormTitle` stacks the reference box: label on top, value (document number / appendix / form code) under it, shrinking a long code to fit. Never draw both at the same y.
+- `drawTable` takes *proportions*: `fitColumnWidths` scales the columns to the content width and never below the longest word in a column, so a table cannot run past the right margin or break a word mid-column. The header row grows with its tallest header.
+- `drawMetaFields` skips an empty filler field; `roleDisplay` must name every `UserRole` (a test enforces it). A row is as tall as its tallest value (a wrapped value used to print over the next row); `drawLabelledLine` does the same for a full-width "Label: value" line (PTR's From / To). A value that fits one line keeps the old 13pt step.
+- **Management reports** (`buildPdfReport`) draw the same `drawTable` on a landscape letter page (`createReportDoc`, widths from `columnProportions`), so rows grow with their text, the header repeats and "Page n of N" is printed. They used a private fixed-height table that overprinted wrapped cells and added stray pages (the Audit Trail came out at 171 pages, 84 of them stray). `drawTable` / `ensureSpace` read the page they are on, not the A4 constants. Costs print as `PHP 50,000.00` (`phpFormat`): the PDF font has no peso sign and printed `±`.
+- RLSDDP's Accountable Officer is the property's holder (`returneeId` when Returns & Incidents generates it, else the current holder, else whoever generates it). The Annex A.4 prints the real ICS number stored for an item, or a fill-in line; it never invents one.
+- To check a layout change, render the PDFs and look at them (RUN-LOCAL.md §11): the unit tests catch geometry, not taste.
+- Known differences from CICC's official templates (extra signatory, missing WMR / IIRUP sections, Move-In/Out property type, Sticker Card) are tracked in `docs/guides/COA-FORMS-AUDIT.md`, with their current status.
 
 > All forms follow official Commission on Audit (COA) format. Forms requiring physical signatures are printed and signed manually; digital copies are retained in AIMRS for audit reference.
 
@@ -390,9 +499,10 @@ Security controls are NOT add-ons — they are embedded from the first line of c
 - Every system transaction logged: user ID, action type, affected record ID, timestamp (UTC), IP address, user role at time of action
 - Audit logs are **append-only** — no update or delete operations on the audit table
 - Full audit log list (`GET /api/v1/audit`) is restricted to System Administrator and Management; filterable by `action` and by `startDate`/`endDate` (server-side)
-- IT Personnel can view transaction history for individual assets they manage via `GET /api/v1/audit/record/:recordId`
+- The Asset Custodian (and any legacy account still carrying `it_personnel` or `property_custodian`) can view transaction history for individual assets **inside their own asset-type scope** via `GET /api/v1/audit/record/:recordId`; any other record id (a user's login trail, an out-of-scope asset) is `403`. System Administrator and Management may read any record. Enforced in `AuditService.findRecordHistory`, so the admin-only `GET /audit/user/:userId` cannot be bypassed through this route
 - System Administrator can pull a single account's activity via `GET /api/v1/audit/user/:userId` (shown in the Master Admin user drawer)
 - Logs exportable as PDF/Excel for COA audit purposes
+- The screens never show bare UUIDs: `AuditService.withNames()` adds `userName` and `recordLabel` to `/audit`, `/audit/user/:id` and `/audit/record/:id` (a request or requisition number, an asset's description and property number, a person's name and employee ID, a form's document number — or its type for an unnumbered report). Names are only for people (§8.4); a record it cannot describe has no label and the screen falls back to the id
 
 ### 8.4 Data Minimization
 - Collect only the personal data necessary for asset assignment and user account administration
@@ -433,44 +543,47 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 ### All Roles — Shared
 - `/login` — Landing/login page (single unified login, role determines redirect)
 
+> Each role has one workspace. All but the Employee's are a single catch-all route
+> (`app/<workspace>/[[...slug]]/page.tsx`) that renders a dedicated component per page;
+> an address with no screen behind it is a 404. The pre-redesign shells (`/supervisor`,
+> `/it-personnel`, `/admin`, `/management`) were deleted on 2026-10-15 — the menu for each
+> role is `Frontend/lib/roles/role-navigation.ts`, the source of truth for this list.
+> Every role also has `My Assigned Assets` and `Notifications`.
+
 ### Employee (`/employee/`)
-- `/employee/dashboard` — Overview: pending requests, recent activity
-- `/employee/requisitions/new` — Submit requisition form
-- `/employee/requisitions` — My requisitions list
-- `/employee/requisitions/[id]` — Request status tracking (timeline view)
+- `/employee/dashboard` — Overview: my property, due-back items, pending requests
 - `/employee/catalogue` — Browse available assets
+- `/employee/requisitions`, `/employee/requisitions/new`, `/employee/requisitions/[id]` — My requisitions, submit, status timeline
+- `/employee/assigned-assets` — Assets I hold; request return / repair / replacement
+- `/employee/returns-incidents` — My return, repair, damage, loss and theft requests
 - `/employee/notifications` — Notifications inbox
 
-### Supervisor (`/supervisor/`)
-- `/supervisor/dashboard` — Pending approvals queue, metrics
-- `/supervisor/approvals` — All requisitions pending approval
-- `/supervisor/approvals/[id]` — Review and approve/reject requisition
-- `/supervisor/history` — Approval history log
-- `/supervisor/notifications` — Notifications inbox
+### Approving Officer (`/approving-officer/`)
+- `dashboard` — Pending approvals queue, metrics
+- `approvals` — Requests routed to me; approve / reject (the review drawer)
+- `approval-history` — My own past decisions, with turnaround
+- `requisitions` — My own requisitions
 
-### IT Personnel (`/it-personnel/`)
-- `/it-personnel/dashboard` — Inventory overview, alerts, pending fulfillments
-- `/it-personnel/assets` — Full asset inventory table
-- `/it-personnel/assets/new` — Add new asset form
-- `/it-personnel/assets/[id]` — Asset details: full record + inline edit mode + context-aware lifecycle modal + transaction history panel + form suggestion banner (no sub-routes — lifecycle and QR are actions on this page)
-- `/it-personnel/qr-scan` — QR/barcode scanner
-- `/it-personnel/requisitions` — Fulfillment queue (approved requisitions)
-- `/it-personnel/forms` — Generate official forms (RIS, PAR, ICS, etc.)
-- `/it-personnel/reports` — Generate reports (Asset Master List, Issuance Records, etc.)
-- `/it-personnel/notifications` — Notifications inbox
+### Asset Custodian (`/asset-custodian/`) — merged 2026-11-25 from the former IT Asset Custodian and Property Custodian workspaces
+- `dashboard`, `it-inventory` (ICT registry; + `assets/new`, `assets/[id]`: record, edit, lifecycle, QR, device photo, history), `fixed-assets`, `supplies` (+ their own `/new`, `assets/[id]`), `disposed-assets`, `qr-scanner`
+- `fulfillment` — Approved requisitions to fulfil or hold; `custody` — who holds what; issue / transfer / return
+- `returns-incidents` — reachable and fully live, but currently not in the sidebar menu (`Frontend/lib/roles/role-navigation.ts`); worth adding back
+- `maintenance` (repairs, incl. loaner), `physical-inventory` (count sheet), `disposal` (recommend disposal)
+- `reports` — Generate official COA forms; `management-reports` — Generate management reports (Asset Master List, Issuance, Returns, Repair History, …)
+- `requisitions` — My own requisitions (fulfilled by another custodian or the System Administrator, never by me)
+- `replacements` / `replacement-validation` → redirects to `fulfillment`; `disposal-review` → redirects to `disposal` (the former dedicated read-only lists — see Module 2's replacement-flow note; this currently drops the "qualifies but has no open request yet" view, with no replacement screen left)
 
-### System Administrator (`/admin/`)
-- `/admin/dashboard` — System health, user activity, audit summary
-- `/admin/users` — User management (CRUD)
-- `/admin/users/[id]/role` — Role assignment
-- `/admin/audit-trail` — Full audit log viewer (filterable, exportable)
-- `/admin/config` — System configuration (thresholds, SLA targets, approval routes)
-- `/admin/notifications` — Notifications inbox
+> `/it-asset-custodian/*` and `/property-custodian/*` no longer have their own screens: every address under either redirects into the equivalent `/asset-custodian/*` one. `/property-officer/*` likewise redirects (`next.config.ts`) to one of the screens above or to the custodian's dashboard.
 
-### Management (`/management/`)
-- `/management/dashboard` — Executive dashboard (KPIs, charts, utilization)
-- `/management/reports` — Report generation and download
-- `/management/audit-trail` — Read-only audit trail access
+### Master Administrator (`/master-admin/`)
+- `dashboard` — System health, user activity, audit summary
+- `users`, `roles` — Accounts, role assignment; `configuration` — System settings (thresholds, SLA); `audit` — Full audit log (filterable, exportable)
+- `returns-incidents`, `repairs`, `fulfillment` — Fallback decider for custodians' own requests (returns/incidents, repairs, and requisitions they filed themselves)
+
+### Management & Audit Viewer (`/management-audit/`) — read-only
+- `dashboard` — Executive dashboard (KPIs, requisition and asset status breakdowns)
+- `asset-reports`, `requisition-reports`, `maintenance-disposal`, `physical-count` — Report generation and download
+- `audit` — Read-only audit log; `forms` — Forms archive
 
 ---
 
@@ -492,13 +605,15 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 12. **SnakeNamingStrategy** — TypeORM is configured with `SnakeNamingStrategy`. Entity property names in camelCase are automatically mapped to snake_case column names in PostgreSQL (e.g., `pdfContent` → `pdf_content`, `createdAt` → `created_at`). Do not specify `@Column({ name: 'snake_case' })` unless overriding the default — it is handled automatically.
 13. **`@IsEnum` required on form DTOs** — The `GenerateFormDto.formType` field must have `@IsEnum(OfficialFormType)` applied. Without it, NestJS `ValidationPipe` passes any string through and the service throws an unhandled runtime error (500). All enum-typed DTO fields must use `@IsEnum()`.
 14. **`tokenVersion` invalidation** — Making two login calls for the same user in the same session increments `tokenVersion` twice, invalidating all previous tokens for that user. Only make one login call per test/simulation per user. The `reset-password` and `revoke-sessions` endpoints also increment `tokenVersion` by +1 to force re-authentication.
-15. **`ISSUED` lifecycle uses `employeeId`, not `custodianId`** — The `UpdateLifecycleDto` accepts `employeeId` (string, e.g. `CICC-0042`) for the `ISSUED` transition. The backend resolves it to a UUID via `UsersService.findByEmployeeId()` and sets `custodianId`. Never send a raw UUID to the `employeeId` field — it is a CICC employee ID string, not a UUID. The `custodianId` field on the DTO still exists as a fallback but the IT Personnel UI uses `employeeId`.
+15. **`ISSUED` lifecycle uses `employeeId`, not `custodianId`** — The `UpdateLifecycleDto` accepts `employeeId` (string, e.g. `CICC-0042`) for the `ISSUED` transition. The backend resolves it to a UUID via `UsersService.findByEmployeeId()` and sets `custodianId`. Never send a raw UUID to the `employeeId` field — it is a CICC employee ID string, not a UUID. The `custodianId` field on the DTO still exists as a fallback but the Asset Custodian UI uses `employeeId`.
 16. **`TRANSFERRED` lifecycle uses `toLocation`** — The `UpdateLifecycleDto` accepts `toLocation` (string) for the `TRANSFERRED` transition — this is the receiving office/section name. It is stored in the audit log metadata; the asset's `officeOrSection` is not automatically updated.
 17. **`PATCH /api/v1/assets/:id` is for metadata edits only** — This endpoint accepts `UpdateAssetDto` (all 16 non-status fields optional). It does NOT accept `status`, `assetClass`, `assetType`, `qrCode`, `barcodeValue`, `id`, `custodianId`. Status transitions must go through `PATCH /api/v1/assets/:id/lifecycle`. Do not confuse the two endpoints.
 
 18. **Docker build context is the repo root, not `Backend/` or `Frontend/`** — this is an npm-workspaces monorepo and both apps import `packages/shared`. `docker build -f Backend/Dockerfile .` (context `.`) with the Dockerfiles copying `packages/shared` beside the app. Reverting to `context: ./Backend` re-breaks the build (the `../../../packages/shared` import escapes the context). There is one root `package-lock.json` — no per-workspace lockfiles.
 
 19. **DB TLS is `DATABASE_SSL`-driven** — default (unset) is verified SSL. `disable` for a local/CI Postgres that speaks no TLS; `no-verify` for a dev machine behind a TLS-intercepting proxy (set it in `Backend/.env`, never in code). This replaced the uncommitted `rejectUnauthorized: false` hack that used to live in `app.module.ts`.
+
+20. **Schema changes reach a database through the runner.** `Backend/scripts/db-migrate.mjs` applies `Database/schemas/NNN_*.sql` once each, in order, and records them in `schema_migrations` (an advisory lock keeps two instances from racing; a file already applied must never be edited, add a new numbered one; a database that has tables but no history is refused unless `MIGRATE_BASELINE=<last applied number>` is set once). It runs as the hosting platform's pre-deploy command (`node scripts/db-migrate.mjs`, Railway for UAT); the backend image carries the script and the schema files. `Backend/test/db-migrate.e2e-spec.ts` proves it against a real Postgres. **Schema changes are also listed in two places** — `Database/schemas/NNN_*.sql` (Supabase / production) **and** `docker-compose.yml` (the dev init list). The e2e suite builds its tables from the entities (`synchronize` under `NODE_ENV=test`), so a table that is only written with raw SQL (`document_counters`) still needs an entity declaring it. Apply a new schema file to Supabase before running a backend that needs it against that database.
 
 ### Out of Scope (Never Build These)
 - Procurement and supplier management
@@ -517,11 +632,20 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 - **Critical-path pass rate:** 100% — no exceptions
 - Tests run automatically in CI on every push; failing tests block merges to `main`
 - Key test areas: asset status transitions, requisition approval routing, RBAC enforcement, audit log generation, QR code utility functions, database interaction layers
+- **Where it stands (2026-11-28, on `develop`):** backend 985 unit tests in 48 suites (90.2% statements, 86.7% branches, 90.9% functions, 90.2% lines; gate is 65 / 55 / 55 / 65), 121 e2e tests in 15 suites on a real Postgres, frontend 538 vitest tests. Coverage moved down from the 2026-10-18 figures (95%→90%) even though test count went up — the Asset Custodian merge, the CICC asset-import script and the dependency-advisory fixes added more code than tests in the same PR; still comfortably over gate. A request-routing or guard change needs an e2e test, because the unit tests mock the database
 
 ### Integration Testing (Jest)
 - API endpoint behavior across service boundaries
 - Role-based access control across all protected routes
 - Requisition workflow end-to-end (submit → approve → fulfill → update asset)
+
+### UI consistency guardrail
+`Frontend/lib/ui-consistency.spec.ts` reads the source and fails on a raw date input, a per-screen input class, a hand-rolled error box or pill, a second `<h1>` component, `gray-*`, a hex colour, a one-off pixel font size, light-grey text, `toLocaleString()` with no locale, "Fulfilment", "Failed to" and three-dot ellipses, and it checks `globals.css` so the type scale cannot shrink. It also forbids pairing `line-clamp` with a display class (`block`/`flex`: whichever Tailwind writes last wins and the clamp silently does nothing), a hand-built Previous / Next pager, and a table header that can break mid-word, and it requires `overflow-wrap: anywhere` on the body. Add a rule in the same change as the migration that makes the code obey it (and prove it can fail by planting a violation: a rule that can never match passes for ever). When a pattern has a good reason to exist, name the file in the rule's allow-list with a comment, do not weaken the rule.
+
+### Verifying screens and PDFs by driving them
+Unit and e2e tests do not prove a screen or a PDF looks right. For UI and form changes, run the stack against a **throwaway Postgres** (never the shared Supabase), drive it with Playwright, and render the PDFs to images — recipe in `RUN-LOCAL.md` §11. Things this found that tests had not: a form number printed over its own label, tables running off the page, an audit log showing truncated ids.
+
+**Also try it with a lot of data and awkward data** (about 350 users, 800 assets, hundreds of requests and 2,700 audit rows; names and descriptions of 90 to 690 characters, unbroken 100-character serial numbers, markup and emoji in every text field), and check the API against a database **built from `Database/schemas/*.sql`**, not only the entity-built one: the e2e and sandbox databases build their tables from the entities, so every text column is unbounded and the real `VARCHAR(100)` limits stay hidden. Recipe in `RUN-LOCAL.md` §11. Things this found that nothing else had (2026-10-17): lists that silently showed only the first 15 / 50 / 100 / 200 records (My Requisitions, the user directory, Roles & Assignment, Approval History), management-report PDFs that printed wrapped cells over the next row, and API inputs that returned 500 instead of saying why.
 
 ### Stress/Performance Testing (Apache JMeter)
 - Simulates 362 concurrent users performing: login, requisition submission, dashboard view, QR scan, approval, report access
@@ -535,7 +659,7 @@ Each system module maps to a specific SVC activity. This is the academic framewo
 - Pool + rate-limit are now env-tunable — `DB_POOL_MAX` (default 20, was pg's 10), `THROTTLE_LIMIT` / `THROTTLE_TTL` (defaults 60 / 60 s per IP, unchanged).
 
 ### User Acceptance Testing (UAT)
-- Structured evaluation instrument for Employees, Supervisors, IT Personnel
+- Structured evaluation instrument for Employees, Supervisors, Asset Custodians
 - Measures: system functionality, usability, SVC alignment, Security by Design compliance
 - KPIs: requisition processing time, inventory accuracy, request status visibility, approval traceability, access control enforcement, audit trail completeness, report generation reliability, user satisfaction vs. manual process
 
@@ -578,11 +702,11 @@ Promotion flow: `feature/<ticket-id>-<desc>` → `develop` → `main`
 #### Branch Protection Summary
 - `feature/*` — no protection (developer pushes freely)
 - `develop` — requires PR + 1 review + `backend-ci`, `frontend-ci`, `backend-e2e`, `shared-pkg` green
-- `main` — requires PR + 2 reviews + **all** checks green (adds `secret-scan`, `codeql`, `dependency-audit`, `owasp-dc` on top of `develop`'s checks — these used to be split across `test`/`uat`, now they all gate the final promotion to production) + force pushes blocked
+- `main` — requires PR + 2 reviews + **all** checks green (adds `secret-scan`, `codeql`, `dependency-audit`, `owasp-dc` on top of `develop`'s checks — these used to be split across `test`/`uat`, now they all gate the final promotion to production) + force pushes blocked. The required check is named **`SonarCloud`** (the Action step that runs the scanner) — the separate **`SonarCloud Code Analysis`** status (the actual quality-gate pass/fail, posted by the SonarCloud GitHub App) is informational only and is *not* in the ruleset's required list, confirmed by reading the live ruleset (`gh api repos/<owner>/<repo>/rulesets/<id>`). A red quality gate (seen since at least 2026-10-16: "C Reliability Rating on New Code") does not by itself block a merge to `main`; it is still worth fixing, just not a hard blocker. GitHub also still has leftover `test`/`uat` branch rulesets from the old 5-branch model (§13 above) even though neither branch exists — harmless, but dead config worth deleting next time someone is in repo settings.
 
 #### Deploy Environments (activated when CICC provides server access)
 - `main` branch → `prod-server` GitHub Environment (manual approval gate required)
-- No dedicated deploy environment for `develop` — internal/JMeter/security testing runs against CI and local/Docker environments rather than a persistently deployed staging server (see CLAUDE.md §12)
+- `develop` → **UAT** (2026-10-17): the temporary Railway + Cloudflare environment CICC officers test on (`docs/guides/DEPLOY-UAT.md`). Railway rebuilds both services on every push to `develop`; `.github/workflows/uat-smoke.yml` (GitHub Environment `uat`, secrets `UAT_BASE_URL` and `UAT_ACCOUNTS`) then waits for the new build and drives the live site as each role (`Backend/test/uat-smoke.mjs`), going red if anything is wrong. It holds no deploy credentials. Synthetic data only; production stays the CICC-managed host above. To freeze what officers see during a test window, repoint Railway at a fixed commit or hold merges to `develop`.
 
 ### Sprint Structure (Agile Scrum)
 - **Sprint length:** 2 weeks
@@ -631,12 +755,17 @@ cd ../Backend && npm install
 #   DATABASE_SSL      unset = verified TLS · 'disable' (local docker/CI) ·
 #                     'no-verify' (dev box behind a TLS-intercepting proxy —
 #                     set here, never in code; replaces the old app.module.ts hack)
-#   DB_POOL_MAX       pg pool ceiling (default 20)
+#   DB_POOL_MAX       pg pool ceiling (default 20). Supabase's session pooler allows only
+#                     15 connections project-wide — use 8 against the shared dev DB
+#                     (EMAXCONNSESSION otherwise); 20 is for a real Postgres
 #   JWT_SECRET / JWT_REFRESH_SECRET   >= 32 random chars (Joi-enforced at startup)
 #   ALLOWED_ORIGIN    CORS origin
 #   TRUST_PROXY       proxy hops to trust so audit-log IPs are the real client
 #                     (set 1 in prod behind CICC IT's proxy; unset when direct)
 #   THROTTLE_LIMIT / THROTTLE_TTL     per-IP rate limit (default 60 / 60000ms)
+#   TZ               process time zone; unset/blank defaults to Asia/Manila so the
+#                     daily 7:00 jobs and dashboard day/month boundaries are CICC time
+#                     in a UTC container (applyDefaultTimeZone in main.ts)
 #   SUPABASE_URL / SUPABASE_ANON_KEY  dev/test only
 
 # Frontend/.env.local
@@ -656,6 +785,21 @@ cd Backend && npm run test:e2e:local # E2E suite — spins a throwaway postgres:
                                      # Docker running. Plain `npm run test:e2e`
                                      # targets Supabase and will not connect
                                      # from jest — use the :local variant.
+
+# Pilot demo data — replays Backend/test/demo-seed/scenario.ts through the real
+# API as the real roles (so numbering, audit trail, notifications and COA forms
+# are genuine). Dry run by default; --apply writes; non-local hosts need
+# --allow-remote. Credentials come from an untracked accounts.local.json — see
+# Backend/test/demo-seed/README.md. Seed a FRESH pilot DB, not one holding real
+# records: the audit log is append-only, so seeded rows can't be fully removed.
+cd Backend && npm run seed:demo
+
+# CICC's real partial equipment list (2026-11-27) -- not a seeder: registers each
+# row through the real /v1/assets API as the Asset Custodian, so every item gets
+# a genuine QR code, barcode and audit trail. Dry run by default; --apply writes.
+# Backend/scripts/cicc-import/{parse-sheet.ts, run-import.ts}, credentials from an
+# untracked accounts.local.json (never the repo).
+cd Backend && npx ts-node scripts/cicc-import/run-import.ts --file <path to .xlsx>
 ```
 
 ---
@@ -666,6 +810,7 @@ cd Backend && npm run test:e2e:local # E2E suite — spins a throwaway postgres:
 - **API style:** RESTful, with consistent response envelopes: `{ data, message, statusCode }`
 - **Error handling:** All errors return structured JSON; never expose stack traces or DB internals in production responses
 - **Validation:** Use `class-validator` + `class-transformer` DTOs in NestJS for all incoming request bodies
+- **Field limits and error mapping:** a text field is bounded to the size of its column (`Backend/src/common/field-limits.ts`, taken from `Database/schemas/001_initial_schema.sql`; cost is `NUMERIC(12,2)`, counts are `INT`), so an over-long value is a 400 that names the field. Change a column's size and change it there. `GlobalExceptionFilter` answers what the DTOs cannot: a body over the limit 413, malformed JSON 400, Postgres 22001 / 22003 400 and 23505 (a duplicate property number, employee ID or email) 409, with messages that name no column, constraint or table. Anything else stays a 500.
 - **Database:** Use TypeORM (or Prisma) — no raw SQL strings with user-supplied data (SQL injection prevention)
 - **Logging:** Use NestJS Logger; sensitive fields (passwords, tokens) must never appear in logs
 - **Comments:** Code comments should explain *why*, not *what*. Add ITIL SVC activity references in service-layer methods where relevant (e.g., `// SVC: Deliver and Support — asset issuance`)
@@ -673,8 +818,32 @@ cd Backend && npm run test:e2e:local # E2E suite — spins a throwaway postgres:
 - **Security linting:** `npm run lint` (ESLint security plugin), `npm run secretlint`, and `npm run audit:check` (dependency CVEs) must all pass with zero errors before any story is marked done. See `CHECKS.md` for the full ordered checklist.
 - **Imports:** Use default imports for `helmet` and `cookie-parser` — `import helmet from 'helmet'` (NOT `import * as helmet`). Use `import { randomUUID } from 'crypto'` instead of the `uuid` npm package (ESM incompatibility with Jest).
 - **TypeORM entity naming:** `SnakeNamingStrategy` is active — camelCase properties map automatically to snake_case columns. Do not add redundant `@Column({ name: '...' })` overrides unless deliberately changing the column name.
-- **TypeORM migrations:** `synchronize: false` — every entity change that affects the schema must be accompanied by a SQL migration file in `Database/migrations/` and executed manually. Never use `synchronize: true` outside of a throw-away local environment.
+- **TypeORM migrations:** `synchronize: false` — every entity change that affects the schema must be accompanied by a SQL file in `Database/schemas/` (next number, idempotent) listed in `docker-compose.yml` and executed manually (`Database/migrations/` is reserved for post-launch changes and does not exist yet). Never use `synchronize: true` outside of a throw-away local environment.
 - **webpack externals:** If a backend package reads files from `__dirname` at runtime (like `pdfkit`), it must be added to `Backend/webpack.config.js` externals so webpack doesn't bundle it. Check this before installing any new native or file-system-dependent library.
+- **UI kit (`Frontend/components/ui/`) — one way to build each thing.** The screens used to be built one at a time (eight ways to print a date, six page titles, four input styles, three status badges, five filter rows), so every role saw a different look. They now draw from one kit, and `Frontend/lib/ui-consistency.spec.ts` fails the build when a screen goes around it. Reach for these, never a per-screen copy:
+
+  | You need | Use | Not |
+  |---|---|---|
+  | page title, eyebrow, help line, main action | `PageHeader` (the only `<h1>`; `AdminPageHeader` is a thin wrapper) | your own heading |
+  | input, select, textarea, search box | `controlClass` / `textareaClass` / `searchControlClass` from `controls.ts`, inside `Field` (label, hint, error, required) | a local `inputClass` |
+  | a date | `DateField` (one date), `DateRange` (From / To) | `<input type="date">` |
+  | a filter row | `SearchToolbar` (search + any number of drop-downs + room for a date range or view switch; `bare` inside a card) | a hand-built row |
+  | a button, or a link that looks like one | `buttonClass({ variant, size })`, `PrimaryButton` / `SecondaryButton` / `DangerButton` | `bg-blue-700 …` |
+  | a titled white card | `Panel` (badge and action slots); plain cards use `surfaceClass` | your own border and shadow |
+  | a figure with a label | `MetricCard` (icon, figure, detail, optional link) | KPI tiles |
+  | a status, a count, a code | `StatusBadge` (maps the real enum values), `Chip` (any small label) | a hand-built pill |
+  | an error or notice | `Notice` (`red` is announced to screen readers) | a red box |
+  | nothing to list | `EmptyRow` (in a table), `EmptyMessage` | a hand-built row |
+  | a dialog or drawer | `CenteredModal` (`size="sm"` for a few fields), `ConfirmDialog`, `DetailDrawer` | `fixed inset-0` |
+  | a table | `thClass` / `tdClass` (cells may wrap) / `tdNoWrapClass` (a record number, a time) from `AdminUi`, inside `TableWrap` | cell classes of your own, or `whitespace-nowrap` on a whole table |
+  | a date or an amount on screen | `formatDate` / `formatDateTime` / `formatTime` / `formatPeso` from `lib/dates.ts` (Manila time; a calendar day never shifts) | `toLocaleString()`, `Intl.DateTimeFormat` |
+
+  `components/admin/AdminUi.tsx` still exports several of these under their old names so the screens built on it keep one import path.
+- **Long lists and long text (do not render hundreds of rows, do not trust a short name).** A list the API returns whole is shown 25 rows at a time through `usePaged` + `Pager` (`lib/pagination.ts`, `lib/use-paged.ts`, `components/ui/Pager.tsx`); rendering a few hundred rows with their buttons stalled the browser for one to two seconds. A list that is fetched must be fetched whole: use `collectAllPages` (`lib/api/collect-pages.ts`), never a bare `list(1, 50)` or `mine()` (the API default is 15), or the screen quietly shows the newest few and its totals are wrong; where the API caps an answer (the catalogue's 100 items, the audit log's newest 200) the screen must say so. A free-text cell (a description, a justification, a comment) goes in `ClampText` (2-3 lines, whole text on hover, with a ceiling width so it cannot take the width of its table), and page, drawer and dialog titles clamp themselves; the full text belongs in the record's drawer. Never put `block`/`flex` next to `line-clamp`. `overflow-wrap: anywhere` on the body lets a 100-character serial number break instead of widening its table, and `thClass` keeps a header word whole so no column can collapse to a letter. The audit CSV export goes through `lib/csv.ts` (formula cells defused, UTF-8 byte-order mark).
+- **Tables must fit their panel.** With the bigger text, 16 tables were wider than their panel at a 1440px screen (up to 450px), which pushed the Actions column and its buttons off the right edge behind a sideways scroll that nobody sees. Cells and headers therefore wrap by default; keep `whitespace-nowrap` for a record number or a time only, give a button a name that does not wrap (`buttonClass` never wraps its label), and keep a clickable icon at 40px or more. A unit test cannot see layout: after adding or widening a table, run the overflow probe in `RUN-LOCAL.md` §11 at 1440 and 1366 wide (it reports any scroll container whose content is wider than its box).
+- **Type scale: bigger text, set once (`Frontend/app/globals.css`).** CICC's staff include older employees and the client asked for bigger text after the last demo, so every step of the scale is about 15% above Tailwind's default: `xs` 14px (captions, table headers), `sm` 16px (body, fields, cells, buttons), `base` 18px, `lg` 20px, `xl` 22px, `2xl` 28px (page titles), `3xl` 34px. **Nothing on screen is smaller than 14px**, controls and buttons are 44px tall (36px compact in table rows) and the sidebar is 288px wide so its labels wrap instead of truncating. Change a size in `globals.css` and it changes everywhere; never write `text-[Npx]`. One typeface (DM Sans). Light-grey text (`slate`/`gray` 300-400) fails contrast, use `slate-500` or darker.
+- **Palette:** one neutral grey (`slate`, never `gray`) and named brand colours (`text-brand`, `bg-brand-dark`, `bg-canvas`, `bg-navy`, declared once in `globals.css`), never a hex value in a class. Status colours come from `ui/tones.ts`.
+- **Wording:** "Fulfillment" (the API route `/requisitions/fulfilment-fallback` keeps its own spelling), "Could not …" for a failure (not "Failed to …"), one ellipsis character (`…`) on a progress message, Title Case for a page title or menu item and sentence case for everything else. A record's page is "Details" in the breadcrumb, never its id. "Requisition" is the formal request for an asset; "request" is a return or incident request: do not mix them.
 - **Quality checklist:** Before marking any task done, run every check in `CHECKS.md` in order. All must pass with zero errors.
 
 ---
@@ -684,7 +853,7 @@ cd Backend && npm run test:e2e:local # E2E suite — spins a throwaway postgres:
 | Rule | Detail |
 |---|---|
 | SLA target | 24-hour requisition approval turnaround |
-| Inventory accuracy target | 98% |
+| Inventory accuracy target | 98% — measured against a physical count (RPCI / RPCPPE reconciliation). The dashboards' "Record completeness" is a data-quality proxy (assets with property no. and serial no.), not this |
 | Replacement validation | Must confirm useful-life threshold, condition, or loss/damage criteria before processing replacement requisition |
 | Disposal | System documents and flags only; CICC executes actual disposal through COA procedure manually |
 | Alternate approver | System must support designation of backup approvers when primary supervisor is unavailable |
@@ -693,6 +862,37 @@ cd Backend && npm run test:e2e:local # E2E suite — spins a throwaway postgres:
 | IES | Consumables, < 1 year useful life → IES classification |
 | Audit log retention | All system transactions; immutable; accessible by Admin and Management |
 | Physical signatures | COA forms requiring physical signatures are printed and manually signed; digital copies retained in AIMRS |
+
+---
+
+## 18. Documentation Map and Upkeep
+
+The markdown files are part of the system: the next developer (or the next AI session) starts from them. Treat a stale one as a bug.
+
+| File | What it is | Update it when |
+|---|---|---|
+| `CLAUDE.md` | Source of truth: rules, roles, modules, constraints | A rule, role, module, endpoint contract or constraint changes |
+| `README.md` | Entry point: structure, quick start, endpoints, doc map | Structure, stack, commands or endpoints change |
+| `FEATURE-STATUS.md` | One-screen map of what works | A feature starts or stops working |
+| `SYSTEM-STATUS.md` | Narrative status, history, what is still open | A milestone lands or a gap is found or closed |
+| `PATH-TO-DONE.md` | Checklist from feature-complete to CICC handover | A handover task is done or discovered |
+| `NEXT-TIME.md` | Where the last session stopped and what to do next | End of every working session |
+| `TEAM-HANDOFF.md` | Onboarding for teammates: branches, credentials, what is built | Branch/PR state, accounts or setup change |
+| `RUN-LOCAL.md` | Local runbook, troubleshooting, the verification recipe | A command, port, env var or gotcha changes |
+| `CHECKS.md` | The quality gate and its current numbers | A check or threshold changes |
+| `MOCK-DATA-WIRING.md` | Which screens are live and what is not built | A screen is added to `live-pages.ts` or a menu |
+| `Database/README.md` | Schema files and how to apply them | A `Database/schemas/NNN_*.sql` file is added |
+| `docs/guides/ROLES.md` | Roles, permissions, routes, **test credentials** | A guard, menu or account changes |
+| `docs/guides/UAT-TESTER-GUIDE.md` | One page per role for the officers testing on UAT: what the role does, its menu, where its work goes, and **its test login** | A menu, a role's rights, a demo account or its password changes |
+| `docs/guides/SYSTEM-FLOW.md` | Seven Mermaid diagrams of the flows (requisition, returns and incidents, repair, asset life, behind the screen) | A flow or a status changes |
+| `docs/guides/SECURITY.md` | Security contract (wins over this file on security) | A security control is added or changed |
+| `docs/guides/COA-FORMS-AUDIT.md` | Official-template fidelity audit and status | A form generator changes |
+| `docs/guides/DEPLOY-UAT.md` | The Railway + Cloudflare UAT deployment: how it's set up, the gate, credentials | The UAT deploy setup, gate or domain changes |
+| `docs/guides/CD-PLAN.md` | The best-practice CD roadmap beyond the quick UAT setup | A CD item is finished or a new one is found |
+| `docs/phases/PHASE-5-TESTING.md` | Testing & Evaluation guide and status | A test phase step is run |
+| `perf/README.md` | Load-test baseline | The load plan or numbers change |
+
+Rules of thumb: a schema change touches `Database/schemas/`, `docker-compose.yml` and `Database/README.md`; a new role-guarded route touches the matrix in §4 and `ROLES.md`; dev passwords already appear in `ROLES.md` (the canonical list), `UAT-TESTER-GUIDE.md` (copied from it for the testers, at the team's request), `TEAM-HANDOFF.md`, `RUN-LOCAL.md` and the `CHECKS.md` smoke tests: do not copy them anywhere else, keep them in sync from `ROLES.md`, never put one in code, and remember the repo is public, so rotate them before handover. `Frontend/AGENTS.md` and `Frontend/CLAUDE.md` are generated by `next dev`; leave them.
 
 ---
 

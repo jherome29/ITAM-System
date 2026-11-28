@@ -13,6 +13,9 @@ import {
   fullName,
   PAGE,
   CONTENT_WIDTH,
+  identityFields,
+  documentNumber,
+  conditionLabel,
 } from './base-form.generator';
 
 // SVC: Obtain/Build — IAR generated when newly procured assets are received and inspected (Appendix 62)
@@ -46,23 +49,18 @@ export async function generateIAR(
   const doc = createDoc();
   let y = drawRepublicHeader(doc);
 
-  const iarNo = `IAR-${Date.now()}`;
   y = drawFormTitle(
     doc,
     'INSPECTION AND ACCEPTANCE REPORT',
     'IAR No.',
-    iarNo,
+    documentNumber(),
     y,
   );
 
   y = drawMetaFields(
     doc,
     [
-      {
-        label: 'Entity Name',
-        value: 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER',
-      },
-      { label: 'Fund Cluster', value: 'General Fund' },
+      ...identityFields(),
       { label: 'Date', value: today() },
       { label: 'Date Received', value: fmtDate(asset.dateOfDelivery) },
       { label: 'Supplier', value: asset.supplier ?? '_______________' },
@@ -106,7 +104,7 @@ export async function generateIAR(
         asset.propertyNumber ?? '—',
         `${asset.itemDescription}${asset.brand ? ' / ' + asset.brand : ''}${asset.serialNumber ? '\nS/N: ' + asset.serialNumber : ''}`,
         phpFormat(asset.acquisitionCost),
-        asset.condition,
+        conditionLabel(asset.condition),
       ],
     ],
     y,

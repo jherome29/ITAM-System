@@ -14,6 +14,14 @@ export const USEFUL_LIFE_YEARS: Record<AssetClass, number> = {
   [AssetClass.IES]: 1,
 };
 
+/**
+ * The clock CICC runs on. The backend defaults the process time zone to this
+ * when TZ is unset (a container's clock is UTC otherwise), and the scheduled
+ * jobs name it explicitly — so "daily 7:00" and "today" / "this month" mean
+ * Manila time wherever the app is deployed.
+ */
+export const APP_TIME_ZONE = 'Asia/Manila';
+
 /** Maximum failed login attempts before account lockout (Security by Design) */
 export const MAX_LOGIN_ATTEMPTS = 5;
 
@@ -23,8 +31,32 @@ export const JWT_EXPIRES_IN = '8h';
 /** SLA target: requisition approval must complete within 24 hours */
 export const SLA_APPROVAL_HOURS = 24;
 
+/**
+ * Default for the `entity_name` system-config value: the agency name printed in
+ * the header of every official form. The Fund Cluster has no default on purpose -
+ * it is CICC's own accounting code, so a form prints a fill-in line until the
+ * Master Administrator sets it.
+ */
+export const FORM_ENTITY_NAME = 'CYBERCRIME INVESTIGATION AND COORDINATING CENTER';
+
 /** Fallback low-stock threshold when an IES asset has no per-item reorder_level. */
 export const DEFAULT_REORDER_LEVEL = 10;
+
+/**
+ * A repair with no expected completion date is treated as due this many days
+ * after it was opened — the overdue-repair watcher alerts the custodian then.
+ */
+export const REPAIR_DEFAULT_TURNAROUND_DAYS = 14;
+
+/**
+ * Replacement validation — a serviceable asset repaired this many times within
+ * REPEAT_REPAIR_WINDOW_MONTHS may be replaced: it keeps failing (CLAUDE.md §17).
+ * Default for the `repeat_repair_limit` system-config value.
+ */
+export const REPEAT_REPAIR_LIMIT = 3;
+
+/** Look-back window for REPEAT_REPAIR_LIMIT. */
+export const REPEAT_REPAIR_WINDOW_MONTHS = 12;
 
 /** Inventory accuracy target: 98% */
 export const INVENTORY_ACCURACY_TARGET = 0.98;

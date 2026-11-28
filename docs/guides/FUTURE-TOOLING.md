@@ -4,6 +4,20 @@ These are features and tools that could NOT be added yet because they depend on 
 Each item has a specific trigger point — do not add them before that point or they will be incomplete.
 This file exists so nothing is forgotten when the time comes.
 
+## Status (2026-10-16)
+
+The frontend is built, so the original "wait until the frontend exists" trigger has passed. Where each item stands:
+
+| Item | State |
+|---|---|
+| Idle session timeout | **Not built.** A session lasts until its token expires (8 h access token, rotating refresh cookie) |
+| MFA / TOTP | **Not built** (nothing in the backend) |
+| Husky + lint-staged | **Not added** (no `.husky/`); CI and `CHECKS.md` are the gate |
+| OWASP ZAP | **Not run yet.** Plan it with the rate-limit warning in `docs/phases/PHASE-5-TESTING.md` §5.3 |
+| Playwright end-to-end tests | **No committed suite.** Playwright is used ad hoc to drive the screens against a throwaway database (`RUN-LOCAL.md` §11), which is how the 2026-10-15/16 UI and PDF defects were found; turning those walkthroughs into a committed suite is worth doing before handover |
+| k6 load test | **Added** (`perf/`), a baseline only; JMeter is still the formal run |
+
+
 ---
 
 ## 1. Idle Session Timeout
@@ -117,7 +131,7 @@ if (user.totpEnabled) {
 ```
 
 **New endpoints needed:**
-- `POST /api/v1/auth/mfa/setup` — generates TOTP secret + QR code for enrollment (IT Personnel role for user setup, or self-service)
+- `POST /api/v1/auth/mfa/setup` — generates TOTP secret + QR code for enrollment (Asset Custodian role for user setup, or self-service)
 - `POST /api/v1/auth/mfa/verify` — confirms the user scanned the QR code correctly (first-time activation)
 - `POST /api/v1/auth/mfa/disable` — Admin only
 
@@ -128,7 +142,7 @@ if (user.totpEnabled) {
 ### Phased rollout suggestion
 1. Build backend endpoints first
 2. Add the MFA code field to the login form
-3. Admin enrolls IT Personnel accounts first (highest privilege)
+3. Admin enrolls Asset Custodian accounts first (highest privilege)
 4. Roll out to Supervisors, then Employees
 5. Management and System Admin accounts: MFA mandatory from day one
 
@@ -191,7 +205,7 @@ Your capstone requires OWASP ASVS compliance evidence. A ZAP scan report is dire
 ### Before running ZAP
 Make sure these are working first:
 - Login page renders and accepts credentials
-- At least the IT Personnel asset pages are accessible
+- At least the Asset Custodian pages are accessible
 - All API endpoints are reachable
 
 > Schedule this for the first week of the Testing phase. Do not leave it for the last day.
@@ -233,7 +247,7 @@ Once the frontend is complete, write Playwright tests for these critical paths:
 |---|---|
 | Employee login → submit requisition | Full requester journey |
 | Supervisor login → approve requisition | Approval workflow |
-| IT Personnel → fulfill requisition → asset status changes | Fulfillment + lifecycle |
+| Asset Custodian → fulfill requisition → asset status changes | Fulfillment + lifecycle |
 | Employee tries to access `/admin` → redirected | RBAC enforcement |
 | Login with wrong password 5× → account locked | Lockout flow |
 | Logout → refresh token cleared → protected routes blocked | Session termination |

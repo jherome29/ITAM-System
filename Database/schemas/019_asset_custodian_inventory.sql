@@ -1,0 +1,5 @@
+ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'asset_custodian';
+
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS photo_data BYTEA;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS photo_mime_type VARCHAR(50);
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS photo_file_name VARCHAR(255);

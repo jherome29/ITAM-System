@@ -1,0 +1,335 @@
+'use client';
+
+import Link from 'next/link';
+import { CenteredModal } from '@/components/ui/CenteredModal';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { DetailDrawer } from '@/components/ui/DetailDrawer';
+import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
+import { Toast } from '@/components/ui/Toast';
+import { usePrintPrompt } from '@/components/shared/RecordPrints';
+import { AdminPageHeader, Field, Panel, PrimaryButton, SearchToolbar, SecondaryButton, StatusChip, TableWrap, inputClass, tdClass, tdNoWrapClass, thClass } from '@/components/admin/AdminUi';
+import { AssetRequestDetail } from './AssetRequestDetail';
+import { AttachmentPicker } from './AttachmentPicker';
+import { assetRequestsApi, type AssetRequest } from '@/lib/api/asset-requests';
+import {
+  REQUEST_STATUS_LABEL,
+  REQUEST_STATUS_TONE,
+  REQUEST_TYPE_LABEL,
+  completeActionLabel,
+  custodianActions,
+  fileProblem,
+  isOpen,
+  rejectReasonProblem,
+} from '@/lib/asset-requests/asset-request-rules';
+import { formatDate, formatDateTime } from '@/lib/requisitions/requisition-view';
+import { localToday } from '@/lib/dates';
+import { DateField } from '@/components/ui/DateField';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyRow } from '@/components/ui/EmptyRow';
+import { ClampText } from '@/components/ui/ClampText';
+import { Pager } from '@/components/ui/Pager';
+import { usePaged } from '@/lib/use-paged';
+
+const FILTERS = [
+  { value: 'open', label: 'Open (needs action)' },
+  { value: 'All', label: 'All requests' },
+  { value: 'submitted', label: 'Awaiting approval' },
+  { value: 'approved', label: 'Approved — hand-over pending' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'rejected', label: 'Rejected' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
+function errorMessage(err: unknown, fallback: string): string {
+  const msg = (err as { response?: { data?: { message?: string | string[] } } })?.response?.data?.message;
+  return Array.isArray(msg) ? msg.join(' · ') : (msg ?? fallback);
+}
+
+function attachmentCount(n: number): string {
+  if (n === 0) return '';
+  return ` · ${n} attachment${n > 1 ? 's' : ''}`;
+}
+
+/**
+ * Custodian view of Returns & Incidents (IT Asset Custodian for ICT, Property
+ * Custodian for Fixed/Supplies — the backend scopes the list). Two steps:
+ * Approve (schedule hand-over) → Mark received, which updates the asset and
+ * offers the matching COA form. Decision controls follow the server's
+ * per-request `canAct` — a custodian never decides their own request.
+ *
+ * `adminFallback` is the System Administrator's view: every request is
+ * listed, and only custodians' own requests (which no custodian may decide)
+ * are actionable.
+ */
+export function AssetRequestQueue({ eyebrow, openId, adminFallback = false, pendingReturns = false, onReceived }: Readonly<{
+  eyebrow: string; openId?: string; adminFallback?: boolean; pendingReturns?: boolean; onReceived?: () => void;
+}>) {
+  const [receiptConfirmed, setReceiptConfirmed] = useState(false);
+  const [rows, setRows] = useState<AssetRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [filter, setFilter] = useState('open');
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<AssetRequest | null>(null);
+  const [toast, setToast] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const [handoverDate, setHandoverDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [reason, setReason] = useState('');
+  const [confirmingReject, setConfirmingReject] = useState(false);
+  const [outcome, setOutcome] = useState<'' | 'repair' | 'disposal'>('');
+  const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
+  const { ask: askToPrint, prompt: printPrompt, isOpen: printPromptOpen } = usePrintPrompt();
+  const RequestDialog = pendingReturns ? CenteredModal : DetailDrawer;
+
+  const notify = (message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(''), 2600);
+  };
+
+  const load = useCallback(
+    () => assetRequestsApi.queue(pendingReturns ? 'open' : undefined).then((res) => {
+      setRows(pendingReturns ? res.data.filter((item) => item.type === 'return' && isOpen(item)) : res.data);
+    }),
+    [pendingReturns],
+  );
+
+  useEffect(() => {
+    load()
+      .catch(() => setLoadError('Could not load requests. Please refresh the page.'))
+      .finally(() => setLoading(false));
+  }, [load]);
+
+  // Notification deep-link (?open=<id>) — fetch and open that request.
+  const handledOpenId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openId || loading || handledOpenId.current === openId) return;
+    handledOpenId.current = openId;
+    assetRequestsApi
+      .getOne(openId)
+      .then((res) => setSelected(res.data))
+      .catch(() => setLoadError('That request could not be found, or it is handled by another custodian.'));
+  }, [openId, loading]);
+
+  const open = (r: AssetRequest | null) => {
+    setSelected(r);
+    setReceiptConfirmed(false);
+    setActionError('');
+    setHandoverDate('');
+    setNotes('');
+    setReason('');
+    setOutcome('');
+    setReceiptFiles([]);
+  };
+
+  // `offerCopy`: ask whether to keep a paper copy once the step is saved (CICC wants one per step).
+  const run = async (label: string, action: () => Promise<{ data: AssetRequest }>, offerCopy = true) => {
+    if (busy) return;
+    setBusy(true);
+    setActionError('');
+    try {
+      const res = await action();
+      setSelected(res.data);
+      if (pendingReturns && res.data.status === 'completed') onReceived?.();
+      setNotes('');
+      setReason('');
+      setReceiptFiles([]);
+      notify(`${res.data.requestNumber} ${label}.`);
+      if (offerCopy) askToPrint('asset_request', res.data.id, res.data.requestNumber);
+      await load().catch(() => {});
+    } catch (err) {
+      setActionError(errorMessage(err, `Could not ${label.replace(/ed$/, '')} the request.`));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+
+  const q = search.toLowerCase();
+  const visible = rows
+    .filter((r) => {
+      if (filter === 'All') return true;
+      if (filter === 'open') return isOpen(r);
+      return r.status === filter;
+    })
+    .filter((r) =>
+      [r.requestNumber, r.asset?.itemDescription, r.asset?.propertyNumber, r.requester?.name, r.requester?.employeeId, REQUEST_TYPE_LABEL[r.type]]
+        .join(' ')
+        .toLowerCase()
+        .includes(q),
+    );
+  const paged = usePaged(visible, `${search}|${filter}`);
+  const openCount = rows.filter(isOpen).length;
+
+  if (loading) return <LoadingSkeleton rows={8} />;
+
+  const actions = selected?.canAct ? (pendingReturns && isOpen(selected) ? ['complete'] : custodianActions(selected.status)) : [];
+  const awaitingCount = rows.filter((r) => isOpen(r) && r.canAct).length;
+
+  return (
+    <div className="space-y-5">
+      <AdminPageHeader
+        eyebrow={eyebrow}
+        title={pendingReturns ? 'Pending Returns' : 'Returns & Incidents'}
+        detail={pendingReturns ? 'Confirm receipt after the holder brings the asset back.' : adminFallback
+          ? `Custodians cannot decide their own return, repair or incident requests, so those escalate here. ${awaitingCount} awaiting your decision; the rest are read-only.`
+          : 'Return, repair, damage, loss and theft requests from asset holders. Approve to schedule the hand-over, then mark the item received.'}
+      />
+      {loadError && <Notice tone="red">{loadError}</Notice>}
+      <SearchToolbar value={search} onChange={setSearch} filters={pendingReturns ? [] : undefined} filterValue={filter} filterOptions={FILTERS} onFilterChange={setFilter} />
+      <Panel title={pendingReturns ? "Return requests" : "Requests"} detail={`${openCount} open · ${rows.length} total`}>
+        <TableWrap>
+          <table className="w-full min-w-[820px]">
+            <thead>
+              <tr>
+                <th className={thClass}>Request</th>
+                <th className={thClass}>Asset</th>
+                <th className={thClass}>Requested by</th>
+                <th className={thClass}>{pendingReturns ? "Requested return" : "Filed"}</th>
+                <th className={thClass}>Status</th>
+                <th className={thClass} />
+              </tr>
+            </thead>
+            <tbody>
+              {paged.pageItems.map((r) => (
+                <tr key={r.id} className="hover:bg-blue-50/40">
+                  <td className={tdClass}>
+                    <p className="font-bold text-slate-950">{REQUEST_TYPE_LABEL[r.type]}</p>
+                    <p className="whitespace-nowrap text-xs text-slate-500">{r.requestNumber}{attachmentCount(r.attachments.length)}</p>
+                  </td>
+                  <td className={tdClass}><ClampText>{r.asset?.itemDescription}</ClampText>{pendingReturns && <p className="text-xs text-slate-500">{r.asset?.propertyNumber}</p>}</td>
+                  <td className={tdClass}>
+                    <p>{r.requester?.name ?? '—'}</p>
+                    <p className="text-xs text-slate-500">{r.requester?.employeeId}</p>
+                  </td>
+                  <td className={tdNoWrapClass}>{pendingReturns ? formatDate(r.preferredDate) : formatDateTime(r.createdAt)}</td>
+                  <td className={tdClass}><StatusChip status={REQUEST_STATUS_LABEL[r.status]} tone={REQUEST_STATUS_TONE[r.status]} /></td>
+                  <td className={`${tdClass} text-right`}>
+                    <SecondaryButton onClick={() => open(r)}>{isOpen(r) && r.canAct ? pendingReturns ? 'Record return' : 'Review' : 'View'}</SecondaryButton>
+                  </td>
+                </tr>
+              ))}
+              {visible.length === 0 && (
+                <EmptyRow colSpan={6}>No requests match the current filter.</EmptyRow>
+              )}
+            </tbody>
+          </table>
+        </TableWrap>
+        <Pager page={paged.page} total={paged.total} pageSize={paged.size} onPage={paged.setPage} noun="requests" />
+      </Panel>
+
+      <RequestDialog open={Boolean(selected)} title={selected?.requestNumber ?? 'Request'} onClose={() => { if (!busy) open(null); }} inactive={printPromptOpen}>
+        {selected && (
+          <div className="space-y-5">
+            <AssetRequestDetail
+              request={selected}
+              onRegenerate={() => void run('documents generated', () => assetRequestsApi.regenerateDocuments(selected.id), false)}
+            />
+
+            {pendingReturns && selected.status === 'completed' && selected.asset && (
+              <Link href={'/asset-custodian/' + (selected.asset.assetType === 'ICT' ? 'it-inventory' : 'fixed-assets') + '/' + selected.asset.id} className="text-sm font-semibold text-blue-700 hover:underline">
+                Open returned asset in inventory
+              </Link>
+            )}
+
+            {actions.includes('approve') && (
+              <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+                <h3 className="text-sm font-bold text-slate-950">Approve</h3>
+                {selected.type === 'return' || selected.type === 'repair' || selected.type === 'damage' ? (
+                  <Field label="Hand-over date (when the holder should bring it in)">
+                    <DateField value={handoverDate} min={localToday()} onChange={(e) => setHandoverDate(e.target.value)} />
+                  </Field>
+                ) : null}
+                <Field label="Note to the requester (optional)">
+                  <textarea className={`${inputClass} h-20 py-2`} value={notes} maxLength={1000} onChange={(e) => setNotes(e.target.value)} />
+                </Field>
+                <PrimaryButton disabled={busy} onClick={() => run('approved', () => assetRequestsApi.approve(selected.id, { handoverDate: handoverDate || undefined, notes: notes.trim() || undefined }))}>
+                  Approve
+                </PrimaryButton>
+              </section>
+            )}
+
+            {actions.includes('complete') && (
+              <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+                <h3 className="text-sm font-bold text-slate-950">{completeActionLabel(selected.type)}</h3>
+                <p className="text-xs text-slate-500">
+                  {selected.type === 'return' && 'Confirms the item is back. The asset becomes Returned and is unassigned from the holder.'}
+                  {selected.type === 'repair' && 'Confirms the item was handed over. The asset becomes Under repair.'}
+                  {selected.type === 'damage' && 'Confirms the item was handed over. Choose where it goes next.'}
+                  {(selected.type === 'loss' || selected.type === 'theft') && 'Records the incident. The asset is flagged for disposal and an RLSDDP is suggested.'}
+                </p>
+                {selected.type === 'damage' && (
+                  <Field label="Outcome">
+                    <select className={inputClass} value={outcome} onChange={(e) => setOutcome(e.target.value as '' | 'repair' | 'disposal')}>
+                      <option value="">Choose…</option>
+                      <option value="repair">Send to repair</option>
+                      <option value="disposal">Flag for disposal (unrepairable)</option>
+                    </select>
+                  </Field>
+                )}
+                <Field label="Notes (condition on receipt, etc.)">
+                  <textarea className={`${inputClass} h-20 py-2`} value={notes} maxLength={1000} onChange={(e) => setNotes(e.target.value)} />
+                </Field>
+                <div>
+                  <span className="mb-1.5 block text-xs font-bold text-slate-600">Condition photos (optional)</span>
+                  <AttachmentPicker files={receiptFiles} onChange={setReceiptFiles} />
+                </div>
+                {pendingReturns && <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" className="mt-1" checked={receiptConfirmed} onChange={(event) => setReceiptConfirmed(event.target.checked)} />
+                  I received this asset from the holder.
+                </label>}
+                <PrimaryButton
+                  disabled={busy || (pendingReturns && !receiptConfirmed) || (selected.type === 'damage' && !outcome) || Boolean(fileProblem(receiptFiles))}
+                  onClick={() => run('completed', () => assetRequestsApi.complete(selected.id, { outcome: outcome || undefined, notes: notes.trim() || undefined, files: receiptFiles, returnReceived: pendingReturns && receiptConfirmed }))}
+                >
+                  {pendingReturns ? "Confirm receipt" : completeActionLabel(selected.type)}
+                </PrimaryButton>
+              </section>
+            )}
+
+            {actions.includes('reject') && (
+              <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+                <h3 className="text-sm font-bold text-slate-950">Reject</h3>
+                <Field label="Reason (sent to the requester)">
+                  <textarea className={`${inputClass} h-20 py-2`} value={reason} maxLength={1000} onChange={(e) => setReason(e.target.value)} />
+                </Field>
+                <p className="text-xs text-slate-500">{rejectReasonProblem(reason) ?? 'The requester sees this reason.'}</p>
+                <SecondaryButton disabled={busy || Boolean(rejectReasonProblem(reason))} onClick={() => setConfirmingReject(true)}>
+                  Reject request
+                </SecondaryButton>
+              </section>
+            )}
+
+            {isOpen(selected) && !selected.canAct && (
+              <p className="rounded-md bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                {adminFallback
+                  ? `Handled by the ${selected.custodianLabel ?? 'custodian'} — only a custodian's own request escalates to you.`
+                  : 'You filed this request yourself, so another custodian or the System Administrator decides it.'}
+              </p>
+            )}
+            {selected.status === 'approved' && selected.handoverDate && (
+              <p className="text-xs text-slate-500">Hand-over scheduled for {formatDate(selected.handoverDate)}.</p>
+            )}
+            {actionError && <Notice tone="red">{actionError}</Notice>}
+          </div>
+        )}
+      </RequestDialog>
+      <ConfirmDialog
+        open={confirmingReject}
+        title={`Reject ${selected?.requestNumber ?? 'request'}?`}
+        detail="The requester is told your reason and the request is closed. They can file a new one."
+        confirmLabel="Reject request"
+        cancelLabel="Keep request"
+        onCancel={() => setConfirmingReject(false)}
+        onConfirm={() => {
+          setConfirmingReject(false);
+          if (selected) void run('rejected', () => assetRequestsApi.reject(selected.id, reason.trim()));
+        }}
+      />
+      <Toast message={toast} />
+      {printPrompt}
+    </div>
+  );
+}

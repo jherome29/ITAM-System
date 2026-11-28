@@ -1,31 +1,43 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bell, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Bell, CheckCircle, XCircle, AlertCircle, ChevronRight } from 'lucide-react';
 import { notificationsApi, type Notification } from '@/lib/api/notifications';
+import { notificationTarget, workspaceBasePath } from '@/lib/notifications/notification-target';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { LoadingSkeleton } from '@/components/ui/LoadingSkeleton';
+import { formatDate } from '@/lib/dates';
+import { SecondaryButton } from '@/components/admin/AdminUi';
+import { surfaceClass } from '@/components/ui/controls';
+import { useAuth } from '@/lib/auth/use-auth';
+import { workspaceLabels } from '@/lib/roles/proposed-roles';
+import { mapBackendRoleToProposedRole } from '@/lib/roles/role-mapping';
+import { Notice } from '@/components/ui/Notice';
 
 function NotifIcon({ type }: Readonly<{ type: string }>) {
   if (type === 'requisition_approved' || type === 'requisition_fulfilled')
-    return <CheckCircle className="w-5 h-5 text-green-600" />;
+    return <CheckCircle className="h-5 w-5 text-green-600" />;
   if (type === 'requisition_rejected')
-    return <XCircle className="w-5 h-5 text-red-500" />;
-  if (type === 'sla_breach' || type === 'low_stock' || type === 'overdue_return' || type === 'alternate_approver')
-    return <AlertCircle className="w-5 h-5 text-amber-500" />;
-  return <AlertCircle className="w-5 h-5 text-blue-500" />;
+    return <XCircle className="h-5 w-5 text-red-500" />;
+  if (type === 'sla_breach' || type === 'low_stock' || type === 'overdue_return' || type === 'alternate_approver' || type === 'asset_request')
+    return <AlertCircle className="h-5 w-5 text-amber-500" />;
+  return <AlertCircle className="h-5 w-5 text-blue-500" />;
 }
 
 export function NotificationsContent() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const { user } = useAuth();
+  const basePath = workspaceBasePath(usePathname() ?? '');
 
   useEffect(() => {
     notificationsApi
       .list()
       .then((r) => setNotifications(r.data.notifications))
-      .catch(() => setError('Failed to load notifications. Please try again.'))
+      .catch(() => setError('Could not load notifications. Please try again.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -35,37 +47,54 @@ export function NotificationsContent() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
+        eyebrow={workspaceLabels[mapBackendRoleToProposedRole(user?.role)]}
         title="Notifications"
-        action={<button type="button" onClick={markAllRead} className="text-sm text-[#1a4d7a] font-medium hover:underline">Mark all as read</button>}
+        detail="Alerts that need your attention, newest first."
+        action={<SecondaryButton onClick={markAllRead}>Mark all as read</SecondaryButton>}
       />
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        <Notice tone="red">{error}</Notice>
       )}
       {loading ? (
         <LoadingSkeleton rows={5} />
       ) : notifications.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 px-6 py-12 text-center text-sm text-gray-400">
-          <Bell className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+        <div className={`${surfaceClass} px-6 py-12 text-center text-sm text-slate-600`}>
+          <Bell className="mx-auto mb-2 h-8 w-8 text-slate-500" />
           No notifications.
         </div>
       ) : (
         <div className="space-y-2">
-          {notifications.map((n) => (
-            <div key={n.id} className={`bg-white rounded-lg shadow-sm border p-4 ${n.isRead ? 'border-gray-200' : 'border-blue-300 bg-blue-50'}`}>
+          {notifications.map((n) => {
+            const target = notificationTarget(basePath, n);
+            const body = (
               <div className="flex gap-4">
-                <div className="shrink-0 mt-0.5"><NotifIcon type={n.alertType} /></div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-start gap-4">
-                    <p className={`text-sm ${n.isRead ? 'text-gray-700' : 'font-medium text-gray-900'}`}>{n.title}</p>
-                    <span className="text-xs text-gray-400 shrink-0">{new Date(n.createdAt).toLocaleDateString()}</span>
+                <div className="mt-0.5 shrink-0"><NotifIcon type={n.alertType} /></div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-4">
+                    <p className={`text-sm ${n.isRead ? 'text-slate-700' : 'font-semibold text-slate-950'}`}>{n.title}</p>
+                    <span className="shrink-0 text-xs text-slate-500">{formatDate(n.createdAt)}</span>
                   </div>
-                  <p className="text-sm text-gray-600 mt-1">{n.message}</p>
+                  <p className="mt-1 text-sm text-slate-600">{n.message}</p>
                 </div>
+                {target && <ChevronRight className="h-5 w-5 shrink-0 self-center text-slate-500" />}
               </div>
-            </div>
-          ))}
+            );
+            const cardClass = `block rounded-lg border p-4 shadow-sm ${n.isRead ? 'border-slate-200 bg-white' : 'border-blue-300 bg-blue-50'}`;
+            return target ? (
+              <Link
+                key={n.id}
+                href={target}
+                onClick={() => { if (!n.isRead) notificationsApi.markRead(n.id).catch(() => {}); }}
+                className={`${cardClass} hover:border-blue-400`}
+              >
+                {body}
+              </Link>
+            ) : (
+              <div key={n.id} className={cardClass}>{body}</div>
+            );
+          })}
         </div>
       )}
     </div>

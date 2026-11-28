@@ -7,7 +7,6 @@ import {
   ArrowRight,
   Bell,
   CalendarClock,
-  CheckCircle2,
   ChevronRight,
   ClipboardList,
   FileWarning,
@@ -15,22 +14,44 @@ import {
   MapPin,
   PackageCheck,
   Plus,
+  Repeat2,
   Search,
-  Send,
+  Undo2,
 } from 'lucide-react';
-import { StatusChip } from '@/components/admin/AdminUi';
 import { DashboardSkeleton } from '@/components/states/DashboardSkeleton';
 import { useAuth } from '@/lib/auth/use-auth';
 import { requisitionsApi, type Requisition, type RequisitionStats } from '@/lib/api/requisitions';
 import { notificationsApi } from '@/lib/api/notifications';
-import { assetMockRows } from '@/lib/mock/assets.mock';
+import { assetsApi, type MyAsset } from '@/lib/api/assets';
+import { localToday } from '@/lib/dates';
+import { formatDate, requisitionStatusLabel } from '@/lib/requisitions/requisition-view';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { buttonClass } from '@/components/ui/buttons';
+import { Chip } from '@/components/ui/Chip';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { MetricCard } from '@/components/ui/MetricCard';
+import { Panel } from '@/components/ui/Panel';
+import { toneStyles } from '@/components/ui/tones';
+import { Notice } from '@/components/ui/Notice';
+import { EmptyMessage } from '@/components/ui/EmptyRow';
+import { humanize } from '@/lib/text';
 
-// "Assets currently assigned to me" has no backend equivalent yet — assets.controller.ts
-// and requisitions.controller.ts expose nothing scoped to "my custody" the way
-// requisitions/mine does for requisitions. Everything sourced from this mock stays
-// clearly labeled "Preview data" below rather than presented as real, per the same
-// disclosure convention WorkflowPage.tsx uses for its still-mock sections.
-const employeeId = 'EMP-001';
+/** A loaned item due back within this many days shows under "Needs your attention". */
+const DUE_SOON_DAYS = 7;
+
+function addDays(isoDay: string, days: number): string {
+  const d = new Date(`${isoDay}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Issued items with a return date that is past or within DUE_SOON_DAYS. */
+function dueBack(assets: MyAsset[], today: string): MyAsset[] {
+  const horizon = addDays(today, DUE_SOON_DAYS);
+  return assets
+    .filter((a) => a.status === 'issued' && a.expectedReturnDate && a.expectedReturnDate.slice(0, 10) <= horizon)
+    .sort((a, b) => String(a.expectedReturnDate).localeCompare(String(b.expectedReturnDate)));
+}
 
 // Statuses that mean a request is still moving — mirrors RequisitionStatus in
 // packages/shared/src/enums minus the terminal FULFILLED/REJECTED/CANCELLED states.
@@ -41,21 +62,23 @@ export function EmployeeDashboard() {
   const [requests, setRequests] = useState<Requisition[]>([]);
   const [stats, setStats] = useState<RequisitionStats | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [assets, setAssets] = useState<MyAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([requisitionsApi.mine(), requisitionsApi.stats(), notificationsApi.list()])
-      .then(([requisitionsRes, statsRes, notificationsRes]) => {
+    Promise.all([requisitionsApi.mine(), requisitionsApi.stats(), notificationsApi.list(), assetsApi.mine()])
+      .then(([requisitionsRes, statsRes, notificationsRes, assetsRes]) => {
         if (cancelled) return;
         setRequests(requisitionsRes.data.data);
         setStats(statsRes.data);
         setUnreadCount(notificationsRes.data.unreadCount);
+        setAssets(assetsRes.data);
         setError('');
       })
       .catch(() => {
-        if (!cancelled) setError('Failed to load your dashboard data. Please try again.');
+        if (!cancelled) setError('Could not load your dashboard data. Please try again.');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -65,185 +88,186 @@ export function EmployeeDashboard() {
     };
   }, []);
 
-  const assets = assetMockRows.filter((asset) => asset.assignedEmployeeId === employeeId);
-  const pendingAssets = assets.filter((item) => item.acknowledgmentStatus === 'Pending');
+  const today = localToday();
+  const returnsDue = dueBack(assets, today);
+  // Qualifies for a replacement and none is open yet — the holder may want one.
+  const replaceable = assets.filter((a) => a.replacement?.eligible && !a.replacement.openRequestNumber);
   const activeRequests = requests.filter((request) => ACTIVE_STATUSES.has(request.status));
   const rejectedRequests = requests.filter((request) => request.status === 'rejected');
   const activeRequestCount = stats ? stats.pending + stats.onHold : activeRequests.length;
-  const attentionCount = pendingAssets.length + rejectedRequests.length;
+  const attentionCount = returnsDue.length + replaceable.length + rejectedRequests.length;
 
   if (loading) return <DashboardSkeleton />;
 
   return (
-    <div className="employee-dashboard mx-auto w-full max-w-[1480px] space-y-5">
-      <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">Employee workspace</p>
-          <h1 className="mt-1 text-[28px] font-extrabold leading-tight text-slate-950 md:text-[32px]">Good day, {user?.firstName ?? 'there'}</h1>
-          <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-600">
-            Review what needs action and keep track of your requests and accountable property.
-          </p>
-        </div>
-        <Link href="/employee/requisitions/new" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-blue-700 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          New requisition
-        </Link>
-      </header>
-
-      {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
-
-      <section aria-labelledby="employee-overview-heading" className="space-y-2">
-        <h2 id="employee-overview-heading" className="text-lg font-extrabold text-slate-950">Overview</h2>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryMetric href="/employee/assigned-assets" label="Assigned assets" value={assets.length} detail="Accountable to you" icon={PackageCheck} tone="blue" preview />
-          <SummaryMetric href="/employee/requisitions" label="Active requests" value={activeRequestCount} detail="In progress" icon={ClipboardList} tone="blue" />
-          <SummaryMetric href="/employee/assigned-assets" label="To acknowledge" value={pendingAssets.length} detail="Action required" icon={CheckCircle2} tone="amber" preview />
-          <SummaryMetric href="/employee/notifications" label="Unread updates" value={unreadCount} detail="New activity" icon={Bell} tone="green" />
-        </div>
-      </section>
-
-      <section aria-labelledby="employee-attention-heading" className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 id="employee-attention-heading" className="text-lg font-extrabold text-slate-950">Needs your attention</h2>
-            <p className="mt-0.5 text-xs text-slate-500">Prioritized tasks that require your response</p>
-          </div>
-          <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">{attentionCount} pending</span>
-        </div>
-        {attentionCount === 0 ? (
-          <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">You are all caught up — nothing needs your attention right now.</div>
-        ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {pendingAssets.map((asset) => (
-              <AttentionRow
-                key={asset.id}
-                icon={CheckCircle2}
-                title={`Acknowledge ${asset.name}`}
-                detail="Confirm receipt and the recorded condition of this asset."
-                meta={asset.id}
-                href="/employee/assigned-assets"
-                action="Acknowledge"
-                tone="amber"
-                preview
-              />
-            ))}
-            {rejectedRequests.map((request) => (
-              <AttentionRow
-                key={request.id}
-                icon={FileWarning}
-                title={`${request.items[0]?.itemDescription ?? 'Requisition'} was rejected`}
-                detail={request.supervisorComments ?? 'Reviewed by your supervisor. See request details for more information.'}
-                meta={request.requestNumber}
-                href={`/employee/requisitions/${request.id}`}
-                action="View details"
-                tone="red"
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.8fr)]">
-        <DashboardPanel title="Active requests" detail="Requests still moving through review or fulfillment" action={<Link href="/employee/requisitions" className="inline-flex items-center gap-1 text-sm font-bold text-blue-700 hover:text-blue-900">View all<ArrowRight className="h-4 w-4" /></Link>}>
-          {activeRequests.length === 0 ? (
-            <div className="p-8 text-center text-sm text-slate-500">You have no requisitions in progress.</div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {activeRequests.slice(0, 6).map((request) => {
-                const primaryItem = request.items[0]?.itemDescription ?? 'Requisition';
-                const extraItems = request.items.length > 1 ? ` +${request.items.length - 1} more` : '';
-                return (
-                  <Link key={request.id} href={`/employee/requisitions/${request.id}`} className="group grid gap-3 px-4 py-3.5 transition hover:bg-slate-50 sm:grid-cols-[minmax(0,1fr)_auto_auto_20px] sm:items-center">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-slate-950 group-hover:text-blue-700">{primaryItem}{extraItems}</p>
-                      <p className="mt-1 text-xs text-slate-500">{request.requestNumber} · Needed {String(request.requiredDate).slice(0, 10)}</p>
-                    </div>
-                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-500"><CalendarClock className="h-3.5 w-3.5" />{new Date(request.updatedAt).toLocaleDateString()}</span>
-                    <StatusChip status={request.status.replace(/_/g, ' ')} tone={request.status === 'on_hold' ? 'amber' : 'blue'} />
-                    <ChevronRight className="hidden h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600 sm:block" />
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </DashboardPanel>
-
-        <DashboardPanel title="My property" detail="Assets under your accountability" action={<Link href="/employee/assigned-assets" className="text-sm font-bold text-blue-700 hover:text-blue-900">Manage</Link>} badge={<PreviewBadge />}>
-          <div className="divide-y divide-slate-100">
-            {assets.map((asset) => (
-              <Link href="/employee/assigned-assets" key={asset.id} className="group flex items-start gap-3 px-4 py-3.5 hover:bg-slate-50">
-                <span className="grid h-9 w-9 flex-none place-items-center rounded-md bg-slate-100 text-slate-600 group-hover:bg-blue-50 group-hover:text-blue-700"><Laptop className="h-4 w-4" /></span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-start justify-between gap-2"><p className="text-sm font-bold text-slate-950">{asset.name}</p><StatusChip status={asset.acknowledgmentStatus} tone={asset.acknowledgmentStatus === 'Pending' ? 'amber' : 'green'} /></div>
-                  <p className="mt-1 text-xs text-slate-500">{asset.id} · {asset.condition}</p>
-                  <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-slate-500"><MapPin className="h-3.5 w-3.5" />{asset.location}</p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </DashboardPanel>
+    <div className="@container flex min-w-0 flex-col gap-4 sm:gap-5">
+      <div className="relative isolate overflow-hidden rounded-lg bg-linear-to-r from-navy via-brand to-blue-900 px-5 py-6 shadow-sm sm:px-7 sm:py-8">
+        <div aria-hidden="true" className="pointer-events-none absolute -top-40 -right-24 -z-10 size-96 rounded-full border border-white/15 bg-white/5 ring-[48px] ring-white/5" />
+        <PageHeader inverse eyebrow="My Dashboard" title={`Good day, ${user?.firstName ?? 'there'}`} />
+        <nav aria-label="Quick actions" className="mt-5 flex flex-wrap gap-2.5">
+          <Link href="/employee/requisitions/new" className={buttonClass()}>
+            <Plus className="size-4" aria-hidden="true" /> New requisition
+          </Link>
+          <Link href="/employee/catalogue" className={buttonClass({ variant: 'secondary' })}>
+            <Search className="size-4" aria-hidden="true" /> Browse catalogue
+          </Link>
+          <Link href="/employee/returns-incidents" className={buttonClass({ variant: 'secondary' })}>
+            <Undo2 className="size-4" aria-hidden="true" /> File return or incident
+          </Link>
+        </nav>
       </div>
 
-      <DashboardPanel title="Quick actions">
-        <div className="grid sm:grid-cols-3">
-          <QuickAction href="/employee/catalogue" icon={Search} title="Browse catalogue" detail="Find requestable assets and supplies" />
-          <QuickAction href="/employee/requisitions/new" icon={Send} title="Submit request" detail="Create a new or replacement requisition" />
-          <QuickAction href="/employee/returns-incidents" icon={FileWarning} title="File return or incident" detail="Report return, repair, damage, loss, or theft" />
+      {error && (
+        <Notice tone="red">{error}</Notice>
+      )}
+
+      <section aria-label="Dashboard totals" className="grid gap-4 min-[360px]:grid-cols-2 sm:gap-5 @[50rem]:grid-cols-4">
+        <MetricCard href="/employee/assigned-assets" label="Assigned assets" value={error ? '—' : assets.length} icon={PackageCheck} tone="blue" />
+        <MetricCard href="/employee/requisitions" label="Active requests" value={error ? '—' : activeRequestCount} icon={ClipboardList} tone="blue" />
+        <MetricCard href="/employee/assigned-assets" label="Returns due" value={error ? '—' : returnsDue.length} icon={Undo2} tone="amber" />
+        <MetricCard href="/employee/notifications" label="Unread updates" value={error ? '—' : unreadCount} icon={Bell} tone="green" />
+      </section>
+
+      {!error && (
+        <div className="grid min-w-0 items-start gap-4 sm:gap-5 @[55rem]:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] @[55rem]:grid-rows-[auto_1fr]">
+          <Panel
+            title="Needs your attention"
+            badge={attentionCount > 0 ? <Chip tone="amber">{attentionCount} {attentionCount === 1 ? 'item' : 'items'}</Chip> : undefined}
+            className="@[55rem]:col-start-2 @[55rem]:row-start-1"
+          >
+            {attentionCount === 0 ? (
+              <EmptyMessage>You’re all caught up.</EmptyMessage>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {returnsDue.map((asset) => {
+                  const due = String(asset.expectedReturnDate).slice(0, 10);
+                  const overdue = due < today;
+                  return (
+                    <AttentionRow
+                      key={`return-${asset.id}`}
+                      icon={Undo2}
+                      title={`${overdue ? 'Overdue: return' : 'Return'} ${asset.itemDescription}`}
+                      detail={overdue ? `It was due back on ${formatDate(due)}. Return it to the custodian or file a return request.` : `Due back on ${formatDate(due)}.`}
+                      meta={asset.propertyNumber || asset.serialNumber || ''}
+                      href="/employee/returns-incidents"
+                      action="File a return"
+                      tone={overdue ? 'red' : 'amber'}
+                    />
+                  );
+                })}
+                {replaceable.map((asset) => (
+                  <AttentionRow
+                    key={`replace-${asset.id}`}
+                    icon={Repeat2}
+                    title={`${asset.itemDescription} qualifies for a replacement`}
+                    detail={asset.replacement.reason}
+                    meta={asset.propertyNumber || asset.serialNumber || ''}
+                    href="/employee/assigned-assets"
+                    action="Request replacement"
+                    tone="amber"
+                  />
+                ))}
+                {rejectedRequests.map((request) => (
+                  <AttentionRow
+                    key={request.id}
+                    icon={FileWarning}
+                    title={`${request.items[0]?.itemDescription ?? 'Requisition'} was rejected`}
+                    detail={request.supervisorComments ?? 'Reviewed by your supervisor. See request details for more information.'}
+                    meta={request.requestNumber}
+                    href={`/employee/requisitions/${request.id}`}
+                    action="View details"
+                    tone="red"
+                  />
+                ))}
+              </ul>
+            )}
+          </Panel>
+
+          <Panel title="Active requests" detail="Track requests through approval and fulfillment"
+            className="@[55rem]:col-start-1 @[55rem]:row-span-2 @[55rem]:row-start-1"
+            action={<Link href="/employee/requisitions" className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:underline">View all <ArrowRight className="size-4" aria-hidden="true" /></Link>}
+          >
+            {activeRequests.length === 0 ? (
+                  <EmptyMessage>{activeRequestCount > 0
+                    ? 'Open My Requisitions to see your requests in progress.'
+                    : 'You have no requisitions in progress.'}</EmptyMessage>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {activeRequests.slice(0, 6).map((request) => {
+                  const primaryItem = request.items[0]?.itemDescription ?? 'Requisition';
+                  const extraItems = request.items.length > 1 ? ` +${request.items.length - 1} more` : '';
+                  return (
+                    <Link key={request.id} href={`/employee/requisitions/${request.id}`} className="group flex min-h-20 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 transition hover:bg-slate-50">
+                      <span className="grid size-9 flex-none place-items-center rounded-lg bg-blue-50 text-blue-700">
+                        <ClipboardList className="size-4" aria-hidden="true" />
+                      </span>
+                      <div className="min-w-0 flex-1 basis-32">
+                        <p className="text-sm font-semibold text-slate-950 group-hover:text-blue-700">{primaryItem}{extraItems}</p>
+                        <p className="mt-1 text-xs text-slate-500">{request.requestNumber} · Needed {formatDate(request.requiredDate)}</p>
+                      </div>
+                      <div className="flex items-center gap-2 pl-[52px] sm:pl-0">
+                        <StatusBadge status={request.status} label={requisitionStatusLabel(request.status)} />
+                        <ChevronRight aria-hidden="true" className="size-4 text-slate-500 transition group-hover:translate-x-0.5 group-hover:text-blue-600" />
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+            {activeRequestCount > Math.min(activeRequests.length, 6) && activeRequests.length > 0 && (
+              <p className="border-t border-slate-100 px-4 py-3 text-xs text-slate-600">Showing {Math.min(activeRequests.length, 6)} of {activeRequestCount} active requests</p>
+            )}
+          </Panel>
+
+          <Panel title="My assigned assets" className="@[55rem]:col-start-2 @[55rem]:row-start-2"
+            action={<Link href="/employee/assigned-assets" className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:underline">View assets <ArrowRight className="size-4" aria-hidden="true" /></Link>}
+          >
+            {assets.length === 0 ? (
+              <EmptyMessage>No property is assigned to you.</EmptyMessage>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {assets.slice(0, 6).map((asset) => {
+                  const location = asset.officeLocation || asset.officeOrSection;
+                  return (
+                    <Link href="/employee/assigned-assets" key={asset.id} className="group flex items-start gap-3 px-4 py-3.5 hover:bg-slate-50">
+                      <span className="grid h-9 w-9 flex-none place-items-center rounded-md bg-slate-100 text-slate-600 group-hover:bg-blue-50 group-hover:text-blue-700"><Laptop className="h-4 w-4" /></span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-start justify-between gap-2"><p className="text-sm font-bold text-slate-950">{asset.itemDescription}</p><StatusBadge status={asset.status} /></div>
+                        <p className="mt-1 text-xs text-slate-500">{[asset.propertyNumber || asset.serialNumber, humanize(asset.condition)].filter(Boolean).join(' · ')}</p>
+                        {asset.repair ? (
+                          <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-slate-500"><CalendarClock className="h-3.5 w-3.5" />Under repair — expected back {formatDate(asset.repair.dueDate)}</p>
+                        ) : location ? (
+                          <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-slate-500"><MapPin className="h-3.5 w-3.5" />{location}</p>
+                        ) : null}
+                      </div>
+                    </Link>
+                  );
+                })}
+                {assets.length > 6 && <Link href="/employee/assigned-assets" className="block px-4 py-3 text-center text-xs font-bold text-blue-700 hover:bg-slate-50">View all {assets.length}</Link>}
+              </div>
+            )}
+          </Panel>
         </div>
-      </DashboardPanel>
+      )}
     </div>
   );
 }
 
-const tones = {
-  blue: 'border-blue-200 bg-blue-50 text-blue-700',
-  amber: 'border-amber-200 bg-amber-50 text-amber-800',
-  green: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  red: 'border-red-200 bg-red-50 text-red-700',
-};
 
-// Scoped disclosure for the sections still backed by lib/mock data — see the
-// employeeId comment above for why (no "my assigned assets" backend endpoint yet).
-function PreviewBadge() {
-  return <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">Preview data</span>;
-}
-
-function AttentionRow({ icon: Icon, title, detail, meta, href, action, tone, preview }: Readonly<{ icon: LucideIcon; title: string; detail: string; meta: string; href: string; action: string; tone: 'amber' | 'red'; preview?: boolean }>) {
-  return <article className="grid min-w-0 gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-[0_2px_8px_rgba(15,23,42,0.05)] sm:grid-cols-[auto_minmax(0,1fr)]"><span className={`grid h-10 w-10 place-items-center rounded-md border ${tones[tone]}`}><Icon className="h-4 w-4" /></span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-bold text-slate-950">{title}</p><span className="text-xs font-semibold text-slate-500">{meta}</span>{preview && <PreviewBadge />}</div><p className="mt-1 text-xs leading-5 text-slate-600">{detail}</p><Link href={href} className="mt-2 inline-flex min-h-8 items-center gap-1.5 text-sm font-bold text-blue-700 hover:text-blue-900">{action}<ArrowRight className="h-4 w-4" /></Link></div></article>;
-}
-
-function summaryToneClass(tone: 'blue' | 'amber' | 'green') {
-  if (tone === 'amber') return 'text-amber-700';
-  if (tone === 'green') return 'text-emerald-700';
-  return 'text-blue-700';
-}
-
-function SummaryMetric({ href, label, value, detail, icon: Icon, tone, preview }: Readonly<{ href: string; label: string; value: number; detail: string; icon: LucideIcon; tone: 'blue' | 'amber' | 'green'; preview?: boolean }>) {
+function AttentionRow({ icon: Icon, title, detail, meta, href, action, tone }: Readonly<{ icon: LucideIcon; title: string; detail: string; meta: string; href: string; action: string; tone: 'amber' | 'red' }>) {
   return (
-    <Link href={href} className="group flex min-h-[104px] min-w-0 items-center gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-[0_3px_12px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
-      <span className={`grid h-12 w-12 flex-none place-items-center rounded-lg border ${tones[tone]}`}>
-        <Icon className="h-[22px] w-[22px]" aria-hidden="true" />
+    <li className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 px-4 py-3.5">
+      <span className={`grid size-9 place-items-center rounded-lg ring-1 ${toneStyles[tone]}`}>
+        <Icon className="size-4" aria-hidden="true" />
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-1.5">
-          <span className="block truncate text-xs font-semibold text-slate-500">{label}</span>
-          {preview && <PreviewBadge />}
-        </span>
-        <span className="mt-1.5 flex min-w-0 items-baseline gap-2">
-          <span className="text-[26px] font-extrabold leading-none text-slate-950">{value}</span>
-          <span className={`truncate text-xs font-bold ${summaryToneClass(tone)}`}>{detail}</span>
-        </span>
-      </span>
-    </Link>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-slate-950">{title}</p>
+        {meta && <p className="mt-0.5 text-xs text-slate-500">{meta}</p>}
+        <p className="mt-1 text-sm leading-5 text-slate-600">{detail}</p>
+        <Link href={href} className="mt-2 inline-flex min-h-8 items-center gap-1.5 text-sm font-semibold text-blue-700 hover:underline">
+          {action} <ArrowRight className="size-4" aria-hidden="true" />
+        </Link>
+      </div>
+    </li>
   );
-}
-
-function DashboardPanel({ title, detail, action, badge, children }: Readonly<{ title: string; detail?: string; action?: React.ReactNode; badge?: React.ReactNode; children: React.ReactNode }>) {
-  return <section className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_3px_12px_rgba(15,23,42,0.05)]"><div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-50/70 px-4 py-4"><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-[15px] font-extrabold text-slate-950">{title}</h2>{badge}</div>{detail && <p className="mt-1 text-xs text-slate-500">{detail}</p>}</div>{action}</div>{children}</section>;
-}
-
-function QuickAction({ href, icon: Icon, title, detail }: Readonly<{ href: string; icon: LucideIcon; title: string; detail: string }>) {
-  return <Link href={href} className="group flex min-h-[82px] items-center gap-3 border-b border-slate-100 p-4 transition last:border-b-0 hover:bg-slate-50 sm:border-r sm:border-b-0 sm:last:border-r-0"><span className="grid h-10 w-10 flex-none place-items-center rounded-lg bg-blue-50 text-blue-700"><Icon className="h-[18px] w-[18px]" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-slate-950 group-hover:text-blue-700">{title}</span><span className="mt-0.5 block text-xs leading-5 text-slate-500">{detail}</span></span><ChevronRight className="h-4 w-4 flex-none text-slate-300 group-hover:text-blue-600" /></Link>;
 }

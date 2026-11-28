@@ -1,10 +1,13 @@
 import {
   IsDateString,
+  IsBoolean,
   IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
+  MaxLength,
 } from 'class-validator';
 import { AssetStatus } from '../../../../packages/shared/src/enums';
 
@@ -48,4 +51,36 @@ export class UpdateLifecycleDto {
   @IsOptional()
   @IsDateString()
   expectedReturnDate?: string; // set on ISSUED for loaned assets; drives OVERDUE_RETURN
+
+  // Used only when a transferred asset arrives (transferred → available): the
+  // office/section and room it now sits in, so the registry matches reality.
+  // Ignored on every other transition.
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  officeOrSection?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  officeLocation?: string;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsDateString({ strict: true })
+  disposalDate?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  disposalMethod?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  disposalReference?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  disposalConfirmed?: boolean;
 }

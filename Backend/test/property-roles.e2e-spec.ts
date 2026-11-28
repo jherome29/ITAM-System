@@ -3,6 +3,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
+import { createTestApp } from './create-test-app';
 
 describe('Property roles (e2e)', () => {
   let app: INestApplication<App>;
@@ -11,9 +12,7 @@ describe('Property roles (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('api'); // matches main.ts bootstrap() — not implied by AppModule alone
-    await app.init();
+    app = await createTestApp(moduleFixture);
   });
 
   afterEach(async () => {

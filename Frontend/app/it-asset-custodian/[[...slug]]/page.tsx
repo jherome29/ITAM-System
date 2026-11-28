@@ -1,23 +1,11 @@
-import { AssetDetailManager } from '@/components/assets/AssetDetailManager';
-import { AssetRegistryList } from '@/components/assets/AssetRegistryList';
-import { QrLookup } from '@/components/assets/QrLookup';
-import { RegisterAssetForm } from '@/components/assets/RegisterAssetForm';
-import { ItAssetCustodianDashboard } from '@/components/it-asset-custodian/ItAssetCustodianDashboard';
-import { WorkflowPage } from '@/components/prototype/WorkflowPage';
-import { FormsWorkspaceContent } from '@/components/shared/FormsWorkspaceContent';
-import { NotificationsContent } from '@/components/shared/NotificationsContent';
-import { ProposedUserRole } from '@/lib/roles/proposed-roles';
-
-export default async function ItAssetCustodianPage({ params }: Readonly<{ params: Promise<{ slug?: string[] }> }>) {
+import { redirect } from 'next/navigation';
+export default async function LegacyCustodianPage({ params, searchParams }: Readonly<{
+  params: Promise<{ slug?: string[] }>;
+  searchParams: Promise<{ open?: string | string[] }>;
+}>) {
   const { slug } = await params;
-  const segment = slug?.[0] ?? 'dashboard';
-  const child = slug?.[1];
-  if (segment === 'dashboard') return <ItAssetCustodianDashboard />;
-  if (segment === 'notifications') return <NotificationsContent />;
-  if (segment === 'assets' && child === 'new') return <RegisterAssetForm basePath="/it-asset-custodian/assets" />;
-  if (segment === 'assets' && child) return <AssetDetailManager assetId={child} basePath="/it-asset-custodian/assets" formsPath="/it-asset-custodian/reports" />;
-  if (segment === 'assets') return <AssetRegistryList basePath="/it-asset-custodian/assets" />;
-  if (segment === 'qr-scanner') return <QrLookup detailBasePath="/it-asset-custodian/assets" />;
-  if (segment === 'reports') return <FormsWorkspaceContent />;
-  return <WorkflowPage role={ProposedUserRole.IT_ASSET_CUSTODIAN} slug={segment} />;
+  const segments = slug?.length ? [...slug] : ['dashboard'];
+  if (segments[0] === 'assets') segments[0] = 'it-inventory';
+  const { open } = await searchParams;
+  redirect('/asset-custodian/' + segments.map(encodeURIComponent).join('/') + (typeof open === 'string' ? `?open=${encodeURIComponent(open)}` : ''));
 }

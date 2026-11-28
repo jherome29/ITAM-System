@@ -16,7 +16,12 @@ import { SchedulerModule } from './scheduler/scheduler.module';
 import { HealthController } from './health/health.controller';
 import { SystemConfigModule } from './system-config/system-config.module';
 import { AdminModule } from './admin/admin.module';
+import { AssetRequestsModule } from './asset-requests/asset-requests.module';
 import { SnakeNamingStrategy } from './common/snake-naming.strategy';
+
+// TypeORM's dynamic loader cannot resolve the bundled Postgres driver.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const postgresDriver = require('pg') as unknown;
 
 @Module({
   imports: [
@@ -48,6 +53,7 @@ import { SnakeNamingStrategy } from './common/snake-naming.strategy';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
+        driver: postgresDriver,
         url: config.get<string>('DATABASE_URL'),
         autoLoadEntities: true,
         // Schema created via SQL scripts — do not let TypeORM alter it.
@@ -113,6 +119,7 @@ import { SnakeNamingStrategy } from './common/snake-naming.strategy';
     SchedulerModule,
     SystemConfigModule,
     AdminModule,
+    AssetRequestsModule,
   ],
   controllers: [HealthController],
   providers: [

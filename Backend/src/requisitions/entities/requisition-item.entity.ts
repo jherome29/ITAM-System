@@ -25,8 +25,8 @@ export class RequisitionItemEntity {
   @Column({ type: 'enum', enum: AssetType })
   assetType!: AssetType;
 
-  @Column({ type: 'enum', enum: AssetClass })
-  assetClass!: AssetClass;
+  @Column({ type: 'enum', enum: AssetClass, nullable: true })
+  assetClass!: AssetClass | null;
 
   @Column({ type: 'text' })
   itemDescription!: string;
@@ -39,4 +39,9 @@ export class RequisitionItemEntity {
 
   @Column({ nullable: true, type: 'uuid' })
   fulfilledAssetId!: string | null;
+
+  // Server-computed at submission: did an available inventory item match this
+  // line? false = typed in for something not currently in stock.
+  @Column({ default: false })
+  inInventory!: boolean;
 }

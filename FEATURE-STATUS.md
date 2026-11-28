@@ -1,121 +1,200 @@
 # AIMRS — Feature Status (quick read)
 
-One-screen map of what the system actually does today. For the detailed
-version see `SYSTEM-STATUS.md` (narrative) and `MOCK-DATA-WIRING.md` (per-screen).
+One-screen map of what the system actually does today. For the narrative and
+history see `SYSTEM-STATUS.md`; for what is left before handover see
+`PATH-TO-DONE.md`; for which screens are live see `MOCK-DATA-WIRING.md`.
 
 Legend: ✅ real backend + real UI, verified · 🟡 works but has a caveat ·
-🔴 UI renders but the data is fake / nothing persists · ⬜ planned, no backend
-yet · 🚫 out of scope.
+⬜ not built · 🚫 out of scope. (There is no 🔴 "mock" row any more: the
+frontend contains no sample data, see below.)
 
-> **2026-09-10:** every *(PR pending)* / *(built, PR pending)* tag below is now
-> **merged to `origin/main`** — alternate approver (#89/#90), watcher-status +
-> config `meta` + revoke-sessions + audit date range + directory role/lock filters
-> (#98), system config (#87), `fix/admin-shell-ui` activate + TRUST_PROXY (#96),
-> the Docker/deploy pass (#95), and the formal Jest security suite (#92).
-> `origin/develop` and `origin/main` are byte-identical.
+> **As of 2026-11-28.** Everything below is in `develop`, including PR #116 (the
+> IT Personnel + Property Custodian → **Asset Custodian** role merge, schema `019`,
+> plus the CICC real-equipment import and a 13-advisory dependency fix) and PRs
+> #113–115 (three small bug fixes — approver name on submit, PAR/ICS not generated
+> on fulfilment, a React key collision). `main` is still behind `develop`; opening
+> that PR is the next step (`NEXT-TIME.md`). Schemas 001–021 must be applied to any
+> database that predates them (`Database/README.md`, note the 020 numbering gap);
+> the shared Supabase dev database is at 019, not yet 021.
 
 ---
 
 ## ✅ Working
 
 **Auth & access**
-- Login for all 7 roles, JWT + refresh-token rotation, per-route RBAC guards.
+- Login for all 5 roles, JWT + refresh-token rotation (one shared refresh, so
+  parallel requests no longer log you out), per-route RBAC guards.
 - Account lockout after N failed logins (N is runtime-configurable); admin
-  force-reset-password and unlock.
+  force-reset-password, unlock, reactivate, force sign-out. Login is rate-limited
+  (10/min per IP). The audit log records the real client IP (`req.ip` + `TRUST_PROXY`).
 
 **Requisitions**
-- Full workflow end to end: employee submits → supervisor approves/rejects →
-  IT/Property fulfils → asset issued. PAR/ICS generated on issuance.
-- **Replacement validation** — a replacement requisition is only accepted if the
-  requester holds the asset *and* it is unserviceable or past its useful life.
-- **Alternate approver** — when a supervisor is marked unavailable, new
-  requisitions route to a designated backup at submit time; a requisition that
-  blows its 24h SLA with no decision is reassigned to the backup by the watcher.
-  Self-service "I'm away" toggle + admin designation. *(merged, PR #89/#90)*
+- Full workflow end to end: submit → supervisor approves/rejects → custodian
+  fulfils → asset issued. PAR/ICS generated on issuance.
+- **Three roles file requisitions** — Employee, Supervisor, **Asset Custodian** —
+  routed to the Approving Officer of their section, else division. Management and
+  the System Administrator do not file.
+- **Segregation of duties** — a requisition is never routed to or decided by its
+  own requester, and a custodian (IT or Property) **never fulfils or holds their
+  own**: it is hidden from their queue and refused with a 403. Another custodian
+  does, or, for exactly those, the System Administrator (Master Admin →
+  Requisition Fulfilment).
+- **Request type is derived, never picked** — `supply` for an IES item, `new`
+  otherwise, `replacement` only from My Assigned Assets; a `repair` requisition is
+  refused (repairs are Returns & Incidents). Items are picked from live
+  inventory; "Not in inventory" lines are flagged.
+- **Replacement validation** — accepted only if the requester holds the asset and
+  it is unserviceable, repaired too often (default 3 in 12 months, configurable),
+  past its useful life, or held while flagged for disposal. One open replacement
+  per asset. Fulfilling it takes the old unit back and can issue the new unit in
+  the same step; the requester can download the receipt.
+- **Alternate approver** — a supervisor marked unavailable routes new requisitions
+  to a designated backup; a requisition past its 24 h SLA is reassigned to the
+  backup by the watcher. A supervisor's own requisition goes to their alternate.
+- Supply requisitions draw stock down transactionally on fulfilment (stock
+  record is chosen on the fulfil dialog).
+
+**Paper copies (record printouts)** — CICC's request for a printout after every step
+- **Print copy** on a requisition, a return / incident request and a repair: a
+  numbered A4 PDF (`PR-YYYY-NNNN`) with the facts, items, notes, a step-by-step
+  timeline, the next step, signature lines and a verification code. A later print
+  says REPRINT: copy N. Whoever can see the record can print it (the holder of a
+  repaired item too); the Paper copy section on the record lists the copies and
+  reopens any of them.
+- **"Keep a paper copy?"** is asked right after a step is saved (file / approve /
+  reject / fulfil / hold a requisition; file / approve / reject / complete / cancel
+  a request; close a repair; issue a loaner). Printing never blocks the step.
+- A printout is not a COA form: it is not in "Official documents" and not in the
+  Forms archive (that list is not scoped by asset type), only on its own record.
+- Not covered: direct asset moves in Custody & Issuance (they already generate
+  their COA forms).
 
 **Assets**
-- Register / edit / lifecycle transitions (issue, return, transfer, repair,
-  dispose-flag), QR + barcode generate and scan, per-asset transaction history.
-- Supply stock: quantity + reorder level, stock drawn down transactionally on
-  fulfilment.
+- Register / edit / lifecycle (issue, return, transfer, repair, flag for disposal,
+  restore a flagged asset with a written justification), QR + barcode generate and
+  scan, per-asset transaction history, one device photo per asset (5 MB, schema `019`).
+- CICC's real partial equipment list (PPE/SEP) is importable through the live API
+  as the Asset Custodian, not a raw DB insert — every row gets a real QR code,
+  barcode and audit trail (`Backend/scripts/cicc-import/`).
+- Supply stock: quantity + reorder level; supply lines are stock, not units (they
+  cannot be issued or transferred as a unit).
+- Custody & Issuance shows who holds each asset; the asset list says who holds it.
+- **My Assigned Assets** for every role, with replacement eligibility per item.
+- **Physical Inventory** count sheet (read-only against live assets) and
+  **Disposal Recommendations** / **Disposal Review** (documented justification,
+  condition and recommended action; the disposal itself stays a manual COA step).
 
-**Notifications & SLA** *(automated)*
-- Cron watchers: SLA breach, 12h pending-approval nudge, overdue return, low
-  stock — each fires once (dedup), in-system delivery to every relevant role,
-  live TopBar bell. Manual `POST /notifications/run-checks` trigger for testing.
-- `GET /notifications/watcher-status` reports the last completed sweep (time,
-  trigger, per-watcher counts); shown on the admin dashboard's Platform-health
-  panel. *(merged, PR #98)*
+**Returns & Incidents** (schemas 010–012)
+- The holder files return / repair / damage / loss / theft with up to 3
+  attachments; a custodian approves → marks received. A rejection needs a reason
+  of 10+ characters and a confirmation. One open case per item (a loss/theft
+  supersedes a pending hand-over). The server enforces the date rules (an incident
+  cannot be dated in the future, a return cannot be in the past).
+- System Admin decides a custodian's own request.
+- Completion drives the lifecycle and auto-generates the COA documents
+  (Receipt, RLSDDP, IIRUP), downloadable by the requester.
+
+**Maintenance & Repair** (schemas 013–014)
+- One repair record per stay `under_repair`, whichever screen sent it. Queue for
+  the Asset Custodian (and Master Admin → Escalations →
+  Repairs). Outcome repaired (back to holder or stock) / not repairable (flagged
+  for disposal). A **loaner unit** can be lent while it is away. Condition follows
+  the lifecycle. Repair History on the asset page and as a PDF/Excel report.
+
+**Notifications & SLA** (automated)
+- Cron watchers: SLA breach, 12 h pending-approval nudge, overdue return, low
+  stock, overdue repair — each fires once (dedup), in-system, live TopBar bell.
+  Clicking one deep-links to the record's drawer (`?open=<id>`).
+- **Administration Overview** shows what is waiting for the administrator ("Needs your
+  decision": return / incident requests, repairs and requisitions that a custodian filed
+  for themselves, each linking to its screen), the watcher rows as "N new alerts sent"
+  beside the live figure, and who did each recent audit event. Record completeness no
+  longer counts a blank serial or property number as complete.
+- `GET /notifications/watcher-status` and the admin dashboard show each watcher's
+  last run and count; `POST /notifications/run-checks` triggers a pass.
+- The server runs on CICC time (Asia/Manila), so the daily jobs and day
+  boundaries are right inside a UTC container.
 
 **System configuration** — SLA hours, default reorder level, useful-life years,
-max login attempts are editable at runtime (System Admin only, audited) and read
-live by the workflow / watchers / auth. `GET /system-config` also returns a
-per-key `meta` (`updatedAt` / `updatedBy`), surfaced as "Last changed … by …"
-on System Settings and the dashboard. *(merged, PR #87; `meta` via PR #98)*
+max login attempts, repeat-repair limit, **entity name and Fund Cluster** are
+editable at runtime (System Admin only, audited, with "last changed … by …").
 
 **Admin & audit**
-- User CRUD, role assignment, unlock, **reactivate** (`PATCH /users/:id/activate` —
-  the counterpart to deactivate), reset-password (in-app dialog, not `window.prompt`),
-  **force sign-out** (`PATCH /users/:id/revoke-sessions` — bumps `tokenVersion`
-  only). Directory has a role filter and a live **Locked** status.
-- Audit trail: every mutation logged append-only (user, action, record, time, IP,
-  role); filterable by action **and date range**; per-account activity drill-down
-  (`GET /audit/user/:id`) shown in the user drawer; full view for Admin + Management.
-  Behind a proxy the client IP is real when `TRUST_PROXY` is set.
-  *(activate + TRUST_PROXY: PR #96; revoke-sessions / role filter /
-  date range / per-user drill-down: PR #98 — both merged)*
-
-**Infra**
-- Docker: both images build (repo-root context), `docker compose up --build` brings up
-  Postgres (all 7 schemas + seed) + backend + frontend with `/api/health` healthchecks.
-  Prod compose fails fast on missing secrets. CI builds both images. *(merged, PR #95)*
-- k6 load baseline: 362 VUs, 0 errors, p95 758 ms (single contended box) — see `perf/`.
+- User CRUD, role assignment, unlock, reactivate, reset-password (in-app dialog),
+  force sign-out; directory has a role filter and a live **Locked** status.
+- Append-only audit trail for every mutation, filterable by action and date range,
+  per-account activity in the user drawer, per-asset history in scope. **Screens
+  show names and numbers, not ids** (person, AR-/REQ- number, asset, form number).
+- **Audit Trail Report** (PDF / Excel, up to 10,000 rows) for the System
+  Administrator and Management.
 
 **Reports & forms**
-- 18 COA form generators (PDF, stored, re-downloadable).
-- Management reports (Asset Master List, Issuance/Return records, etc.) generated
-  live from the database.
+- 18 COA form generators (PDF, stored, re-downloadable). The seven
+  per-transaction forms (PAR, ICS, PTR, IAR, the two receipts, RLSDDP, Move-Out)
+  carry a **real running number** `<SERIES>-<YYYY>-<NNNN>` allocated atomically
+  with the form; the entity name and Fund Cluster come from System Settings.
+- Registers paginate; tables fit the page; the RSMI and RPCI no longer print
+  guesses (RSMI prices supplies from the stock they came from; the RPCI leaves the
+  physical count blank).
+- **Reports & Forms** screen: a catalogue of the 18 forms with record pickers, and
+  the archive (search by document number). Management reports (Asset Master List,
+  Issuance / Return records, Requisition History, Disposal, Physical Count, Repair
+  History, Audit Trail) are generated live; an unknown report type is a 400.
+
+**UI**
+- **No mock or sample data anywhere in the frontend.** Every reachable screen reads
+  real records and every button saves through the API. An address with no real
+  screen is a 404.
+
+**Infra / quality**
+- Docker: both images build (repo-root context); `docker compose up --build` brings
+  up Postgres (all 17 schemas + seed) + backend + frontend with `/api/health`
+  healthchecks; prod compose fails fast on missing secrets; CI builds both images.
+- Formal security e2e suite (8 ASVS scenarios) gates CI. Backend 985 unit tests
+  (90% statements), 121 e2e on a real Postgres, frontend 538 tests.
+- UI: one shared kit (`Frontend/components/ui/`), one type scale with nothing below 14px (client feedback: bigger text for older staff), and a spec that fails the build when a screen goes around them. Merged to `develop`.
+- k6 load baseline: 362 VUs, 0 errors; p95 was 758 ms on 2026-09-06, re-run 2026-11-28 at 1.04 s (`perf/README.md` — likely more real per-request work since, plus this run's contention).
 
 ---
 
 ## 🟡 Works but has a caveat
 
+- **Replacement Validation and Disposal Review have no screen.** The backend endpoint
+  and the `ReplacementReview.tsx` component both still exist, but `/asset-custodian/replacements`
+  and `/disposal-review` now redirect into Fulfillment and Disposal Recommendations
+  instead (2026-11-26, "retire redundant navigation"), which don't show the one thing
+  those screens were for — held items that already qualify for replacement with no
+  open request yet. Likely an unintended regression of the Asset Custodian merge.
+
+- **COA form templates** — all 18 render with correct data and layout, but several
+  still differ from CICC's official forms: an extra unofficial third signatory
+  (PAR, ICS, IAR, the receipts, RLSDDP), WMR missing its Certificate of Inspection,
+  IIRUP missing its accounting columns and Witness, Move-In/Move-Out print
+  "Property Type: Office" always, and Sticker Card is an asset tag rather than
+  Appendix 58's Stock Card. Item-by-item status: `docs/guides/COA-FORMS-AUDIT.md`.
+- **Annex A.4** is titled "…Issued" but lists every SEP asset created in the period,
+  including stock that was never issued.
+- **Period reports** treat an end date as midnight, so items created later that
+  same day fall outside a period ending today (RSMI, RSPI, Annex A.4, RPCI…).
+- **Asset history** shows who did something by role ("IT Asset Custodian"), not by
+  person; PAR / ICS / RLSDDP print the asset's registered section, not the end
+  user's, as Office/Section.
+- **Approver coverage** — each division that files needs an active Approving
+  Officer. Property and Supply Management has one (`CICC-SUP-002`); if it is
+  deactivated its two roles cannot submit ("No supervisor is configured").
 - **Alternate approver** — after an SLA hand-off the backup inherits an
-  already-blown deadline with no fresh clock or second escalation (deliberate:
-  "one hop, no chain"); "unavailable until <date>" is date-granularity (expires
-  ~08:00 that day).
-- **COA form templates** — all 18 render, but fields/signatories need correcting
-  against the real references (Move-In/Move-Out property-type bug, RSMI zeroed
-  cost, WMR & IIRUP missing sections).
+  already-blown deadline with no fresh clock ("one hop, no chain").
+- **Physical count** is read-only: there is nowhere to record a count or reconcile.
 
 ---
 
-## 🔴 Still on mock data (UI renders, nothing real behind it)
+## ⬜ Not built
 
-- **Management dashboards** — trend / utilisation / KPI chart panels show
-  "Preview data" (no trends endpoint).
-- **Employee** — "my assigned assets" panel (preview data); Returns & Incidents
-  tab (in-memory only, nothing persists).
-- **Approving Officer** — `approval-history` list (backend exists — needs wiring).
-- **Property Officer** — `disposal`, `audit` (backend exists — needs wiring);
-  `corrections`, `reconciliation`, `replacements` (no backend).
-- **Generic fallthrough** — any role + screen not on the live-fetch allow-list
-  renders `WorkflowPage.tsx` mock rows by default.
-- **Dead mock code** — `lib/services/mock-*.service.ts` (×5), `laptops.mock.ts`
-  + `LaptopAssetDetail/Form`, `AssetInventoryGallery.tsx`, `RoleDashboard.tsx`:
-  unreferenced, safe to delete.
-
----
-
-## ⬜ Not built yet (planned)
-
-- **Disposal workflow** — turn the dispose-flag into a documented flow with the
-  COA-required fields (justification, condition assessment, recommended action).
-- **Returns / Incidents module** — employee return request, repair request,
-  damage/loss/theft report + audit.
-- **Physical count / reconciliation** — blocks the RPCI / RPCPPE / Physical Count
-  Summary reports and the physical-inventory screens.
-- **Trends / utilisation endpoint** — for the 🔴 Management chart panels.
+- **Recording a physical count / reconciliation** (and inventory
+  corrections). Blocks a real RPCI / RPCPPE reconciliation.
+- **Trends / utilisation reporting** — the Management dashboard shows real status
+  shares, not monthly trends; the Asset Utilization Summary report does not exist.
+- **Stock Card** (Appendix 58) — the Sticker Card generator is a different document.
 
 ---
 

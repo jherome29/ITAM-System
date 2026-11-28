@@ -1,7 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
-import PDFDocument from 'pdfkit';
+import { Between, ILike, In, Not, Repository } from 'typeorm';
 import ExcelJS from 'exceljs';
 import { GeneratedReportEntity } from './entities/generated-report.entity';
 import { GeneratedFormEntity } from './entities/generated-form.entity';
@@ -9,12 +13,30 @@ import { AssetEntity } from '../assets/entities/asset.entity';
 import { RequisitionEntity } from '../requisitions/entities/requisition.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { AuditService } from '../audit/audit.service';
+import { SystemConfigService } from '../system-config/system-config.service';
+import {
+  bufferize,
+  columnProportions,
+  createReportDoc,
+  drawTable,
+  ensureSpace,
+  phpFormat,
+  withFormIdentity,
+} from './forms/base-form.generator';
+import { DOCUMENT_SERIES, allocateDocumentNumber } from './document-numbers';
+import { randomInt } from 'node:crypto';
+import { generateRecordPrint } from './forms/record-print.generator';
+import type { PrintableRecord, RecordKind } from './record-print';
 import {
   OfficialFormType,
   AuditAction,
   UserRole,
   AssetClass,
   AssetStatus,
+  AssetRequestStatus,
+  AssetRequestType,
+  RepairServiceType,
+  RequisitionStatus,
 } from '../../../packages/shared/src/enums';
 
 // Form generators
@@ -36,6 +58,8 @@ import { generateRPCI } from './forms/rpci.generator';
 import { generateRPCPPE } from './forms/rpcppe.generator';
 import { generateWMR } from './forms/wmr.generator';
 import { generateAnnexA4 } from './forms/annex-a4.generator';
+import { AssetRequestEntity } from '../asset-requests/entities/asset-request.entity';
+import { AssetRepairEntity } from '../assets/entities/asset-repair.entity';
 
 // SVC: Improve — PDF management reports and COA official form generation
 
@@ -49,10 +73,24 @@ export interface GenerateFormInput {
   purpose?: string;
   requestingDivision?: string;
   returneeId?: string;
+  /** CICC employee ID (e.g. CICC-0042) - what a custodian can actually see. */
+  returneeEmployeeId?: string;
   receiverId?: string;
   dateFrom?: string;
   dateTo?: string;
+  // Internal only (not on the HTTP DTO): links the stored form to the
+  // Returns & Incidents request that produced it.
+  assetRequestId?: string;
 }
+
+/** Optional period for the reports that take one (YYYY-MM-DD, end inclusive). */
+export interface ReportRange {
+  from?: string;
+  to?: string;
+}
+
+/** An audit export is held in memory and drawn row by row, so it is bounded. */
+const AUDIT_REPORT_ROW_LIMIT = 10_000;
 
 @Injectable()
 export class ReportsService {
@@ -67,7 +105,12 @@ export class ReportsService {
     private readonly reqRepo: Repository<RequisitionEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
+    @InjectRepository(AssetRequestEntity)
+    private readonly assetRequestRepo: Repository<AssetRequestEntity>,
+    @InjectRepository(AssetRepairEntity)
+    private readonly repairRepo: Repository<AssetRepairEntity>,
     private readonly auditService: AuditService,
+    private readonly systemConfig: SystemConfigService,
   ) {}
 
   async findAll(page = 1, limit = 50) {
@@ -79,11 +122,66 @@ export class ReportsService {
     return { data, total, page, limit };
   }
 
-  async findAllForms(page = 1, limit = 50) {
-    const [data, total] = await this.formRepo.findAndCount({
+  async findAllForms(
+    page = 1,
+    limit = 50,
+    filter: { formType?: OfficialFormType; search?: string } = {},
+  ) {
+    // Record printouts are not archive documents: the archive is not scoped by
+    // asset type, and a printout may only be read through its own record.
+    if (filter.formType === OfficialFormType.RECORD_PRINT) {
+      return { data: [], total: 0, page, limit };
+    }
+    const search = filter.search?.trim();
+    const [forms, total] = await this.formRepo.findAndCount({
+      where: {
+        formType: filter.formType ?? Not(OfficialFormType.RECORD_PRINT),
+        // % and _ are typed as text, not wildcards.
+        ...(search
+          ? { documentNumber: ILike(`%${search.replace(/[\\%_]/g, '\\$&')}%`) }
+          : {}),
+      },
       order: { generatedAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
+    });
+
+    // Names for the ids, so the archive can say which laptop and whose slip
+    // instead of "asset 3fa85f64…". One lookup per kind for the whole page.
+    const ids = (pick: (f: GeneratedFormEntity) => string | null) => [
+      ...new Set(forms.map(pick).filter((id): id is string => id !== null)),
+    ];
+    const assetIds = ids((f) => f.relatedAssetId);
+    const requisitionIds = ids((f) => f.relatedRequisitionId);
+    const userIds = ids((f) => f.generatedById);
+    const [assets, requisitions, users] = await Promise.all([
+      assetIds.length
+        ? this.assetRepo.find({ where: { id: In(assetIds) } })
+        : [],
+      requisitionIds.length
+        ? this.reqRepo.find({ where: { id: In(requisitionIds) } })
+        : [],
+      userIds.length ? this.userRepo.find({ where: { id: In(userIds) } }) : [],
+    ]);
+    const assetById = new Map(assets.map((a) => [a.id, a]));
+    const requisitionById = new Map(requisitions.map((r) => [r.id, r]));
+    const userById = new Map(users.map((u) => [u.id, u]));
+
+    const data = forms.map((f) => {
+      const asset = f.relatedAssetId ? assetById.get(f.relatedAssetId) : null;
+      const author = userById.get(f.generatedById);
+      return {
+        ...f,
+        assetLabel: asset
+          ? `${asset.itemDescription}${asset.propertyNumber ? ` (${asset.propertyNumber})` : ''}`
+          : null,
+        requisitionNumber: f.relatedRequisitionId
+          ? (requisitionById.get(f.relatedRequisitionId)?.requestNumber ?? null)
+          : null,
+        generatedByName: author
+          ? `${author.firstName} ${author.lastName}`
+          : null,
+      };
     });
     return { data, total, page, limit };
   }
@@ -91,15 +189,22 @@ export class ReportsService {
   /**
    * getKpi — Management dashboard KPIs.
    * SVC: Improve — executive-level inventory and process metrics.
+   *
+   * `recordCompleteness` is the share of assets that have both a property
+   * number and a serial number. It is a data-quality measure, NOT inventory
+   * accuracy: accuracy means agreement with a physical count, which the system
+   * does not record (it used to be exposed as `inventoryAccuracy`, which read
+   * as one).
    */
   async getKpi() {
     const totalAssets = await this.assetRepo.count();
     const completeAssets = await this.assetRepo
       .createQueryBuilder('a')
-      .where('a.propertyNumber IS NOT NULL')
-      .andWhere('a.serialNumber IS NOT NULL')
+      // Blank text is as missing as NULL: an empty serial number is not a serial number.
+      .where("COALESCE(TRIM(a.propertyNumber), '') <> ''")
+      .andWhere("COALESCE(TRIM(a.serialNumber), '') <> ''")
       .getCount();
-    const inventoryAccuracy =
+    const recordCompleteness =
       totalAssets > 0 ? Math.round((completeAssets / totalAssets) * 100) : 100;
 
     const decidedRows = await this.reqRepo
@@ -115,7 +220,7 @@ export class ReportsService {
     const avgApprovalHours =
       decidedRows.length > 0
         ? Math.round(
-            (decidedRows.reduce((s, r) => s + parseFloat(r.hours), 0) /
+            (decidedRows.reduce((s, r) => s + Number.parseFloat(r.hours), 0) /
               decidedRows.length) *
               10,
           ) / 10
@@ -127,9 +232,20 @@ export class ReportsService {
       .andWhere('r.slaDeadline IS NOT NULL')
       .andWhere('r.supervisorDecidedAt <= r.slaDeadline')
       .getCount();
-    const totalDecided = decidedRows.length;
+    // A requisition still waiting past its deadline is a breach already. Only
+    // counting the decided ones left the stalled ones invisible, so the
+    // dashboard read "SLA compliance 100%" beside "4 requisitions past SLA".
+    // Requisitions still inside their window are not assessable yet and stay out.
+    const pendingPastSla = await this.reqRepo
+      .createQueryBuilder('r')
+      .where('r.status = :pending', {
+        pending: RequisitionStatus.PENDING_SUPERVISOR,
+      })
+      .andWhere('r.slaDeadline < :now', { now: new Date() })
+      .getCount();
+    const assessed = decidedRows.length + pendingPastSla;
     const slaComplianceRate =
-      totalDecided > 0 ? Math.round((withinSla / totalDecided) * 100) : 100;
+      assessed > 0 ? Math.round((withinSla / assessed) * 100) : 100;
 
     const totalRequisitions = await this.reqRepo.count();
 
@@ -144,7 +260,7 @@ export class ReportsService {
       .getCount();
 
     return {
-      inventoryAccuracy,
+      recordCompleteness,
       avgApprovalHours,
       slaComplianceRate,
       totalAssets,
@@ -165,11 +281,25 @@ export class ReportsService {
     generatedById: string,
     userRole: UserRole,
     ipAddress: string,
+    range: ReportRange = {},
   ): Promise<{ buffer: Buffer; report: GeneratedReportEntity }> {
+    // Role matrix (CLAUDE.md 4): the audit trail is for the System Administrator
+    // and Management. The endpoint is open to IT and the property custodian for
+    // the other reports, so this one is checked here.
+    if (
+      reportType === 'AUDIT_TRAIL' &&
+      userRole !== UserRole.SYSTEM_ADMIN &&
+      userRole !== UserRole.MANAGEMENT
+    ) {
+      throw new ForbiddenException(
+        'The audit trail report is limited to the System Administrator and Management',
+      );
+    }
+
     const buffer =
       format === 'PDF'
-        ? await this.buildPdfReport(reportType)
-        : await this.buildExcelReport(reportType);
+        ? await this.buildPdfReport(reportType, range)
+        : await this.buildExcelReport(reportType, range);
 
     const ext = format === 'PDF' ? 'pdf' : 'xlsx';
     const report = this.reportRepo.create({
@@ -194,92 +324,68 @@ export class ReportsService {
   }
 
   // ── PDF report builder ─────────────────────────────────────────────────────
-  private async buildPdfReport(reportType: string): Promise<Buffer> {
-    const { rows, headers, title } = await this.fetchReportData(reportType);
+  private async buildPdfReport(
+    reportType: string,
+    range: ReportRange,
+  ): Promise<Buffer> {
+    const { rows, headers, title } = await this.fetchReportData(
+      reportType,
+      range,
+    );
 
-    return new Promise<Buffer>((resolve, reject) => {
-      const doc = new PDFDocument({
-        margin: 40,
-        size: 'LETTER',
-        layout: 'landscape',
-      });
-      const chunks: Buffer[] = [];
-      doc.on('data', (c: Buffer) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
+    const doc = createReportDoc();
 
-      // Header bar
-      doc.rect(40, 40, doc.page.width - 80, 36).fill('#1a4d7a');
-      doc
-        .fillColor('white')
-        .font('Helvetica-Bold')
-        .fontSize(14)
-        .text('AIMRS — ' + title, 50, 52, { width: doc.page.width - 100 });
-      doc
-        .fillColor('#555')
-        .font('Helvetica')
-        .fontSize(8)
-        .text(
-          `Generated: ${new Date().toLocaleString('en-PH')}  |  Cybercrime Investigation and Coordinating Center`,
-          50,
-          85,
-        );
+    // Header bar
+    doc.rect(40, 40, doc.page.width - 80, 36).fill('#1a4d7a');
+    doc
+      .fillColor('white')
+      .font('Helvetica-Bold')
+      .fontSize(14)
+      .text('AIMRS — ' + title, 50, 52, { width: doc.page.width - 100 });
+    doc
+      .fillColor('#555')
+      .font('Helvetica')
+      .fontSize(8)
+      .text(
+        `Generated: ${new Date().toLocaleString('en-PH')}  |  ${this.systemConfig.getEntityName()}`,
+        50,
+        85,
+      );
 
-      // Column layout
-      const colCount = headers.length;
-      const colW = Math.floor((doc.page.width - 80) / colCount);
-      let y = 100;
+    // The same table the COA forms use: it measures each row (a description that wraps gets the
+    // height it needs, instead of printing over the next row), repeats the column header on every
+    // page and never draws below the margin, where pdfkit would answer with a stray page.
+    const cells = rows.map((row) => row.map((cell) => String(cell ?? '—')));
+    const widths = columnProportions(headers.map(String), cells);
+    const y = drawTable(
+      doc,
+      headers.map((header, i) => ({
+        header: String(header),
+        width: widths[i],
+      })),
+      cells,
+      100,
+    );
 
-      // Table header row
-      doc.rect(40, y, doc.page.width - 80, 18).fill('#e8f0f7');
-      headers.forEach((h, i) => {
-        doc
-          .fillColor('#1a4d7a')
-          .font('Helvetica-Bold')
-          .fontSize(7)
-          .text(String(h), 44 + i * colW, y + 5, {
-            width: colW - 4,
-            ellipsis: true,
-          });
-      });
-      y += 18;
+    const footerY = ensureSpace(doc, y, 12);
+    doc
+      .fillColor('#555')
+      .font('Helvetica')
+      .fontSize(7)
+      .text(`Total records: ${rows.length}`, 40, footerY, { lineBreak: false });
 
-      // Data rows
-      rows.forEach((row, ri) => {
-        if (y > doc.page.height - 60) {
-          doc.addPage({ layout: 'landscape', size: 'LETTER', margin: 40 });
-          y = 40;
-        }
-        if (ri % 2 === 0) {
-          doc.rect(40, y, doc.page.width - 80, 16).fill('#f8fafc');
-        }
-        row.forEach((cell, i) => {
-          doc
-            .fillColor('#333')
-            .font('Helvetica')
-            .fontSize(7)
-            .text(String(cell ?? '—'), 44 + i * colW, y + 4, {
-              width: colW - 4,
-              ellipsis: true,
-            });
-        });
-        y += 16;
-      });
-
-      // Footer
-      doc
-        .fillColor('#aaa')
-        .font('Helvetica')
-        .fontSize(7)
-        .text(`Total records: ${rows.length}`, 40, doc.page.height - 30);
-
-      doc.end();
-    });
+    return bufferize(doc);
   }
 
   // ── Excel report builder ───────────────────────────────────────────────────
-  private async buildExcelReport(reportType: string): Promise<Buffer> {
-    const { rows, headers, title } = await this.fetchReportData(reportType);
+  private async buildExcelReport(
+    reportType: string,
+    range: ReportRange,
+  ): Promise<Buffer> {
+    const { rows, headers, title } = await this.fetchReportData(
+      reportType,
+      range,
+    );
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'AIMRS — CICC';
@@ -301,7 +407,7 @@ export class ReportsService {
     // Generated date row
     sheet.mergeCells(2, 1, 2, headers.length);
     sheet.getCell(2, 1).value =
-      `Generated: ${new Date().toLocaleString('en-PH')} | CICC`;
+      `Generated: ${new Date().toLocaleString('en-PH')} | ${this.systemConfig.getEntityName()}`;
     sheet.getCell(2, 1).font = {
       italic: true,
       size: 9,
@@ -350,7 +456,10 @@ export class ReportsService {
   }
 
   // ── Data fetcher — returns typed rows for a given report type ─────────────
-  private async fetchReportData(reportType: string): Promise<{
+  private async fetchReportData(
+    reportType: string,
+    range: ReportRange = {},
+  ): Promise<{
     headers: string[];
     rows: (string | number | null)[][];
     title: string;
@@ -385,9 +494,7 @@ export class ReportsService {
             (a.condition ?? '—').replaceAll('_', ' '),
             a.status.replaceAll('_', ' '),
             `${a.division ?? '—'} / ${a.officeOrSection ?? '—'}`,
-            a.acquisitionCost == null
-              ? '—'
-              : `₱${Number(a.acquisitionCost).toLocaleString('en-PH')}`,
+            a.acquisitionCost == null ? '—' : phpFormat(a.acquisitionCost),
             a.acquisitionDate
               ? new Date(a.acquisitionDate).toLocaleDateString('en-PH')
               : '—',
@@ -478,7 +585,10 @@ export class ReportsService {
       }
 
       case 'PHYSICAL_COUNT': {
+        // What is still on the books: disposed assets are gone, and the count
+        // sheet in the app already leaves them out.
         const assets = await this.assetRepo.find({
+          where: { status: Not(AssetStatus.DISPOSED) },
           order: { condition: 'ASC' },
         });
         return {
@@ -500,6 +610,53 @@ export class ReportsService {
             (a.condition ?? '—').replaceAll('_', ' '),
             a.status.replaceAll('_', ' '),
             a.officeLocation ?? '—',
+          ]),
+        };
+      }
+
+      // SVC: Improve — repair history: turnaround, outcomes, repeat repairs.
+      case 'REPAIR_HISTORY': {
+        const repairs = await this.repairRepo
+          .createQueryBuilder('r')
+          .leftJoinAndSelect('r.asset', 'asset')
+          .leftJoinAndSelect('r.holder', 'holder')
+          .orderBy('r.openedAt', 'DESC')
+          .getMany();
+        const day = (d: Date | string | null) =>
+          d ? new Date(d).toISOString().slice(0, 10) : '—';
+        const turnaround = (r: AssetRepairEntity) =>
+          r.completedAt
+            ? `${Math.max(0, Math.round((new Date(r.completedAt).getTime() - new Date(r.openedAt).getTime()) / 86_400_000))} d`
+            : 'open';
+        return {
+          title: 'Repair History',
+          headers: [
+            'Property #',
+            'Description',
+            'Holder',
+            'Opened',
+            'Service',
+            'Problem / Findings',
+            'Action Taken',
+            'Outcome',
+            'Closed',
+            'Turnaround',
+          ],
+          rows: repairs.map((r) => [
+            r.asset?.propertyNumber ?? '—',
+            r.asset?.itemDescription ?? '—',
+            r.holder
+              ? `${r.holder.firstName} ${r.holder.lastName}`
+              : 'In stock',
+            day(r.openedAt),
+            r.serviceType === RepairServiceType.EXTERNAL
+              ? `External${r.serviceProvider ? ` — ${r.serviceProvider}` : ''}`
+              : 'In-house',
+            [r.reportedProblem, r.findings].filter(Boolean).join(' / ') || '—',
+            r.actionTaken ?? '—',
+            (r.outcome ?? 'in progress').replaceAll('_', ' '),
+            day(r.completedAt),
+            turnaround(r),
           ]),
         };
       }
@@ -532,27 +689,58 @@ export class ReportsService {
             a.assetClass,
             (a.condition ?? '—').replaceAll('_', ' '),
             a.status.replaceAll('_', ' '),
-            a.acquisitionCost == null
-              ? '—'
-              : `₱${Number(a.acquisitionCost).toLocaleString('en-PH')}`,
+            a.acquisitionCost == null ? '—' : phpFormat(a.acquisitionCost),
           ]),
         };
       }
 
-      default: {
-        const assets = await this.assetRepo.find({
-          order: { createdAt: 'DESC' },
-        });
+      // SVC: Improve - the audit trail as a document, for COA review.
+      case 'AUDIT_TRAIL': {
+        const { data: entries, total } = await this.auditService.findAll(
+          1,
+          AUDIT_REPORT_ROW_LIMIT,
+          undefined,
+          range.from,
+          range.to,
+        );
+        const users = entries.length
+          ? await this.userRepo.find({
+              where: { id: In([...new Set(entries.map((e) => e.userId))]) },
+            })
+          : [];
+        const byId = new Map(users.map((u) => [u.id, u]));
+        const who = (id: string) => {
+          const u = byId.get(id);
+          return u ? `${u.firstName} ${u.lastName} (${u.employeeId})` : id;
+        };
         return {
-          title: reportType.replaceAll('_', ' '),
-          headers: ['Property #', 'Description', 'Status'],
-          rows: assets.map((a) => [
-            a.propertyNumber ?? '—',
-            a.itemDescription,
-            a.status,
+          title:
+            total > entries.length
+              ? `Audit Trail Report (latest ${entries.length.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} entries)`
+              : 'Audit Trail Report',
+          headers: [
+            'Timestamp (UTC)',
+            'User',
+            'Role',
+            'Action',
+            'Record Type',
+            'Record ID',
+            'IP Address',
+          ],
+          rows: entries.map((e) => [
+            e.timestamp.toISOString().slice(0, 19).replace('T', ' '),
+            who(e.userId),
+            e.userRole,
+            e.action,
+            e.affectedRecordType,
+            e.affectedRecordId,
+            e.ipAddress,
           ]),
         };
       }
+
+      default:
+        throw new BadRequestException(`Unknown report type: ${reportType}`);
     }
   }
 
@@ -566,6 +754,85 @@ export class ReportsService {
     userRole: UserRole,
     ipAddress: string,
   ): Promise<Buffer> {
+    const { buffer } = await this.generateFormRecord(
+      input,
+      generatedById,
+      userRole,
+      ipAddress,
+    );
+    return buffer;
+  }
+
+  /**
+   * Same as generateForm() but also returns the stored record — used where the
+   * caller must link to the saved form (Returns & Incidents documents).
+   */
+  async generateFormRecord(
+    input: GenerateFormInput,
+    generatedById: string,
+    userRole: UserRole,
+    ipAddress: string,
+  ): Promise<{ form: GeneratedFormEntity; buffer: Buffer }> {
+    // A record printout is made by the Print copy button on the record (createRecordPrint), which has
+    // already checked that the caller may see it; the COA form generator has no record to draw.
+    if (input.formType === OfficialFormType.RECORD_PRINT) {
+      throw new BadRequestException(
+        'A record printout is made with the Print copy button on the record itself.',
+      );
+    }
+    const series = DOCUMENT_SERIES[input.formType];
+    const identity = {
+      entityName: this.systemConfig.getEntityName(),
+      fundCluster: this.systemConfig.getFundCluster(),
+    };
+
+    // The number is taken and the form stored in one transaction: a form that
+    // fails to generate (no custodian, unknown asset) hands its number back
+    // instead of leaving a hole in the series.
+    const saved = await this.formRepo.manager.transaction(async (em) => {
+      const documentNumber = series
+        ? await allocateDocumentNumber(em, series, new Date().getFullYear())
+        : null;
+      // The agency name, Fund Cluster and number in the header are read by the
+      // generators from the request's context rather than fixed text.
+      return withFormIdentity(
+        { ...identity, documentNumber: documentNumber ?? undefined },
+        () =>
+          this.buildFormRecord(
+            input,
+            generatedById,
+            documentNumber,
+            em.getRepository(GeneratedFormEntity),
+          ),
+      );
+    });
+
+    // After the commit, so the trail never records a form that was rolled back.
+    await this.auditService.log({
+      userId: generatedById,
+      userRole,
+      action: AuditAction.FORM_GENERATED,
+      affectedRecordId: saved.form.id,
+      affectedRecordType: 'form',
+      ipAddress,
+      metadata: {
+        formType: input.formType,
+        documentNumber: saved.form.documentNumber ?? undefined,
+        assetId: input.assetId,
+        requisitionId: input.requisitionId,
+        assetRequestId: input.assetRequestId,
+      },
+    });
+
+    return saved;
+  }
+
+  private async buildFormRecord(
+    input: GenerateFormInput,
+    generatedById: string,
+    documentNumber: string | null,
+    formRepo: Repository<GeneratedFormEntity>,
+  ): Promise<{ form: GeneratedFormEntity; buffer: Buffer }> {
     const { formType } = input;
     let buffer: Buffer;
 
@@ -594,6 +861,57 @@ export class ReportsService {
       if (!user)
         throw new NotFoundException(`Custodian ${asset.custodianId} not found`);
       return user;
+    };
+
+    // ── Helper: who returned the asset ──────────────────────────────────────
+    // A completed return clears the custodian, so by the time the receipt is
+    // generated there is none. Fall back to the requester of the most recent
+    // completed return request (Returns & Incidents) for that asset.
+    const getReturnee = async (asset: AssetEntity): Promise<UserEntity> => {
+      if (input.returneeId) {
+        const u = await getUser(input.returneeId);
+        if (!u)
+          throw new NotFoundException(`User ${input.returneeId} not found`);
+        return u;
+      }
+      if (input.returneeEmployeeId) {
+        const u = await this.userRepo.findOne({
+          where: { employeeId: input.returneeEmployeeId },
+        });
+        if (!u)
+          throw new NotFoundException(
+            `No employee with ID ${input.returneeEmployeeId}`,
+          );
+        return u;
+      }
+      if (asset.custodianId) return getCustodian(asset);
+      const lastReturn = await this.assetRequestRepo.findOne({
+        where: {
+          assetId: asset.id,
+          type: AssetRequestType.RETURN,
+          status: AssetRequestStatus.COMPLETED,
+        },
+        order: { completedAt: 'DESC' },
+      });
+      // A unit collected by a replacement requisition never had a return
+      // request: the holder is whoever asked for its replacement.
+      const replacement = lastReturn
+        ? null
+        : await this.reqRepo.findOne({
+            where: {
+              replacedAssetId: asset.id,
+              status: RequisitionStatus.FULFILLED,
+            },
+            order: { fulfilledAt: 'DESC' },
+          });
+      const holderId = lastReturn?.requestedById ?? replacement?.requestedById;
+      const u = await getUser(holderId);
+      if (!u) {
+        throw new NotFoundException(
+          `Asset ${asset.id} has no current custodian or completed return — enter the returnee's employee ID.`,
+        );
+      }
+      return u;
     };
 
     // ── Helper: load the generating user ────────────────────────────────────
@@ -633,10 +951,16 @@ export class ReportsService {
       case OfficialFormType.PTR: {
         const asset = await getAsset(input.assetId);
         const releasingOfficer = await getIssuer();
+        // A transfer report with no destination is not a report; the form used
+        // to print the placeholder "Target Office/Section" instead.
+        if (!input.targetOffice?.trim())
+          throw new BadRequestException(
+            'targetOffice is required for a Property Transfer Report',
+          );
         buffer = await generatePTR(
           asset,
           releasingOfficer,
-          input.targetOffice ?? 'Target Office/Section',
+          input.targetOffice.trim(),
         );
         break;
       }
@@ -650,7 +974,15 @@ export class ReportsService {
 
       case OfficialFormType.RLSDDP: {
         const asset = await getAsset(input.assetId);
-        const officer = await getIssuer();
+        // The accountable officer is whoever holds the property (the requester,
+        // when Returns & Incidents generates it after custody was cleared), not
+        // the custodian who happens to be generating the report.
+        const officer =
+          input.returneeId || input.returneeEmployeeId
+            ? await getReturnee(asset)
+            : asset.custodianId
+              ? await getCustodian(asset)
+              : await getIssuer();
         buffer = await generateRLSSDDP(
           asset,
           officer,
@@ -668,13 +1000,11 @@ export class ReportsService {
 
       case OfficialFormType.RECEIPT_RETURNED_PROPERTY: {
         const asset = await getAsset(input.assetId);
-        const returnee = input.returneeId
-          ? await getUser(input.returneeId)
-          : await getCustodian(asset);
+        const returnee = await getReturnee(asset);
         const receiver = await getIssuer();
         buffer = await generateReceiptReturnedProperty(
           asset,
-          returnee!,
+          returnee,
           receiver,
         );
         break;
@@ -682,11 +1012,9 @@ export class ReportsService {
 
       case OfficialFormType.RECEIPT_RETURNED_SEP: {
         const asset = await getAsset(input.assetId);
-        const returnee = input.returneeId
-          ? await getUser(input.returneeId)
-          : await getCustodian(asset);
+        const returnee = await getReturnee(asset);
         const receiver = await getIssuer();
-        buffer = await generateReceiptReturnedSEP(asset, returnee!, receiver);
+        buffer = await generateReceiptReturnedSEP(asset, returnee, receiver);
         break;
       }
 
@@ -749,15 +1077,40 @@ export class ReportsService {
           relations: { items: true },
           order: { fulfilledAt: 'ASC' },
         });
-        const items = reqs.flatMap((r) =>
-          r.items.map((i) => ({
-            requestNumber: r.requestNumber,
-            itemDescription: i.itemDescription,
-            assetType: i.assetType,
-            quantity: i.quantity,
-            acquisitionCost: 0,
-          })),
+        // Supplies only: the report is of supplies and materials, and a
+        // laptop or a desk in the same requisition belongs on the PAR/ICS.
+        const supplyLines = reqs.flatMap((r) =>
+          r.items
+            .filter((i) => i.assetClass === AssetClass.IES)
+            .map((i) => ({ requestNumber: r.requestNumber, line: i })),
         );
+        // Unit cost and stock number come from the stock the line was issued
+        // from; a line fulfilled before stock was linked has neither.
+        const stockIds = [
+          ...new Set(
+            supplyLines.flatMap(({ line }) =>
+              line.fulfilledAssetId ? [line.fulfilledAssetId] : [],
+            ),
+          ),
+        ];
+        const stock = stockIds.length
+          ? await this.assetRepo.find({ where: { id: In(stockIds) } })
+          : [];
+        const stockById = new Map(stock.map((a) => [a.id, a]));
+        const items = supplyLines.map(({ requestNumber, line }) => {
+          const unit = line.fulfilledAssetId
+            ? stockById.get(line.fulfilledAssetId)
+            : undefined;
+          return {
+            requestNumber,
+            itemDescription: line.itemDescription,
+            assetType: line.assetType,
+            quantity: line.quantity,
+            // Postgres returns decimals as strings.
+            acquisitionCost: unit ? Number(unit.acquisitionCost) : null,
+            stockNumber: unit?.itemCode || null,
+          };
+        });
         buffer = await generateRSMI(items, from, to);
         break;
       }
@@ -823,6 +1176,21 @@ export class ReportsService {
           const d = a.createdAt ? new Date(a.createdAt) : null;
           return d && d >= from && d <= to;
         });
+        // The ICS an item was issued under is the one stored with it, oldest
+        // first so a re-issue's later number wins.
+        const icsForms = filtered.length
+          ? await this.formRepo.find({
+              where: {
+                formType: OfficialFormType.ICS,
+                relatedAssetId: In(filtered.map((a) => a.id)),
+              },
+              select: { relatedAssetId: true, documentNumber: true },
+              order: { generatedAt: 'ASC' },
+            })
+          : [];
+        const icsNumber = new Map(
+          icsForms.map((f) => [f.relatedAssetId, f.documentNumber]),
+        );
         const enriched = await Promise.all(
           filtered.map(async (a) => {
             const custodian = a.custodianId
@@ -833,6 +1201,7 @@ export class ReportsService {
               custodianName: custodian
                 ? `${custodian.firstName} ${custodian.lastName}`
                 : undefined,
+              icsNumber: icsNumber.get(a.id) ?? null,
             };
           }),
         );
@@ -847,31 +1216,200 @@ export class ReportsService {
     }
 
     // ── Persist form record with PDF content ──────────────────────────────
-    const form = this.formRepo.create({
+    const form = formRepo.create({
       formType,
+      documentNumber,
       relatedAssetId: input.assetId ?? null,
       relatedRequisitionId: input.requisitionId ?? null,
+      relatedAssetRequestId: input.assetRequestId ?? null,
       filePath: 'stored',
       generatedById,
       pdfContent: buffer,
     });
-    const saved = await this.formRepo.save(form);
+    const saved = await formRepo.save(form);
 
+    return { form: saved, buffer };
+  }
+
+  // ── Record printouts (schema 018) ──────────────────────────────────────────
+
+  private static readonly PRINT_LINK = {
+    requisition: 'relatedRequisitionId',
+    asset_request: 'relatedAssetRequestId',
+    repair: 'relatedAssetRepairId',
+  } as const;
+
+  /** Eight characters without the look-alikes (0 O 1 I), as K7Q2-9DXM: easy to read aloud and to type. */
+  private newVerificationCode(): string {
+    const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    const pick = () => alphabet[randomInt(alphabet.length)];
+    return `${Array.from({ length: 4 }, pick).join('')}-${Array.from({ length: 4 }, pick).join('')}`;
+  }
+
+  /**
+   * A numbered paper copy of one record. The caller (the service that owns the record) has already checked
+   * that the user may see it. Every print is stored, so a paper copy can be checked against what the system
+   * showed at that moment; a later print of the same record is the next copy and says REPRINT.
+   * SVC: Deliver and Support - proof beyond the digital record.
+   */
+  async createRecordPrint(
+    record: PrintableRecord,
+    printedBy: { id: string; name: string; role: UserRole },
+    ipAddress: string,
+  ): Promise<{ form: GeneratedFormEntity; buffer: Buffer }> {
+    const link = ReportsService.PRINT_LINK[record.kind];
+    const prior = await this.formRepo.find({
+      where: {
+        formType: OfficialFormType.RECORD_PRINT,
+        [link]: record.recordId,
+      },
+      select: { id: true, generatedAt: true },
+      order: { generatedAt: 'ASC' },
+    });
+    const copy = prior.length + 1;
+    const code = this.newVerificationCode();
+    const identity = {
+      entityName: this.systemConfig.getEntityName(),
+      fundCluster: this.systemConfig.getFundCluster(),
+    };
+
+    // Number and row in one transaction, as for every other form: a print that fails to draw gives its
+    // number back, so the series has no gaps.
+    const saved = await this.formRepo.manager.transaction(async (em) => {
+      const documentNumber = await allocateDocumentNumber(
+        em,
+        DOCUMENT_SERIES[OfficialFormType.RECORD_PRINT] as string,
+        new Date().getFullYear(),
+      );
+      const buffer = await withFormIdentity(
+        { ...identity, documentNumber },
+        () =>
+          generateRecordPrint(record, {
+            printNumber: documentNumber,
+            printedAt: new Date(),
+            printedBy: { name: printedBy.name, role: printedBy.role },
+            copy,
+            firstPrintedAt: prior[0]?.generatedAt,
+            verificationCode: code,
+          }),
+      );
+      const repo = em.getRepository(GeneratedFormEntity);
+      const form = await repo.save(
+        repo.create({
+          formType: OfficialFormType.RECORD_PRINT,
+          documentNumber,
+          [link]: record.recordId,
+          verificationCode: code,
+          filePath: 'stored',
+          generatedById: printedBy.id,
+          pdfContent: buffer,
+        }),
+      );
+      return { form, buffer };
+    });
+
+    // After the commit, so the trail never records a print that was rolled back.
     await this.auditService.log({
-      userId: generatedById,
-      userRole,
+      userId: printedBy.id,
+      userRole: printedBy.role,
       action: AuditAction.FORM_GENERATED,
-      affectedRecordId: saved.id,
+      affectedRecordId: saved.form.id,
       affectedRecordType: 'form',
       ipAddress,
       metadata: {
-        formType,
-        assetId: input.assetId,
-        requisitionId: input.requisitionId,
+        formType: OfficialFormType.RECORD_PRINT,
+        documentNumber: saved.form.documentNumber ?? undefined,
+        recordKind: record.kind,
+        recordReference: record.reference,
+        copy,
       },
     });
+    return saved;
+  }
 
-    return buffer;
+  /** The prints of one record, oldest first, with who made each (no PDF blob). */
+  async recordPrints(kind: RecordKind, recordId: string) {
+    const link = ReportsService.PRINT_LINK[kind];
+    const forms = await this.formRepo.find({
+      where: { formType: OfficialFormType.RECORD_PRINT, [link]: recordId },
+      select: {
+        id: true,
+        documentNumber: true,
+        generatedAt: true,
+        generatedById: true,
+        verificationCode: true,
+      },
+      order: { generatedAt: 'ASC' },
+    });
+    const users = forms.length
+      ? await this.userRepo.find({
+          where: { id: In([...new Set(forms.map((f) => f.generatedById))]) },
+        })
+      : [];
+    const names = new Map(
+      users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]),
+    );
+    return forms.map((f, i) => ({
+      id: f.id,
+      documentNumber: f.documentNumber,
+      verificationCode: f.verificationCode,
+      generatedAt: f.generatedAt,
+      copy: i + 1,
+      printedByName: names.get(f.generatedById) ?? 'Unknown',
+    }));
+  }
+
+  /** A stored print, only if it belongs to this record: the link is what lets the people on the record read it. */
+  async recordPrintPdf(kind: RecordKind, recordId: string, formId: string) {
+    const link = ReportsService.PRINT_LINK[kind];
+    const form = await this.formRepo
+      .createQueryBuilder('f')
+      .select(['f.id', 'f.documentNumber', 'f.pdfContent'])
+      .where(
+        `f.id = :formId AND f.${link} = :recordId AND f.formType = :type`,
+        {
+          formId,
+          recordId,
+          type: OfficialFormType.RECORD_PRINT,
+        },
+      )
+      .getOne();
+    if (!form?.pdfContent) throw new NotFoundException('Printout not found');
+    return { documentNumber: form.documentNumber, buffer: form.pdfContent };
+  }
+
+  /**
+   * COA forms generated for a requisition (no PDF blob), oldest first. Record
+   * printouts are the same table but not an official document: they have their
+   * own Paper copy list, so they stay out of "Official documents".
+   */
+  formsForRequisition(requisitionId: string) {
+    return this.formRepo.find({
+      where: {
+        relatedRequisitionId: requisitionId,
+        formType: Not(OfficialFormType.RECORD_PRINT),
+      },
+      select: { id: true, formType: true, generatedAt: true },
+      order: { generatedAt: 'ASC' },
+    });
+  }
+
+  /**
+   * A form's PDF, only if it was generated for this requisition — the link is
+   * what lets the requester read it (generated forms are otherwise
+   * custodian / admin only).
+   */
+  async requisitionFormPdf(requisitionId: string, formId: string) {
+    const form = await this.formRepo
+      .createQueryBuilder('f')
+      .select(['f.id', 'f.formType', 'f.pdfContent'])
+      .where('f.id = :formId AND f.relatedRequisitionId = :requisitionId', {
+        formId,
+        requisitionId,
+      })
+      .getOne();
+    if (!form?.pdfContent) throw new NotFoundException('Document not found');
+    return { formType: form.formType, buffer: form.pdfContent };
   }
 
   /**
@@ -887,7 +1425,10 @@ export class ReportsService {
       .where('f.id = :id', { id })
       .getOne();
 
-    if (!form) throw new NotFoundException(`Form record ${id} not found`);
+    // A printout is served by its record's own route, which checks access to
+    // that record; this route only checks the caller's role.
+    if (!form || form.formType === OfficialFormType.RECORD_PRINT)
+      throw new NotFoundException(`Form record ${id} not found`);
     if (!form.pdfContent)
       throw new NotFoundException(
         `Form ${id} has no stored PDF — it may have been generated before this feature was enabled`,

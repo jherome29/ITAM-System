@@ -3,12 +3,24 @@
 export enum UserRole {
   EMPLOYEE = 'employee',
   SUPERVISOR = 'supervisor',
-  IT_PERSONNEL = 'it_personnel',
+  ASSET_CUSTODIAN = 'asset_custodian',
+  IT_PERSONNEL = 'it_personnel', // Asset Custodian; persisted value retained for compatibility.
   SYSTEM_ADMIN = 'system_admin',
   MANAGEMENT = 'management',
   PROPERTY_CUSTODIAN = 'property_custodian',
+  /**
+   * @deprecated Retired: merged into PROPERTY_CUSTODIAN (the Officer was a
+   * read-only subset of it). The value stays because the Postgres enum cannot drop
+   * it and old audit rows still carry it. No route grants it and no account may be
+   * given it: assign from ASSIGNABLE_USER_ROLES.
+   */
   PROPERTY_OFFICER = 'property_officer',
 }
+
+/** Every role an account can be given today (all of UserRole except the retired one). */
+export const ASSIGNABLE_USER_ROLES: readonly UserRole[] = Object.values(
+  UserRole,
+).filter((role) => role !== UserRole.PROPERTY_OFFICER);
 
 export enum AssetClass {
   PPE = 'PPE', // Property, Plant & Equipment — useful life >1yr, cost >= PHP 50,000
@@ -66,6 +78,41 @@ export enum NotificationAlertType {
   REQUISITION_APPROVED  = 'requisition_approved',
   REQUISITION_REJECTED  = 'requisition_rejected',
   REQUISITION_FULFILLED = 'requisition_fulfilled',
+  ASSET_REQUEST         = 'asset_request',         // to custodians: new / cancelled return or incident
+  ASSET_REQUEST_UPDATE  = 'asset_request_update',  // to the requester: approved / rejected / completed
+  REPAIR_UPDATE         = 'repair_update',         // to the holder: repaired / not repairable
+  REPAIR_OVERDUE        = 'repair_overdue',        // to custodians: repair past its expected completion
+}
+
+// Where a repair is done, and how it ended (asset_repairs).
+export enum RepairServiceType {
+  IN_HOUSE = 'in_house',
+  EXTERNAL = 'external',
+}
+
+export enum RepairOutcome {
+  REPAIRED = 'repaired',
+  UNREPAIRABLE = 'unrepairable',
+}
+
+// Return / incident requests filed by the holder of an issued asset.
+export enum AssetRequestType {
+  RETURN = 'return',
+  REPAIR = 'repair',
+  DAMAGE = 'damage',
+  LOSS   = 'loss',
+  THEFT  = 'theft',
+}
+
+// submitted → approved (hand-over scheduled) → completed (item received / processed)
+// rejected (custodian, only before approval) and cancelled (requester, any open
+// state) are terminal.
+export enum AssetRequestStatus {
+  SUBMITTED = 'submitted',
+  APPROVED  = 'approved',
+  COMPLETED = 'completed',
+  REJECTED  = 'rejected',
+  CANCELLED = 'cancelled',
 }
 
 export enum AuditAction {
@@ -102,6 +149,14 @@ export enum AuditAction {
 
   SYSTEM_CONFIG_UPDATED = 'system_config_updated',
   REQUISITION_REASSIGNED = 'requisition_reassigned',
+  // Return / incident request actions
+  ASSET_REQUEST_SUBMITTED = 'asset_request_submitted',
+  ASSET_REQUEST_APPROVED  = 'asset_request_approved',
+  ASSET_REQUEST_REJECTED  = 'asset_request_rejected',
+  ASSET_REQUEST_COMPLETED = 'asset_request_completed',
+  ASSET_REQUEST_CANCELLED = 'asset_request_cancelled',
+  REPAIR_UPDATED = 'repair_updated',     // custodian logged progress on an open repair
+  REPAIR_COMPLETED = 'repair_completed', // repaired or found unrepairable
 }
 
 export enum OfficialFormType {
@@ -123,4 +178,20 @@ export enum OfficialFormType {
   IIRUP = 'IIRUP',                         // Appendix 74
   RLSDDP = 'RLSDDP',                      // Appendix 75
   PTR = 'PTR',                             // Appendix 76
+  // Not a COA form: the numbered paper copy of a requisition, return / incident request or repair
+  // (schema 018). Made by the print buttons, never from the form generator.
+  RECORD_PRINT = 'RECORD_PRINT',
+}
+
+// Management reports (CLAUDE.md 7.1). The API validates against this list, so a
+// misspelt or made-up type is a 400 rather than a silently wrong export.
+export enum ReportType {
+  ASSET_MASTER_LIST = 'ASSET_MASTER_LIST',
+  REQUISITION_HISTORY = 'REQUISITION_HISTORY',
+  ASSET_ISSUANCE = 'ASSET_ISSUANCE',
+  ASSET_RETURN = 'ASSET_RETURN',
+  PHYSICAL_COUNT = 'PHYSICAL_COUNT',
+  REPAIR_HISTORY = 'REPAIR_HISTORY',
+  DISPOSAL = 'DISPOSAL',
+  AUDIT_TRAIL = 'AUDIT_TRAIL',
 }

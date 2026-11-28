@@ -31,7 +31,6 @@ interface AuthReq {
   UserRole.SYSTEM_ADMIN,
   UserRole.MANAGEMENT,
   UserRole.PROPERTY_CUSTODIAN,
-  UserRole.PROPERTY_OFFICER,
 )
 export class NotificationsController {
   constructor(private readonly svc: NotificationsService) {}
