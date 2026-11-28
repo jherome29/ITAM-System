@@ -885,20 +885,34 @@ export class RequisitionsService {
     // count and the insert now run under a transaction-scoped advisory lock, so
     // submissions queue for a few milliseconds instead of colliding (same
     // pattern as AssetRequestsService).
+    //
+    // `count()+1` was still wrong on its own: it assumes the year's numbers are
+    // contiguous. Once any row is deleted (old test data cleaned up, etc.) the
+    // count undercounts relative to the highest number actually in use, so the
+    // computed "next" number collides with an existing row and every
+    // subsequent submission 409s forever (found live on the Railway UAT site,
+    // 2026-11-28, after a cleanup left a 23-number gap). Use the highest
+    // existing number instead — padded to 4 digits, string order matches
+    // numeric order, so this needs no casting.
     const saved = await this.reqRepo.manager.transaction(async (em) => {
       await em.query(
         "SELECT pg_advisory_xact_lock(hashtext('requisition_number'))",
       );
       const repo = em.getRepository(RequisitionEntity);
       const year = submittedAt.getFullYear();
-      const count = await repo
+      const rows = await repo
         .createQueryBuilder('r')
+        .select('r.requestNumber', 'requestNumber')
         .where('r.requestNumber LIKE :p', { p: `REQ-${year}-%` })
-        .getCount();
+        .getRawMany<{ requestNumber: string }>();
+      const lastNumber = rows.reduce((max, row) => {
+        const n = parseInt(row.requestNumber.split('-')[2], 10);
+        return Number.isFinite(n) && n > max ? n : max;
+      }, 0);
 
       return repo.save(
         repo.create({
-          requestNumber: `REQ-${year}-${String(count + 1).padStart(4, '0')}`,
+          requestNumber: `REQ-${year}-${String(lastNumber + 1).padStart(4, '0')}`,
           requestedById,
           requisitionType: dto.requisitionType,
           justification: dto.justification,

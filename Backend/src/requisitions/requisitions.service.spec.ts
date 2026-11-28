@@ -500,8 +500,14 @@ describe('RequisitionsService', () => {
         mockItemRepo.save.mockResolvedValue([]);
       });
 
-      it("is one past the count of THIS year's numbers (REQ-YYYY-NNNN, restarts each year)", async () => {
-        qb.getCount.mockResolvedValue(41);
+      const num = (n: number) => `REQ-${year}-${String(n).padStart(4, '0')}`;
+
+      it("is one past THIS year's highest existing number (REQ-YYYY-NNNN, restarts each year)", async () => {
+        qb.getRawMany.mockResolvedValue(
+          Array.from({ length: 41 }, (_, i) => ({
+            requestNumber: num(i + 1),
+          })),
+        );
 
         const result = await service.create(
           dto,
@@ -510,15 +516,38 @@ describe('RequisitionsService', () => {
           '127.0.0.1',
         );
 
-        expect(result.requestNumber).toBe(`REQ-${year}-0042`);
+        expect(result.requestNumber).toBe(num(42));
         expect(qb.where).toHaveBeenCalledWith('r.requestNumber LIKE :p', {
           p: `REQ-${year}-%`,
         });
         expect(mockReqRepo.count).not.toHaveBeenCalled(); // no all-years count
       });
 
-      it('takes the numbering lock before counting, and saves the header in that same transaction', async () => {
-        qb.getCount.mockResolvedValue(0);
+      it('continues from the highest number, not the row count, when old rows were deleted and left a gap', async () => {
+        // Exactly what broke live on Railway (2026-11-28): rows 1-7 and 31-58
+        // exist (35 rows total), 8-30 were deleted. count()+1 would compute 36,
+        // which already exists — a 409 on every submission, forever.
+        const existing = [
+          ...Array.from({ length: 7 }, (_, i) => num(i + 1)),
+          ...Array.from({ length: 28 }, (_, i) => num(i + 31)),
+        ];
+        qb.getRawMany.mockResolvedValue(
+          existing.map((requestNumber) => ({ requestNumber })),
+        );
+
+        const result = await service.create(
+          dto,
+          'emp-1',
+          UserRole.EMPLOYEE,
+          '127.0.0.1',
+        );
+
+        expect(existing).not.toContain(result.requestNumber);
+        expect(result.requestNumber).toBe(num(59));
+      });
+
+      it('takes the numbering lock before reading the existing numbers, and saves the header in that same transaction', async () => {
+        qb.getRawMany.mockResolvedValue([]);
 
         await service.create(dto, 'emp-1', UserRole.EMPLOYEE, '127.0.0.1');
 
@@ -527,10 +556,10 @@ describe('RequisitionsService', () => {
           expect.stringContaining('pg_advisory_xact_lock'),
         );
         const lockAt = mockEmQuery.mock.invocationCallOrder[0];
-        const countAt = qb.getCount.mock.invocationCallOrder[0];
+        const readAt = qb.getRawMany.mock.invocationCallOrder[0];
         const saveAt = mockReqRepo.save.mock.invocationCallOrder[0];
-        expect(lockAt).toBeLessThan(countAt);
-        expect(countAt).toBeLessThan(saveAt);
+        expect(lockAt).toBeLessThan(readAt);
+        expect(readAt).toBeLessThan(saveAt);
       });
     });
 
