@@ -2,9 +2,19 @@
 
 > **For:** Nelson James Casambros · Andrei Fredrick Montaniel · Jairus Nathan Valenton
 > **Target Completion:** October 2026
-> **Last updated:** October 16, 2026
+> **Last updated:** November 28, 2026
 
 Read this file first, then **CLAUDE.md** (the single source of truth for the whole project). Everything else is linked from one of these two.
+
+---
+
+## 0. Most recent: the Asset Custodian merge (2026-11-25 → 11-28, all on `develop`)
+
+IT Personnel and Property Custodian were merged into one **Asset Custodian** role — CICC's instruction was that one person now handles every asset type. Schema `019` adds the role (`it_personnel`/`property_custodian` stay for old accounts, same pattern as the earlier Property Officer retirement); `RolesGuard.normalizeRole()` treats all three as the same role for RBAC purposes; `resolveAssetTypeScope()` still differs per the literal value held. The separate `/it-asset-custodian/` and `/property-custodian/` workspaces are gone — one `/asset-custodian/` catch-all now, with the old paths as redirect shims. Full detail: CLAUDE.md §4 and `docs/guides/ROLES.md`.
+
+Landed in the same push to `develop` (branch `UPDATED-ROLE-ASSET-CUSTODIAN`, consolidated via PR #116, plus three one-commit fix PRs #113–115 and the CICC import via an earlier PR): CICC's real partial equipment list imported through the live API as the Asset Custodian (`Backend/scripts/cicc-import/`); an asset device-photo upload (`GET/POST/DELETE /assets/:id/photo`, schema `019`); a requisition line's asset class is now optional (schema `021`) — inventory decides it, not the requester; a fix so a newly-submitted requisition shows its approver's name immediately instead of "Not yet assigned"; a fix so fulfilling a requisition actually generates its PAR/ICS (it never had before); a fix for a React key-collision console warning; a 13-advisory dependency bump; a CodeQL duplicate-webpack-key fix. A **regression found while updating these docs, not yet fixed:** the Replacement Validation and Disposal Review screens got redirected into Fulfillment/Disposal on 2026-11-26 as "redundant navigation," but they showed something those two don't — held items that qualify for replacement with no open request yet. Worth a decision (`docs/guides/ROLES.md` has the detail).
+
+Health as of 2026-11-28: backend 985 unit tests / 48 suites, 121 e2e / 15 suites, frontend 538 vitest tests, all clean; k6 re-run at 362 VUs shows p95 1.04 s (`perf/README.md`) — up from September's 758 ms, likely more real per-request work plus this run's machine contention, not a regression to chase blindly. `develop` → `main` has not been opened yet; see `NEXT-TIME.md` for exactly where this was left.
 
 ---
 
@@ -129,13 +139,13 @@ cd Frontend && npm run dev
 | Role | Email | Password |
 |---|---|---|
 | System Administrator | admin@cicc.gov.ph | Admin@CICC2026! |
-| IT Personnel | itpersonnel@cicc.gov.ph | CiccIT@2026!Sec |
+| **Asset Custodian** (live, unified account — role changed from `property_custodian` on 2026-11-25) | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
 | Supervisor | supervisor@cicc.gov.ph | Supervisor@CICC2026! |
 | Employee | employee@cicc.gov.ph | Employee@CICC2026! |
 | Management | management@cicc.gov.ph | Management@CICC2026! |
-| Property Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
-| Property Custodian (second account; was the Property Officer, `property.officer@cicc.gov.ph` until 2026-10-16) | property.custodian2@cicc.gov.ph | PropertyOfficer@2026! |
 | Supervisor (Approving Officer, Property and Supply Management) | psm.approver@cicc.gov.ph | PSMApprover@2026! |
+
+Two legacy custodian accounts remain active but are not for new testing (`docs/guides/ROLES.md` has the full picture): `property.custodian2@cicc.gov.ph` / `PropertyOfficer@2026!` (legacy `property_custodian`, scoped to Fixed + Supplies — this was the Property Officer, renamed 2026-10-16); `itpersonnel@cicc.gov.ph` / `CiccIT@2026!Sec` (legacy `it_personnel`) was **deactivated** 2026-11-25 rather than migrated, since CICC's instruction is one custodian now handles every asset type.
 
 The 2 Property role accounts, scoped to Fixed + Supplies assets, already existed in the shared dev DB but had no known-working password until 2026-08-21, when they were reset via the real `PATCH /api/v1/users/:id/reset-password` endpoint and verified with a live login. If these no longer work, someone has reset them again since — check with the team rather than assuming this doc is wrong.
 
@@ -175,8 +185,8 @@ Full role details, the permission matrix and page routes: **`docs/guides/ROLES.m
 - **Demo data** (#107): `npm run seed:demo` loads pilot data through the real API.
 
 ### Solid, all on `main`
-- Auth: JWT + httpOnly refresh tokens, bcrypt, account lockout, RBAC guards, real login for all 6 roles — no mock accounts anywhere in the codebase anymore
-- 6 roles: the original 5 (Employee, Supervisor, IT Personnel, System Admin, Management) plus Property Custodian, scoped to Fixed + Supplies assets (a seventh, the read-only Property Officer, was merged into it on 2026-10-16)
+- Auth: JWT + httpOnly refresh tokens, bcrypt, account lockout, RBAC guards, real login for all 5 roles — no mock accounts anywhere in the codebase anymore
+- 5 roles today: Employee, Supervisor, **Asset Custodian** (scoped to every asset type), System Admin, Management. Asset Custodian is itself a merge of two earlier roles (IT Personnel + Property Custodian, 2026-11-25), and Property Custodian had already absorbed a third (the read-only Property Officer, 2026-10-16) — see §0 above and CLAUDE.md §4
 - Assets module: registry, lifecycle state machine, QR generation, search + status filter, asset-type scope enforcement on every write path (not just reads)
 - Requisitions module: submit → approve/reject → fulfill workflow, real end to end as of 2026-08-19 — both the API and the actual UI (Supervisor's queue, the Approving Officer's real-time queue, and IT Personnel's fulfillment page all work against real data with real actions now, not just tested at the API level)
 - Audit module: append-only log, action filter, per-record lookup — now including User Management (was the one module missing it; fixed 2026-08-19)

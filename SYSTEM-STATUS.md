@@ -9,14 +9,15 @@ date* and are kept as a record, not maintained).
 > `PATH-TO-DONE.md` (checklist to CICC handover) · `NEXT-TIME.md` (where the last
 > session stopped) · `MOCK-DATA-WIRING.md` (which screens are live).
 
-## Where things stand (2026-10-16)
+## Where things stand (2026-11-28)
 
-The system now does what the capstone describes, end to end, for all six roles,
-on real data. The work since the last full status (2026-09-10) landed in four
-waves:
+The system now does what the capstone describes, end to end, for all five roles,
+on real data. The work since the last full status (2026-10-16) landed in one more
+wave on top of the ones below:
 
 | Wave | What | Where |
 |---|---|---|
+| **Asset Custodian merge + CICC import** (2026-11-25 → 11-28) | IT Personnel and Property Custodian merged into one **Asset Custodian** role (CICC's instruction: one person handles every asset type) — schema `019`, `RolesGuard.normalizeRole()` unifies RBAC across the old and new role values, `resolveAssetTypeScope()` still differs per legacy value held; one `/asset-custodian/` workspace replaces the two separate ones. Alongside it: CICC's real partial equipment list imported through the live API (`Backend/scripts/cicc-import/`); a device-photo upload per asset; a requisition line's asset class is now optional (schema `021`, inventory decides it); three small fixes (approver name missing on submit, PAR/ICS never generated on fulfilment, a React key-collision warning); a 13-advisory dependency bump; a CodeQL duplicate-webpack-key fix. **A regression found while writing this status, not yet fixed:** Replacement Validation and Disposal Review lost their screens on 2026-11-26 ("retire redundant navigation") — they now redirect into Fulfillment/Disposal, which don't show held items that qualify for replacement with no open request yet. | PR #116 (role merge, import, dependency fix) + #113–115 (the three small fixes), all **on `develop`** |
 | **Returns, repairs, replacement** (2026-10-09 → 10-14) | Returns & Incidents with attachments and auto-generated COA documents; Maintenance & Repair with loaner units; derived request types; the replacement flow (repeat repairs qualify, the new unit is issued on fulfilment, the requester gets the receipt); catalogue item picker; notification deep-links; self-approval routing fix; per-watcher status | PR #102 / #103, **on `develop`** |
 | **Audit + clean-up** (2026-10-14 → 10-15) | The 2026-10-14 verification's fixes: scope bypass on `/audit/record/:id`, requisition-number race, TZ default, SLA KPI, real client IP, `GET /users` admin-only, restore-from-flagged; **every mock screen removed** (the frontend has no sample data); disposal review, physical-inventory count sheet, real approval history, real management dashboard, the audit log for Management; the demo-data seeder | PR #105, #106, #107 — open against `develop` |
 | **UI + export audit, and the property roles** (2026-10-15 → 10-16) | 12 defects from a button-by-button and PDF-by-PDF audit (supply stock draw-down, real running document numbers, entity name / Fund Cluster as settings, the Audit Trail Report, paginating tables, the Reports & Forms redesign); a second pass (Manila-day dates, server-side request date rules, a real reason to reject, names instead of UUIDs in the audit screens); **Property Custodian and Property Officer file requisitions**, custodians never fulfil their own (the System Administrator is the fallback); a read of all 18 PDFs that fixed overprinted form numbers, tables running off the page, a wrong Accountable Officer on the RLSDDP and an invented ICS number on the Annex A.4 | PR #108 — open, stacked on #106 |
@@ -25,14 +26,19 @@ waves:
 | **Record printouts** (2026-10-18) | CICC's client asked for a printable hard copy after every action on a requisition, a return / incident request and a repair, as proof. Each record has a **Print copy** button and a "Keep a paper copy?" prompt right after a step: a numbered `PR-YYYY-NNNN` A4 PDF with the timeline, signature lines and a verification code, reprints marked. Schema 018, CLAUDE.md Module 8. Access follows the record, and a printout is kept out of the unscoped Forms archive. | `Backend/src/reports` (`record-print*`), `requisitions` / `asset-requests` / `assets` services, `Frontend/components/shared/RecordPrints.tsx` |
 | **UI consistency and bigger text** (2026-10-16) | The client asked for bigger text; the screens were built one at a time. One type scale (xs 14px, body 16px, titles 28px), one form kit (controls, date box, filter row, page header, buttons, status badge, chip, metric card, panel, notice, dialog), one palette and one wording, held by `Frontend/lib/ui-consistency.spec.ts`. Fixed on the way: an unknown status printed the CSS class "undefined", the asset page's breadcrumb showed a UUID, dialogs could not be closed with Escape. A later pass with realistic volume (about 350 users, 800 assets, hundreds of requests, 2,700 audit rows) and awkward data (90-690 character names, unbroken serial numbers, markup in every field) found and fixed: lists that silently showed only the first 15 / 50 / 100 / 200 records, long lists now paged 25 at a time, management-report PDFs that printed wrapped cells over each other (Audit Trail: 171 pages, 84 stray), header lines on the forms that wrapped over the next line, and API inputs that returned 500 instead of a 400 / 409 / 413 that says why. | branch `refactor/ui-consistency` |
 
-Health (2026-10-18): backend `tsc` / ESLint / webpack build clean, **981 unit
-tests** (95.2% statements) and **120 e2e tests** on a real Postgres passing;
-frontend `tsc` / ESLint clean and **521 tests** passing (the production build was last run before the UI-consistency branch; CI builds it);
-`secretlint` and both dependency audits clean; CI green except SonarCloud's quality
-gate ("C Reliability Rating on New Code", issue not yet identified). One
-transient failure of 4 tests in `auth.service.spec` (the lockout threshold) was
-seen once on a coverage run and did not reproduce in four later runs; if it
-recurs, capture the output.
+Health (2026-11-28, full re-run on merged `develop`): backend `tsc` / ESLint / webpack
+build clean, **985 unit tests** (90.2% statements) and **121 e2e tests** on a real
+Postgres passing; frontend `tsc` / ESLint / production build clean and **538 tests**
+passing; `secretlint` and both dependency audits clean; Docker build verified for
+both images; smoke tests (401/403/200/helmet) passed. CI green on every **required**
+check, including the Action step named `SonarCloud`. The separate `SonarCloud Code
+Analysis` status (the quality gate itself) still fails ("C Reliability Rating on
+New Code", unchanged since at least 2026-10-16) — but reading the live branch
+ruleset confirms that status is **not** in `main`'s required-checks list, only the
+Action step is, so this does not block the `develop` → `main` promotion. Still worth
+fixing, just not a hard blocker. One transient failure of 4 tests in
+`auth.service.spec` (the lockout threshold) was seen once on a coverage run months
+ago and has not reproduced since.
 
 Screens and PDFs were also **driven in a browser against a throwaway Postgres**
 (not Supabase) and every form was rendered to an image and read, which found the
@@ -73,13 +79,14 @@ for an asset flagged through the lifecycle endpoint (the flag does not change th
 condition); dates print MM/DD/YYYY.
 
 **Delivery**
-- **`develop` → `main`** (2 reviews, every check green). #105, #106, #107 and #109 are in
-  `develop`; **#108 had been merged into a dead branch by mistake**, so #109 delivered
-  it. Schema `017` (it retires the Property Officer role) was applied to the shared
-  Supabase dev database on 2026-10-16.
-- **SonarCloud's quality gate fails** on the merged work ("C Reliability Rating on New
-  Code"). Its API blocks non-main branches, so the issue has to be read in the
-  SonarCloud dashboard.
+- **`develop` → `main`** (2 reviews, every check green): not opened yet, but `develop`
+  is fully re-verified (health section above) and ready — this is the very next step,
+  see `NEXT-TIME.md`. Schemas `019` and `021` still need applying to the shared Supabase
+  dev database (it's at `019`) before testing a manually-entered requisition line there.
+- **SonarCloud's quality gate still fails** on new code ("C Reliability Rating on New
+  Code", unchanged since at least 2026-10-16) — confirmed **not** a required check for
+  `main` (the ruleset requires the `SonarCloud` Action step, which passes; the separate
+  `SonarCloud Code Analysis` status is informational). Worth fixing, not a blocker.
 - **CICC inputs:** their property office's real document-number series (ours is a
   placeholder), and the Fund Cluster value.
 - **Before handover:** rotate the dev passwords in `ROLES.md` (the repo is public);
@@ -95,8 +102,8 @@ checklist report for the paper. The Jest security suite and a k6 baseline are do
 
 ## Suggested order of next work
 
-1. **Promote `develop` → `main`**; read the SonarCloud issue.
-2. **Fix the end-date bug in the period reports**; decide the other flagged
+1. **Open and merge the `develop` → `main` PR** — `develop` is already re-verified and green on every required check.
+2. **Decide the Replacement Validation / Disposal Review regression** (above) — restore a screen or confirm the loss is acceptable; fix the end-date bug in the period reports; decide the other flagged
    questions above (Annex A.4 scope, asset history by person).
 3. **Compare the generated PDFs against the official templates in `FORMS/`**
    (checked for layout and content, not against the paper forms), then the form

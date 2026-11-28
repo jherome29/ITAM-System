@@ -961,7 +961,7 @@ The sections above are the original contract. These controls came from later ver
 |---|---|---|
 | The audit IP is `req.ip` everywhere, with `TRUST_PROXY` | `auth.controller.ts`, `main.ts` | `auth.controller.spec.ts` |
 | `/audit/record/:recordId` is scoped to the caller's asset types; the admin-only `/audit/user/:id` cannot be reached through it | `audit.service.ts` `findRecordHistory` | `audit-record-scope.e2e-spec.ts` |
-| `GET /users` and `GET /users/:id` are System Administrator only (the directory is not for IT Personnel) | `users.controller.ts` | `users.controller.spec.ts` (pins every route's roles) |
+| `GET /users` and `GET /users/:id` are System Administrator only (the directory is not for the Asset Custodian) | `users.controller.ts` | `users.controller.spec.ts` (pins every route's roles) |
 | The demo RBAC endpoints in the auth controller were removed | `auth.controller.ts` | removal; nothing calls them |
 | Each role's workspace shell renders only for users of that role (an `AppShell` role guard), not just the menu | `Frontend/components/shell/AppShell.tsx` | code review; no dedicated test yet |
 | One shared token refresh: parallel requests no longer invalidate each other and log the user out | `Frontend/lib/api/client.ts`, `single-flight.ts` | `single-flight.spec.ts` |
@@ -970,7 +970,7 @@ The sections above are the original contract. These controls came from later ver
 | Requisition numbers are allocated under a lock (six simultaneous submits no longer 500) | `requisitions.service.ts` | `requisitions.service.spec.ts`, `requisition-workflow.e2e-spec.ts` |
 | Form numbers are allocated atomically with the stored form (no duplicates, no gaps) | `document-numbers.ts` | `document-numbers.e2e-spec.ts` |
 | Attachment upload: count, size and **magic-byte** type checks; stored with `select: false` | `asset-requests`, `attachment-files.ts` | `asset-requests.service.spec.ts`, `asset-requests.controller.spec.ts` |
-| Segregation of duties for requisitions and requests (see ASVS V11.1 above) | `requisitions.service.ts`, `asset-requests.service.ts` | `property-requisitions.e2e-spec.ts` (Property Custodian and IT Personnel), `requisition-workflow.e2e-spec.ts` |
+| Segregation of duties for requisitions and requests (see ASVS V11.1 above) | `requisitions.service.ts`, `asset-requests.service.ts` | `property-requisitions.e2e-spec.ts` (proven against both the current Asset Custodian role and the legacy Property Custodian / IT Personnel values), `requisition-workflow.e2e-spec.ts` |
 | The server runs on CICC time (Asia/Manila), so day boundaries and the daily jobs are right in a UTC container | `common/app-time-zone.ts`, `main.ts` | `app-time-zone.spec.ts` |
 | Database function `search_path` pinned (Supabase advisor lint 0011) | `015_function_search_path.sql` | applied to dev |
 | Names, not ids, in the audit screens, and only for people (CLAUDE.md §8.4) | `audit.service.ts` `withNames` | `audit.service.spec.ts` |

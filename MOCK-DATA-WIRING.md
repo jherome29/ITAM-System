@@ -1,6 +1,6 @@
 # Mock Data → Real Wiring — Status
 
-**Snapshot:** 2026-10-16 (still true; the table below was extended for the property roles). **The frontend contains no mock or sample data.** Every
+**Snapshot:** 2026-11-28 (still true; the role names below were updated for the Asset Custodian merge). **The frontend contains no mock or sample data.** Every
 screen a user can reach reads real records from the API, and every button on it saves
 through the API (and is audited). This file used to be the migration map; the migration
 is finished, so it is now just the record of what that means and what is *not built*.
@@ -24,11 +24,11 @@ behind it can never show a made-up one.
 | Page | Roles | Reads / writes |
 |---|---|---|
 | Approval Queue | Approving Officer | `GET /v1/requisitions`, `…/approve`, `…/reject` |
-| My Requisitions | Approving Officer, IT Asset Custodian, **Property Custodian** (the Employee has its own pages) | `GET /v1/requisitions/mine`, `POST /v1/requisitions` |
-| Requisition Fulfillment | IT Asset Custodian, Property Custodian | `GET /v1/requisitions` (their own requisitions are excluded), `…/fulfill`, `…/hold` |
+| My Requisitions | Approving Officer, **Asset Custodian** (the Employee has its own pages) | `GET /v1/requisitions/mine`, `POST /v1/requisitions` |
+| Requisition Fulfillment | Asset Custodian | `GET /v1/requisitions` (their own requisitions are excluded), `…/fulfill`, `…/hold` |
 | Requisition Fulfilment (fallback) | **Master Admin** | `GET /v1/requisitions/fulfilment-fallback` (only requisitions a custodian filed themselves), `…/fulfill`, `…/hold` |
-| Custody & Issuance | IT Asset Custodian, Property Custodian | `GET /v1/assets` (carries who holds each asset), `PATCH …/lifecycle` |
-| Disposal Recommendations | IT Asset Custodian, Property Custodian | `GET /v1/assets?status=available`, `PATCH …/lifecycle` |
+| Custody & Issuance | Asset Custodian | `GET /v1/assets` (carries who holds each asset), `PATCH …/lifecycle` |
+| Disposal Recommendations | Asset Custodian | `GET /v1/assets?status=available`, `PATCH …/lifecycle` |
 
 Everything else is its own component calling the API directly (dashboards, asset registry,
 returns & incidents, maintenance & repair, replacement validation, disposal review,
@@ -56,5 +56,6 @@ and its menu entry to `lib/roles/role-navigation.ts` — nothing else needs un-h
 components only they used) were deleted on 2026-10-15. Login had stopped sending anyone
 there, and every capability had a new equivalent except one: the IT custodian's
 management-report generator (`/it-personnel/reports`). That now lives at
-`/it-asset-custodian/management-reports`, in the IT menu. The Property Custodian's "Go to Forms"
-button, the only link from a new screen into an old one, now points at `/property-custodian/reports` (the Property Officer role that used to own that page was merged into the Property Custodian on 2026-10-16).
+`/asset-custodian/management-reports` (the unified Asset Custodian workspace, merged 2026-11-25
+from the former separate `/it-asset-custodian/` and `/property-custodian/` ones, which now just
+redirect into it).

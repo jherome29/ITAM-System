@@ -68,7 +68,7 @@ CICC asked for a printed proof after every step. You can print a copy of any **r
 | Employee 2 | uat.employee2@cicc.gov.ph | Employee2@CICC2026! | A monitor and a chair. A **return request is already filed** (AR-2026-0021). **Try:** open Returns & Incidents and follow it |
 | Employee 3 | uat.employee3@cicc.gov.ph | Employee3@CICC2026! | A filing cabinet. A **requisition is waiting for approval** (REQ-2026-0054). **Try:** follow it in My Requisitions |
 | Employee 4 | uat.employee4@cicc.gov.ph | Employee4@CICC2026! | An air conditioner. A **damage report is filed** (AR-2026-0022). **Try:** follow it, then see the repair |
-| Employee 5 | uat.employee5@cicc.gov.ph | Employee5@CICC2026! | A chair. A requisition for a laptop is **approved and waiting for the IT custodian** (REQ-2026-0055). **Try:** watch it get issued |
+| Employee 5 | uat.employee5@cicc.gov.ph | Employee5@CICC2026! | A chair. A requisition for a laptop is **approved and waiting for the Asset Custodian** (REQ-2026-0055). **Try:** watch it get issued |
 | Employee (older account) | employee@cicc.gov.ph | Employee@CICC2026! | Many items and past requests (27 items, 48 requisitions): good for seeing a full history |
 
 **Try this:** open the Asset Catalogue, request something, then follow it in My Requisitions as the other roles act on it. When you send it, the **"Keep a paper copy?"** box appears: print it and check the number, the steps and the signature lines. Open the same request later and use **Paper copy** to print a second one: it says **REPRINT**.
@@ -103,68 +103,39 @@ CICC asked for a printed proof after every step. You can print a copy of any **r
 
 ---
 
-## Page 4: IT Asset Custodian
+## Page 4: Asset Custodian
 
-**You are:** the keeper of **computers and ICT equipment** (laptops, monitors, servers, network devices).
+**You are:** the keeper of **every kind of equipment** — computers and ICT gear, furniture and fixed assets, and office supplies. (This used to be two separate roles, IT Asset Custodian and Property Custodian; they were merged into one on 2026-11-25 because CICC wants one person handling everything.)
 
-**You can:** register assets, hand them out and take them back, fulfil approved ICT requests, handle returns and incident reports, run repairs, make official forms and reports.
-**You cannot:** handle furniture or supplies (that is the Property Custodian), or approve or fulfil **your own** requests.
+**You can:** register assets, hand them out and take them back, fulfil approved requests of any kind, handle returns and incident reports, run repairs, manage supply stock, make official forms and reports.
+**You cannot:** approve or fulfil **your own** requests — another custodian, or the Admin, does that.
 
 | Menu | What it does |
 |---|---|
-| ICT Dashboard | Stock, waiting requests, low-stock alerts |
-| ICT Asset Registry | Every ICT asset, with its history. Add new ones here |
-| ICT Requisition Fulfillment | Approved requests waiting for you. **Fulfil** (and pick the unit to issue) or put **on hold** if out of stock |
+| Dashboard | Stock, waiting requests, low-stock alerts |
+| IT Inventory / Fixed Asset Inventory / Supplies Inventory | Every asset, by kind, with its history. Add new ones here |
+| Requisition Fulfillment | Approved requests waiting for you. **Fulfil** (and pick the unit to issue) or put **on hold** if out of stock |
 | Custody & Issuance | Who holds what. Issue, transfer or take back an item |
-| Returns & Incidents | Employees' return, repair, damage, loss and theft reports. **Approve**, then **mark received** |
-| QR Scanner | Scan an asset's QR label to open its record |
 | Maintenance & Repair | Items being repaired. Update progress, lend a spare, close as repaired or not repairable |
-| ICT Physical Inventory | The count sheet: what the system expects to find in each location |
-| ICT Disposal Recommendations | Flag unusable items for disposal, with a written reason |
-| ICT Reports & Forms | Make the official forms (PAR, ICS, PTR and others) and see the archive |
+| Barcode Scanner | Scan an asset's QR label to open its record |
+| Physical Inventory | The count sheet: what the system expects to find in each location |
+| Disposal Recommendations | Flag unusable items for disposal, with a written reason |
+| Reports & Forms | Make the official forms (PAR, ICS, PTR and others) and see the archive |
 | Management Reports | Master list, issuance, returns and repair reports (PDF or Excel) |
 
 **Where your work goes next:** the employee is notified. Forms appear in the archive for Management.
 
-| Login | Email | Password |
-|---|---|---|
-| IT Asset Custodian | itpersonnel@cicc.gov.ph | CiccIT@2026!Sec |
-
-**Try this:** open ICT Requisition Fulfillment and fulfil **REQ-2026-0055** (Employee 5's laptop). Then open ICT Reports & Forms and make a form. Each step you finish (fulfil, hold, approve or complete a return or incident report, close a repair, lend a spare) offers a **paper copy**; the **Paper copy** box on every record has the earlier ones. You see only ICT records.
-
----
-
-## Page 5: Property Custodian
-
-**You are:** the keeper of **furniture, fixed assets and office supplies**.
-
-**You can:** the same as the IT custodian, for fixed assets and supplies, plus managing supply stock and two review screens.
-**You cannot:** handle ICT equipment, or approve or fulfil your own requests.
-
-| Menu | What it does |
-|---|---|
-| Property Dashboard | Stock and waiting requests |
-| Fixed Asset Registry / Supply Inventory | Furniture and equipment records, and supply stock levels |
-| Property Requisition Fulfillment | Approved requests waiting for you: fulfil or put on hold |
-| Custody & Issuance | Who holds what; issue, transfer, take back |
-| Returns & Incidents | Return, repair, damage, loss and theft reports: approve, then mark received |
-| Maintenance & Repair | Items being repaired, with spares and results |
-| QR Scanner, Physical Inventory | Scan labels; the count sheet |
-| Property Disposal Recommendations | Flag unusable items for disposal with a reason |
-| Disposal Review | Read-only list of everything flagged for disposal |
-| Replacement Validation | Read-only list of replacement requests and items that qualify |
-| Property Reports & Forms | Official forms and the archive |
+**Not in the menu above, but reachable directly:** `/asset-custodian/returns-incidents` is your inbox for employees' return, repair, damage, loss and theft reports — **approve**, then **mark received**. Type that address after the site's address if the menu doesn't show it for you.
 
 | Login | Email | Password |
 |---|---|---|
-| Property Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
-| Property Custodian (second) | property.custodian2@cicc.gov.ph | PropertyOfficer@2026! |
+| Asset Custodian | property.custodian@cicc.gov.ph | PropertyCustodian@2026! |
 
-**Try this:** open Returns & Incidents. **AR-2026-0021** (a chair return) and **AR-2026-0022** (an air conditioner damage report) are waiting. Approve one, mark it received, and see what happens next (a repair record opens for the damage). Each step offers a **paper copy**; try printing the request and then its repair. You see only fixed assets and supplies.
+**Try this:** open `/asset-custodian/returns-incidents`. **AR-2026-0021** (a chair return) and **AR-2026-0022** (an air conditioner damage report) are waiting. Approve one, mark it received, and see what happens next (a repair record opens for the damage). Then open Requisition Fulfillment and fulfil **REQ-2026-0055** (Employee 5's laptop), and open Reports & Forms and make a form. Each step you finish (fulfil, hold, approve or complete a return or incident report, close a repair, lend a spare) offers a **paper copy**; the **Paper copy** box on every record has the earlier ones.
 
 ---
 
-## Page 6: System Administrator
+## Page 5: System Administrator
 
 **You are:** the person who looks after accounts, settings and the full history.
 
@@ -175,7 +146,7 @@ CICC asked for a printed proof after every step. You can print a copy of any **r
 |---|---|
 | Admin Dashboard | What is waiting for **your decision** (requests a custodian filed for themselves, each with an Open link), system health, the background checks that send alerts, and the latest audit entries |
 | Users & Accounts | Create, search, deactivate, unlock or sign out accounts; reset a password |
-| Roles & Permissions | Change which of the six roles an account has |
+| Roles & Permissions | Change which of the five roles an account has |
 | System Settings | Limits such as the approval time target, the repeat-repair limit, sign-in attempts, and the name and fund cluster printed on forms |
 | Audit Log | Every action: who, what, when, from where. Filter and export it |
 | Returns & Incidents, Repairs, Requisition Fulfillment | Only the requests a custodian filed for themselves |
@@ -188,7 +159,7 @@ CICC asked for a printed proof after every step. You can print a copy of any **r
 
 ---
 
-## Page 7: Management
+## Page 6: Management
 
 **You are:** a viewer who checks how the system is doing. **Read-only: you cannot change anything.**
 
