@@ -90,7 +90,7 @@ interface RichTextValue {
 function isRichText(v: unknown): v is RichTextValue {
   return (
     typeof v === 'object' &&
-    v !== null &&
+    !!v &&
     Array.isArray((v as RichTextValue).richText)
   );
 }
@@ -99,7 +99,7 @@ interface FormulaValue {
   result?: unknown;
 }
 function isFormula(v: unknown): v is FormulaValue {
-  return typeof v === 'object' && v !== null && 'result' in v;
+  return typeof v === 'object' && !!v && 'result' in v;
 }
 
 // ExcelJS hands back a plain value for most cells, but not for every one:
